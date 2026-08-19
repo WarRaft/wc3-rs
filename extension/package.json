@@ -1,0 +1,45 @@
+{
+  "name": "wc3",
+  "displayName": "WC3",
+  "description": "Warcraft III language support for VS Code — JASS syntax highlighting and live diagnostics.",
+  "version": "0.0.1",
+  "publisher": "WarRaft",
+  "license": "CC0-1.0",
+  "engines": {
+    "vscode": "^1.111.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:jass"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "jass",
+        "aliases": [
+          "JASS"
+        ],
+        "extensions": [
+          ".j",
+          ".pld",
+          ".ai"
+        ],
+        "icon": {
+          "light": "./icons/jass.svg",
+          "dark": "./icons/jass.svg"
+        },
+        "configuration": "./syntaxes/jass.language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "jass",
+        "scopeName": "source.jass",
+        "path": "./syntaxes/jass.tmLanguage.json"
+      }
+    ]
+  }
+}
