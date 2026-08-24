@@ -36,12 +36,43 @@ verbatim).
 ## Running it locally
 
 ```sh
-# 1. Build the backend
+# 1. Build the backend (quick, host-only, for iterating)
 cd ../server && cargo build
 
 # 2. Open extension/ in VS Code and press F5
 #    (Run and Debug → "Extension Development Host")
 ```
 
-The extension looks for the backend at `../server/target/debug/wc3-server`
-relative to itself — there's no packaged/prebuilt binary yet.
+`serverBinaryPath()` in `extension.js` looks for the backend in this order:
+1. `./bin/wc3-server-{macos,linux,windows.exe}` — the packaged,
+   cross-compiled binary produced by `server/build.sh` / `server/build-mac.sh`
+   (same naming as the older `JASS-Tree-sitter-Rust` extension's own
+   `bin/`). It lives inside `extension/`, not `server/`, because `vsce`
+   only packages files under the folder that holds `package.json`.
+2. `../server/target/release/wc3-server`
+3. `../server/target/debug/wc3-server` — the plain `cargo build` output;
+   what you get from step 1 above.
+
+### Producing a packaged binary
+
+One-time environment setup — installs the cross-compilation toolchain
+(rustup targets/components, `jq`, `mingw-w64`, `musl-cross`):
+
+```sh
+cd ../server && ./build-conf.sh
+```
+
+Then, either:
+
+- `./build.sh` — ported from the older extension's own `build.sh`.
+  Cross-compiles a universal macOS binary plus Linux (musl) and Windows
+  (gnu) builds into `extension/bin/`. See `server/.cargo/config.toml` for
+  the linkers it expects.
+- `./build-mac.sh` — quick host-only debug build (current Mac target
+  only) into `extension/bin/`, for local iteration without the full
+  cross-compile.
+
+```sh
+cd ../server && ./build.sh       # full cross-compile
+cd ../server && ./build-mac.sh   # quick local mac build
+```

@@ -28,6 +28,7 @@ const {
 } = require('vscode')
 
 const path = require('path')
+const fs = require('fs')
 const {ServerClient} = require('./serverClient.js')
 
 const DEBOUNCE_MS = 200
@@ -42,16 +43,47 @@ let diagnosticCollection = null
 const updateTimers = new Map()
 
 /**
- * Path to the `wc3-server` binary. There's no packaged/prebuilt binary yet
- * (unlike the older extension, which ships one per platform under `bin/`)
- * — this assumes the dev layout where `extension/` and `server/` are
- * sibling directories in the same repo, and that `cargo build` has already
- * been run in `server/`.
+ * Resolves the `wc3-server` binary to spawn.
+ *
+ * Prefers the packaged, cross-compiled binary under `./bin/` (produced by
+ * `server/build.sh` / `server/build-mac.sh`, named like the older
+ * extension's own `bin/` binaries: `wc3-server-macos` / `wc3-server-linux` /
+ * `wc3-server-windows.exe`). It lives inside the extension folder itself —
+ * not `../server/bin` — because `vsce` only packages files under the
+ * folder that holds `package.json`. Falls back to a local dev build
+ * (`../server/target/{release,debug}/wc3-server`) so day-to-day
+ * development doesn't require running the full cross-compile every time.
+ *
  * @param {import('vscode').ExtensionContext} context
+ * @returns {string | null} null if the platform isn't supported.
  */
 function serverBinaryPath(context) {
-    const name = process.platform === 'win32' ? 'wc3-server.exe' : 'wc3-server'
-    return path.join(context.extensionPath, '..', 'server', 'target', 'debug', name)
+    const serverDir = path.join(context.extensionPath, '..', 'server')
+
+    let platformSuffix
+    switch (process.platform) {
+        case 'win32':
+            platformSuffix = 'windows.exe'
+            break
+        case 'darwin':
+            platformSuffix = 'macos'
+            break
+        case 'linux':
+            platformSuffix = 'linux'
+            break
+        default:
+            window.showErrorMessage(`WC3: unsupported platform: ${process.platform}`)
+            return null
+    }
+
+    const packaged = path.join(context.extensionPath, 'bin', `wc3-server-${platformSuffix}`)
+    if (fs.existsSync(packaged)) return packaged
+
+    const devName = process.platform === 'win32' ? 'wc3-server.exe' : 'wc3-server'
+    const release = path.join(serverDir, 'target', 'release', devName)
+    if (fs.existsSync(release)) return release
+
+    return path.join(serverDir, 'target', 'debug', devName)
 }
 
 /** @param {import('vscode').TextDocument} document */
@@ -91,13 +123,16 @@ module.exports = {
         diagnosticCollection = languages.createDiagnosticCollection('jass')
         context.subscriptions.push(diagnosticCollection)
 
-        client = new ServerClient(serverBinaryPath(context))
+        const binPath = serverBinaryPath(context)
+        if (!binPath) return
+
+        client = new ServerClient(binPath)
         try {
             await client.start()
         } catch (e) {
             window.showErrorMessage(
                 `WC3: failed to start the language server (${e.message}). ` +
-                'Did you run "cargo build" in the server/ crate?',
+                'Run "cargo build" (or server/build.sh for a packaged binary) in the server/ crate first.',
             )
             client = null
             return

@@ -16,14 +16,18 @@
 use jass_rs::{lint, parse, ColumnEncoding, Level};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
-use tiny_http::{Header, ListenAddr, Method, Response, Server};
+use tiny_http::{Header, Method, Response, Server};
 
 fn main() {
     let server = Server::http("127.0.0.1:0").expect("failed to bind 127.0.0.1:0");
-    let port = match server.server_addr() {
-        ListenAddr::IP(addr) => addr.port(),
-        ListenAddr::Unix(_) => unreachable!("bound to a TCP address, not a unix socket"),
-    };
+    // `to_ip()` is portable (unlike matching `ListenAddr` directly — its
+    // `Unix` variant only exists on Unix targets, so an exhaustive match
+    // fails to compile on Windows).
+    let port = server
+        .server_addr()
+        .to_ip()
+        .expect("bound to an IP address (127.0.0.1), never a unix socket")
+        .port();
     let token = generate_token();
 
     // The extension reads this exact line from our stdout to learn where

@@ -13,7 +13,7 @@
   ],
   "main": "./extension.js",
   "activationEvents": [
-    "onLanguage:jass"
+    
   ],
   "contributes": {
     "languages": [
