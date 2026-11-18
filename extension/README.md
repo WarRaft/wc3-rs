@@ -7,14 +7,31 @@ Warcraft III language support for VS Code.
 - JASS syntax highlighting (`.j`, `.pld`, `.ai`): comments, string/rawcode
   literals, bracket matching, indent-on-keyword rules for
   `function`/`if`/`loop`/`globals` blocks.
-- Live diagnostics: parse errors and lint warnings (duplicate
-  declarations, unused locals, `loop` without `exitwhen`, missing
-  `return`, ...) from [`jass-rs`](../../jass-rs), shown in the Problems
-  panel as you type.
+- Zinc syntax highlighting (`.zn`): keywords, declarations, line/block
+  comments, literals, operators, brace-based indentation.
+- Semantic highlighting for both languages, using VS Code's standard
+  token types and modifiers: functions and natives (`defaultLibrary`),
+  parameters, locals, globals and constants (`readonly`), types and
+  primitives, libraries (`namespace`), structs, interfaces, methods,
+  fields (`static`), assignments (`modification`), plus keywords,
+  literals, operators and comments. It works on half-typed code too,
+  because classification runs on an error-tolerant token stream rather
+  than the AST.
+- Live diagnostics for both languages: parse errors and lint warnings
+  shown in the Problems panel as you type —
+  - JASS via [`jass-rs`](../../jass-rs): duplicate declarations, unused
+    locals, `loop` without `exitwhen`, missing `return`, ...
+  - Zinc via [`zinc-rs`](../../zinc-rs): duplicate libraries/members/
+    locals, unused locals, `while (true)` without `break`/`return`,
+    `break` outside a loop, empty `if`/`else`, missing `return`, ...
 
 ## Architecture
 
-- `../server` — a small Rust binary (`wc3-server`) that wraps `jass-rs`.
+- `../server` — a small Rust binary (`wc3-server`) that wraps `jass-rs`
+  and `zinc-rs` (both built on the shared [`parser-rs`](../../parser-rs),
+  so the server converts their errors/diagnostics with one code path). The
+  extension sends each document's `languageId` (`jass`/`zinc`) along with
+  its text, and the server picks the parser by it.
   It's spawned as a subprocess and speaks plain HTTP on
   `127.0.0.1:<random port>`, guarded by a `?token=` printed (along with
   the port) as its first line of stdout. It exits when its stdin closes,

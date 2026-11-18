@@ -9,11 +9,16 @@
 //! project, since none of it is JASS-specific.
 //!
 //! Unlike that project this uses `tiny_http` (blocking, ~3 small
-//! dependencies) instead of `axum`/`tokio`, and all JASS logic comes from
-//! `jass-rs` rather than a ported copy — this binary is just the glue that
-//! turns `jass-rs::parse`/`lint` into HTTP JSON.
+//! dependencies) instead of `axum`/`tokio`, and all language logic comes
+//! from `jass-rs` / `zinc-rs` (both built on the shared `parser-rs`) rather
+//! than a ported copy — this binary is just the glue that turns their
+//! `parse`/`lint` into HTTP JSON, picking the language by the document's
+//! `languageId`.
 
-use jass_rs::{lint, parse, ColumnEncoding, Level};
+use parser_rs::{ColumnEncoding, Diagnostic, ParseError};
+
+/// The dialect `.j` documents are read in.
+const VJASS: jass_rs::Dialect = jass_rs::Dialect::VJass;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use tiny_http::{Header, Method, Response, Server};
@@ -101,23 +106,33 @@ fn handle_request(mut request: tiny_http::Request, token: &str) {
 
     let path = request.url().split('?').next().unwrap_or("").to_string();
 
-    match (request.method().clone(), path.as_str()) {
-        (Method::Post, "/document/update") => {
-            let mut body = String::new();
-            if request.as_reader().read_to_string(&mut body).is_err() {
-                respond(
-                    request,
-                    Response::from_string("invalid body").with_status_code(400),
-                );
-                return;
-            }
-            let json = serde_json::to_string(&handle_update(&body))
-                .unwrap_or_else(|_| "{\"diagnostics\":[]}".to_string());
-            respond(request, json_response(json));
-        }
-        _ => respond(
+    if request.method() != &Method::Post {
+        respond(request, Response::from_string("not found").with_status_code(404));
+        return;
+    }
+    let mut body = String::new();
+    if request.as_reader().read_to_string(&mut body).is_err() {
+        respond(
             request,
-            Response::from_string("not found").with_status_code(404),
+            Response::from_string("invalid body").with_status_code(400),
+        );
+        return;
+    }
+
+    let json = match path.as_str() {
+        "/document/update" => serde_json::to_string(&handle_update(&body)),
+        "/document/semanticTokens" => serde_json::to_string(&handle_semantic_tokens(&body)),
+        "/semantic/legend" => serde_json::to_string(&handle_legend()),
+        _ => {
+            respond(request, Response::from_string("not found").with_status_code(404));
+            return;
+        }
+    };
+    match json {
+        Ok(json) => respond(request, json_response(json)),
+        Err(_) => respond(
+            request,
+            Response::from_string("serialization failed").with_status_code(500),
         ),
     }
 }
@@ -145,6 +160,14 @@ fn token_ok(url: &str, token: &str) -> bool {
 #[derive(Deserialize)]
 struct UpdateRequest {
     text: String,
+    /// The VS Code language id of the document (`"jass"`, `"zinc"`).
+    /// Missing means `"jass"`, for clients predating Zinc support.
+    #[serde(rename = "languageId", default = "default_language")]
+    language_id: String,
+}
+
+fn default_language() -> String {
+    "jass".to_string()
 }
 
 #[derive(Serialize)]
@@ -152,7 +175,7 @@ struct DiagnosticOut {
     /// 0-indexed, matching `vscode.Position` directly — the extension does
     /// no further index math.
     line0: usize,
-    /// 0-indexed, UTF-16-counted (see `jass_rs::ColumnEncoding::Utf16`) —
+    /// 0-indexed, UTF-16-counted (see `parser_rs::ColumnEncoding::Utf16`) —
     /// also a direct `vscode.Position` value. `null` when only a whole-line
     /// location is known (lint diagnostics don't carry a column).
     char0: Option<usize>,
@@ -167,19 +190,37 @@ struct UpdateResponse {
     diagnostics: Vec<DiagnosticOut>,
 }
 
-fn handle_update(body: &str) -> UpdateResponse {
-    let req: UpdateRequest = match serde_json::from_str(body) {
-        Ok(r) => r,
-        Err(_) => {
-            return UpdateResponse {
-                diagnostics: Vec::new(),
-            }
-        }
-    };
+/// Parses and lints `text` as `language`. Every language crate reports
+/// through the same `parser-rs` types, so everything past this dispatch is
+/// language-agnostic. `None` for a language this server doesn't know.
+fn analyze(language: &str, text: &str) -> Option<Result<Vec<Diagnostic>, ParseError>> {
+    Some(match language {
+        // `.j` files are read as vJASS, so `//! zinc` blocks are handed to
+        // zinc-rs (lines stay file-absolute; Zinc lint is included).
+        "jass" => jass_rs::parse_with(text, VJASS).map(|p| jass_rs::lint(&p)),
+        "zinc" => zinc_rs::parse(text).map(|p| zinc_rs::lint(&p)),
+        _ => return None,
+    })
+}
 
-    let diagnostics = match parse(&req.text) {
+fn handle_update(body: &str) -> UpdateResponse {
+    let diagnostics = serde_json::from_str::<UpdateRequest>(body)
+        .ok()
+        .and_then(|req| {
+            let result = analyze(&req.language_id, &req.text)?;
+            Some(to_diagnostics_out(&req.text, result))
+        })
+        .unwrap_or_default();
+    UpdateResponse { diagnostics }
+}
+
+fn to_diagnostics_out(
+    text: &str,
+    result: Result<Vec<Diagnostic>, ParseError>,
+) -> Vec<DiagnosticOut> {
+    match result {
         Err(err) => {
-            let (char0, end_char0) = utf16_char_range(&req.text, err.line, err.col, err.end_col);
+            let (char0, end_char0) = utf16_char_range(text, err.line, err.col, err.end_col);
             vec![DiagnosticOut {
                 line0: err.line.saturating_sub(1),
                 char0: Some(char0),
@@ -188,27 +229,60 @@ fn handle_update(body: &str) -> UpdateResponse {
                 message: err.message,
             }]
         }
-        Ok(program) => lint(&program)
+        Ok(diagnostics) => diagnostics
             .into_iter()
             .map(|d| DiagnosticOut {
                 line0: d.line.saturating_sub(1),
                 char0: None,
                 end_char0: None,
-                severity: if d.level == Level::Error {
-                    "error"
-                } else {
-                    "warning"
-                },
+                severity: d.level.as_str(),
                 message: d.message,
             })
             .collect(),
-    };
-
-    UpdateResponse { diagnostics }
+    }
 }
 
-/// Converts a jass-rs `(line, start_col, end_col)` — 1-indexed, codepoint
-/// counted — into 0-indexed UTF-16 columns for `vscode.Position`.
+#[derive(Serialize)]
+struct LegendResponse {
+    #[serde(rename = "tokenTypes")]
+    token_types: Vec<&'static str>,
+    #[serde(rename = "tokenModifiers")]
+    token_modifiers: Vec<&'static str>,
+}
+
+/// VS Code's standard semantic token types and modifiers, in the order
+/// the encoded token data indexes them. The extension registers exactly
+/// this, so the legend lives in one place (`parser_rs::semantic`).
+fn handle_legend() -> LegendResponse {
+    let (token_types, token_modifiers) = parser_rs::semantic::legend();
+    LegendResponse {
+        token_types,
+        token_modifiers,
+    }
+}
+
+#[derive(Serialize)]
+struct SemanticTokensResponse {
+    /// `deltaLine, deltaStartChar, length, tokenType, tokenModifiers` per
+    /// token — ready for `new vscode.SemanticTokens(Uint32Array.from(data))`.
+    data: Vec<u32>,
+}
+
+fn handle_semantic_tokens(body: &str) -> SemanticTokensResponse {
+    let data = serde_json::from_str::<UpdateRequest>(body)
+        .ok()
+        .and_then(|req| match req.language_id.as_str() {
+            "jass" => Some(jass_rs::encoded_semantic_tokens(&req.text, VJASS)),
+            "zinc" => Some(zinc_rs::encoded_semantic_tokens(&req.text)),
+            _ => None,
+        })
+        .unwrap_or_default();
+    SemanticTokensResponse { data }
+}
+
+/// Converts a `(line, start_col, end_col)` — 1-indexed, codepoint counted,
+/// as every `parser-rs`-based parser reports — into 0-indexed UTF-16
+/// columns for `vscode.Position`.
 fn utf16_char_range(source: &str, line: usize, start_col: usize, end_col: usize) -> (usize, usize) {
     let line_text = source.lines().nth(line.saturating_sub(1)).unwrap_or("");
     let start = ColumnEncoding::Utf16.from_codepoints(line_text, start_col);

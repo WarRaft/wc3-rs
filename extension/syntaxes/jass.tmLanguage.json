@@ -3,8 +3,15 @@
     "name": "JASS",
     "scopeName": "source.jass",
     "patterns": [
-        { "include": "#comment" },
-        { "include": "#string" }
+        {
+            "include": "#zinc-block"
+        },
+        {
+            "include": "#comment"
+        },
+        {
+            "include": "#string"
+        }
     ],
     "repository": {
         "comment": {
@@ -21,7 +28,27 @@
                     "match": "\\\\."
                 }
             ]
+        },
+        "zinc-block": {
+            "name": "meta.embedded.block.zinc",
+            "begin": "^\\s*(//!\\s*zinc)\\s*$",
+            "beginCaptures": {
+                "1": {
+                    "name": "keyword.control.directive.zinc.jass"
+                }
+            },
+            "end": "^\\s*(//!\\s*endzinc)\\s*$",
+            "endCaptures": {
+                "1": {
+                    "name": "keyword.control.directive.zinc.jass"
+                }
+            },
+            "contentName": "source.zinc",
+            "patterns": [
+                {
+                    "include": "source.zinc"
+                }
+            ]
         }
     }
 }
-

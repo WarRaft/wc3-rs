@@ -4,15 +4,17 @@
  * WC3 extension entry point.
  *
  * Spawns the `wc3-server` Rust binary (see `../server`, which wraps
- * `jass-rs`) as a subprocess and talks to it over the same transport as
+ * `jass-rs` and `zinc-rs`) as a subprocess and talks to it over the same transport as
  * the older JASS-Tree-sitter-Rust extension: a local HTTP server on a
  * random port, handshake read from the process's first stdout line,
  * `?token=` auth, shutdown on stdin close. `serverClient.js` and
  * `httpTransport.js` implement that transport and are unchanged copies —
  * none of it is JASS-specific.
  *
- * Feature-wise this only wires up diagnostics (parse errors + lint
- * warnings) for now, via `/document/update`. Everything else the old
+ * Feature-wise this wires up, for JASS and Zinc documents (the document's
+ * `languageId` picks the parser):
+ * - diagnostics (parse errors + lint warnings) via `/document/update`;
+ * - semantic highlighting via `/semantic/legend` + `/document/semanticTokens`. Everything else the old
  * extension's protocol supports (hover, completion, ...) has no
  * counterpart here yet — `wc3-server` doesn't implement those routes.
  */
@@ -25,6 +27,8 @@ const {
     DiagnosticSeverity,
     Range,
     Position,
+    SemanticTokens,
+    SemanticTokensLegend,
 } = require('vscode')
 
 const path = require('path')
@@ -32,6 +36,9 @@ const fs = require('fs')
 const {ServerClient} = require('./serverClient.js')
 
 const DEBOUNCE_MS = 200
+
+/** Language ids `wc3-server` can analyze (its `analyze` dispatch). */
+const LANGUAGES = new Set(['jass', 'zinc'])
 
 /** @type {ServerClient | null} */
 let client = null
@@ -88,7 +95,7 @@ function serverBinaryPath(context) {
 
 /** @param {import('vscode').TextDocument} document */
 function scheduleUpdate(document) {
-    if (document.languageId !== 'jass') return
+    if (!LANGUAGES.has(document.languageId)) return
     const key = document.uri.toString()
     clearTimeout(updateTimers.get(key))
     updateTimers.set(key, setTimeout(() => {
@@ -101,7 +108,10 @@ function scheduleUpdate(document) {
 async function updateDiagnostics(document) {
     if (!client) return
 
-    const result = await client.sendRequest('document/update', {text: document.getText()})
+    const result = await client.sendRequest('document/update', {
+        text: document.getText(),
+        languageId: document.languageId,
+    })
     if (!result || !Array.isArray(result.diagnostics)) return
 
     const diagnostics = result.diagnostics.map(d => {
@@ -117,10 +127,42 @@ async function updateDiagnostics(document) {
     diagnosticCollection.set(document.uri, diagnostics)
 }
 
+/**
+ * Registers semantic highlighting for every language in {@link LANGUAGES}.
+ * The legend (VS Code's standard token types and modifiers) comes from the
+ * server, so the Rust side is the single source of truth for the indices
+ * its encoded token data uses.
+ *
+ * @param {import('vscode').ExtensionContext} context
+ */
+async function registerSemanticTokens(context) {
+    const legendInfo = await client.sendRequest('semantic/legend', {})
+    if (!legendInfo) return
+    const legend = new SemanticTokensLegend(legendInfo.tokenTypes, legendInfo.tokenModifiers)
+
+    const provider = {
+        /** @param {import('vscode').TextDocument} document */
+        async provideDocumentSemanticTokens(document) {
+            if (!client) return null
+            const result = await client.sendRequest('document/semanticTokens', {
+                text: document.getText(),
+                languageId: document.languageId,
+            })
+            if (!result || !Array.isArray(result.data)) return null
+            return new SemanticTokens(Uint32Array.from(result.data))
+        },
+    }
+
+    const selector = [...LANGUAGES].map(language => ({language}))
+    context.subscriptions.push(
+        languages.registerDocumentSemanticTokensProvider(selector, provider, legend),
+    )
+}
+
 module.exports = {
     /** @param {import('vscode').ExtensionContext} context */
     async activate(context) {
-        diagnosticCollection = languages.createDiagnosticCollection('jass')
+        diagnosticCollection = languages.createDiagnosticCollection('wc3')
         context.subscriptions.push(diagnosticCollection)
 
         const binPath = serverBinaryPath(context)
@@ -136,6 +178,12 @@ module.exports = {
             )
             client = null
             return
+        }
+
+        try {
+            await registerSemanticTokens(context)
+        } catch (e) {
+            console.error('[wc3] semantic tokens unavailable:', e)
         }
 
         context.subscriptions.push(workspace.onDidOpenTextDocument(scheduleUpdate))

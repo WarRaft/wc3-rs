@@ -31,6 +31,7 @@ name = "jass-rs"
 version = "0.1.0"
 dependencies = [
  "parser-rs",
+ "zinc-rs",
 ]
 
 [[package]]
@@ -144,9 +145,18 @@ name = "wc3-server"
 version = "0.1.0"
 dependencies = [
  "jass-rs",
+ "parser-rs",
  "serde",
  "serde_json",
  "tiny_http",
+ "zinc-rs",
+]
+
+[[package]]
+name = "zinc-rs"
+version = "0.1.0"
+dependencies = [
+ "parser-rs",
 ]
 
 [[package]]

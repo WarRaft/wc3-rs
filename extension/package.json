@@ -1,7 +1,7 @@
 {
   "name": "wc3",
   "displayName": "WC3",
-  "description": "Warcraft III language support for VS Code — JASS syntax highlighting and live diagnostics.",
+  "description": "Warcraft III language support for VS Code — JASS and Zinc syntax and semantic highlighting, and live diagnostics.",
   "version": "0.0.1",
   "publisher": "WarRaft",
   "license": "CC0-1.0",
@@ -12,9 +12,7 @@
     "Programming Languages"
   ],
   "main": "./extension.js",
-  "activationEvents": [
-    
-  ],
+  "activationEvents": [],
   "contributes": {
     "languages": [
       {
@@ -32,14 +30,110 @@
           "dark": "./icons/jass.svg"
         },
         "configuration": "./syntaxes/jass.language-configuration.json"
+      },
+      {
+        "id": "zinc",
+        "aliases": [
+          "Zinc"
+        ],
+        "extensions": [
+          ".zn"
+        ],
+        "icon": {
+          "light": "./icons/jass.svg",
+          "dark": "./icons/jass.svg"
+        },
+        "configuration": "./syntaxes/zinc.language-configuration.json"
       }
     ],
     "grammars": [
       {
         "language": "jass",
         "scopeName": "source.jass",
-        "path": "./syntaxes/jass.tmLanguage.json"
+        "path": "./syntaxes/jass.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.block.zinc": "zinc"
+        }
+      },
+      {
+        "language": "zinc",
+        "scopeName": "source.zinc",
+        "path": "./syntaxes/zinc.tmLanguage.json"
       }
-    ]
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "jass",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "zinc",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      }
+    ],
+    "configurationDefaults": {
+      "[jass]": {
+        "editor.semanticHighlighting.enabled": true
+      },
+      "[zinc]": {
+        "editor.semanticHighlighting.enabled": true
+      }
+    }
   }
 }

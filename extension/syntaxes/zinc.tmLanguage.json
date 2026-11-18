@@ -1,0 +1,120 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "Zinc",
+    "scopeName": "source.zinc",
+    "patterns": [
+        { "include": "#comment" },
+        { "include": "#string" },
+        { "include": "#rawcode" },
+        { "include": "#number" },
+        { "include": "#declaration" },
+        { "include": "#keyword" },
+        { "include": "#constant" },
+        { "include": "#operator" }
+    ],
+    "repository": {
+        "comment": {
+            "patterns": [
+                {
+                    "name": "comment.line.double-slash.zinc",
+                    "match": "//.*$"
+                },
+                {
+                    "name": "comment.block.zinc",
+                    "begin": "/\\*",
+                    "end": "\\*/"
+                }
+            ]
+        },
+        "string": {
+            "name": "string.quoted.double.zinc",
+            "begin": "\"",
+            "end": "\"|$",
+            "patterns": [
+                {
+                    "name": "constant.character.escape.zinc",
+                    "match": "\\\\."
+                }
+            ]
+        },
+        "rawcode": {
+            "name": "string.quoted.single.zinc",
+            "match": "'[^'\\n]*'"
+        },
+        "number": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.hex.zinc",
+                    "match": "\\b0[xX][0-9a-fA-F]+\\b"
+                },
+                {
+                    "name": "constant.numeric.decimal.zinc",
+                    "match": "\\b[0-9]+(\\.[0-9]+)?\\b"
+                }
+            ]
+        },
+        "declaration": {
+            "patterns": [
+                {
+                    "match": "\\b(library|struct|interface|module)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+                    "captures": {
+                        "1": { "name": "storage.type.zinc" },
+                        "2": { "name": "entity.name.type.zinc" }
+                    }
+                },
+                {
+                    "match": "\\b(function|method)\\s+(?:(operator)\\s*)?([A-Za-z_][A-Za-z0-9_]*)?",
+                    "captures": {
+                        "1": { "name": "storage.type.function.zinc" },
+                        "2": { "name": "keyword.other.operator.zinc" },
+                        "3": { "name": "entity.name.function.zinc" }
+                    }
+                }
+            ]
+        },
+        "keyword": {
+            "patterns": [
+                {
+                    "name": "keyword.control.zinc",
+                    "match": "\\b(if|else|while|do|for|break|return|debug)\\b"
+                },
+                {
+                    "name": "storage.modifier.zinc",
+                    "match": "\\b(private|public|static|constant|readonly|delegate|stub|optional)\\b"
+                },
+                {
+                    "name": "keyword.other.zinc",
+                    "match": "\\b(library|requires|needs|uses|struct|interface|module|extends|type|function|method|operator)\\b"
+                },
+                {
+                    "name": "storage.type.primitive.zinc",
+                    "match": "\\b(integer|real|boolean|string|handle|code|nothing)\\b"
+                }
+            ]
+        },
+        "constant": {
+            "patterns": [
+                {
+                    "name": "constant.language.zinc",
+                    "match": "\\b(true|false|null)\\b"
+                },
+                {
+                    "name": "variable.language.zinc",
+                    "match": "\\b(this|thistype)\\b"
+                }
+            ]
+        },
+        "operator": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.arrow.zinc",
+                    "match": "->"
+                },
+                {
+                    "name": "keyword.operator.zinc",
+                    "match": "&&|\\|\\||==|!=|<=|>=|[-+*/]=|[-+*/%<>=!]"
+                }
+            ]
+        }
+    }
+}
