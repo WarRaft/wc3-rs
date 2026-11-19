@@ -1,0 +1,107 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "AngelScript",
+    "scopeName": "source.angelscript",
+    "patterns": [
+        { "include": "#comment" },
+        { "include": "#heredoc" },
+        { "include": "#string" },
+        { "include": "#number" },
+        { "include": "#declaration" },
+        { "include": "#keyword" },
+        { "include": "#constant" },
+        { "include": "#operator" }
+    ],
+    "repository": {
+        "comment": {
+            "patterns": [
+                { "name": "comment.line.double-slash.angelscript", "match": "//.*$" },
+                { "name": "comment.block.angelscript", "begin": "/\\*", "end": "\\*/" }
+            ]
+        },
+        "heredoc": {
+            "name": "string.quoted.triple.angelscript",
+            "begin": "\"\"\"",
+            "end": "\"\"\""
+        },
+        "string": {
+            "patterns": [
+                {
+                    "name": "string.quoted.double.angelscript",
+                    "begin": "\"",
+                    "end": "\"|$",
+                    "patterns": [{ "name": "constant.character.escape.angelscript", "match": "\\\\." }]
+                },
+                {
+                    "name": "string.quoted.single.angelscript",
+                    "begin": "'",
+                    "end": "'|$",
+                    "patterns": [{ "name": "constant.character.escape.angelscript", "match": "\\\\." }]
+                }
+            ]
+        },
+        "number": {
+            "patterns": [
+                { "name": "constant.numeric.hex.angelscript", "match": "\\b0[xX][0-9a-fA-F_]+\\b" },
+                { "name": "constant.numeric.binary.angelscript", "match": "\\b0[bB][01_]+\\b" },
+                { "name": "constant.numeric.octal.angelscript", "match": "\\b0[oO][0-7_]+\\b" },
+                { "name": "constant.numeric.decimal.angelscript", "match": "(?<![\\w.])(\\d+(\\.\\d+)?|\\.\\d+)([eE][+-]?\\d+)?[fFdD]?\\b" }
+            ]
+        },
+        "declaration": {
+            "patterns": [
+                {
+                    "match": "\\b(class|interface|enum|namespace)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+                    "captures": {
+                        "1": { "name": "storage.type.angelscript" },
+                        "2": { "name": "entity.name.type.angelscript" }
+                    }
+                },
+                {
+                    "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+                    "captures": { "1": { "name": "entity.name.function.angelscript" } }
+                }
+            ]
+        },
+        "keyword": {
+            "patterns": [
+                {
+                    "name": "keyword.control.angelscript",
+                    "match": "\\b(if|else|for|while|do|switch|case|default|break|continue|return|try|catch)\\b"
+                },
+                {
+                    "name": "storage.modifier.angelscript",
+                    "match": "\\b(const|private|protected|shared|external|abstract|final|override|explicit|property|mixin|in|out|inout)\\b"
+                },
+                {
+                    "name": "keyword.other.angelscript",
+                    "match": "\\b(class|interface|enum|namespace|funcdef|typedef|import|from|cast|get|set|function)\\b"
+                },
+                {
+                    "name": "keyword.operator.word.angelscript",
+                    "match": "\\b(and|or|xor|not|is)\\b"
+                },
+                {
+                    "name": "storage.type.primitive.angelscript",
+                    "match": "\\b(void|bool|int|int8|int16|int32|int64|uint|uint8|uint16|uint32|uint64|float|double|auto)\\b"
+                }
+            ]
+        },
+        "constant": {
+            "patterns": [
+                { "name": "constant.language.angelscript", "match": "\\b(true|false|null)\\b" },
+                { "name": "variable.language.angelscript", "match": "\\b(this|super)\\b" }
+            ]
+        },
+        "operator": {
+            "patterns": [
+                { "name": "keyword.operator.handle.angelscript", "match": "@" },
+                { "name": "keyword.operator.scope.angelscript", "match": "::" },
+                {
+                    "name": "keyword.operator.angelscript",
+                    "match": ">>>=|\\*\\*=|<<=|>>=|>>>|\\*\\*|\\^\\^|&&|\\|\\||==|!=|<=|>=|\\+\\+|--|[-+*/%&|^]=|[-+*/%<>=!~&|^?:]"
+                }
+            ]
+        }
+    }
+}
