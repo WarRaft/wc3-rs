@@ -5,3 +5,6 @@ sources=src
 
 [jass]
 dialect=vjass // .j files without a `// @dialect` header are vJASS
+
+[lint]
+infinite-loop=warning // on: find loops that never end

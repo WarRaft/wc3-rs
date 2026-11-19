@@ -30,13 +30,18 @@ dialect=vjass
 |-------------|-----------|------------------------------------------|-------------------------------------------------------------------------|
 | `[project]` | `sources` | paths, comma-separated, relative to the project root | the project's source folders and files                     |
 | `[jass]`    | `dialect` | `jass` or `vjass` (case-insensitive)     | the dialect of `.j` files that don't declare one in a `// @dialect` header |
+| `[lint]`    | a rule id | `off`, `warning` or `error`              | turn a lint rule off or on, at that level (see [Lint](#lint))           |
 
 - **`dialect`.** A file's own header always wins over the project, so a
   project can still mix dialects. Without either, a file is plain JASS.
   The order is header, then project, then plain JASS.
-- **`sources`** is read and checked, but not used yet: it's where
-  cross-file analysis will look for the project's code. Quote a path that
-  contains a comma: `sources="my, folder"`.
+- **`sources`** lists the folders and files that make up the project (see
+  the project model below); without it, the whole project folder does.
+  `./src` and `a/../src` mean `src`. Quote a path that contains a comma:
+  `sources="my, folder"`.
+- **Settings apply below the manifest.** A file under the project folder
+  but outside `sources` isn't loaded as part of the project, but when it's
+  opened it's still read with the project's settings.
 
 **Checks.** In the editor, `wc3.bni` gets BNI's own syntax errors and lint
 plus checks of its settings, at the exact name or value:
@@ -45,13 +50,149 @@ plus checks of its settings, at the exact name or value:
   go unnoticed);
 - an unknown dialect, or `dialect` with no value or several (an error);
 - `dialect` set twice (a warning; the first one is used);
-- a `sources` path that doesn't exist, or an empty one (a warning).
+- a `sources` path that doesn't exist, or an empty one (a warning);
+- an unknown lint rule (a warning), or a setting that isn't `off`,
+  `warning` or `error` (an error). A rule set twice takes the last value.
 
-**How the editor uses it.** The extension sends each document's path with
-its requests, and `wc3-server` finds and reads the manifest
-(`server/src/project.rs`). Settings come from the **saved** `wc3.bni`: the
-server re-reads it when its modification time or size changes, and the
-extension re-analyzes and re-highlights every open document when a
-`wc3.bni` in the workspace is saved, created or deleted. A `wc3.bni` above
-the workspace folders is still found, but changes to it are only picked up
-on the next edit of a document.
+**The project model.** `wc3-server` keeps every file of every project in
+memory (`server/src/workspace.rs`) and analyzes them all, so the
+Problems panel shows the whole project's errors without opening anything.
+
+- **Which projects.** Every `wc3.bni` under the workspace folders, and
+  the project of any file opened from elsewhere (even a `wc3.bni` above
+  the workspace folders).
+- **Which files.** The project's `sources`, or its whole folder without
+  them, plus `wc3.bni` itself. Only known extensions count (`.j`, `.pld`,
+  `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`); hidden folders
+  (`.git`, `.idea`, ...) are skipped; a nested project owns its own files.
+  `sources` may point outside the project folder (`sources=src,../shared`).
+- **Text.** An open file uses the editor's text; any other file its text
+  on disk, read as UTF-8 with invalid bytes replaced (old maps often use a
+  legacy code page). Closing a project file goes back to its disk text.
+- **Disk.** The server watches the workspace folders and every project's
+  folders and sources itself. A changed, created or deleted source file is
+  re-read and re-analyzed (unless it's open); a changed `wc3.bni` reloads
+  the projects and re-analyzes everything, since its settings and
+  `sources` apply to all files.
+- **Cost.** Files are analyzed in parallel: 25 MB of JASS (60 copies of
+  `Blizzard.j`) loads in about 0.2 s.
+
+## Lint
+
+Every lint diagnostic names its **rule**, shown as the diagnostic's code
+in the Problems panel. A rule has one id in every language that checks
+the same thing, so one setting covers all of them. A project switches
+rules in `wc3.bni`:
+
+```ini
+[lint]
+infinite-loop=warning     // on, as a warning (it's off by default)
+unused-local=off          // off
+empty-branch=error        // on, raised to an error
+```
+
+Without a setting, a rule is on at its own level (the level it reports
+in each language) unless the table says it's off by default. Parse errors
+aren't lint: they can't be turned off. The rules are defined in
+`parser_rs::RULES` (`parser-rs/src/diagnostic.rs`); this table follows it.
+
+| rule                             | languages                    | default | finds |
+|----------------------------------|------------------------------|---------|-------|
+| `statement-outside-function`     | JASS, Zinc                   | on      | a statement at the top level, where only declarations belong |
+| `modifier-outside-library`       | Zinc                         | on      | `private` / `public` outside a library, where it has no effect |
+| `duplicate-declaration`          | JASS, Zinc, AngelScript      | on      | a name declared twice in the same scope |
+| `unused-local`                   | JASS, Zinc, Lua, AngelScript | on      | a local variable (or Lua local function) that's never used |
+| `shadowed-variable`              | AngelScript                  | on      | a local that hides a variable of an outer scope |
+| `missing-return`                 | JASS, Zinc, AngelScript      | on      | a function (or `get` accessor) with a return type that may not return a value |
+| `infinite-loop`                  | JASS, Zinc, Lua, AngelScript | **off** | a loop with no way out: a JASS `loop` without `exitwhen`, a `while (true)` without `break` or `return` |
+| `empty-branch`                   | JASS, Zinc, Lua, AngelScript | on      | an empty `then` / `else` / `if` body |
+| `break-outside-loop`             | Zinc, Lua, AngelScript       | on      | `break` outside a loop (or switch) |
+| `continue-outside-loop`          | AngelScript                  | on      | `continue` outside a loop |
+| `duplicate-label`                | Lua                          | on      | a label defined twice in the same block |
+| `undefined-label`                | Lua                          | on      | a `goto` with no visible label |
+| `vararg-outside-vararg-function` | Lua                          | on      | `...` in a function that doesn't take it |
+| `item-outside-section`           | BNI                          | on      | a `key=value` before the first `[section]` |
+| `empty-section-name`             | BNI                          | on      | a `[]` section header |
+| `duplicate-section`              | BNI                          | on      | a section header repeated in the file |
+| `unclosed-section-header`        | BNI                          | on      | a section header missing its `]` |
+| `unterminated-string`            | BNI                          | on      | a quoted string with no closing `"` |
+
+**Why `infinite-loop` is off.** A thread that loops forever and sleeps is
+normal Warcraft III code: the game's own AI scripts are full of them (161
+such loops in its `Scripts` folder, e.g. `PlayGame` ends in
+`SleepForever()`). Turn the rule on to find such loops, say, ones that
+forgot to sleep.
+
+## Symbol index
+
+Every file of the project model carries its **symbols**: each name it
+declares or references, with its kind and scope (`parser_rs::Occurrence`).
+The language crate records them in the same pass that produces the
+highlighting, so they agree, and half-typed code is indexed too. Every
+language produces them: JASS, Zinc (also inside vJASS `//! zinc` blocks),
+Lua and AngelScript. BNI is data and has none.
+
+**Resolution.** By exact (case-sensitive) name, within the name's scope:
+
+- **Parameters and locals**: their own function, in their own file. In
+  Lua every `local` is a binding of its own, following Lua's scoping, so
+  a shadowing `local x = x + 1` is two symbols.
+- **Zinc library members** are private by default: their own library.
+  `public` ones are project-wide, so JASS code can call a public Zinc
+  function, but not a private one.
+- **Struct and class members** (Zinc, AngelScript) and **table fields**
+  (Lua): a separate namespace matched across the project, since `obj.x`
+  can't be tied to its struct, class or table without type inference.
+  Every `x` field and every `.x` are one symbol. In AngelScript, a bare
+  name inside a class that names one of its members is that member
+  (implicit `this`).
+- **AngelScript namespaces.** A name declared in `namespace A { namespace
+  B { ... } }` lives in `A::B`, and a namespace may be reopened in any
+  file. A use is looked up as AngelScript does: what's written (`C`,
+  `X::C`) from the namespace it's used in, then each enclosing one, out to
+  the global namespace, and the first that declares it wins; `::X::C`
+  means exactly `X::C`. `Color::Red` and `Red` are the same enum value. A
+  name declared nowhere (a native, say) is in the global namespace, which
+  is where every other language's names live.
+- **Everything else** (JASS functions, natives, globals, constants and
+  types; Zinc libraries and anything outside a library; Lua globals;
+  AngelScript's namespace members, as above) is project-wide, across
+  languages: every file of the model means the same
+  symbol. So with `common.j` and `Blizzard.j` among a project's files, go
+  to definition on `CreateTimer`, from JASS, Zinc or Lua, lands on its
+  `native` in `common.j`.
+
+**What the editor gets** (`server/src/index.rs`), all asked with one
+`query` message and answered after every earlier change is analyzed:
+
+| feature                          | answer                                                       |
+|----------------------------------|--------------------------------------------------------------|
+| go to definition (F12)           | the symbol's declarations, in any file                       |
+| find references (Shift+F12)      | every occurrence, declarations included (unless VS Code asks otherwise) |
+| hover                            | the declaration lines, with file, line and namespace; or "not declared in the project" |
+| outline (document symbols)       | the file's declarations, except parameters and locals        |
+| go to symbol in workspace (Ctrl+T) | declarations (except parameters and locals) whose name contains the text (case-insensitive) |
+| rename (F2)                      | every occurrence, in every project file (open or not), or why it can't be renamed |
+
+**Rename** (`server/src/rename.rs`) replaces exactly what find references
+finds. It's refused, with the reason shown in the editor, when it can't
+be done safely:
+
+- the symbol isn't declared in the project (`print`, or a native whose
+  `common.j` isn't part of it), or it's a JASS `native`, the game's API;
+- it's a field or method declared in more than one place: members are
+  matched by name, so renaming one would rename the others;
+- the new name isn't a plain name in **every** language the symbol is used
+  in: each language's own lexer decides (a keyword doesn't lex as a name;
+  JASS is checked as vJASS), JASS and Zinc names start with a letter, and
+  JASS names don't end with `_`;
+- the new name is already declared in the same scope (for a project-wide
+  name, the same namespace).
+
+An AngelScript class is renamed together with its constructors and
+destructor; F2 on a constructor renames the class.
+
+Nothing is cached beyond the symbols themselves: a query scans what it
+needs. On the game's own `Scripts` folder (293 files: `common.j`,
+`Blizzard.j`, the AI and campaign scripts) loading takes about 80 ms and a
+query about 1 ms.

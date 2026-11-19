@@ -80,7 +80,7 @@ fn unknown_sections_and_keys_are_warnings() {
     assert_eq!(
         messages,
         vec![
-            (1, "unknown section [jas] (expected [project] or [jass])"),
+            (1, "unknown section [jas] (expected [project], [jass] or [lint])"),
             (4, "unknown setting 'source' in [project] (expected 'sources')"),
             (5, "setting without a name"),
         ]
@@ -136,4 +136,70 @@ fn projects_reload_a_changed_manifest() {
 
     std::fs::remove_file(&manifest).unwrap();
     assert_eq!(projects.for_file(&file), None);
+}
+
+#[test]
+fn source_paths_are_normalized() {
+    let (project, _) = load(Path::new("/p"), "[project]\nsources=./src,a/../lib\n");
+    assert_eq!(project.sources, vec![PathBuf::from("/p/src"), PathBuf::from("/p/lib")]);
+}
+
+#[test]
+fn a_project_contains_its_scopes_and_manifest_but_not_hidden_folders() {
+    let whole = Project { root: "/p".into(), ..Project::default() };
+    assert!(whole.contains(Path::new("/p/a.j")));
+    assert!(whole.contains(Path::new("/p/deep/er/a.j")));
+    assert!(!whole.contains(Path::new("/p/.git/a.j")));
+    assert!(!whole.contains(Path::new("/q/a.j")));
+
+    let src = Project { root: "/p".into(), sources: vec!["/p/src".into()], ..Project::default() };
+    assert!(src.contains(Path::new("/p/src/a.j")));
+    assert!(src.contains(Path::new("/p/wc3.bni")));
+    assert!(!src.contains(Path::new("/p/other/a.j")));
+    assert!(!src.contains(Path::new("/p/src/.cache/a.j")));
+}
+
+#[test]
+fn reads_lint_settings() {
+    let src = "[lint]\ninfinite-loop=warning\nunused-local=OFF\nempty-branch=error\n";
+    let (project, issues) = load(Path::new("/p"), src);
+    assert!(issues.is_empty(), "{issues:?}");
+    assert_eq!(project.lint.get("infinite-loop"), Some(&LintSetting::On(Level::Warning)));
+    assert_eq!(project.lint.get("unused-local"), Some(&LintSetting::Off));
+    assert_eq!(project.lint.get("empty-branch"), Some(&LintSetting::On(Level::Error)));
+}
+
+#[test]
+fn lint_settings_are_checked() {
+    let src = "[lint]\nunused-locals=off\nunused-local=maybe\nempty-branch=\n";
+    let (project, issues) = load(Path::new("/p"), src);
+    assert!(project.lint.is_empty());
+    let got: Vec<_> = issues.iter().map(|i| (i.line, i.level, i.message.as_str())).collect();
+    assert_eq!(
+        got,
+        vec![
+            (2, Level::Warning, "unknown lint rule 'unused-locals' (the rules are listed in the wc3-rs README)"),
+            (3, Level::Error, "unknown lint setting 'maybe' (expected off, warning or error)"),
+            (4, Level::Error, "'empty-branch' needs one value: off, warning or error"),
+        ]
+    );
+}
+
+#[test]
+fn lint_defaults_and_project_settings_apply() {
+    use parser_rs::{rule, Diagnostic};
+    let diags = || {
+        vec![
+            Diagnostic::warning(rule::INFINITE_LOOP, "loop", 1),
+            Diagnostic::warning(rule::UNUSED_LOCAL, "unused", 2),
+            Diagnostic::warning(rule::EMPTY_BRANCH, "empty", 3),
+        ]
+    };
+    // No project: only the default-off rule goes.
+    let rules: Vec<_> = apply_lint(diags(), None).iter().map(|d| d.rule).collect();
+    assert_eq!(rules, vec![rule::UNUSED_LOCAL, rule::EMPTY_BRANCH]);
+    // A project turns it on, another rule off, and re-levels a third.
+    let (project, _) = load(Path::new("/p"), "[lint]\ninfinite-loop=warning\nunused-local=off\nempty-branch=error\n");
+    let got: Vec<_> = apply_lint(diags(), Some(&project)).iter().map(|d| (d.rule, d.level)).collect();
+    assert_eq!(got, vec![(rule::INFINITE_LOOP, Level::Warning), (rule::EMPTY_BRANCH, Level::Error)]);
 }

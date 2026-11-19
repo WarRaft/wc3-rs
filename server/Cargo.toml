@@ -2,7 +2,7 @@
 name = "wc3-server"
 version = "0.1.0"
 edition = "2021"
-description = "Local HTTP backend for the WC3 VS Code extension — parses, lints and highlights JASS/vJASS, Zinc, Lua, AngelScript and BNI via jass-rs / zinc-rs / lua-rs / as-rs / bni-rs, and reads wc3.bni projects."
+description = "Language backend of the WC3 VS Code extension (binary protocol over stdio) — parses, lints and highlights JASS/vJASS, Zinc, Lua, AngelScript and BNI via jass-rs / zinc-rs / lua-rs / as-rs / bni-rs, and reads wc3.bni projects."
 license = "CC0-1.0"
 
 [[bin]]
@@ -16,6 +16,4 @@ zinc-rs = { path = "../../zinc-rs" }
 lua-rs = { path = "../../lua-rs" }
 as-rs = { path = "../../as-rs" }
 bni-rs = { path = "../../bni-rs" }
-tiny_http = "0.12"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+notify = "8.2.0"

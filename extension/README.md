@@ -26,6 +26,17 @@ Warcraft III language support for VS Code.
   comments, and `//! zinc` … `//! endzinc` blocks, which are parsed,
   linted and highlighted as Zinc with file-accurate positions. One project
   can mix both.
+- BNI (`.bni`, including `wc3.bni`) via [`bni-rs`](https://github.com/WarRaft/bni-rs):
+  semantic highlighting, syntax errors and lint.
+- Projects: a `wc3.bni` file marks a project root and holds its settings,
+  such as the default JASS dialect. Every file of the project is analyzed,
+  open or not, so its problems are listed right away (see the repository
+  README).
+- Symbol navigation across the whole project, in every language: go to
+  definition, find references, hover with the declaration, outline, go
+  to symbol in workspace, and rename (F2), which refuses with a reason
+  when the rename wouldn't be safe. Parameters and locals resolve within their
+  function; everything else across all project files.
 - Live diagnostics: parse errors and lint warnings
   shown in the Problems panel as you type —
   - JASS via [`jass-rs`](https://github.com/WarRaft/jass-rs): duplicate declarations, unused
@@ -36,23 +47,39 @@ Warcraft III language support for VS Code.
 
 ## Architecture
 
-- `../server` — a small Rust binary (`wc3-server`) that wraps `jass-rs`
-  and `zinc-rs` (both built on the shared [`parser-rs`](https://github.com/WarRaft/parser-rs),
-  so the server converts their errors/diagnostics with one code path). The
-  extension sends each document's `languageId` (`jass`/`zinc`) along with
-  its text, and the server picks the parser by it.
-  It's spawned as a subprocess and speaks plain HTTP on
-  `127.0.0.1:<random port>`, guarded by a `?token=` printed (along with
-  the port) as its first line of stdout. It exits when its stdin closes,
-  i.e. when the extension process that spawned it dies.
-- `serverClient.js` / `httpTransport.js` implement that transport. They're
-  unmodified-in-spirit copies from the older `JASS-Tree-sitter-Rust`
-  extension — none of that code is JASS-specific, so there was nothing to
-  rewrite (one pre-existing bug — an uncleared startup timeout that could
-  throw after `stop()` — was fixed here).
-- `extension.js` is new: it only wires up `/document/update` → Problems
-  panel. None of the older extension's other features (hover, completion,
-  map editor, MPQ browsing, ...) have a counterpart here yet.
+All language logic lives in Rust; the extension is a thin shell with no
+dependencies besides the VS Code API.
+
+- `../server`: the `wc3-server` binary. It wraps `jass-rs`, `zinc-rs`,
+  `lua-rs`, `as-rs` and `bni-rs`, all built on the shared
+  [`parser-rs`](https://github.com/WarRaft/parser-rs), so one code path
+  turns their errors and lint into diagnostics.
+- **Protocol.** stdio, binary, the same framing both ways:
+  `u32 body length | u8 kind | body` (little-endian fields, length-prefixed
+  UTF-8 strings). It's specified in `server/src/protocol.rs`;
+  `protocol.js` is its JavaScript twin. Unknown kinds are skipped, so
+  either side can add messages.
+- **The editor only reports**: workspace folders (`init`), and what
+  happens to documents: `open`, `edit` (incremental changes), `lang`
+  (language changed, text kept), `close`. It never asks for anything.
+- **The server keeps every project file in memory**, open or not, and
+  answers each change with one `file` message per affected file:
+  everything it knows about it at that version (diagnostics, plus semantic
+  tokens for open documents). Project files that were never opened are
+  reported too, so their problems show up right away. A burst of edits
+  is analyzed once. It sends the token legend first, and watches the disk
+  itself (`notify`): source files and `wc3.bni`.
+- **Ids.** A document is identified by its path on disk (`fsPath`) when
+  it's a file, so it matches the files the server finds itself, and by its
+  URI otherwise.
+- **Queries.** Only what depends on the cursor is asked (`query` →
+  `answer`): definition, references, hover, document and workspace
+  symbols, rename, answered from the server's symbol index after every earlier
+  change is analyzed.
+- `extension.js` applies diagnostics as they arrive and serves
+  highlighting from the last tokens received. If VS Code asks for a
+  version the server hasn't answered yet, it waits for that answer (up to
+  a second). The server exits when its stdin closes.
 
 This is otherwise a fresh extension — it does not share JASS-parsing code
 with the older `JASS-Tree-sitter-Rust` extension (only the TextMate

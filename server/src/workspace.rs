@@ -1,0 +1,372 @@
+//! The project model, in memory. Every file of every known project is
+//! here, open in the editor or not: its text (the editor's while it's
+//! open, the disk's otherwise), its language and its project. Whenever a
+//! file changes, it's re-analyzed and the editor gets a report, so the
+//! problems of the whole project are known without opening anything.
+//!
+//! - **Which projects.** Every `wc3.bni` under the workspace folders, and
+//!   the project of any file opened from elsewhere.
+//! - **Which files.** A project's `sources` (or its whole root when it
+//!   lists none), files with a known extension (`Language::from_path`),
+//!   outside hidden folders, whose nearest `wc3.bni` is this project's
+//!   (a nested project owns its own files). Plus the manifest itself.
+//! - **Identity.** A file is identified by its path on disk, the form the
+//!   editor uses for files too; a document with no file (untitled) by the
+//!   editor's URI.
+//!
+//! Text from disk is read as UTF-8, with invalid bytes replaced: old maps
+//! often store scripts in a legacy code page.
+
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use parser_rs::Occurrence;
+
+use crate::analysis;
+use crate::document::{Document, Language};
+use crate::project::{self, Project, Projects};
+use crate::protocol::ServerMsg;
+
+struct Entry {
+    doc: Document,
+    /// The editor owns the text; disk changes don't touch it.
+    open: bool,
+    /// From the last analysis; empty until the file is first analyzed.
+    symbols: Vec<Occurrence>,
+}
+
+impl Entry {
+    fn new(doc: Document, open: bool) -> Entry {
+        Entry { doc, open, symbols: Vec::new() }
+    }
+}
+
+#[derive(Default)]
+pub struct Workspace {
+    roots: Vec<PathBuf>,
+    files: HashMap<String, Entry>,
+    projects: Projects,
+    /// Manifests of the projects loaded so far.
+    manifests: HashSet<PathBuf>,
+    /// Files to analyze and report.
+    dirty: HashSet<String>,
+    /// Files the editor should forget: they left the model.
+    cleared: Vec<String>,
+}
+
+/// The id of a file on disk.
+pub fn path_id(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+impl Workspace {
+    /// The workspace folders. Loads every project found in them.
+    pub fn set_roots(&mut self, roots: Vec<PathBuf>) {
+        self.roots = roots;
+        self.sync_disk();
+    }
+
+    /// The editor opened a document. A file from a project not loaded yet
+    /// loads that project too.
+    pub fn open(&mut self, id: String, path: Option<PathBuf>, language: Language, version: i32, text: String) {
+        let new_project = path
+            .as_deref()
+            .and_then(project::find_manifest)
+            .is_some_and(|m| !self.manifests.contains(&m));
+        self.files.insert(id.clone(), Entry::new(Document { language, version, text, path }, true));
+        self.dirty.insert(id);
+        if new_project {
+            self.sync_disk();
+        }
+    }
+
+    pub fn edit(&mut self, id: &str, version: i32, changes: &[(crate::document::Range, String)]) {
+        if let Some(entry) = self.files.get_mut(id).filter(|e| e.open) {
+            for (range, text) in changes {
+                entry.doc.apply(*range, text);
+            }
+            entry.doc.version = version;
+            self.dirty.insert(id.to_string());
+        }
+    }
+
+    /// The editor switched the document's language; `None` means one the
+    /// server doesn't analyze, which is the same as closing it.
+    pub fn set_language(&mut self, id: &str, language: Option<Language>) {
+        match language {
+            Some(language) => {
+                if let Some(entry) = self.files.get_mut(id) {
+                    entry.doc.language = language;
+                    self.dirty.insert(id.to_string());
+                }
+            }
+            None => self.close(id),
+        }
+    }
+
+    /// The editor closed a document. A project file goes back to its text
+    /// on disk and stays in the model; anything else leaves it.
+    pub fn close(&mut self, id: &str) {
+        let Some(entry) = self.files.get(id) else {
+            return;
+        };
+        let path = entry.doc.path.clone();
+        let member = path.filter(|p| self.member(p).is_some());
+        match member.and_then(|p| load(&p)) {
+            Some(doc) => {
+                self.files.insert(id.to_string(), Entry::new(doc, false));
+                self.dirty.insert(id.to_string());
+            }
+            None => self.remove(id),
+        }
+    }
+
+    /// Files changed on disk (created, modified or deleted). A manifest
+    /// change reloads every project, since `sources` may have changed and
+    /// settings apply to all files. Open files keep the editor's text.
+    pub fn disk_changed(&mut self, paths: &[PathBuf]) {
+        if paths.iter().any(|p| project::is_manifest(p)) {
+            self.sync_disk();
+            self.dirty.extend(self.files.keys().cloned());
+            return;
+        }
+        for path in paths {
+            let id = path_id(path);
+            if self.files.get(&id).is_some_and(|e| e.open) {
+                continue;
+            }
+            match self.member(path).and_then(|_| load(path)) {
+                Some(doc) => {
+                    self.files.insert(id.clone(), Entry::new(doc, false));
+                    self.dirty.insert(id);
+                }
+                None => {
+                    if self.files.contains_key(&id) {
+                        self.remove(&id);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Is the model empty of work?
+    pub fn is_idle(&self) -> bool {
+        self.dirty.is_empty() && self.cleared.is_empty()
+    }
+
+    /// Analyzes every changed file, in parallel, keeps its symbols for the
+    /// index, and returns the reports in a stable order: cleared files
+    /// first (empty reports), then the rest by id. Files not open in the
+    /// editor get diagnostics only: tokens are for highlighting what's on
+    /// screen.
+    pub fn take_reports(&mut self) -> Vec<ServerMsg> {
+        let mut out: Vec<ServerMsg> = std::mem::take(&mut self.cleared)
+            .into_iter()
+            .map(|id| ServerMsg::File { id, version: 0, diagnostics: Vec::new(), tokens: Vec::new() })
+            .collect();
+
+        let mut ids: Vec<String> = std::mem::take(&mut self.dirty).into_iter().collect();
+        ids.sort();
+        let settings: Vec<Option<Arc<Project>>> = ids
+            .iter()
+            .map(|id| {
+                let path = self.files.get(id)?.doc.path.clone()?;
+                self.settings_for(&path)
+            })
+            .collect();
+        let mut jobs: Vec<(&String, &Entry, Option<Arc<Project>>)> = Vec::new();
+        for (id, project) in ids.iter().zip(settings) {
+            if let Some(entry) = self.files.get(id) {
+                jobs.push((id, entry, project));
+            }
+        }
+        let results = parallel_map(&jobs, |(id, entry, project)| {
+            let a = analysis::analyze(&entry.doc, project.as_deref(), entry.open);
+            ((*id).clone(), entry.doc.version, a)
+        });
+        for (id, version, a) in results {
+            if let Some(entry) = self.files.get_mut(&id) {
+                entry.symbols = a.symbols;
+            }
+            out.push(ServerMsg::File { id, version, diagnostics: a.diagnostics, tokens: a.tokens });
+        }
+        out
+    }
+
+    /// One file's text and symbols.
+    pub fn file(&self, id: &str) -> Option<(&Document, &[Occurrence])> {
+        self.files.get(id).map(|e| (&e.doc, e.symbols.as_slice()))
+    }
+
+    /// Every file's id, text and symbols, in no particular order.
+    pub fn all_files(&self) -> impl Iterator<Item = (&str, &Document, &[Occurrence])> {
+        self.files.iter().map(|(id, e)| (id.as_str(), &e.doc, e.symbols.as_slice()))
+    }
+
+    fn remove(&mut self, id: &str) {
+        self.files.remove(id);
+        self.dirty.remove(id);
+        self.cleared.push(id.to_string());
+    }
+
+    /// The project `path` is a file of, if any (see the module docs):
+    /// its nearest project, or a loaded project that lists it in
+    /// `sources` from outside its own root.
+    fn member(&mut self, path: &Path) -> Option<Arc<Project>> {
+        Language::from_path(path)?;
+        if let Some(project) = self.projects.for_file(path) {
+            if project.contains(path) {
+                return Some(project);
+            }
+        }
+        let manifests: Vec<PathBuf> = self.manifests.iter().cloned().collect();
+        manifests.iter().find_map(|m| {
+            let project = self.projects.for_file(m)?;
+            (!path.starts_with(&project.root) && project.contains(path)).then_some(project)
+        })
+    }
+
+    /// The settings `path` is read with: its project's, or, for a file
+    /// that isn't one of a project's files (outside `sources`, say), those
+    /// of the nearest `wc3.bni` above it.
+    fn settings_for(&mut self, path: &Path) -> Option<Arc<Project>> {
+        self.member(path).or_else(|| self.projects.for_file(path))
+    }
+
+    /// Every folder whose changes matter: the workspace folders, and the
+    /// roots and sources of every loaded project (which may lie outside
+    /// them). Folders inside another listed one are left out.
+    pub fn watch_paths(&mut self) -> Vec<PathBuf> {
+        let mut paths = self.roots.clone();
+        let manifests: Vec<PathBuf> = self.manifests.iter().cloned().collect();
+        for m in manifests {
+            if let Some(project) = self.projects.for_file(&m) {
+                paths.push(project.root.clone());
+                paths.extend(project.sources.iter().filter(|s| s.is_dir()).cloned());
+            }
+        }
+        paths.sort();
+        paths.dedup();
+        let mut out: Vec<PathBuf> = Vec::new();
+        for p in paths {
+            if !out.iter().any(|kept| p.starts_with(kept)) {
+                out.push(p);
+            }
+        }
+        out
+    }
+
+    /// Brings the disk side of the model up to date: finds the projects,
+    /// loads their files that aren't loaded yet, and drops files that are
+    /// no longer part of any project (unless they're open).
+    fn sync_disk(&mut self) {
+        let mut manifests: HashSet<PathBuf> =
+            self.manifests.iter().filter(|m| m.is_file()).cloned().collect();
+        for root in &self.roots {
+            walk(root, &mut |p| {
+                if project::is_manifest(p) {
+                    manifests.insert(p.to_path_buf());
+                }
+            });
+        }
+        for entry in self.files.values().filter(|e| e.open) {
+            if let Some(m) = entry.doc.path.as_deref().and_then(project::find_manifest) {
+                manifests.insert(m);
+            }
+        }
+
+        let mut wanted: HashMap<String, PathBuf> = HashMap::new();
+        for manifest in &manifests {
+            let Some(project) = self.projects.for_file(manifest) else {
+                continue;
+            };
+            wanted.insert(path_id(manifest), manifest.clone());
+            for scope in project.scopes() {
+                walk(&scope, &mut |p| {
+                    let owned = !p.starts_with(&project.root)
+                        || project::find_manifest(p).as_deref() == Some(manifest.as_path());
+                    if owned && Language::from_path(p).is_some() && project.contains(p) {
+                        wanted.entry(path_id(p)).or_insert_with(|| p.to_path_buf());
+                    }
+                });
+            }
+        }
+        self.manifests = manifests;
+
+        for (id, path) in &wanted {
+            if self.files.contains_key(id) {
+                continue;
+            }
+            if let Some(doc) = load(path) {
+                self.files.insert(id.clone(), Entry::new(doc, false));
+                self.dirty.insert(id.clone());
+            }
+        }
+        let gone: Vec<String> = self
+            .files
+            .iter()
+            .filter(|(id, e)| !e.open && !wanted.contains_key(*id))
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in gone {
+            self.remove(&id);
+        }
+    }
+}
+
+/// A file's disk version, or `None` if it can't be read or has no known
+/// language.
+fn load(path: &Path) -> Option<Document> {
+    let language = Language::from_path(path)?;
+    let bytes = std::fs::read(path).ok()?;
+    let text = String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
+    Some(Document { language, version: 0, text, path: Some(path.to_path_buf()) })
+}
+
+/// Calls `f` for `path` if it's a file, or for every file below it if it's
+/// a folder, skipping hidden folders and not following symlinked ones.
+fn walk(path: &Path, f: &mut impl FnMut(&Path)) {
+    if path.is_file() {
+        f(path);
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        let child = entry.path();
+        if kind.is_dir() {
+            if !project::is_hidden(&entry.file_name()) {
+                walk(&child, f);
+            }
+        } else if kind.is_file() || (kind.is_symlink() && child.is_file()) {
+            f(&child);
+        }
+    }
+}
+
+/// `items.iter().map(f)`, spread over the CPU cores when there's more
+/// than one item.
+fn parallel_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(items.len());
+    if threads <= 1 {
+        return items.iter().map(f).collect();
+    }
+    let chunk = items.len().div_ceil(threads);
+    let f = &f;
+    std::thread::scope(|s| {
+        let handles: Vec<_> = items
+            .chunks(chunk)
+            .map(|part| s.spawn(move || part.iter().map(f).collect::<Vec<_>>()))
+            .collect();
+        handles.into_iter().flat_map(|h| h.join().expect("analysis panicked")).collect()
+    })
+}
+
+#[cfg(test)]
+#[path = "workspace.test.rs"]
+mod tests;

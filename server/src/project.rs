@@ -9,6 +9,10 @@
 //!
 //! [jass]
 //! dialect=vjass
+//!
+//! [lint]
+//! infinite-loop=warning
+//! unused-local=off
 //! ```
 //!
 //! The format is documented in the `wc3-rs` README ("Projects").
@@ -35,6 +39,49 @@ pub struct Project {
     /// `[project] sources=`: the project's source folders and files,
     /// resolved against `root`, in the order written.
     pub sources: Vec<PathBuf>,
+    /// `[lint] <rule>=off|warning|error`: rules switched or re-levelled
+    /// from their defaults (`parser_rs::RULES`), by rule id.
+    pub lint: HashMap<String, LintSetting>,
+}
+
+/// What a project does with a lint rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LintSetting {
+    Off,
+    /// On, at this level, whatever level the rule reports at by default.
+    On(Level),
+}
+
+impl LintSetting {
+    fn from_name(name: &str) -> Option<LintSetting> {
+        match name.to_ascii_lowercase().as_str() {
+            "off" => Some(LintSetting::Off),
+            "warning" => Some(LintSetting::On(Level::Warning)),
+            "error" => Some(LintSetting::On(Level::Error)),
+            _ => None,
+        }
+    }
+}
+
+/// Applies the project's lint settings (or none) to `diags`: drops the
+/// rules that are off, by the project's choice or by default, and sets the
+/// level of those it re-levels.
+pub fn apply_lint(diags: Vec<parser_rs::Diagnostic>, project: Option<&Project>) -> Vec<parser_rs::Diagnostic> {
+    diags
+        .into_iter()
+        .filter_map(|mut d| {
+            let setting = project.and_then(|p| p.lint.get(d.rule)).copied();
+            let enabled = parser_rs::find_rule(d.rule).is_none_or(|r| r.enabled);
+            match setting {
+                Some(LintSetting::Off) => None,
+                Some(LintSetting::On(level)) => {
+                    d.level = level;
+                    Some(d)
+                }
+                None => enabled.then_some(d),
+            }
+        })
+        .collect()
 }
 
 /// A problem in the manifest's settings, with the exact columns of the
@@ -46,6 +93,63 @@ pub struct Issue {
     pub line: usize,
     pub col: usize,
     pub end_col: usize,
+}
+
+impl Project {
+    /// The manifest's path.
+    pub fn manifest(&self) -> PathBuf {
+        self.root.join(MANIFEST)
+    }
+
+    /// Where the project's files are: its `sources`, or the whole root
+    /// when it lists none.
+    pub fn scopes(&self) -> Vec<PathBuf> {
+        if self.sources.is_empty() {
+            vec![self.root.clone()]
+        } else {
+            self.sources.clone()
+        }
+    }
+
+    /// Is `path` one of the project's files: the manifest itself, or a
+    /// file inside one of its scopes and not inside a hidden (`.name`)
+    /// folder below that scope. Doesn't check which project is nearest;
+    /// see [`find_manifest`].
+    pub fn contains(&self, path: &Path) -> bool {
+        path == self.manifest()
+            || self.scopes().iter().any(|scope| {
+                path.strip_prefix(scope).is_ok_and(|rel| {
+                    !rel.parent()
+                        .is_some_and(|dirs| dirs.components().any(|c| is_hidden(c.as_os_str())))
+                })
+            })
+    }
+}
+
+/// Hidden folders (`.git`, `.idea`, `.vscode`, ...) are never part of a
+/// project.
+pub fn is_hidden(name: &std::ffi::OsStr) -> bool {
+    name.to_str().is_some_and(|n| n.starts_with('.') && n != "." && n != "..")
+}
+
+/// Resolves `.` and `..` lexically, so `root/./src` and `root/a/../src`
+/// are the same path as `root/src`, the form the editor and a directory
+/// walk produce.
+pub fn normalize(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() {
+                    out.push(c);
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 /// Is `path` a project manifest?
@@ -98,12 +202,19 @@ pub fn load(root: &Path, src: &str) -> (Project, Vec<Issue>) {
                     }
                 }
             }
+            "lint" => {
+                for item in items {
+                    if let Some(rule) = key_of(item, &mut issues) {
+                        read_lint(item, rule, &mut project, &mut issues);
+                    }
+                }
+            }
             // An empty name is already a bni-rs lint warning.
             "" => {}
             other => issues.push(at_name(
                 &section.name,
                 Level::Warning,
-                format!("unknown section [{other}] (expected [project] or [jass])"),
+                format!("unknown section [{other}] (expected [project], [jass] or [lint])"),
             )),
         }
     }
@@ -140,6 +251,35 @@ fn unknown_key(item: &Item, section: &str, issues: &mut Vec<Issue>) {
     ));
 }
 
+/// `<rule>=off|warning|error`. A rule set twice: the last one wins, as
+/// lint settings are often appended to override earlier ones.
+fn read_lint(item: &Item, rule: &str, project: &mut Project, issues: &mut Vec<Issue>) {
+    let key = item.key.as_ref().expect("key_of returned a key");
+    if parser_rs::find_rule(rule).is_none() {
+        issues.push(at_name(
+            key,
+            Level::Warning,
+            format!("unknown lint rule '{rule}' (the rules are listed in the wc3-rs README)"),
+        ));
+        return;
+    }
+    let [field] = item.fields.as_slice() else {
+        issues.push(at_name(key, Level::Error, format!("'{rule}' needs one value: off, warning or error")));
+        return;
+    };
+    let value = field.text();
+    match LintSetting::from_name(value.trim()) {
+        Some(setting) => {
+            project.lint.insert(rule.to_string(), setting);
+        }
+        None => issues.push(at_field(
+            field,
+            Level::Error,
+            format!("unknown lint setting '{value}' (expected off, warning or error)"),
+        )),
+    }
+}
+
 fn read_dialect(item: &Item, issues: &mut Vec<Issue>) -> Option<jass_rs::Dialect> {
     let [field] = item.fields.as_slice() else {
         let message = if item.fields.is_empty() {
@@ -170,7 +310,7 @@ fn read_sources(root: &Path, item: &Item, project: &mut Project, issues: &mut Ve
             issues.push(at_field(field, Level::Warning, "empty source path".into()));
             continue;
         }
-        let path = root.join(text);
+        let path = normalize(&root.join(text));
         if !path.exists() {
             issues.push(at_field(
                 field,
