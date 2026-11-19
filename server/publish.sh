@@ -17,6 +17,6 @@ msg "🔨 Building server binaries…"
 (cd "$SERVER_DIR" && ./build.sh)
 
 msg "\n🚀 Publishing extension…"
-(cd "$EXT_DIR" && vsce publish "$@")
+(cd "$EXT_DIR" && vsce publish "$@" patch)
 
 msg "\n✅ Published"
