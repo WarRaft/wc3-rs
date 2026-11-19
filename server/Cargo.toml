@@ -2,7 +2,7 @@
 name = "wc3-server"
 version = "0.1.0"
 edition = "2021"
-description = "Local HTTP backend for the WC3 VS Code extension — parses and lints JASS and Zinc via jass-rs / zinc-rs."
+description = "Local HTTP backend for the WC3 VS Code extension — parses, lints and highlights JASS/vJASS, Zinc, Lua and AngelScript via jass-rs / zinc-rs / lua-rs / as-rs."
 license = "CC0-1.0"
 
 [[bin]]
@@ -13,6 +13,8 @@ path = "src/main.rs"
 parser-rs = { path = "../../parser-rs" }
 jass-rs = { path = "../../jass-rs" }
 zinc-rs = { path = "../../zinc-rs" }
+lua-rs = { path = "../../lua-rs" }
+as-rs = { path = "../../as-rs" }
 tiny_http = "0.12"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

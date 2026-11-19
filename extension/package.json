@@ -1,7 +1,7 @@
 {
   "name": "wc3",
   "displayName": "WC3",
-  "description": "Warcraft III language support for VS Code — JASS and Zinc syntax and semantic highlighting, and live diagnostics.",
+  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua and AngelScript: semantic highlighting and live diagnostics.",
   "version": "0.0.1",
   "publisher": "WarRaft",
   "license": "CC0-1.0",
@@ -40,10 +40,32 @@
           ".zn"
         ],
         "icon": {
-          "light": "./icons/jass.svg",
-          "dark": "./icons/jass.svg"
+          "light": "./icons/zinc.svg",
+          "dark": "./icons/zinc.svg"
         },
         "configuration": "./syntaxes/zinc.language-configuration.json"
+      },
+      {
+        "id": "lua",
+        "icon": {
+          "light": "./icons/lua.svg",
+          "dark": "./icons/lua.svg"
+        }
+      },
+      {
+        "id": "angelscript",
+        "aliases": [
+          "AngelScript"
+        ],
+        "extensions": [
+          ".as",
+          ".angelscript"
+        ],
+        "icon": {
+          "light": "./icons/as.svg",
+          "dark": "./icons/as.svg"
+        },
+        "configuration": "./syntaxes/angelscript.language-configuration.json"
       }
     ],
     "grammars": [
@@ -59,6 +81,11 @@
         "language": "zinc",
         "scopeName": "source.zinc",
         "path": "./syntaxes/zinc.tmLanguage.json"
+      },
+      {
+        "language": "angelscript",
+        "scopeName": "source.angelscript",
+        "path": "./syntaxes/angelscript.tmLanguage.json"
       }
     ],
     "semanticTokenScopes": [
@@ -125,6 +152,70 @@
             "entity.name.type.parameter"
           ]
         }
+      },
+      {
+        "language": "lua",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "angelscript",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
       }
     ],
     "configurationDefaults": {
@@ -132,6 +223,12 @@
         "editor.semanticHighlighting.enabled": true
       },
       "[zinc]": {
+        "editor.semanticHighlighting.enabled": true
+      },
+      "[lua]": {
+        "editor.semanticHighlighting.enabled": true
+      },
+      "[angelscript]": {
         "editor.semanticHighlighting.enabled": true
       }
     }

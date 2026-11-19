@@ -96,7 +96,7 @@ fn handle_update_reports_zinc_parse_errors_with_utf16_columns() {
 
 #[test]
 fn handle_update_ignores_unknown_languages() {
-    let body = serde_json::json!({ "text": "garbage", "languageId": "lua" }).to_string();
+    let body = serde_json::json!({ "text": "garbage", "languageId": "cobol" }).to_string();
     assert!(handle_update(&body).diagnostics.is_empty());
 }
 
@@ -119,20 +119,52 @@ fn semantic_tokens_are_encoded_per_language() {
     // x (variable), = (operator), 1 (number); `;` isn't highlighted
     assert_eq!(handle_semantic_tokens(&zinc).data.len(), 3 * 5);
 
-    let other = serde_json::json!({ "text": "x", "languageId": "lua" }).to_string();
+    let other = serde_json::json!({ "text": "x", "languageId": "cobol" }).to_string();
     assert!(handle_semantic_tokens(&other).data.is_empty());
 }
 
 #[test]
-fn jass_documents_hand_zinc_blocks_to_zinc() {
-    let src = "//! zinc\nlibrary L {\n    function F() {\n        integer unused;\n    }\n}\n//! endzinc\nfunction G takes nothing returns nothing\nendfunction";
+fn vjass_documents_hand_zinc_blocks_to_zinc() {
+    let src = "// @dialect vjass\n//! zinc\nlibrary L {\n    function F() {\n        integer unused;\n    }\n}\n//! endzinc\nfunction G takes nothing returns nothing\nendfunction";
     let body = serde_json::json!({ "text": src, "languageId": "jass" }).to_string();
     let resp = handle_update(&body);
     assert_eq!(resp.diagnostics.len(), 1);
-    assert_eq!(resp.diagnostics[0].line0, 3); // file line 4
+    assert_eq!(resp.diagnostics[0].line0, 4); // file line 5
     assert!(resp.diagnostics[0].message.contains("unused local variable 'unused'"));
 
     // and highlighting covers the block: `library` is a Zinc keyword token
     let tokens = handle_semantic_tokens(&body).data;
     assert!(tokens.chunks(5).any(|t| t[3] == parser_rs::SemanticType::Namespace.index()));
+}
+
+#[test]
+fn jass_documents_are_plain_jass_unless_they_opt_in() {
+    // No header: `library` is just a name, and `//! zinc` a comment.
+    let src = "globals\n    integer library = 1\nendglobals";
+    let body = serde_json::json!({ "text": src, "languageId": "jass" }).to_string();
+    assert!(handle_update(&body).diagnostics.is_empty());
+
+    // The same code in a vJASS file: `library` is a keyword now.
+    let vjass = format!("// @dialect vjass\n{src}");
+    let body = serde_json::json!({ "text": vjass, "languageId": "jass" }).to_string();
+    let resp = handle_update(&body);
+    assert_eq!(resp.diagnostics.len(), 1);
+    assert_eq!(resp.diagnostics[0].severity, "error");
+}
+
+#[test]
+fn lua_and_angelscript_documents_are_analyzed() {
+    let lua = serde_json::json!({ "text": "local unused = 1\nbreak", "languageId": "lua" }).to_string();
+    let resp = handle_update(&lua);
+    assert_eq!(resp.diagnostics.len(), 2);
+    assert_eq!(resp.diagnostics[1].severity, "error"); // break outside a loop
+    assert!(!handle_semantic_tokens(&lua).data.is_empty());
+
+    let angel = serde_json::json!({ "text": "int f() {\n}", "languageId": "angelscript" }).to_string();
+    let resp = handle_update(&angel);
+    assert_eq!(resp.diagnostics.len(), 1);
+    assert!(resp.diagnostics[0].message.contains("not all paths"));
+
+    let broken = serde_json::json!({ "text": "class {", "languageId": "angelscript" }).to_string();
+    assert_eq!(handle_update(&broken).diagnostics[0].severity, "error");
 }

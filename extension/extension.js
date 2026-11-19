@@ -4,14 +4,14 @@
  * WC3 extension entry point.
  *
  * Spawns the `wc3-server` Rust binary (see `../server`, which wraps
- * `jass-rs` and `zinc-rs`) as a subprocess and talks to it over the same transport as
+ * `jass-rs`, `zinc-rs`, `lua-rs` and `as-rs`) as a subprocess and talks to it over the same transport as
  * the older JASS-Tree-sitter-Rust extension: a local HTTP server on a
  * random port, handshake read from the process's first stdout line,
  * `?token=` auth, shutdown on stdin close. `serverClient.js` and
  * `httpTransport.js` implement that transport and are unchanged copies —
  * none of it is JASS-specific.
  *
- * Feature-wise this wires up, for JASS and Zinc documents (the document's
+ * Feature-wise this wires up, for JASS, Zinc, Lua and AngelScript documents (the document's
  * `languageId` picks the parser):
  * - diagnostics (parse errors + lint warnings) via `/document/update`;
  * - semantic highlighting via `/semantic/legend` + `/document/semanticTokens`. Everything else the old
@@ -38,7 +38,7 @@ const {ServerClient} = require('./serverClient.js')
 const DEBOUNCE_MS = 200
 
 /** Language ids `wc3-server` can analyze (its `analyze` dispatch). */
-const LANGUAGES = new Set(['jass', 'zinc'])
+const LANGUAGES = new Set(['jass', 'zinc', 'lua', 'angelscript'])
 
 /** @type {ServerClient | null} */
 let client = null

@@ -9,7 +9,11 @@ Warcraft III language support for VS Code.
   `function`/`if`/`loop`/`globals` blocks.
 - Zinc syntax highlighting (`.zn`): keywords, declarations, line/block
   comments, literals, operators, brace-based indentation.
-- Semantic highlighting for both languages, using VS Code's standard
+- Lua (`.lua`, the Warcraft III Reforged script language; VS Code's
+  built-in Lua grammar plus our icon) and AngelScript (`.as`, own grammar):
+  semantic highlighting and diagnostics from [`lua-rs`](../../lua-rs) /
+  [`as-rs`](../../as-rs).
+- Semantic highlighting for all four languages, using VS Code's standard
   token types and modifiers: functions and natives (`defaultLibrary`),
   parameters, locals, globals and constants (`readonly`), types and
   primitives, libraries (`namespace`), structs, interfaces, methods,
@@ -17,7 +21,12 @@ Warcraft III language support for VS Code.
   literals, operators and comments. It works on half-typed code too,
   because classification runs on an error-tolerant token stream rather
   than the AST.
-- Live diagnostics for both languages: parse errors and lint warnings
+- Per-file dialects. A `.j` file is plain JASS unless its header says
+  `// @dialect vjass`. A vJASS file gets vJASS keywords, `/* */`
+  comments, and `//! zinc` … `//! endzinc` blocks, which are parsed,
+  linted and highlighted as Zinc with file-accurate positions. One project
+  can mix both.
+- Live diagnostics: parse errors and lint warnings
   shown in the Problems panel as you type —
   - JASS via [`jass-rs`](../../jass-rs): duplicate declarations, unused
     locals, `loop` without `exitwhen`, missing `return`, ...

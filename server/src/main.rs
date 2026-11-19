@@ -10,15 +10,20 @@
 //!
 //! Unlike that project this uses `tiny_http` (blocking, ~3 small
 //! dependencies) instead of `axum`/`tokio`, and all language logic comes
-//! from `jass-rs` / `zinc-rs` (both built on the shared `parser-rs`) rather
+//! from `jass-rs` / `zinc-rs` / `lua-rs` / `as-rs` (all built on the shared
+//! `parser-rs`) rather
 //! than a ported copy — this binary is just the glue that turns their
 //! `parse`/`lint` into HTTP JSON, picking the language by the document's
 //! `languageId`.
 
 use parser_rs::{ColumnEncoding, Diagnostic, ParseError};
 
-/// The dialect `.j` documents are read in.
-const VJASS: jass_rs::Dialect = jass_rs::Dialect::VJass;
+/// The dialect a `.j` document is read in: whatever its own header
+/// declares (`// @dialect vjass`), plain JASS otherwise. It's per file, so
+/// a project can mix dialects.
+fn jass_dialect(text: &str) -> jass_rs::Dialect {
+    jass_rs::Dialect::detect(text)
+}
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use tiny_http::{Header, Method, Response, Server};
@@ -195,10 +200,12 @@ struct UpdateResponse {
 /// language-agnostic. `None` for a language this server doesn't know.
 fn analyze(language: &str, text: &str) -> Option<Result<Vec<Diagnostic>, ParseError>> {
     Some(match language {
-        // `.j` files are read as vJASS, so `//! zinc` blocks are handed to
-        // zinc-rs (lines stay file-absolute; Zinc lint is included).
-        "jass" => jass_rs::parse_with(text, VJASS).map(|p| jass_rs::lint(&p)),
+        // In a vJASS file, `//! zinc` blocks are handed to zinc-rs (lines
+        // stay file-absolute; Zinc lint is included).
+        "jass" => jass_rs::parse_with(text, jass_dialect(text)).map(|p| jass_rs::lint(&p)),
         "zinc" => zinc_rs::parse(text).map(|p| zinc_rs::lint(&p)),
+        "lua" => lua_rs::parse(text).map(|c| lua_rs::lint(&c)),
+        "angelscript" => as_rs::parse(text).map(|s| as_rs::lint(&s)),
         _ => return None,
     })
 }
@@ -272,8 +279,13 @@ fn handle_semantic_tokens(body: &str) -> SemanticTokensResponse {
     let data = serde_json::from_str::<UpdateRequest>(body)
         .ok()
         .and_then(|req| match req.language_id.as_str() {
-            "jass" => Some(jass_rs::encoded_semantic_tokens(&req.text, VJASS)),
+            "jass" => Some(jass_rs::encoded_semantic_tokens(
+                &req.text,
+                jass_dialect(&req.text),
+            )),
             "zinc" => Some(zinc_rs::encoded_semantic_tokens(&req.text)),
+            "lua" => Some(lua_rs::encoded_semantic_tokens(&req.text)),
+            "angelscript" => Some(as_rs::encoded_semantic_tokens(&req.text)),
             _ => None,
         })
         .unwrap_or_default();

@@ -3,6 +3,13 @@
 version = 4
 
 [[package]]
+name = "as-rs"
+version = "0.1.0"
+dependencies = [
+ "parser-rs",
+]
+
+[[package]]
 name = "ascii"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -39,6 +46,13 @@ name = "log"
 version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
+
+[[package]]
+name = "lua-rs"
+version = "0.1.0"
+dependencies = [
+ "parser-rs",
+]
 
 [[package]]
 name = "memchr"
@@ -144,7 +158,9 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 name = "wc3-server"
 version = "0.1.0"
 dependencies = [
+ "as-rs",
  "jass-rs",
+ "lua-rs",
  "parser-rs",
  "serde",
  "serde_json",
