@@ -1,7 +1,7 @@
 {
   "name": "wc3",
   "displayName": "WC3",
-  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua and AngelScript: semantic highlighting and live diagnostics.",
+  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects.",
   "version": "0.0.2",
   "publisher": "WarRaft",
   "icon": "images/logo.png",
@@ -71,6 +71,23 @@
           "dark": "./icons/as.svg"
         },
         "configuration": "./syntaxes/angelscript.language-configuration.json"
+      },
+      {
+        "id": "bni",
+        "aliases": [
+          "BNI"
+        ],
+        "extensions": [
+          ".bni"
+        ],
+        "filenames": [
+          "wc3.bni"
+        ],
+        "icon": {
+          "light": "./icons/bni.svg",
+          "dark": "./icons/bni.svg"
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
       }
     ],
     "grammars": [
@@ -221,6 +238,38 @@
             "entity.name.type.parameter"
           ]
         }
+      },
+      {
+        "language": "bni",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
       }
     ],
     "configurationDefaults": {
@@ -234,6 +283,9 @@
         "editor.semanticHighlighting.enabled": true
       },
       "[angelscript]": {
+        "editor.semanticHighlighting.enabled": true
+      },
+      "[bni]": {
         "editor.semanticHighlighting.enabled": true
       }
     }

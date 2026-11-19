@@ -1,0 +1,7 @@
+// The project manifest: this folder and everything below it is one project.
+
+[project]
+sources=src
+
+[jass]
+dialect=vjass // .j files without a `// @dialect` header are vJASS

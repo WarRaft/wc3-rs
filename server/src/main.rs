@@ -14,19 +14,27 @@
 //! `parser-rs`) rather
 //! than a ported copy — this binary is just the glue that turns their
 //! `parse`/`lint` into HTTP JSON, picking the language by the document's
-//! `languageId`.
+//! `languageId`, and that finds the project (`wc3.bni`, see `project`)
+//! each document belongs to.
+
+mod project;
 
 use parser_rs::{ColumnEncoding, Diagnostic, ParseError};
-
-/// The dialect a `.j` document is read in: whatever its own header
-/// declares (`// @dialect vjass`), plain JASS otherwise. It's per file, so
-/// a project can mix dialects.
-fn jass_dialect(text: &str) -> jass_rs::Dialect {
-    jass_rs::Dialect::detect(text)
-}
+use project::{Project, Projects};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
+use std::path::Path;
 use tiny_http::{Header, Method, Response, Server};
+
+/// The dialect a `.j` document is read in: whatever its own header
+/// declares (`// @dialect vjass`), else its project's default
+/// (`[jass] dialect=` in `wc3.bni`), else plain JASS. The header wins, so
+/// a project can still mix dialects.
+fn jass_dialect(text: &str, project: Option<&Project>) -> jass_rs::Dialect {
+    jass_rs::Dialect::declared(text)
+        .or_else(|| project.and_then(|p| p.jass_dialect))
+        .unwrap_or_default()
+}
 
 fn main() {
     let server = Server::http("127.0.0.1:0").expect("failed to bind 127.0.0.1:0");
@@ -47,8 +55,9 @@ fn main() {
 
     spawn_stdin_watcher();
 
+    let mut projects = Projects::default();
     for request in server.incoming_requests() {
-        handle_request(request, &token);
+        handle_request(request, &token, &mut projects);
     }
 }
 
@@ -100,7 +109,7 @@ fn splitmix64(x: u64) -> u64 {
     z ^ (z >> 31)
 }
 
-fn handle_request(mut request: tiny_http::Request, token: &str) {
+fn handle_request(mut request: tiny_http::Request, token: &str, projects: &mut Projects) {
     if !token_ok(request.url(), token) {
         respond(
             request,
@@ -125,8 +134,10 @@ fn handle_request(mut request: tiny_http::Request, token: &str) {
     }
 
     let json = match path.as_str() {
-        "/document/update" => serde_json::to_string(&handle_update(&body)),
-        "/document/semanticTokens" => serde_json::to_string(&handle_semantic_tokens(&body)),
+        "/document/update" => serde_json::to_string(&handle_update(&body, projects)),
+        "/document/semanticTokens" => {
+            serde_json::to_string(&handle_semantic_tokens(&body, projects))
+        }
         "/semantic/legend" => serde_json::to_string(&handle_legend()),
         _ => {
             respond(request, Response::from_string("not found").with_status_code(404));
@@ -169,6 +180,21 @@ struct UpdateRequest {
     /// Missing means `"jass"`, for clients predating Zinc support.
     #[serde(rename = "languageId", default = "default_language")]
     language_id: String,
+    /// The document's file-system path, used to find its project. Missing
+    /// for an unsaved or non-file document, which then has no project.
+    #[serde(default)]
+    path: Option<String>,
+}
+
+impl UpdateRequest {
+    fn path(&self) -> Option<&Path> {
+        self.path.as_deref().map(Path::new)
+    }
+
+    /// The project this document belongs to, if any.
+    fn project(&self, projects: &mut Projects) -> Option<std::sync::Arc<Project>> {
+        projects.for_file(self.path()?)
+    }
 }
 
 fn default_language() -> String {
@@ -195,28 +221,56 @@ struct UpdateResponse {
     diagnostics: Vec<DiagnosticOut>,
 }
 
-/// Parses and lints `text` as `language`. Every language crate reports
-/// through the same `parser-rs` types, so everything past this dispatch is
-/// language-agnostic. `None` for a language this server doesn't know.
-fn analyze(language: &str, text: &str) -> Option<Result<Vec<Diagnostic>, ParseError>> {
-    Some(match language {
+/// Parses and lints the document in its language. Every language crate
+/// reports through the same `parser-rs` types, so everything past this
+/// dispatch is language-agnostic. `None` for a language this server
+/// doesn't know.
+fn analyze(req: &UpdateRequest, projects: &mut Projects) -> Option<Vec<DiagnosticOut>> {
+    let text = req.text.as_str();
+    let result = match req.language_id.as_str() {
         // In a vJASS file, `//! zinc` blocks are handed to zinc-rs (lines
         // stay file-absolute; Zinc lint is included).
-        "jass" => jass_rs::parse_with(text, jass_dialect(text)).map(|p| jass_rs::lint(&p)),
+        "jass" => {
+            let project = req.project(projects);
+            jass_rs::parse_with(text, jass_dialect(text, project.as_deref()))
+                .map(|p| jass_rs::lint(&p))
+        }
         "zinc" => zinc_rs::parse(text).map(|p| zinc_rs::lint(&p)),
         "lua" => lua_rs::parse(text).map(|c| lua_rs::lint(&c)),
         "angelscript" => as_rs::parse(text).map(|s| as_rs::lint(&s)),
+        "bni" => return Some(analyze_bni(req)),
         _ => return None,
-    })
+    };
+    Some(to_diagnostics_out(text, result))
 }
 
-fn handle_update(body: &str) -> UpdateResponse {
+/// BNI never fails as a whole: every malformed line is its own error, and
+/// lint still runs. A project manifest (`wc3.bni`) also gets its settings
+/// checked, against the text being edited rather than the saved file.
+fn analyze_bni(req: &UpdateRequest) -> Vec<DiagnosticOut> {
+    let text = req.text.as_str();
+    let doc = bni_rs::parse(text);
+    let mut out: Vec<DiagnosticOut> = doc
+        .errors
+        .iter()
+        .map(|err| exact(text, err.line, err.col, err.end_col, "error", err.message.clone()))
+        .collect();
+    out.extend(bni_rs::lint(&doc).into_iter().map(whole_line));
+    if let Some(path) = req.path().filter(|p| project::is_manifest(p)) {
+        let root = path.parent().unwrap_or(Path::new(""));
+        let (_, issues) = project::load(root, text);
+        out.extend(issues.into_iter().map(|i| {
+            exact(text, i.line, i.col, i.end_col, i.level.as_str(), i.message)
+        }));
+    }
+    out.sort_by_key(|d| d.line0);
+    out
+}
+
+fn handle_update(body: &str, projects: &mut Projects) -> UpdateResponse {
     let diagnostics = serde_json::from_str::<UpdateRequest>(body)
         .ok()
-        .and_then(|req| {
-            let result = analyze(&req.language_id, &req.text)?;
-            Some(to_diagnostics_out(&req.text, result))
-        })
+        .and_then(|req| analyze(&req, projects))
         .unwrap_or_default();
     UpdateResponse { diagnostics }
 }
@@ -226,26 +280,38 @@ fn to_diagnostics_out(
     result: Result<Vec<Diagnostic>, ParseError>,
 ) -> Vec<DiagnosticOut> {
     match result {
-        Err(err) => {
-            let (char0, end_char0) = utf16_char_range(text, err.line, err.col, err.end_col);
-            vec![DiagnosticOut {
-                line0: err.line.saturating_sub(1),
-                char0: Some(char0),
-                end_char0: Some(end_char0),
-                severity: "error",
-                message: err.message,
-            }]
-        }
-        Ok(diagnostics) => diagnostics
-            .into_iter()
-            .map(|d| DiagnosticOut {
-                line0: d.line.saturating_sub(1),
-                char0: None,
-                end_char0: None,
-                severity: d.level.as_str(),
-                message: d.message,
-            })
-            .collect(),
+        Err(err) => vec![exact(text, err.line, err.col, err.end_col, "error", err.message)],
+        Ok(diagnostics) => diagnostics.into_iter().map(whole_line).collect(),
+    }
+}
+
+/// A diagnostic at exact 1-based codepoint columns of `line`.
+fn exact(
+    text: &str,
+    line: usize,
+    col: usize,
+    end_col: usize,
+    severity: &'static str,
+    message: String,
+) -> DiagnosticOut {
+    let (char0, end_char0) = utf16_char_range(text, line, col, end_col);
+    DiagnosticOut {
+        line0: line.saturating_sub(1),
+        char0: Some(char0),
+        end_char0: Some(end_char0),
+        severity,
+        message,
+    }
+}
+
+/// A lint diagnostic, which covers its whole line.
+fn whole_line(d: Diagnostic) -> DiagnosticOut {
+    DiagnosticOut {
+        line0: d.line.saturating_sub(1),
+        char0: None,
+        end_char0: None,
+        severity: d.level.as_str(),
+        message: d.message,
     }
 }
 
@@ -275,14 +341,18 @@ struct SemanticTokensResponse {
     data: Vec<u32>,
 }
 
-fn handle_semantic_tokens(body: &str) -> SemanticTokensResponse {
+fn handle_semantic_tokens(body: &str, projects: &mut Projects) -> SemanticTokensResponse {
     let data = serde_json::from_str::<UpdateRequest>(body)
         .ok()
         .and_then(|req| match req.language_id.as_str() {
-            "jass" => Some(jass_rs::encoded_semantic_tokens(
-                &req.text,
-                jass_dialect(&req.text),
-            )),
+            "jass" => {
+                let project = req.project(projects);
+                Some(jass_rs::encoded_semantic_tokens(
+                    &req.text,
+                    jass_dialect(&req.text, project.as_deref()),
+                ))
+            }
+            "bni" => Some(bni_rs::encoded_semantic_tokens(&req.text)),
             "zinc" => Some(zinc_rs::encoded_semantic_tokens(&req.text)),
             "lua" => Some(lua_rs::encoded_semantic_tokens(&req.text)),
             "angelscript" => Some(as_rs::encoded_semantic_tokens(&req.text)),
