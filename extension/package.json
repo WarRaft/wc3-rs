@@ -4,7 +4,12 @@
   "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua and AngelScript: semantic highlighting and live diagnostics.",
   "version": "0.0.1",
   "publisher": "WarRaft",
+  "icon": "images/logo.png",
   "license": "CC0-1.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WarRaft/wc3-rs"
+  },
   "engines": {
     "vscode": "^1.111.0"
   },

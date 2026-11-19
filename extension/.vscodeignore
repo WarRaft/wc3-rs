@@ -1,3 +1,5 @@
 .vscodeignore
 .gitignore
 **/.DS_Store
+.vscode/**
+test/**

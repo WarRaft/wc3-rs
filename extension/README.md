@@ -11,8 +11,8 @@ Warcraft III language support for VS Code.
   comments, literals, operators, brace-based indentation.
 - Lua (`.lua`, the Warcraft III Reforged script language; VS Code's
   built-in Lua grammar plus our icon) and AngelScript (`.as`, own grammar):
-  semantic highlighting and diagnostics from [`lua-rs`](../../lua-rs) /
-  [`as-rs`](../../as-rs).
+  semantic highlighting and diagnostics from [`lua-rs`](https://github.com/WarRaft/lua-rs) /
+  [`as-rs`](https://github.com/WarRaft/as-rs).
 - Semantic highlighting for all four languages, using VS Code's standard
   token types and modifiers: functions and natives (`defaultLibrary`),
   parameters, locals, globals and constants (`readonly`), types and
@@ -28,16 +28,16 @@ Warcraft III language support for VS Code.
   can mix both.
 - Live diagnostics: parse errors and lint warnings
   shown in the Problems panel as you type —
-  - JASS via [`jass-rs`](../../jass-rs): duplicate declarations, unused
+  - JASS via [`jass-rs`](https://github.com/WarRaft/jass-rs): duplicate declarations, unused
     locals, `loop` without `exitwhen`, missing `return`, ...
-  - Zinc via [`zinc-rs`](../../zinc-rs): duplicate libraries/members/
+  - Zinc via [`zinc-rs`](https://github.com/WarRaft/zinc-rs): duplicate libraries/members/
     locals, unused locals, `while (true)` without `break`/`return`,
     `break` outside a loop, empty `if`/`else`, missing `return`, ...
 
 ## Architecture
 
 - `../server` — a small Rust binary (`wc3-server`) that wraps `jass-rs`
-  and `zinc-rs` (both built on the shared [`parser-rs`](../../parser-rs),
+  and `zinc-rs` (both built on the shared [`parser-rs`](https://github.com/WarRaft/parser-rs),
   so the server converts their errors/diagnostics with one code path). The
   extension sends each document's `languageId` (`jass`/`zinc`) along with
   its text, and the server picks the parser by it.
