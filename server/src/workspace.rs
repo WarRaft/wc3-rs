@@ -57,11 +57,14 @@ struct Entry {
     project: Option<PathBuf>,
     /// One of the game's scripts (see the module docs).
     game: bool,
+    /// For the text form of object data, the game's metadata it was last
+    /// checked with (empty outside a project with a game).
+    objects: Option<Arc<Metadata>>,
 }
 
 impl Entry {
     fn new(doc: Document, open: bool) -> Entry {
-        Entry { doc, open, symbols: Vec::new(), project: None, game: false }
+        Entry { doc, open, symbols: Vec::new(), project: None, game: false, objects: None }
     }
 
     fn game(doc: Document, open: bool) -> Entry {
@@ -286,10 +289,13 @@ impl Workspace {
         let quiet: HashSet<String> = ids.iter().filter(|id| self.is_map_blizzard(id)).cloned().collect();
         let roots: HashMap<String, Option<PathBuf>> =
             jobs.iter().map(|(id, _, p, _)| ((*id).clone(), p.as_ref().map(|p| p.root.clone()))).collect();
+        let mut objects: HashMap<String, Option<Arc<Metadata>>> =
+            jobs.iter().map(|(id, _, _, o)| ((*id).clone(), o.clone())).collect();
         for (id, version, mut a) in results {
             if let Some(entry) = self.files.get_mut(&id) {
                 entry.symbols = a.symbols;
                 entry.project = roots.get(&id).cloned().flatten();
+                entry.objects = objects.remove(&id).flatten();
                 if entry.game || quiet.contains(&id) {
                     a.diagnostics.clear();
                 }
@@ -427,6 +433,13 @@ impl Workspace {
     /// One file's text and symbols.
     pub fn file(&self, id: &str) -> Option<(&Document, &[Occurrence])> {
         self.files.get(id).map(|e| (&e.doc, e.symbols.as_slice()))
+    }
+
+    /// The text form of object data `id` and the game's metadata it was
+    /// last checked with; `None` for any other file.
+    pub fn object_text(&self, id: &str) -> Option<(&Document, &Metadata)> {
+        let entry = self.files.get(id)?;
+        Some((&entry.doc, entry.objects.as_deref()?))
     }
 
     /// Every file's id, text and symbols, in no particular order.

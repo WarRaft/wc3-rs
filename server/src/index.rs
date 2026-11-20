@@ -128,6 +128,11 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             return Answer { locations: Vec::new(), text };
         }
         QueryKind::PathCompletion | QueryKind::PathLinks => return manifest_paths(ws, kind, id, pos),
+        QueryKind::Hover if ws.object_text(id).is_some() => {
+            let (doc, meta) = ws.object_text(id).expect("just checked");
+            let text = crate::objects::hover(&doc.text, pos, meta).unwrap_or_default();
+            return Answer { locations: Vec::new(), text };
+        }
         QueryKind::Definition | QueryKind::References | QueryKind::Hover => {
             ws.note_context(id);
             let Some(target) = at(ws, id, pos) else {

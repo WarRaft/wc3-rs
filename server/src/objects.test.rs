@@ -124,3 +124,28 @@ fn the_cache_drops_what_changed() {
     assert!(cache.disk_changed(&[wc3.join("Units/UnitMetaData.slk")]));
     assert_eq!(cache.get(&game, Kind::Unit).name(w3abdhqtu_rs::Rawcode(*b"uhpm")), Some("Life"));
 }
+
+#[test]
+fn hovers() {
+    use crate::document::Position;
+    let table = "C;X1;Y1;K\"ID\"\nC;X2;K\"field\"\nC;X3;K\"type\"\nC;X4;K\"minVal\"\nC;X5;K\"maxVal\"\nC;X6;K\"repeat\"\nC;X7;K\"data\"\nC;X8;K\"useSpecific\"\n\
+C;X1;Y2;K\"Hbz1\"\nC;X2;K\"Number of Waves\"\nC;X3;K\"int\"\nC;X4;K\"1\"\nC;X5;K\"99999\"\nC;X6;K4\nC;X7;K1\nC;X8;K\"AHbz,ACbz\"\n\
+C;X1;Y3;K\"aher\"\nC;X2;K\"Hero Ability\"\nC;X3;K\"bool\"\nC;X6;K0\nC;X7;K0\n";
+    let objects = "C;X1;Y1;K\"alias\"\nC;X2;K\"code\"\nC;X1;Y2;K\"AIbz\"\nC;X2;K\"AHbz\"\n";
+    let meta = Metadata::from_tables(table, &[]).with_codes(objects);
+    let text = "[w3a]\nversion=2\n[A000]\n_parent=AIbz\nHbz1[2].A=x\naher=1\nzzzz=1\n";
+    let at = |line, character| hover(text, Position::new(line, character), &meta);
+    assert_eq!(
+        at(4, 2).unwrap(),
+        "**Number of Waves** `Hbz1`\n\n`int`: a whole number · 1 to 99999 in World Editor  \nper level · data column A (`.A`)\n\nData of `AHbz`, `ACbz`. `AIbz` has the data of `AHbz`."
+    );
+    assert_eq!(at(5, 0).unwrap(), "**Hero Ability** `aher`\n\n`bool`: a whole number · 0 or 1");
+    let strings = hover("[w3a]\nversion=2\n[A000]\nanam=\"x\"\n", Position::new(3, 0), &Metadata::from_tables("C;X1;Y1;K\"ID\"\nC;X2;K\"type\"\nC;X3;K\"field\"\nC;X1;Y2;K\"anam\"\nC;X2;K\"string\"\nC;X3;K\"Name\"\n", &[]));
+    assert_eq!(strings.unwrap(), "**Name** `anam`\n\n`string`");
+    assert_eq!(at(6, 1).unwrap(), "`zzzz`\n\nNot a field of abilities in this game's metadata.");
+    // Off a key: on a value, on `[A000]`.
+    assert_eq!(at(4, 11), None);
+    assert_eq!(at(2, 1), None);
+    // No game.
+    assert!(hover(text, Position::new(4, 0), &Metadata::default()).unwrap().contains("isn't in a project with `game=`"));
+}

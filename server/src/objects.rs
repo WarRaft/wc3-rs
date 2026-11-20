@@ -146,6 +146,81 @@ fn to_bytes(kind: Kind, text: &str) -> Result<Vec<u8>, String> {
     data.to_bytes().map_err(|err| err.message)
 }
 
+/// The hover for the field key at `pos` in the text form `text`: what
+/// `meta`, the game's metadata, says about the field. `None` off a key.
+pub fn hover(text: &str, pos: crate::document::Position, meta: &Metadata) -> Option<String> {
+    let lines = crate::document::LineIndex::new(text);
+    let doc = bni_rs::parse(text);
+    let at = w3abdhqtu_rs::field_at(&doc, pos.line as usize + 1, lines.column(text, pos))?;
+    let id = w3abdhqtu_rs::id_text(at.field);
+    if meta.is_empty() {
+        return Some(format!(
+            "`{id}`\n\nNo field names or checks: the file isn't in a project with `game=` folders."
+        ));
+    }
+    let Some(field) = meta.get(at.field) else {
+        return Some(format!(
+            "`{id}`\n\nNot a field of {} in this game's metadata.",
+            at.kind.title()
+        ));
+    };
+    let mut out = vec![format!("**{}** `{id}`", field.name)];
+
+    // How it's stored, unless the type's name says so already.
+    let plain = ["string", "real", "unreal"].contains(&field.ty.as_str());
+    let mut ty = match field.storage {
+        Some(storage) if !field.ty.is_empty() && !plain => format!("`{}`: {}", field.ty, storage.describe()),
+        _ if !field.ty.is_empty() => format!("`{}`", field.ty),
+        _ => String::new(),
+    };
+    let limit = |v: f64| if v.fract() == 0.0 { format!("{v:.0}") } else { v.to_string() };
+    let limits = match (field.min, field.max) {
+        _ if field.ty == "bool" => "0 or 1".to_string(),
+        (Some(min), Some(max)) => format!("{} to {} in World Editor", limit(min), limit(max)),
+        (Some(min), None) => format!("at least {} in World Editor", limit(min)),
+        (None, Some(max)) => format!("at most {} in World Editor", limit(max)),
+        (None, None) => String::new(),
+    };
+    if !limits.is_empty() {
+        ty = if ty.is_empty() { limits } else { format!("{ty} · {limits}") };
+    }
+    let mut shape = Vec::new();
+    if field.levels && at.kind.has_levels(w3abdhqtu_rs::LATEST_VERSION) {
+        shape.push(if at.kind == Kind::Doodad { "per variation" } else { "per level" }.to_string());
+    }
+    if at.kind == Kind::Ability && field.column > 0 {
+        let c = field.column;
+        let letter = if c <= 26 { ((b'A' + (c - 1) as u8) as char).to_string() } else { c.to_string() };
+        shape.push(format!("data column {letter} (`.{letter}`)"));
+    }
+    let shape = shape.join(" · ");
+    out.push([ty, shape].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("  \n"));
+
+    let list = |ids: &[w3abdhqtu_rs::Rawcode]| {
+        ids.iter().map(|&i| format!("`{}`", w3abdhqtu_rs::id_text(i))).collect::<Vec<_>>().join(", ")
+    };
+    let mut whose = Vec::new();
+    if !field.specific.is_empty() {
+        whose.push(format!("Data of {}.", list(&field.specific)));
+    }
+    if !field.not_specific.is_empty() {
+        whose.push(format!("Not of {}.", list(&field.not_specific)));
+    }
+    let code = meta.code(at.base);
+    if !at.base.is_none() && code != at.base && !field.specific.is_empty() {
+        whose.push(format!("`{}` has the data of `{}`.", w3abdhqtu_rs::id_text(at.base), w3abdhqtu_rs::id_text(code)));
+    }
+    match (field.units, field.items) {
+        (Some(true), Some(false)) => whose.push("Units only, not items.".into()),
+        (Some(false), Some(true)) => whose.push("Items only.".into()),
+        _ => {}
+    }
+    if !whose.is_empty() {
+        out.push(whose.join(" "));
+    }
+    Some(out.into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n\n"))
+}
+
 /// What's wrong with a BNI document that is an object-data text form,
 /// past its BNI errors (which the caller has): the errors that stop it
 /// from saving, and what the checks against `meta` find (lint, see

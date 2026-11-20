@@ -673,3 +673,14 @@ fn object_text_is_checked_with_its_projects_game() {
     let found = ws.take_reports().into_iter().any(|m| matches!(m, ServerMsg::File { id, diagnostics, .. } if id == "wc3obj:/y" && !diagnostics.is_empty()));
     assert!(!found);
 }
+
+#[test]
+fn hover_on_an_object_field() {
+    let meta = "C;X1;Y1;K\"ID\"\nC;X2;K\"type\"\nC;X3;K\"field\"\nC;X1;Y2;K\"umvs\"\nC;X2;K\"int\"\nC;X3;K\"Speed\"\n";
+    let tmp = project("ws-object-hover", &[("p/wc3.bni", "[project]\ngame=wc3\nsources=src\n"), ("p/wc3/Units/UnitMetaData.slk", meta)]);
+    let mut ws = init(&tmp.0);
+    ws.open("wc3obj:/x".into(), Some(tmp.0.join("p/src/war3map.w3u")), Language::Bni, 1, "[w3u]\nversion=2\n[hfoo]\numvs=1\n".into());
+    ws.take_reports();
+    let answer = crate::index::answer(&ws, crate::index::QueryKind::Hover, "wc3obj:/x", crate::document::Position::new(3, 1), "");
+    assert_eq!(answer.text, "**Speed** `umvs`\n\n`int`: a whole number");
+}

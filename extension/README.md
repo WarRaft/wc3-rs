@@ -62,7 +62,8 @@ Warcraft III language support for VS Code.
   `game=` folders, each field gets its World Editor name and type as a
   comment, and the fields are checked against the game's metadata as you
   type (types, limits, unknown fields, levels, whose field it is), with
-  quick fixes.
+  quick fixes. Hovering over a field shows its name, type, limits, levels,
+  data column and whose field it is.
 - Symbol navigation across the whole project, in every language: go to
   definition, find references, hover with the declaration, outline, go
   to symbol in workspace, and rename (F2), which refuses with a reason

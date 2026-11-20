@@ -248,6 +248,11 @@ it), a number past World Editor's limits, an unknown field, a level or
 data column that doesn't fit, a field of another object. Each is a lint
 rule (`object-...` below), so the project's `[lint]` switches it.
 
+Hovering over a field's key shows what the metadata says about it: its
+name and id, its type and how it's written, World Editor's limits,
+whether it has levels and which data column it is in, and whose field it
+is (`Data of AHbz, ACbz`; `AIbz has the data of AHbz`, by its code).
+
 The editor reads the
 text as BNI, so it's highlighted and checked like any BNI, plus what
 would stop it from saving (a value that isn't one, a level on a unit
