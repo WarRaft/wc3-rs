@@ -120,6 +120,10 @@ dependencies besides the VS Code API.
   writes the file. The text's language is the file's (`w3a` ...), which
   the server reads as BNI; the text is opened with the file's path, so
   the server reads it with the file's project and its game.
+- **Restored tabs.** `wc3obj:` and `wc3map:` exist only while the
+  extension runs, so it activates on them (`onFileSystem:wc3obj`,
+  `onFileSystem:wc3map`): a tab of either that VS Code restores after a
+  reload opens instead of failing with "no file system provider".
 - **Queries.** Only what depends on the cursor is asked (`query` →
   `answer`): definition, references, hover, document and workspace
   symbols, rename, answered from the server's symbol index after every earlier

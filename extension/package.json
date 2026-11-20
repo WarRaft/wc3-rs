@@ -17,7 +17,10 @@
     "Programming Languages"
   ],
   "main": "./extension.js",
-  "activationEvents": [],
+  "activationEvents": [
+    "onFileSystem:wc3obj",
+    "onFileSystem:wc3map"
+  ],
   "contributes": {
     "commands": [
       {
