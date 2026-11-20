@@ -81,9 +81,9 @@ impl Language {
             "lua" => Language::Lua,
             "as" | "angelscript" => Language::AngelScript,
             "bni" => Language::Bni,
-            // Object data, which the editor shows in its BNI text form
-            // (see `objects`).
-            "w3a" | "w3b" | "w3d" | "w3h" | "w3q" | "w3t" | "w3u" => Language::Bni,
+            // Not object data (`.w3a` ...): the files are binary. Only
+            // their text form, which the editor opens under its own
+            // scheme with the file's language id, is BNI (`from_id`).
             _ => return None,
         })
     }

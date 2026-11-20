@@ -18,6 +18,9 @@ fn languages_come_from_editor_ids() {
     assert_eq!(Language::from_id("jass"), Some(Language::Jass));
     assert_eq!(Language::from_id("bni"), Some(Language::Bni));
     assert_eq!(Language::from_id("w3a"), Some(Language::Bni));
+    // The object-data files themselves are binary: only their text form
+    // (by the editor's id) is BNI.
+    assert_eq!(Language::from_path(Path::new("map.w3x/war3map.w3a")), None);
     assert_eq!(Language::from_id("cobol"), None);
 }
 

@@ -233,9 +233,12 @@ to text and back to the same bytes; the format and its rarer parts
 
 The comment after a field is the name World Editor gives it, from the
 game's metadata tables (`Units\AbilityMetaData.slk` ...) and its strings
-(`UI\WorldEditStrings.txt`), found in the `game=` folders of the file's
-project like the game's scripts. A file outside every project, or a
-project without `game=`, gets no names. They're read each time a file is
+(`UI\WorldEditStrings.txt`), found in the `game=` folders of the project
+whose `sources` take the file in (a map they match takes in its files),
+over each other in order, like the game's scripts. The game's version
+decides the fields, so there's no guessing: a file outside every
+project's `sources` (even one below a `wc3.bni`) or in a project without
+`game=` gets no names. They're read each time a file is
 opened.
 
 The editor reads the

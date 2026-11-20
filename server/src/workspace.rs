@@ -458,6 +458,13 @@ impl Workspace {
         if Language::from_path(path).is_none() && !map::is_map_name(path) {
             return None;
         }
+        self.owner(path)
+    }
+
+    /// The project whose `sources` take in `path`, whatever kind of file
+    /// it is: its nearest project, or a loaded project that lists it from
+    /// outside its own root. A file in a map belongs where the map does.
+    fn owner(&mut self, path: &Path) -> Option<Arc<Project>> {
         if let Some(project) = self.projects.for_file(path) {
             if project.contains(path) {
                 return Some(project);
@@ -477,10 +484,12 @@ impl Workspace {
         self.member(path).or_else(|| self.projects.for_file(path))
     }
 
-    /// The `game=` folders of the project the file `path` is read with
-    /// (see `settings_for`); none outside every project.
+    /// The `game=` folders of the project `path` is a file of (its
+    /// `sources` take it in, see `owner`), in their order. None for a file
+    /// outside every project, even one below a `wc3.bni`: which game a
+    /// file goes with is the project's to say.
     pub fn game_folders(&mut self, path: &Path) -> Vec<PathBuf> {
-        self.settings_for(path).map(|p| p.game.clone()).unwrap_or_default()
+        self.owner(path).map(|p| p.game.clone()).unwrap_or_default()
     }
 
     /// Every folder whose changes matter: the workspace folders, and the

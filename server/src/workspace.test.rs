@@ -613,10 +613,28 @@ fn a_maps_own_blizzard_j_replaces_the_games_for_that_map() {
 
 #[test]
 fn game_folders_of_a_file() {
-    let tmp = project("ws-game-folders", &[("p/wc3.bni", "[project]\ngame=wc3\n"), ("p/wc3/x", "")]);
+    let tmp = project(
+        "ws-game-folders",
+        &[("p/wc3.bni", "[project]\ngame=wc3\ngame=ujapi\nsources=maps/*.w3x,src\n"), ("p/wc3/x", "")],
+    );
     let mut ws = Workspace::default();
     let p = tmp.0.join("p");
-    // In a map in the project too; nothing outside it.
-    assert_eq!(ws.game_folders(&p.join("maps/a.w3x/war3map.w3u")), vec![p.join("wc3")]);
+    let both = vec![p.join("wc3"), p.join("ujapi")];
+    // Every game folder, in order; in a map of the project too.
+    assert_eq!(ws.game_folders(&p.join("maps/a.w3x/war3map.w3u")), both);
+    assert_eq!(ws.game_folders(&p.join("src/war3map.w3a")), both);
+    // Below the manifest but not in `sources`, or outside every project:
+    // no game.
+    assert_eq!(ws.game_folders(&p.join("war3map.w3a")), Vec::<PathBuf>::new());
+    assert_eq!(ws.game_folders(&p.join("maps/war3map.w3a")), Vec::<PathBuf>::new());
     assert_eq!(ws.game_folders(&tmp.0.join("war3map.w3u")), Vec::<PathBuf>::new());
+}
+
+#[test]
+fn object_data_files_are_not_analyzed() {
+    // Binary object data in the project's sources isn't text: nothing to
+    // report for it.
+    let tmp = project("ws-objects", &[("wc3.bni", "[project]\nsources=.\n"), ("war3map.w3a", "\u{3}\0\0\0garbage"), ("a.j", OK)]);
+    let mut ws = init(&tmp.0);
+    assert_eq!(names(&tmp.0, &reports(&mut ws)), vec!["a.j", "wc3.bni"]);
 }
