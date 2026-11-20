@@ -3,3 +3,7 @@ node_modules/
 /server/target/
 /extension/bin/
 /extension/.idea/
+
+# OS / IDE
+.DS_Store
+.idea/
