@@ -31,7 +31,8 @@
 //! editor shows it under the `wc3map:` scheme with that path, a file
 //! system it reaches through `Fs` messages (see `mapfs`). A texture the
 //! editor shows is sent as its bytes in a `Texture` message and comes back
-//! decoded (see `texture`). The
+//! decoded (see `texture`); object data (`.w3a` ...) goes to its text form
+//! and back the same way, in `Objects` messages (see `objects`). The
 //! server reports files the editor never opened, and a path is what both
 //! sides know them by. A reader skips frames of a kind it doesn't know, so either
 //! side can add messages without breaking the other. The JavaScript twin
@@ -111,6 +112,11 @@ pub enum ClientMsg {
     /// Kind 8. A texture file's bytes (`u32` length, then the bytes), to
     /// decode for the viewer; answered at once by `Texture`.
     Texture { request: u32, data: Vec<u8> },
+    /// Kind 9. Object data to convert: `u8` op (0: the file's bytes to
+    /// its text form; 1: a text form, as UTF-8, to the file's bytes), the
+    /// file's name (its extension says what it holds), `data`. Answered at
+    /// once by `Objects`.
+    Objects { request: u32, op: u8, name: String, data: Vec<u8> },
 }
 
 /// The operations of `ClientMsg::Fs`, in wire order.
@@ -189,6 +195,10 @@ pub enum ServerMsg {
     /// one first: `u32` width, `u32` height, error, RGBA bytes (empty for
     /// a mip that's missing or doesn't decode).
     Texture { request: u32, texture: Texture },
+    /// Kind 133. The answer to `ClientMsg::Objects` number `request`:
+    /// error (empty if it converted), then the result (the text as UTF-8,
+    /// or the file's bytes).
+    Objects { request: u32, error: String, data: Vec<u8> },
 }
 
 fn kind_code(kind: Kind) -> u8 {
@@ -244,11 +254,13 @@ mod kind {
     pub const QUERY: u8 = 6;
     pub const FS: u8 = 7;
     pub const TEXTURE: u8 = 8;
+    pub const OBJECTS: u8 = 9;
     pub const FILE: u8 = 128;
     pub const LEGEND: u8 = 129;
     pub const ANSWER: u8 = 130;
     pub const FS_ANSWER: u8 = 131;
     pub const TEXTURE_ANSWER: u8 = 132;
+    pub const OBJECTS_ANSWER: u8 = 133;
 }
 
 /// Reads one frame: `Ok(None)` at a clean end of input (between frames).
@@ -324,6 +336,7 @@ impl ClientMsg {
                 data: r.bytes()?,
             },
             kind::TEXTURE => ClientMsg::Texture { request: r.u32()?, data: r.bytes()? },
+            kind::OBJECTS => ClientMsg::Objects { request: r.u32()?, op: r.u8()?, name: r.string()?, data: r.bytes()? },
             _ => return Ok(None),
         };
         Ok(Some(msg))
@@ -386,6 +399,13 @@ impl ClientMsg {
                 w.u32(*request);
                 w.bytes(data);
                 kind::TEXTURE
+            }
+            ClientMsg::Objects { request, op, name, data } => {
+                w.u32(*request);
+                w.u8(*op);
+                w.string(name);
+                w.bytes(data);
+                kind::OBJECTS
             }
         };
         w.frame(kind)
@@ -494,6 +514,12 @@ impl ServerMsg {
                 });
                 kind::TEXTURE_ANSWER
             }
+            ServerMsg::Objects { request, error, data } => {
+                w.u32(*request);
+                w.string(error);
+                w.bytes(data);
+                kind::OBJECTS_ANSWER
+            }
         };
         w.frame(kind)
     }
@@ -520,7 +546,7 @@ impl ServerMsg {
                     let rule = parser_rs::find_rule(&rule).map_or("", |known| known.id);
                     let title = r.string()?;
                     let edits = r.list(|r| Ok((r.range()?, r.string()?)))?;
-                    let fix = (!title.is_empty()).then(|| crate::analysis::Fix { title, edits });
+                    let fix = (!title.is_empty()).then_some(crate::analysis::Fix { title, edits });
                     Ok(Diagnostic { level, range, message, rule, fix })
                 })?,
                 tokens: r.list(|r| r.u32())?,
@@ -574,6 +600,7 @@ impl ServerMsg {
                     mips: r.list(|r| Ok(crate::texture::Mip { width: r.u32()?, height: r.u32()?, error: r.string()?, rgba: r.bytes()? }))?,
                 },
             },
+            kind::OBJECTS_ANSWER => ServerMsg::Objects { request: r.u32()?, error: r.string()?, data: r.bytes()? },
             _ => return Ok(None),
         };
         Ok(Some(msg))

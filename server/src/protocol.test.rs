@@ -43,6 +43,7 @@ fn client_messages_round_trip() {
             data: vec![0, 1, 255],
         },
         ClientMsg::Texture { request: 4, data: b"BLP1".to_vec() },
+        ClientMsg::Objects { request: 5, op: 1, name: "/m/war3map.w3u".into(), data: b"[w3u]".to_vec() },
     ];
     for msg in messages {
         assert_eq!(decode_client(&msg.encode()), msg);
@@ -167,6 +168,15 @@ fn texture_answers_round_trip() {
     };
     let frame = msg.encode();
     assert_eq!(frame[4], 132);
+    let (kind, body) = read_frame(&mut &frame[..]).unwrap().unwrap();
+    assert_eq!(ServerMsg::decode(kind, &body).unwrap(), Some(msg));
+}
+
+#[test]
+fn objects_answers_round_trip() {
+    let msg = ServerMsg::Objects { request: 9, error: "line 2: bad".into(), data: vec![1, 2] };
+    let frame = msg.encode();
+    assert_eq!(frame[4], 133);
     let (kind, body) = read_frame(&mut &frame[..]).unwrap().unwrap();
     assert_eq!(ServerMsg::decode(kind, &body).unwrap(), Some(msg));
 }

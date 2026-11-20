@@ -55,6 +55,10 @@ Warcraft III language support for VS Code.
   black or white; zoom (Fit, 1:1, +/−, Ctrl/Cmd + wheel, keys `0` `1`
   `+` `-`, `[` `]` for the mips), read the pixel under the cursor, save
   the mip as PNG. It reloads when the file changes.
+- Object data: a `.w3a`, `.w3b`, `.w3d`, `.w3h`, `.w3q`, `.w3t` or
+  `.w3u` (on disk or inside a map) opens as text, in BNI, with
+  highlighting and live errors, and saving writes the file back. Every
+  file goes to text and back to the same bytes.
 - Symbol navigation across the whole project, in every language: go to
   definition, find references, hover with the declaration, outline, go
   to symbol in workspace, and rename (F2), which refuses with a reason
@@ -102,6 +106,12 @@ dependencies besides the VS Code API.
   `texture` message; the server decodes it with `blp-rs` (decoding only,
   no C code, so cross-compiling is unaffected) and answers with the
   header and every mip as RGBA.
+- **Object data.** A `.w3a` ... file opens through the `wc3obj:` file
+  system, at the file's path: reading it reads the file (through VS Code,
+  so inside maps too) and has the server convert it to text (`objects`
+  message), and writing it has the server convert the text back, then
+  writes the file. The text's language is the file's (`w3a` ...), which
+  the server reads as BNI.
 - **Queries.** Only what depends on the cursor is asked (`query` →
   `answer`): definition, references, hover, document and workspace
   symbols, rename, answered from the server's symbol index after every earlier

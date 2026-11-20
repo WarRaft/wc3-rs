@@ -201,6 +201,38 @@ DXT1/3/5, raw BGRA) and every mip, each on its own, so a damaged or
 missing mip leaves the others viewable. BLP0, the Warcraft III beta's
 format, keeps its mips in separate `.b00`… files, and isn't shown.
 
+## Object data
+
+Object data (`.w3a` abilities, `.w3b` destructables, `.w3d` doodads,
+`.w3h` buffs, `.w3q` upgrades, `.w3t` items, `.w3u` units) opens as text,
+from disk or from inside a map, and saves back into the file. The text is
+BNI, written and read by [`w3abdhqtu-rs`](../w3abdhqtu-rs/README.md)
+(`server/src/objects.rs`):
+
+```ini
+[w3a]
+version=2
+
+[ACwe]                      // a changed standard object
+arlv=6
+
+[A000]                      // a custom one, and what it's based on
+_parent=ANwm
+anam="Blizzard"
+aub1[2]="Line one"\n"Line two"
+Hbz1[3].B=unreal 0.25
+```
+
+Every field is its four-character id, then `[level]` and `.column`
+(`Data A` is `.A`) for abilities, upgrades and doodads. Every file goes
+to text and back to the same bytes; the format and its rarer parts
+(sets, `end` ids) are in the `w3abdhqtu-rs` README. The editor reads the
+text as BNI, so it's highlighted and checked like any BNI, plus what
+would stop it from saving (a value that isn't one, a level on a unit
+field). Saving such text fails with the reason, and the file stays as it
+was. Comments and spacing aren't kept: the file has no room for them, so
+the next time it's opened the text is as the server writes it.
+
 ## Lint
 
 Every lint diagnostic names its **rule**, shown as the diagnostic's code

@@ -1,7 +1,7 @@
 {
   "name": "wc3",
   "displayName": "WC3",
-  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects; maps as folders and a BLP texture viewer.",
+  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects; maps as folders and a BLP texture viewer; object data (.w3a .w3u ...) as editable text.",
   "version": "0.0.3",
   "publisher": "WarRaft",
   "icon": "images/logo.png",
@@ -71,6 +71,55 @@
           },
           {
             "filenamePattern": "*.BLP"
+          }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "wc3.objects",
+        "displayName": "Object Data as Text",
+        "selector": [
+          {
+            "filenamePattern": "*.w3a"
+          },
+          {
+            "filenamePattern": "*.w3b"
+          },
+          {
+            "filenamePattern": "*.w3d"
+          },
+          {
+            "filenamePattern": "*.w3h"
+          },
+          {
+            "filenamePattern": "*.w3q"
+          },
+          {
+            "filenamePattern": "*.w3t"
+          },
+          {
+            "filenamePattern": "*.w3u"
+          },
+          {
+            "filenamePattern": "*.W3A"
+          },
+          {
+            "filenamePattern": "*.W3B"
+          },
+          {
+            "filenamePattern": "*.W3D"
+          },
+          {
+            "filenamePattern": "*.W3H"
+          },
+          {
+            "filenamePattern": "*.W3Q"
+          },
+          {
+            "filenamePattern": "*.W3T"
+          },
+          {
+            "filenamePattern": "*.W3U"
           }
         ],
         "priority": "default"
@@ -322,7 +371,8 @@
         "icon": {
           "light": "./icons/w3a.svg",
           "dark": "./icons/w3a.svg"
-        }
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
         "id": "w3b",
@@ -335,7 +385,8 @@
         "icon": {
           "light": "./icons/w3b.svg",
           "dark": "./icons/w3b.svg"
-        }
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
         "id": "w3d",
@@ -348,7 +399,8 @@
         "icon": {
           "light": "./icons/w3d.svg",
           "dark": "./icons/w3d.svg"
-        }
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
         "id": "w3e",
@@ -374,7 +426,8 @@
         "icon": {
           "light": "./icons/w3h.svg",
           "dark": "./icons/w3h.svg"
-        }
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
         "id": "w3i",
@@ -413,7 +466,8 @@
         "icon": {
           "light": "./icons/w3q.svg",
           "dark": "./icons/w3q.svg"
-        }
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
         "id": "w3r",
@@ -439,7 +493,8 @@
         "icon": {
           "light": "./icons/w3t.svg",
           "dark": "./icons/w3t.svg"
-        }
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
         "id": "w3u",
@@ -452,7 +507,8 @@
         "icon": {
           "light": "./icons/w3u.svg",
           "dark": "./icons/w3u.svg"
-        }
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
         "id": "wc3-preview",
@@ -683,6 +739,230 @@
       },
       {
         "language": "bni",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "w3a",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "w3b",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "w3d",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "w3h",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "w3q",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "w3t",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "w3u",
         "scopes": {
           "comment": [
             "comment"

@@ -26,11 +26,19 @@ const KIND = {
     QUERY: 6,
     FS: 7,
     TEXTURE: 8,
+    OBJECTS: 9,
     FILE: 128,
     LEGEND: 129,
     ANSWER: 130,
     FS_ANSWER: 131,
     TEXTURE_ANSWER: 132,
+    OBJECTS_ANSWER: 133,
+}
+
+/** What `encode.objects` asks for (`objects::TO_TEXT` / `TO_BYTES`). */
+const OBJECTS_OP = {
+    TO_TEXT: 0,
+    TO_BYTES: 1,
 }
 
 /** File system operations inside maps (`protocol::FsOp` on the Rust side). */
@@ -251,6 +259,24 @@ const encode = {
         w.bytes(data)
         return w.frame(KIND.TEXTURE)
     },
+
+    /**
+     * Object data to convert: a `.w3a` ... file's bytes to its text form,
+     * or a text form (UTF-8) to the file's bytes.
+     *
+     * @param {number} request  echoed in the answer
+     * @param {number} op  one of OBJECTS_OP
+     * @param {string} name  the file's name or path; its extension says what it holds
+     * @param {Uint8Array} data
+     */
+    objects(request, op, name, data) {
+        const w = new Writer()
+        w.u32(request)
+        w.u8(op)
+        w.string(name)
+        w.bytes(data)
+        return w.frame(KIND.OBJECTS)
+    },
 }
 
 /** Reads the fields of one frame's body in order. */
@@ -331,7 +357,8 @@ class Reader {
  *         | {kind: 'legend', types: string[], modifiers: string[]}
  *         | {kind: 'answer', request: number, text: string, locations: WireLocation[]}
  *         | {kind: 'fs', request: number, error: string | null, message: string, stat: FsStat | null, entries: [string, 'file' | 'dir'][], data: Uint8Array}
- *         | {kind: 'texture', request: number, texture: Texture}} ServerMessage
+ *         | {kind: 'texture', request: number, texture: Texture}
+ *         | {kind: 'objects', request: number, error: string, data: Uint8Array}} ServerMessage
  * @typedef {{error: string, version: string, encoding: string, alphaBits: number, width: number, height: number, mips: TextureMip[]}} Texture
  * @typedef {{width: number, height: number, error: string, rgba: Uint8Array}} TextureMip
  * @typedef {{type: 'file' | 'dir', size: number, mtime: number, readonly: boolean, note: string}} FsStat
@@ -396,6 +423,8 @@ function decode(kind, body) {
             }
             return {kind: 'texture', request, texture}
         }
+        case KIND.OBJECTS_ANSWER:
+            return {kind: 'objects', request: r.u32(), error: r.string(), data: r.bytes()}
         default:
             return null
     }
@@ -442,4 +471,4 @@ class FrameReader {
     }
 }
 
-module.exports = {encode, decode, FrameReader, KIND, QUERY, FS_OP, FS_FLAG, HEADER}
+module.exports = {encode, decode, FrameReader, KIND, QUERY, FS_OP, FS_FLAG, OBJECTS_OP, HEADER}

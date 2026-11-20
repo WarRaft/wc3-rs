@@ -17,6 +17,7 @@ fn range(l1: u32, c1: u32, l2: u32, c2: u32) -> Range {
 fn languages_come_from_editor_ids() {
     assert_eq!(Language::from_id("jass"), Some(Language::Jass));
     assert_eq!(Language::from_id("bni"), Some(Language::Bni));
+    assert_eq!(Language::from_id("w3a"), Some(Language::Bni));
     assert_eq!(Language::from_id("cobol"), None);
 }
 

@@ -64,7 +64,8 @@ pub struct Server<W: Write> {
     queries: Vec<Query>,
     /// Maps as folders, for `Fs` messages.
     mapfs: crate::mapfs::MapFs,
-    /// Answers to send that don't wait for analysis: `Fs`, `Texture`.
+    /// Answers to send that don't wait for analysis: `Fs`, `Texture`,
+    /// `Objects`.
     answers: Vec<ServerMsg>,
 }
 
@@ -169,6 +170,13 @@ impl<W: Write> Server<W> {
             }
             ClientMsg::Texture { request, data } => {
                 self.answers.push(ServerMsg::Texture { request, texture: crate::texture::decode(&data) });
+            }
+            ClientMsg::Objects { request, op, name, data } => {
+                let (error, data) = match crate::objects::convert(op, &name, &data) {
+                    Ok(data) => (String::new(), data),
+                    Err(error) => (error, Vec::new()),
+                };
+                self.answers.push(ServerMsg::Objects { request, error, data });
             }
         }
     }

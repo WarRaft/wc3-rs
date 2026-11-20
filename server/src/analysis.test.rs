@@ -217,3 +217,12 @@ fn an_empty_else_is_marked_on_else_with_a_fix_that_deletes_it() {
     let fix = d.fix.expect("a fix");
     assert_eq!(fix.edits, vec![(Range::new(Position::new(3, 0), Position::new(4, 0)), String::new())]);
 }
+
+#[test]
+fn object_text_errors() {
+    let doc = doc(Language::Bni, "[w3u]\nversion=2\n[hfoo]\nuhpm=x\n", None);
+    let d = diagnostics(&doc, None);
+    assert_eq!(d.len(), 1);
+    assert_eq!(d[0].range, Range::new(Position::new(3, 5), Position::new(3, 6)));
+    assert!(d[0].message.starts_with("expected a value"));
+}

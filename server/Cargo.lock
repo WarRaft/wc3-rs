@@ -827,6 +827,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 
 [[package]]
+name = "w3abdhqtu-rs"
+version = "0.1.0"
+dependencies = [
+ "bni-rs",
+ "parser-rs",
+]
+
+[[package]]
 name = "walkdir"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -854,6 +862,7 @@ dependencies = [
  "notify",
  "parser-rs",
  "storm-rs",
+ "w3abdhqtu-rs",
  "zinc-rs",
 ]
 

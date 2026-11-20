@@ -8,7 +8,8 @@
 //! the language crates (`jass-rs`, `zinc-rs`, `lua-rs`, `as-rs`, `bni-rs`,
 //! all built on `parser-rs`), and sending the results back. It also
 //! decodes BLP textures for the editor's viewer (`texture`, with
-//! `blp-rs`). The process ends when its stdin closes, i.e. when the
+//! `blp-rs`), and turns object data (`.w3a` ...) into its text form and
+//! back (`objects`, with `w3abdhqtu-rs`). The process ends when its stdin closes, i.e. when the
 //! editor goes away.
 
 mod analysis;
@@ -18,6 +19,7 @@ mod glob;
 mod index;
 mod map;
 mod mapfs;
+mod objects;
 mod paths;
 mod project;
 mod protocol;

@@ -31,6 +31,15 @@
  * reads the file (from disk or from inside a map), the server decodes it
  * with `blp-rs` (`server/src/texture.rs`), and the page draws its mips.
  *
+ * Object data (`.w3a`, `.w3b`, `.w3d`, `.w3h`, `.w3q`, `.w3t`, `.w3u`)
+ * opens as text: its BNI text form (`w3abdhqtu-rs`), under the `wc3obj:`
+ * scheme with the file's path. That file system reads the file (from disk
+ * or from inside a map) and has the server turn it into text; saving has
+ * the server turn the text back into the file's bytes, and fails with the
+ * reason when it can't. While it's edited, the text is a BNI document like
+ * any other (highlighting, diagnostics), under the language of its file
+ * (`w3a` ...), which the server reads as BNI.
+ *
  * In `wc3.bni`, the paths of `game=` and `sources=` complete from the disk
  * and every folder along them is a link that reveals that folder (in the
  * Explorer when it's in the workspace, in the system's file manager
@@ -73,7 +82,7 @@ const {
     CodeAction,
     CodeActionKind,
 } = require('vscode')
-const {encode, decode, FrameReader, QUERY, FS_OP, FS_FLAG} = require('./protocol.js')
+const {encode, decode, FrameReader, QUERY, FS_OP, FS_FLAG, OBJECTS_OP} = require('./protocol.js')
 
 /** The scheme of files inside maps. */
 const MAP_SCHEME = 'wc3map'
@@ -82,8 +91,15 @@ const MAP_SCHEME = 'wc3map'
  * server's `map::ARCHIVES`). */
 const MAP_NAME = /\.(w3[xm]|mpq)$/i
 
+/** The scheme of object data shown as text. */
+const OBJECTS_SCHEME = 'wc3obj'
+
+/** The languages of object-data files (`package.json`), one per type. As
+ * `wc3obj:` text they're BNI; a file opened as is is binary, not text. */
+const OBJECT_LANGUAGES = new Set(['w3a', 'w3b', 'w3d', 'w3h', 'w3q', 'w3t', 'w3u'])
+
 /** Language ids the server analyzes (its `Language::from_id`). */
-const LANGUAGES = new Set(['jass', 'vjass', 'zinc', 'lua', 'angelscript', 'bni'])
+const LANGUAGES = new Set(['jass', 'vjass', 'zinc', 'lua', 'angelscript', 'bni', ...OBJECT_LANGUAGES])
 
 /** How long highlighting waits for the server to analyze a new version. */
 const TOKENS_WAIT_MS = 1000
@@ -254,7 +270,9 @@ function send(frame) {
 
 /** @param {import('vscode').TextDocument} doc */
 function supported(doc) {
-    return LANGUAGES.has(doc.languageId) && (hasPath(doc.uri) || doc.uri.scheme === 'untitled')
+    if (!LANGUAGES.has(doc.languageId)) return false
+    if (OBJECT_LANGUAGES.has(doc.languageId)) return doc.uri.scheme === OBJECTS_SCHEME
+    return hasPath(doc.uri) || doc.uri.scheme === 'untitled'
 }
 
 function sendRoots() {
@@ -885,6 +903,129 @@ function registerTextures(context) {
 }
 
 /**
+ * Has the server convert object data (see the header): a file's bytes to
+ * its text form (`OBJECTS_OP.TO_TEXT`), or a text form back to the bytes.
+ * Rejects with the server's reason when it can't.
+ *
+ * @param {number} op  one of OBJECTS_OP
+ * @param {string} name  the file's path; its extension says what it holds
+ * @param {Uint8Array} data
+ * @returns {Promise<Uint8Array>}
+ */
+function objectsRequest(op, name, data) {
+    if (!server) return Promise.reject(new Error('The WC3 server isn\'t running.'))
+    const request = nextRequest = (nextRequest + 1) >>> 0
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            pendingQueries.delete(request)
+            reject(new Error('The WC3 server didn\'t answer in time.'))
+        }, FS_TIMEOUT_MS)
+        pendingQueries.set(request, answer => {
+            clearTimeout(timer)
+            if (answer.error) reject(new Error(answer.error))
+            else resolve(answer.data)
+        })
+        send(encode.objects(request, op, name, data))
+    })
+}
+
+/**
+ * Object data as text (see the header): the `wc3obj:` file system over
+ * the real files, and the editor `.w3a` ... files open in, which opens
+ * their text instead.
+ *
+ * @param {import('vscode').ExtensionContext} context
+ */
+function registerObjects(context) {
+    const changed = new EventEmitter()
+    /** The file a `wc3obj:` URI shows: on disk, or inside a map. */
+    const source = uri => {
+        const file = Uri.file(uri.fsPath)
+        return inMap(uri.fsPath) ? file.with({scheme: MAP_SCHEME}) : file
+    }
+    /** The file on disk that changes with it: itself, or its map. */
+    const onDisk = uri => Uri.file(mapOf(uri.fsPath) ?? uri.fsPath)
+    const failed = (uri, e) => FileSystemError.Unavailable(`${path.basename(uri.fsPath)}: ${e instanceof Error ? e.message : e}`)
+
+    const provider = {
+        onDidChangeFile: changed.event,
+        watch(uri) {
+            const file = onDisk(uri)
+            const dir = Uri.file(path.dirname(file.fsPath))
+            const watcher = workspace.createFileSystemWatcher(new RelativePattern(dir, path.basename(file.fsPath)))
+            const fire = () => changed.fire([{type: FileChangeType.Changed, uri}])
+            const subscriptions = [watcher, watcher.onDidChange(fire), watcher.onDidCreate(fire)]
+            return new Disposable(() => subscriptions.forEach(d => d.dispose()))
+        },
+        async stat(uri) {
+            const stat = await workspace.fs.stat(source(uri))
+            if (stat.type !== FileType.File) throw FileSystemError.FileNotFound(uri)
+            return stat
+        },
+        readDirectory: () => [],
+        async readFile(uri) {
+            const data = await workspace.fs.readFile(source(uri))
+            try {
+                return await objectsRequest(OBJECTS_OP.TO_TEXT, uri.fsPath, data)
+            } catch (e) {
+                throw failed(uri, e)
+            }
+        },
+        async writeFile(uri, content) {
+            let data
+            try {
+                data = await objectsRequest(OBJECTS_OP.TO_BYTES, uri.fsPath, content)
+            } catch (e) {
+                throw failed(uri, e)
+            }
+            await workspace.fs.writeFile(source(uri), data)
+            changed.fire([{type: FileChangeType.Changed, uri}])
+        },
+        delete: uri => {
+            throw FileSystemError.NoPermissions(uri)
+        },
+        rename: uri => {
+            throw FileSystemError.NoPermissions(uri)
+        },
+        createDirectory: uri => {
+            throw FileSystemError.NoPermissions(uri)
+        },
+    }
+
+    // A `.w3a` ... file opens its text in a text editor, in place of this
+    // one; when it can't, this one says why.
+    const editor = {
+        openCustomDocument: uri => ({uri, dispose() {}}),
+        async resolveCustomEditor(document, panel) {
+            const text = Uri.file(document.uri.fsPath).with({scheme: OBJECTS_SCHEME})
+            const html = s => s.replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})[c])
+            panel.webview.html = `<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<style>body { font-family: var(--vscode-font-family); color: var(--vscode-descriptionForeground); padding: 2em; }</style>
+</head><body><p>Opening ${html(path.basename(document.uri.fsPath))} as text…</p></body></html>`
+            try {
+                const doc = await workspace.openTextDocument(text)
+                await window.showTextDocument(doc, {viewColumn: panel.viewColumn, preview: false})
+                panel.dispose()
+            } catch (e) {
+                const message = e instanceof Error ? e.message : String(e)
+                panel.webview.html = `<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<style>body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: 2em; }
+h2 { font-size: 1.2em; font-weight: 600; } p { color: var(--vscode-errorForeground); }</style>
+</head><body><h2>Can't show ${html(path.basename(document.uri.fsPath))} as text</h2><p>${html(message)}</p></body></html>`
+            }
+        },
+    }
+
+    context.subscriptions.push(
+        changed,
+        workspace.registerFileSystemProvider(OBJECTS_SCHEME, provider, {isCaseSensitive: process.platform === 'linux'}),
+        window.registerCustomEditorProvider('wc3.objects', editor, {supportsMultipleEditorsPerDocument: true}),
+    )
+}
+
+/**
  * Highlighting for every language, served from the tokens the server
  * pushed. If the document is newer than those, waits (briefly) for the
  * server's answer to the edit instead of showing stale colors.
@@ -952,7 +1093,7 @@ function startServer(command, context) {
             const msg = decode(kind, body)
             if (!msg) continue
             if (msg.kind === 'file') onFile(msg)
-            else if (msg.kind === 'answer' || msg.kind === 'fs' || msg.kind === 'texture') {
+            else if (msg.kind === 'answer' || msg.kind === 'fs' || msg.kind === 'texture' || msg.kind === 'objects') {
                 const done = pendingQueries.get(msg.request)
                 pendingQueries.delete(msg.request)
                 if (done) done(msg)
@@ -975,6 +1116,7 @@ module.exports = {
         registerManifestPaths(context)
         registerMaps(context)
         registerTextures(context)
+        registerObjects(context)
 
         sendRoots()
         context.subscriptions.push(

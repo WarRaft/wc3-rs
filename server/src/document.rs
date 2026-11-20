@@ -52,6 +52,9 @@ impl Language {
             "lua" => Language::Lua,
             "angelscript" => Language::AngelScript,
             "bni" => Language::Bni,
+            // Object data, which the editor shows in its BNI text form
+            // (see `objects`).
+            "w3a" | "w3b" | "w3d" | "w3h" | "w3q" | "w3t" | "w3u" => Language::Bni,
             _ => return None,
         })
     }
@@ -78,6 +81,9 @@ impl Language {
             "lua" => Language::Lua,
             "as" | "angelscript" => Language::AngelScript,
             "bni" => Language::Bni,
+            // Object data, which the editor shows in its BNI text form
+            // (see `objects`).
+            "w3a" | "w3b" | "w3d" | "w3h" | "w3q" | "w3t" | "w3u" => Language::Bni,
             _ => return None,
         })
     }

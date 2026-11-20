@@ -73,11 +73,14 @@ pub fn diagnostics(doc: &Document, project: Option<&Project>) -> Vec<Diagnostic>
 }
 
 /// BNI never fails as a whole: every malformed line is its own error, and
-/// lint still runs. A project manifest (`wc3.bni`) also gets its settings
+/// lint still runs. The text form of object data also gets the errors
+/// that would stop it from saving. A project manifest (`wc3.bni`) also gets its settings
 /// checked, against the text being edited rather than the saved file.
 fn bni(doc: &Document, project: Option<&Project>, out: &Out) -> Vec<Diagnostic> {
     let parsed = bni_rs::parse(out.text);
     let mut diags: Vec<Diagnostic> = parsed.errors.iter().map(|e| out.error(e)).collect();
+    // The text form of object data (`.w3a` ...): what it can't save.
+    diags.extend(crate::objects::text_errors(&parsed).iter().map(|e| out.error(e)));
     let lint = project::apply_lint(bni_rs::lint(&parsed), project);
     diags.extend(lint.into_iter().map(|d| out.lint(d)));
     if let Some(path) = doc.path.as_deref().filter(|p| project::is_manifest(p)) {

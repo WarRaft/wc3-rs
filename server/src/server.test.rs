@@ -34,7 +34,7 @@ fn session(events: Vec<Event>) -> Vec<Answer> {
                 answers.push(Answer { id, version, diagnostics, tokens })
             }
             Some(ServerMsg::Legend { .. }) => assert!(answers.is_empty(), "the legend comes first"),
-            Some(ServerMsg::Answer { .. } | ServerMsg::Fs { .. } | ServerMsg::Texture { .. }) => {}
+            Some(ServerMsg::Answer { .. } | ServerMsg::Fs { .. } | ServerMsg::Texture { .. } | ServerMsg::Objects { .. }) => {}
             None => panic!("unknown frame {kind}"),
         }
     }
