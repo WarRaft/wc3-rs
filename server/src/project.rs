@@ -13,6 +13,7 @@
 //! dialect=vjass
 //!
 //! [lint]
+//! pure=error
 //! infinite-loop=warning
 //! unused-local=off
 //! ```
@@ -48,6 +49,10 @@ pub struct Project {
     /// `[lint] <rule>=off|warning|error`: rules switched or re-levelled
     /// from their defaults (`parser_rs::RULES`), by rule id.
     pub lint: HashMap<String, LintSetting>,
+    /// `[lint] <group>=off|warning|error`: groups of rules
+    /// (`parser_rs::GROUPS`), by group id. A rule set by name wins over
+    /// its groups.
+    pub lint_groups: HashMap<String, LintSetting>,
 }
 
 /// What a project does with a lint rule.
@@ -71,13 +76,20 @@ impl LintSetting {
 
 /// Applies the project's lint settings (or none) to `diags`: drops the
 /// rules that are off, by the project's choice or by default, and sets the
-/// level of those it re-levels.
+/// level of those it re-levels. A rule's own setting comes first, then
+/// that of a group it belongs to, then its default.
 pub fn apply_lint(diags: Vec<parser_rs::Diagnostic>, project: Option<&Project>) -> Vec<parser_rs::Diagnostic> {
     diags
         .into_iter()
         .filter_map(|mut d| {
-            let setting = project.and_then(|p| p.lint.get(d.rule)).copied();
-            let enabled = parser_rs::find_rule(d.rule).is_none_or(|r| r.enabled);
+            let rule = parser_rs::find_rule(d.rule);
+            let setting = project.and_then(|p| {
+                p.lint.get(d.rule).or_else(|| {
+                    rule.and_then(|r| r.groups.iter().find_map(|g| p.lint_groups.get(*g)))
+                })
+            });
+            let setting = setting.copied();
+            let enabled = rule.is_none_or(|r| r.enabled);
             match setting {
                 Some(LintSetting::Off) => None,
                 Some(LintSetting::On(level)) => {
@@ -258,15 +270,17 @@ fn unknown_key(item: &Item, section: &str, issues: &mut Vec<Issue>) {
     ));
 }
 
-/// `<rule>=off|warning|error`. A rule set twice: the last one wins, as
-/// lint settings are often appended to override earlier ones.
+/// `<rule>=off|warning|error`, or `<group>=...` for every rule of a
+/// group. Set twice: the last one wins, as lint settings are often
+/// appended to override earlier ones.
 fn read_lint(item: &Item, rule: &str, project: &mut Project, issues: &mut Vec<Issue>) {
     let key = item.key.as_ref().expect("key_of returned a key");
-    if parser_rs::find_rule(rule).is_none() {
+    let is_group = parser_rs::find_group(rule).is_some();
+    if !is_group && parser_rs::find_rule(rule).is_none() {
         issues.push(at_name(
             key,
             Level::Warning,
-            format!("unknown lint rule '{rule}' (the rules are listed in the wc3-rs README)"),
+            format!("unknown lint rule or group '{rule}' (they are listed in the wc3-rs README)"),
         ));
         return;
     }
@@ -277,7 +291,8 @@ fn read_lint(item: &Item, rule: &str, project: &mut Project, issues: &mut Vec<Is
     let value = field.text();
     match LintSetting::from_name(value.trim()) {
         Some(setting) => {
-            project.lint.insert(rule.to_string(), setting);
+            let map = if is_group { &mut project.lint_groups } else { &mut project.lint };
+            map.insert(rule.to_string(), setting);
         }
         None => issues.push(at_field(
             field,

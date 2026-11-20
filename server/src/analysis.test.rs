@@ -157,6 +157,33 @@ fn infinite_loops_are_off_unless_the_project_turns_them_on() {
 }
 
 #[test]
+fn pure_jass_reports_left_out_takes_and_returns() {
+    let src = "function main
+endfunction";
+    assert!(diags(Language::Jass, src).is_empty());
+
+    let tmp = TempDir::new("analysis-lint-pure");
+    std::fs::write(tmp.0.join(project::MANIFEST), "[lint]
+pure=error
+").unwrap();
+    let path = tmp.0.join("x.j");
+    let project = crate::project::Projects::default().for_file(&path);
+    let d = diagnostics(&doc(Language::Jass, src, Some(&path)), project.as_deref());
+    assert_eq!(d.len(), 1);
+    assert_eq!((d[0].rule, d[0].level), ("implicit-signature", Level::Error));
+    assert!(d[0].message.contains("'takes nothing returns nothing'"), "{}", d[0].message);
+
+    // The rest of the group: a global outside `globals`, after a function.
+    let src = "function main takes nothing returns nothing\nendfunction\ninteger late\n";
+    assert!(diags(Language::Jass, src).is_empty());
+    let rules: Vec<_> = diagnostics(&doc(Language::Jass, src, Some(&path)), project.as_deref())
+        .iter()
+        .map(|d| d.rule)
+        .collect();
+    assert_eq!(rules, vec!["global-outside-globals", "declaration-after-function"]);
+}
+
+#[test]
 fn bni_lint_follows_the_project_too() {
     let tmp = TempDir::new("analysis-lint-bni");
     std::fs::write(tmp.0.join(project::MANIFEST), "[lint]\nduplicate-section=off\n").unwrap();

@@ -178,7 +178,7 @@ fn lint_settings_are_checked() {
     assert_eq!(
         got,
         vec![
-            (2, Level::Warning, "unknown lint rule 'unused-locals' (the rules are listed in the wc3-rs README)"),
+            (2, Level::Warning, "unknown lint rule or group 'unused-locals' (they are listed in the wc3-rs README)"),
             (3, Level::Error, "unknown lint setting 'maybe' (expected off, warning or error)"),
             (4, Level::Error, "'empty-branch' needs one value: off, warning or error"),
         ]
@@ -202,6 +202,42 @@ fn lint_defaults_and_project_settings_apply() {
     let (project, _) = load(Path::new("/p"), "[lint]\ninfinite-loop=warning\nunused-local=off\nempty-branch=error\n");
     let got: Vec<_> = apply_lint(diags(), Some(&project)).iter().map(|d| (d.rule, d.level)).collect();
     assert_eq!(got, vec![(rule::INFINITE_LOOP, Level::Warning), (rule::EMPTY_BRANCH, Level::Error)]);
+}
+
+#[test]
+fn a_group_switches_its_rules_and_a_rule_setting_wins() {
+    use parser_rs::{rule, Diagnostic};
+    let diags = || {
+        vec![
+            Diagnostic::error(rule::IMPLICIT_SIGNATURE, "implicit", 1),
+            Diagnostic::warning(rule::UNUSED_LOCAL, "unused", 2),
+        ]
+    };
+    // Off by default.
+    let rules: Vec<_> = apply_lint(diags(), None).iter().map(|d| d.rule).collect();
+    assert_eq!(rules, vec![rule::UNUSED_LOCAL]);
+
+    let (project, issues) = load(Path::new("/p"), "[lint]
+pure=warning
+");
+    assert!(issues.is_empty(), "{issues:?}");
+    assert_eq!(project.lint_groups.get("pure"), Some(&LintSetting::On(Level::Warning)));
+    assert!(project.lint.is_empty());
+    let got: Vec<_> = apply_lint(diags(), Some(&project)).iter().map(|d| (d.rule, d.level)).collect();
+    assert_eq!(got, vec![(rule::IMPLICIT_SIGNATURE, Level::Warning), (rule::UNUSED_LOCAL, Level::Warning)]);
+
+    // The rule's own setting wins, before or after the group.
+    for src in ["[lint]
+implicit-signature=off
+pure=error
+", "[lint]
+pure=error
+implicit-signature=off
+"] {
+        let (project, _) = load(Path::new("/p"), src);
+        let rules: Vec<_> = apply_lint(diags(), Some(&project)).iter().map(|d| d.rule).collect();
+        assert_eq!(rules, vec![rule::UNUSED_LOCAL], "{src}");
+    }
 }
 
 #[test]

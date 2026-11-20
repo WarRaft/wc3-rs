@@ -33,7 +33,7 @@ dialect=vjass
 | `[project]` | `sources` | paths, comma-separated, relative to the project root | the project's source folders and files                     |
 | `[project]` | `game`    | one path per line, absolute or relative to the project root | a game folder; repeat for more, each over the ones before |
 | `[jass]`    | `dialect` | `jass` or `vjass` (case-insensitive)     | the dialect of `.j` files that don't declare one in a `// @dialect` header |
-| `[lint]`    | a rule id | `off`, `warning` or `error`              | turn a lint rule off or on, at that level (see [Lint](#lint))           |
+| `[lint]`    | a rule or group id | `off`, `warning` or `error`     | turn a lint rule (or every rule of a group) off or on, at that level (see [Lint](#lint)) |
 
 - **`dialect`.** A file's own header always wins over the project, so a
   project can still mix dialects. Without either, a file is plain JASS.
@@ -68,7 +68,7 @@ plus checks of its settings, at the exact name or value:
 - a `sources` path that doesn't exist, or an empty one (a warning);
 - `game` with no value or several on one line (an error), a `game` path
   that doesn't exist or isn't a folder (a warning);
-- an unknown lint rule (a warning), or a setting that isn't `off`,
+- an unknown lint rule or group (a warning), or a setting that isn't `off`,
   `warning` or `error` (an error). A rule set twice takes the last value.
 
 **The project model.** `wc3-server` keeps every file of every project in
@@ -121,7 +121,17 @@ empty-branch=error        // on, raised to an error
 ```
 
 Without a setting, a rule is on at its own level (the level it reports
-in each language) unless the table says it's off by default. Parse errors
+in each language) unless the table says it's off by default.
+
+A **group** switches several rules at once: `pure=error` sets every rule
+of the group `pure`. A rule set by name wins over its group, wherever
+the lines are, so `pure=error` with `implicit-signature=off` keeps that
+one rule off.
+
+| group  | rules                | for |
+|--------|----------------------|-----|
+| `pure` | `implicit-signature`, `declaration-after-function`, `global-outside-globals` | pure JASS as the game reads it: reports what this toolchain accepts beyond the game's grammar. Off by default |
+ Parse errors
 aren't lint: they can't be turned off. The rules are defined in
 `parser_rs::RULES` (`parser-rs/src/diagnostic.rs`); this table follows it.
 
@@ -145,6 +155,9 @@ aren't lint: they can't be turned off. The rules are defined in
 | `duplicate-section`              | BNI                          | on      | a section header repeated in the file |
 | `unclosed-section-header`        | BNI                          | on      | a section header missing its `]` |
 | `unterminated-string`            | BNI                          | on      | a quoted string with no closing `"` |
+| `implicit-signature`             | JASS                         | **off** | a `function` or `native` without `takes` or `returns`, which the game requires (group `pure`) |
+| `declaration-after-function`     | JASS                         | **off** | a global, `globals` block, `native` or `type` after a function; the game reads them only before the first one (group `pure`) |
+| `global-outside-globals`         | JASS                         | **off** | a variable at the top level outside `globals ... endglobals`, where the game doesn't read it (group `pure`) |
 
 **Why `infinite-loop` is off.** A thread that loops forever and sleeps is
 normal Warcraft III code: the game's own AI scripts are full of them (161
