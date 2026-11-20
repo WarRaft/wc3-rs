@@ -6,6 +6,8 @@
 //! ```ini
 //! [project]
 //! sources=src,lib
+//! game=C:/Games/Warcraft III
+//! game=../my-common-j
 //!
 //! [jass]
 //! dialect=vjass
@@ -39,6 +41,10 @@ pub struct Project {
     /// `[project] sources=`: the project's source folders and files,
     /// resolved against `root`, in the order written.
     pub sources: Vec<PathBuf>,
+    /// `[project] game=`: the game folders, resolved against `root` (an
+    /// absolute path stays as written), in the order written. A file in a
+    /// later folder overrides the same file in an earlier one; see `game`.
+    pub game: Vec<PathBuf>,
     /// `[lint] <rule>=off|warning|error`: rules switched or re-levelled
     /// from their defaults (`parser_rs::RULES`), by rule id.
     pub lint: HashMap<String, LintSetting>,
@@ -177,6 +183,7 @@ pub fn load(root: &Path, src: &str) -> (Project, Vec<Issue>) {
                 for item in items {
                     match key_of(item, &mut issues) {
                         Some("sources") => read_sources(root, item, &mut project, &mut issues),
+                        Some("game") => read_game(root, item, &mut project, &mut issues),
                         Some(_) => unknown_key(item, "project", &mut issues),
                         None => {}
                     }
@@ -241,7 +248,7 @@ fn key_of<'a>(item: &'a Item, issues: &mut Vec<Issue>) -> Option<&'a str> {
 fn unknown_key(item: &Item, section: &str, issues: &mut Vec<Issue>) {
     let key = item.key.as_ref().expect("key_of returned a key");
     let expected = match section {
-        "project" => "sources",
+        "project" => "sources' or 'game",
         _ => "dialect",
     };
     issues.push(at_name(
@@ -300,6 +307,36 @@ fn read_dialect(item: &Item, issues: &mut Vec<Issue>) -> Option<jass_rs::Dialect
         ));
     }
     dialect
+}
+
+/// `game=<folder>`: one path, absolute or relative to the project root;
+/// each `game=` line adds a folder on top of the earlier ones. A folder
+/// that doesn't exist is only a warning: the setting is kept, so a
+/// manifest shared between machines still loads.
+fn read_game(root: &Path, item: &Item, project: &mut Project, issues: &mut Vec<Issue>) {
+    let key = item.key.as_ref().expect("key_of returned a key");
+    let [field] = item.fields.as_slice() else {
+        let message = if item.fields.is_empty() {
+            "'game' needs a value: the Warcraft III folder"
+        } else {
+            "'game' takes a single path (quote a path that contains a comma; add another 'game=' line for another folder)"
+        };
+        issues.push(at_name(key, Level::Error, message.into()));
+        return;
+    };
+    let text = field.text();
+    let text = text.trim();
+    if text.is_empty() {
+        issues.push(at_field(field, Level::Error, "'game' needs a value: the Warcraft III folder".into()));
+        return;
+    }
+    let path = normalize(&root.join(text));
+    if !path.exists() {
+        issues.push(at_field(field, Level::Warning, format!("game folder '{text}' does not exist")));
+    } else if !path.is_dir() {
+        issues.push(at_field(field, Level::Warning, format!("game path '{text}' is not a folder")));
+    }
+    project.game.push(path);
 }
 
 fn read_sources(root: &Path, item: &Item, project: &mut Project, issues: &mut Vec<Issue>) {

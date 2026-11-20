@@ -14,7 +14,9 @@
 //!   a name), plus JASS and Zinc names start with a letter and JASS
 //!   names don't end with `_`;
 //! - **conflict**: the new name is already declared in the same scope
-//!   (for a project-wide name, the same namespace).
+//!   (for a project-wide name, the same namespace);
+//! - **in a map**: an occurrence is in a file inside a map (`.w3x`,
+//!   `.w3m`), which is read-only (see `map`).
 //!
 //! An AngelScript class is renamed with its constructors and destructor,
 //! which are members named like it; renaming a constructor renames its
@@ -24,6 +26,7 @@ use parser_rs::{LexSpec, Occurrence, Scope, SymbolKind, TokenKind};
 
 use crate::document::{Document, Language, Position};
 use crate::index::{at, matches, Answer, Out};
+use crate::map;
 use crate::workspace::Workspace;
 
 /// Whether the name under the cursor can be renamed: its location and
@@ -104,6 +107,13 @@ fn plan<'a>(ws: &'a Workspace, id: &'a str, pos: Position) -> Result<Vec<Found<'
     }
     if decls.iter().any(|f| f.2.kind == SymbolKind::Native) {
         return Err(format!("`{}` is a native, part of the game's API: it can't be renamed.", target.name));
+    }
+    if let Some((map, name)) = found.iter().find_map(|f| map::split(f.1.path.as_deref()?)) {
+        return Err(format!(
+            "`{}` is used in {name} inside the map {}: files in maps are read-only, so it can't be renamed.",
+            target.name,
+            map.file_name().and_then(|n| n.to_str()).unwrap_or_default(),
+        ));
     }
     if target.scope == Scope::Member && decls.len() > 1 {
         let places: Vec<String> = decls.iter().map(|f| format!("{}:{}", file_name(f.0), f.2.line)).collect();

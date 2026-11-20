@@ -225,3 +225,57 @@ fn many_files_are_analyzed_in_parallel_in_a_stable_order() {
         assert_eq!(report.2, i % 2);
     }
 }
+
+#[test]
+fn scripts_inside_maps_are_project_files() {
+    let tmp = project("ws-maps", &[("wc3.bni", ""), ("a.j", OK), (".hidden/x.j", BAD)]);
+    let map = tmp.0.join("Test.w3x");
+    crate::map::tests::make_map(&map, &[("war3map.j", BAD), ("Scripts\\lib.j", OK), ("war3map.w3i", "x")]);
+    std::fs::write(tmp.0.join(".hidden/Hidden.w3x"), "").unwrap();
+    let mut ws = init(&tmp.0);
+    let r = reports(&mut ws);
+    assert_eq!(
+        names(&tmp.0, &r),
+        vec!["Test.w3x/Scripts/lib.j", "Test.w3x/war3map.j", "a.j", "wc3.bni"]
+    );
+    assert_eq!(r[1].2, 1, "war3map.j is analyzed: {r:?}");
+    let script = map.join("war3map.j");
+    assert_eq!(ws.file(&path_id(&script)).unwrap().0.path.as_deref(), Some(script.as_path()));
+
+    // Opened and closed: back to the map's text.
+    ws.open(path_id(&script), Some(script.clone()), Language::Jass, 1, OK.into());
+    assert_eq!(reports(&mut ws)[0].2, 0);
+    ws.close(&path_id(&script));
+    assert_eq!(reports(&mut ws), vec![(path_id(&script), 0, 1, 0)]);
+
+    // The map is saved again: its files are read again, gone ones dropped.
+    crate::map::tests::make_map(&map, &[("war3map.j", OK)]);
+    ws.disk_changed(std::slice::from_ref(&map));
+    let r = reports(&mut ws);
+    assert_eq!(names(&tmp.0, &r), vec!["Test.w3x/Scripts/lib.j", "Test.w3x/war3map.j"]);
+    assert_eq!((r[1].1, r[1].2), (0, 0));
+    assert!(ws.file(&path_id(&map.join("Scripts/lib.j"))).is_none());
+
+    // A manifest change keeps the map's files without reading it again.
+    std::fs::write(tmp.0.join("wc3.bni"), "[jass]\ndialect=vjass\n").unwrap();
+    ws.disk_changed(&[tmp.0.join("wc3.bni")]);
+    assert_eq!(
+        names(&tmp.0, &reports(&mut ws)),
+        vec!["Test.w3x/war3map.j", "a.j", "wc3.bni"]
+    );
+
+    // The map is deleted.
+    std::fs::remove_file(&map).unwrap();
+    ws.disk_changed(std::slice::from_ref(&map));
+    assert_eq!(names(&tmp.0, &reports(&mut ws)), vec!["Test.w3x/war3map.j"]);
+    assert!(ws.file(&path_id(&script)).is_none());
+}
+
+#[test]
+fn sources_can_name_a_map() {
+    let tmp = project("ws-map-sources", &[("wc3.bni", "[project]\nsources=Main.w3m\n"), ("a.j", OK)]);
+    crate::map::tests::make_map(&tmp.0.join("Main.w3m"), &[("war3map.j", OK)]);
+    crate::map::tests::make_map(&tmp.0.join("Other.w3x"), &[("war3map.j", OK)]);
+    let mut ws = init(&tmp.0);
+    assert_eq!(names(&tmp.0, &reports(&mut ws)), vec!["Main.w3m/war3map.j", "wc3.bni"]);
+}

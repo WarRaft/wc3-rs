@@ -16,6 +16,11 @@
  * depends on the cursor is asked: go to definition, find references,
  * hover, symbol search and rename are answered from the server's symbol
  * index.
+ *
+ * Scripts inside maps (`.w3x`, `.w3m`) are files of the model too, at a
+ * path inside the map's (`<map.w3x>/war3map.j`). VS Code can't read them,
+ * so they're shown under the `wc3map:` scheme with that path, read-only,
+ * their text asked from the server.
  */
 
 const path = require('path')
@@ -39,6 +44,12 @@ const {
     SemanticTokensLegend,
 } = require('vscode')
 const {encode, decode, FrameReader, QUERY} = require('./protocol.js')
+
+/** The scheme of files inside maps. */
+const MAP_SCHEME = 'wc3map'
+
+/** Map file names (the server's `map::EXTENSIONS`). */
+const MAP_NAME = /\.w3[xm]$/i
 
 /** Language ids the server analyzes (its `Language::from_id`). */
 const LANGUAGES = new Set(['jass', 'zinc', 'lua', 'angelscript', 'bni'])
@@ -143,13 +154,41 @@ function serverBinaryPath(context) {
 }
 
 /**
- * A document's id in the protocol: its path for a file, so it matches
- * the files the server finds on disk itself; its URI otherwise.
+ * Is the document a file, on disk or inside a map: does it have a path?
+ *
+ * @param {import('vscode').Uri} uri
+ */
+function hasPath(uri) {
+    return uri.scheme === 'file' || uri.scheme === MAP_SCHEME
+}
+
+/**
+ * A document's id in the protocol: its path for a file (inside a map
+ * too), so it matches the files the server finds on disk itself; its URI
+ * otherwise.
  *
  * @param {import('vscode').TextDocument} doc
  */
 function idOf(doc) {
-    return doc.uri.scheme === 'file' ? doc.uri.fsPath : doc.uri.toString()
+    return hasPath(doc.uri) ? doc.uri.fsPath : doc.uri.toString()
+}
+
+/**
+ * Is the path inside a map: does one of the folders above it name a map
+ * file on disk?
+ *
+ * @param {string} file
+ */
+function inMap(file) {
+    for (let dir = path.dirname(file); dir !== path.dirname(dir); dir = path.dirname(dir)) {
+        if (!MAP_NAME.test(dir)) continue
+        try {
+            if (fs.statSync(dir).isFile()) return true
+        } catch {
+            // Not there: keep looking above.
+        }
+    }
+    return false
 }
 
 /**
@@ -159,7 +198,9 @@ function idOf(doc) {
  * @param {string} id
  */
 function uriOf(id) {
-    return path.isAbsolute(id) ? Uri.file(id) : Uri.parse(id)
+    if (!path.isAbsolute(id)) return Uri.parse(id)
+    const uri = Uri.file(id)
+    return inMap(id) ? uri.with({scheme: MAP_SCHEME}) : uri
 }
 
 /** @param {Buffer} frame */
@@ -169,7 +210,7 @@ function send(frame) {
 
 /** @param {import('vscode').TextDocument} doc */
 function supported(doc) {
-    return LANGUAGES.has(doc.languageId) && (doc.uri.scheme === 'file' || doc.uri.scheme === 'untitled')
+    return LANGUAGES.has(doc.languageId) && (hasPath(doc.uri) || doc.uri.scheme === 'untitled')
 }
 
 function sendRoots() {
@@ -197,7 +238,7 @@ function onOpen(doc) {
     }
     if (!supported(doc) || tracked.has(id)) return
     tracked.set(id, doc.languageId)
-    const file = doc.uri.scheme === 'file' ? doc.uri.fsPath : ''
+    const file = hasPath(doc.uri) ? doc.uri.fsPath : ''
     send(encode.open(id, file, doc.languageId, doc.version, doc.getText()))
 }
 
@@ -353,6 +394,10 @@ function registerQueries(context) {
                 }
                 return edit
             },
+        }),
+        workspace.registerTextDocumentContentProvider(MAP_SCHEME, {
+            provideTextDocumentContent: async uri =>
+                (await query(QUERY.CONTENT, uri.fsPath, {line: 0, character: 0}))?.text ?? '',
         }),
         languages.registerWorkspaceSymbolProvider({
             provideWorkspaceSymbols: async text =>

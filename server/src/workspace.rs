@@ -9,7 +9,9 @@
 //! - **Which files.** A project's `sources` (or its whole root when it
 //!   lists none), files with a known extension (`Language::from_path`),
 //!   outside hidden folders, whose nearest `wc3.bni` is this project's
-//!   (a nested project owns its own files). Plus the manifest itself.
+//!   (a nested project owns its own files). Plus the manifest itself,
+//!   and the scripts inside every map (`.w3x`, `.w3m`) found the same
+//!   way, each at a path inside the map's (see `map`).
 //! - **Identity.** A file is identified by its path on disk, the form the
 //!   editor uses for files too; a document with no file (untitled) by the
 //!   editor's URI.
@@ -25,6 +27,7 @@ use parser_rs::Occurrence;
 
 use crate::analysis;
 use crate::document::{Document, Language};
+use crate::map;
 use crate::project::{self, Project, Projects};
 use crate::protocol::ServerMsg;
 
@@ -49,6 +52,8 @@ pub struct Workspace {
     projects: Projects,
     /// Manifests of the projects loaded so far.
     manifests: HashSet<PathBuf>,
+    /// The maps in the model, and the ids of their files.
+    maps: HashMap<PathBuf, Vec<String>>,
     /// Files to analyze and report.
     dirty: HashSet<String>,
     /// Files the editor should forget: they left the model.
@@ -132,6 +137,10 @@ impl Workspace {
             return;
         }
         for path in paths {
+            if map::is_map_name(path) {
+                self.reload_map(path);
+                continue;
+            }
             let id = path_id(path);
             if self.files.get(&id).is_some_and(|e| e.open) {
                 continue;
@@ -204,6 +213,37 @@ impl Workspace {
         self.files.iter().map(|(id, e)| (id.as_str(), &e.doc, e.symbols.as_slice()))
     }
 
+    /// A map changed on disk (or appeared, or went away): its files are
+    /// read again. Open ones keep the editor's text.
+    fn reload_map(&mut self, path: &Path) {
+        let old = self.maps.remove(path).unwrap_or_default();
+        let mut ids = Vec::new();
+        if map::is_map(path) {
+            if let Some(project) = self.member(path) {
+                for (inner, doc) in map::files(path) {
+                    if !project.contains(&inner) {
+                        continue;
+                    }
+                    let id = path_id(&inner);
+                    ids.push(id.clone());
+                    if self.files.get(&id).is_some_and(|e| e.open) {
+                        continue;
+                    }
+                    self.files.insert(id.clone(), Entry::new(doc, false));
+                    self.dirty.insert(id);
+                }
+            }
+        }
+        for id in old {
+            if !ids.contains(&id) && self.files.get(&id).is_some_and(|e| !e.open) {
+                self.remove(&id);
+            }
+        }
+        if !ids.is_empty() {
+            self.maps.insert(path.to_path_buf(), ids);
+        }
+    }
+
     fn remove(&mut self, id: &str) {
         self.files.remove(id);
         self.dirty.remove(id);
@@ -212,9 +252,11 @@ impl Workspace {
 
     /// The project `path` is a file of, if any (see the module docs):
     /// its nearest project, or a loaded project that lists it in
-    /// `sources` from outside its own root.
+    /// `sources` from outside its own root. A map counts as a file too.
     fn member(&mut self, path: &Path) -> Option<Arc<Project>> {
-        Language::from_path(path)?;
+        if Language::from_path(path).is_none() && !map::is_map_name(path) {
+            return None;
+        }
         if let Some(project) = self.projects.for_file(path) {
             if project.contains(path) {
                 return Some(project);
@@ -277,6 +319,7 @@ impl Workspace {
         }
 
         let mut wanted: HashMap<String, PathBuf> = HashMap::new();
+        let mut maps: Vec<(PathBuf, Arc<Project>)> = Vec::new();
         for manifest in &manifests {
             let Some(project) = self.projects.for_file(manifest) else {
                 continue;
@@ -286,13 +329,48 @@ impl Workspace {
                 walk(&scope, &mut |p| {
                     let owned = !p.starts_with(&project.root)
                         || project::find_manifest(p).as_deref() == Some(manifest.as_path());
-                    if owned && Language::from_path(p).is_some() && project.contains(p) {
+                    if !owned || !project.contains(p) {
+                        return;
+                    }
+                    if Language::from_path(p).is_some() {
                         wanted.entry(path_id(p)).or_insert_with(|| p.to_path_buf());
+                    } else if map::is_map_name(p) && !maps.iter().any(|(m, _)| m == p) {
+                        maps.push((p.to_path_buf(), project.clone()));
                     }
                 });
             }
         }
         self.manifests = manifests;
+
+        // A map already in the model keeps its files; a new one is read.
+        let mut found_maps = HashMap::new();
+        for (path, project) in maps {
+            let ids = match self.maps.remove(&path) {
+                Some(ids) => ids,
+                None => {
+                    let mut ids = Vec::new();
+                    for (inner, doc) in map::files(&path) {
+                        if !project.contains(&inner) {
+                            continue;
+                        }
+                        let id = path_id(&inner);
+                        if !self.files.contains_key(&id) {
+                            self.files.insert(id.clone(), Entry::new(doc, false));
+                            self.dirty.insert(id.clone());
+                        }
+                        ids.push(id);
+                    }
+                    ids
+                }
+            };
+            for id in &ids {
+                wanted.insert(id.clone(), PathBuf::from(id));
+            }
+            if !ids.is_empty() {
+                found_maps.insert(path, ids);
+            }
+        }
+        self.maps = found_maps;
 
         for (id, path) in &wanted {
             if self.files.contains_key(id) {
@@ -315,9 +393,12 @@ impl Workspace {
     }
 }
 
-/// A file's disk version, or `None` if it can't be read or has no known
-/// language.
+/// A file's disk version (from inside its map for a file in a map), or
+/// `None` if it can't be read or has no known language.
 fn load(path: &Path) -> Option<Document> {
+    if !path.exists() {
+        return map::load(path);
+    }
     let language = Language::from_path(path)?;
     let bytes = std::fs::read(path).ok()?;
     let text = String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());

@@ -32,6 +32,9 @@ Warcraft III language support for VS Code.
   such as the default JASS dialect. Every file of the project is analyzed,
   open or not, so its problems are listed right away (see the repository
   README).
+- Maps: the scripts inside `.w3x` / `.w3m` maps in a project are project
+  files too (`war3map.j`, `war3map.lua`, ...), analyzed and searchable
+  like any other; they open read-only.
 - Symbol navigation across the whole project, in every language: go to
   definition, find references, hover with the declaration, outline, go
   to symbol in workspace, and rename (F2), which refuses with a reason

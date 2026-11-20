@@ -143,8 +143,8 @@ impl<W: Write> Server<W> {
     }
 
     /// Watches every folder the model cares about (see
-    /// `Workspace::watch_paths`) that isn't watched yet. Only manifests
-    /// and source files are passed on, so a build writing thousands of
+    /// `Workspace::watch_paths`) that isn't watched yet. Only manifests,
+    /// source files and maps are passed on, so a build writing thousands of
     /// other files doesn't wake the loop.
     fn update_watch(&mut self) {
         use notify::Watcher;
@@ -166,7 +166,9 @@ impl<W: Write> Server<W> {
                 let paths: Vec<PathBuf> = event
                     .paths
                     .into_iter()
-                    .filter(|p| project::is_manifest(p) || Language::from_path(p).is_some())
+                    .filter(|p| {
+                        project::is_manifest(p) || Language::from_path(p).is_some() || crate::map::is_map_name(p)
+                    })
                     .collect();
                 if !paths.is_empty() {
                     let _ = events.send(Event::Disk(paths));

@@ -37,6 +37,9 @@ pub enum QueryKind {
     /// Every occurrence to replace to rename the symbol to the query
     /// text, or why it can't be.
     Rename,
+    /// The text of a file, as the model has it: for the editor to show a
+    /// file it can't read itself, one inside a map.
+    Content,
 }
 
 /// One place in a file.
@@ -70,6 +73,13 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
     match kind {
         QueryKind::PrepareRename => return crate::rename::prepare(ws, id, pos),
         QueryKind::Rename => return crate::rename::rename(ws, id, pos, query),
+        QueryKind::Content => {
+            let text = match ws.file(id) {
+                Some((doc, _)) => doc.text.clone(),
+                None => crate::map::load(std::path::Path::new(id)).map(|d| d.text).unwrap_or_default(),
+            };
+            return Answer { locations: Vec::new(), text };
+        }
         QueryKind::Definition | QueryKind::References | QueryKind::Hover => {
             let Some(target) = at(ws, id, pos) else {
                 return Answer::default();

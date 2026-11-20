@@ -21,6 +21,8 @@ belongs to the project and is read with its settings.
 // wc3.bni
 [project]
 sources=src,lib
+game="C:/Games/Warcraft III"
+game=../ujapi
 
 [jass]
 dialect=vjass
@@ -29,6 +31,7 @@ dialect=vjass
 | section     | key       | value                                    | meaning                                                                 |
 |-------------|-----------|------------------------------------------|-------------------------------------------------------------------------|
 | `[project]` | `sources` | paths, comma-separated, relative to the project root | the project's source folders and files                     |
+| `[project]` | `game`    | one path per line, absolute or relative to the project root | a game folder; repeat for more, each over the ones before |
 | `[jass]`    | `dialect` | `jass` or `vjass` (case-insensitive)     | the dialect of `.j` files that don't declare one in a `// @dialect` header |
 | `[lint]`    | a rule id | `off`, `warning` or `error`              | turn a lint rule off or on, at that level (see [Lint](#lint))           |
 
@@ -39,6 +42,18 @@ dialect=vjass
   the project model below); without it, the whole project folder does.
   `./src` and `a/../src` mean `src`. Quote a path that contains a comma:
   `sources="my, folder"`.
+- **`game`** is the folder Warcraft III is installed in, and each further
+  `game=` line adds a folder on top of it, to replace some of the game's
+  files (a custom `Scripts/common.j`, say). A game file (`Scripts\common.j`,
+  any case, `/` or `\`) is looked up from the top: within each folder,
+  the folder itself first, then its archives in the reverse of the order
+  the game opens them (`War3.mpq`, `War3x.mpq`, `War3xLocal.mpq`,
+  `War3Patch.mpq`; any case on disk, missing ones skipped); then the
+  folder below. So with the manifest above, `Scripts\common.j` comes from
+  `../ujapi/Scripts/common.j` if it's there, and `Scripts\Blizzard.j` from
+  the game's `War3Patch.mpq`. Each value is one path, so quote it if it
+  contains a comma. A folder that doesn't exist is only a warning and the
+  setting is kept, so a manifest shared between machines still loads.
 - **Settings apply below the manifest.** A file under the project folder
   but outside `sources` isn't loaded as part of the project, but when it's
   opened it's still read with the project's settings.
@@ -51,6 +66,8 @@ plus checks of its settings, at the exact name or value:
 - an unknown dialect, or `dialect` with no value or several (an error);
 - `dialect` set twice (a warning; the first one is used);
 - a `sources` path that doesn't exist, or an empty one (a warning);
+- `game` with no value or several on one line (an error), a `game` path
+  that doesn't exist or isn't a folder (a warning);
 - an unknown lint rule (a warning), or a setting that isn't `off`,
   `warning` or `error` (an error). A rule set twice takes the last value.
 
@@ -66,12 +83,24 @@ Problems panel shows the whole project's errors without opening anything.
   `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`); hidden folders
   (`.git`, `.idea`, ...) are skipped; a nested project owns its own files.
   `sources` may point outside the project folder (`sources=src,../shared`).
+- **Maps.** A map (`.w3x`, `.w3m`) found the same way, under the project
+  folder or its `sources` (or named in them: `sources=Main.w3x`), is
+  read like a folder: its scripts are project files at paths inside the
+  map's, `Main.w3x/war3map.j`. Those are every file the map's
+  `(listfile)` names with a known extension, plus the map script under
+  the names the game looks for (`war3map.j`, `Scripts\war3map.j`,
+  `war3map.lua`), which protected maps often leave out of the list. Maps
+  are MPQ archives, read with [`storm-rs`](../storm-rs). The editor opens
+  these files read-only (as `wc3map:` documents), and a rename that would
+  change one is refused. A map saved again is re-read; a map that can't
+  be read adds nothing.
 - **Text.** An open file uses the editor's text; any other file its text
   on disk, read as UTF-8 with invalid bytes replaced (old maps often use a
   legacy code page). Closing a project file goes back to its disk text.
 - **Disk.** The server watches the workspace folders and every project's
   folders and sources itself. A changed, created or deleted source file is
-  re-read and re-analyzed (unless it's open); a changed `wc3.bni` reloads
+  re-read and re-analyzed (unless it's open), and so is a changed map; a
+  changed `wc3.bni` reloads
   the projects and re-analyzes everything, since its settings and
   `sources` apply to all files.
 - **Cost.** Files are analyzed in parallel: 25 MB of JASS (60 copies of

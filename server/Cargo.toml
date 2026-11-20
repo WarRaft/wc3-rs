@@ -16,4 +16,5 @@ zinc-rs = { path = "../../zinc-rs" }
 lua-rs = { path = "../../lua-rs" }
 as-rs = { path = "../../as-rs" }
 bni-rs = { path = "../../bni-rs" }
+storm-rs = { path = "../../storm-rs" }
 notify = "8.2.0"

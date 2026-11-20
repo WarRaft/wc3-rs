@@ -172,3 +172,32 @@ fn angelscript_rename_conflicts_only_within_the_namespace() {
     let a = ren(&ws, &tmp, "n.as", 1, 21, "Z");
     assert_eq!(a.text, "`Z` is already declared in n.as:4.");
 }
+
+#[test]
+fn refuses_when_a_file_in_a_map_uses_the_name() {
+    let (tmp, mut ws) = workspace("ren-map", &[("lib.j", LIB)]);
+    crate::map::tests::make_map(&tmp.0.join("Test.w3x"), &[("war3map.j", USER)]);
+    ws.disk_changed(&[tmp.0.join("Test.w3x")]);
+    ws.take_reports();
+    let a = ren(&ws, &tmp, "lib.j", 0, 10, "Assist");
+    assert!(a.locations.is_empty());
+    assert!(
+        a.text.contains("used in war3map.j inside the map Test.w3x"),
+        "{}",
+        a.text
+    );
+    // A name only the project's own files use still renames.
+    assert_eq!(edits(&ren(&ws, &tmp, "lib.j", 1, 20, "double")).len(), 2);
+}
+
+#[test]
+fn content_answers_with_the_text_of_a_file_in_a_map() {
+    let (tmp, mut ws) = workspace("content-map", &[]);
+    let map = tmp.0.join("Test.w3x");
+    crate::map::tests::make_map(&map, &[("war3map.j", USER)]);
+    ws.disk_changed(std::slice::from_ref(&map));
+    ws.take_reports();
+    let answer = |id: &std::path::Path| crate::index::answer(&ws, crate::index::QueryKind::Content, &id.to_string_lossy(), Position::new(0, 0), "");
+    assert_eq!(answer(&map.join("war3map.j")).text, USER);
+    assert_eq!(answer(&map.join("missing.j")).text, "");
+}

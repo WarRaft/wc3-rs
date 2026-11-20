@@ -38,6 +38,7 @@ const QUERY = {
     WORKSPACE_SYMBOLS: 4,
     PREPARE_RENAME: 5,
     RENAME: 6,
+    CONTENT: 7,
 }
 
 /** Symbol kinds, in wire order (`parser_rs::SymbolKind`). */

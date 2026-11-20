@@ -81,7 +81,7 @@ fn unknown_sections_and_keys_are_warnings() {
         messages,
         vec![
             (1, "unknown section [jas] (expected [project], [jass] or [lint])"),
-            (4, "unknown setting 'source' in [project] (expected 'sources')"),
+            (4, "unknown setting 'source' in [project] (expected 'sources' or 'game')"),
             (5, "setting without a name"),
         ]
     );
@@ -202,4 +202,39 @@ fn lint_defaults_and_project_settings_apply() {
     let (project, _) = load(Path::new("/p"), "[lint]\ninfinite-loop=warning\nunused-local=off\nempty-branch=error\n");
     let got: Vec<_> = apply_lint(diags(), Some(&project)).iter().map(|d| (d.rule, d.level)).collect();
     assert_eq!(got, vec![(rule::INFINITE_LOOP, Level::Warning), (rule::EMPTY_BRANCH, Level::Error)]);
+}
+
+#[test]
+fn reads_the_game_folders_in_order() {
+    let tmp = TempDir::new("game");
+    std::fs::create_dir_all(tmp.0.join("wc3")).unwrap();
+    std::fs::create_dir_all(tmp.0.join("over")).unwrap();
+    let abs = tmp.0.join("wc3");
+    let src = format!("[project]\ngame=\"{}\"\ngame=./over\n", abs.display());
+    let (project, issues) = load(&tmp.0, &src);
+    assert!(issues.is_empty(), "{issues:?}");
+    assert_eq!(project.game, vec![abs, tmp.0.join("over")]);
+}
+
+#[test]
+fn game_checks() {
+    let tmp = TempDir::new("game-checks");
+    std::fs::write(tmp.0.join("file"), "").unwrap();
+
+    let (project, issues) = load(&tmp.0, "[project]\ngame=nope\n");
+    assert_eq!(project.game, vec![tmp.0.join("nope")]);
+    assert_eq!(issues[0].level, Level::Warning);
+    assert_eq!((issues[0].line, issues[0].col, issues[0].end_col), (2, 6, 10));
+    assert!(issues[0].message.contains("game folder 'nope' does not exist"));
+
+    let (_, issues) = load(&tmp.0, "[project]\ngame=file\n");
+    assert!(issues[0].message.contains("is not a folder"));
+
+    let (project, issues) = load(&tmp.0, "[project]\ngame=\n");
+    assert!(project.game.is_empty());
+    assert_eq!(issues[0].level, Level::Error);
+    assert!(issues[0].message.contains("needs a value"));
+
+    let (_, issues) = load(&tmp.0, "[project]\ngame=a,b\n");
+    assert!(issues[0].message.contains("single path"));
 }

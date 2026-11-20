@@ -26,7 +26,10 @@
 //! stale.
 //!
 //! A document is identified by an **id**: its path on disk for a file
-//! (VS Code's `fsPath`), its URI otherwise (an untitled document). The
+//! (VS Code's `fsPath`), its URI otherwise (an untitled document). A file
+//! inside a map has a path inside the map's, `<map.w3x>/war3map.j`; the
+//! editor shows it under the `wc3map:` scheme with that path, read-only,
+//! its text from a `content` query. The
 //! server reports files the editor never opened, and a path is what both
 //! sides know them by. A reader skips frames of a kind it doesn't know, so either
 //! side can add messages without breaking the other. The JavaScript twin
@@ -77,8 +80,8 @@ pub enum ClientMsg {
     /// symbols) about `text`. `request` is echoed in the `Answer`. The
     /// query kind is a `u8`: 0 definition, 1 references, 2 hover,
     /// 3 document symbols, 4 workspace symbols, 5 prepare rename,
-    /// 6 rename (`text` is the new name). An unknown one gets an empty
-    /// answer.
+    /// 6 rename (`text` is the new name), 7 content (the answer's `text`
+    /// is the file's text). An unknown one gets an empty answer.
     Query {
         request: u32,
         kind: Option<QueryKind>,
@@ -127,7 +130,7 @@ pub enum ServerMsg {
     },
 }
 
-const QUERY_KINDS: [QueryKind; 7] = [
+const QUERY_KINDS: [QueryKind; 8] = [
     QueryKind::Definition,
     QueryKind::References,
     QueryKind::Hover,
@@ -135,6 +138,7 @@ const QUERY_KINDS: [QueryKind; 7] = [
     QueryKind::WorkspaceSymbols,
     QueryKind::PrepareRename,
     QueryKind::Rename,
+    QueryKind::Content,
 ];
 
 const SYMBOL_KINDS: [SymbolKind; 17] = [
