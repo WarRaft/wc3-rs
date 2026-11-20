@@ -17,8 +17,9 @@
 //!   (for a project-wide name, the same namespace);
 //! - **the game's**: an occurrence is in one of the game's scripts
 //!   (`Blizzard.j`, say; see `workspace`);
-//! - **in a map**: an occurrence is in a file inside a map (`.w3x`,
-//!   `.w3m`), which is read-only (see `map`).
+//! - **in a read-only map**: an occurrence is in a file inside a map
+//!   that can't be written (see `mapfs`). Files in other maps are renamed
+//!   like any; the editor asks before changing a map.
 //!
 //! An AngelScript class is renamed with its constructors and destructor,
 //! which are members named like it; renaming a constructor renames its
@@ -117,12 +118,19 @@ fn plan<'a>(ws: &'a Workspace, id: &'a str, pos: Position) -> Result<Vec<Found<'
             file_name(f.0)
         ));
     }
-    if let Some((map, name)) = found.iter().find_map(|f| map::split(f.1.path.as_deref()?)) {
-        return Err(format!(
-            "`{}` is used in {name} inside the map {}: files in maps are read-only, so it can't be renamed.",
-            target.name,
-            map.file_name().and_then(|n| n.to_str()).unwrap_or_default(),
-        ));
+    let mut checked = Vec::new();
+    for (archive, name) in found.iter().filter_map(|f| map::split(f.1.path.as_deref()?)) {
+        if checked.contains(&archive) {
+            continue;
+        }
+        checked.push(archive);
+        if let Some(reason) = crate::mapfs::readonly(archive) {
+            return Err(format!(
+                "`{}` is used in {name} inside {}, which can't be changed ({reason}), so it can't be renamed.",
+                target.name,
+                archive.file_name().and_then(|n| n.to_str()).unwrap_or_default(),
+            ));
+        }
     }
     if target.scope == Scope::Member && decls.len() > 1 {
         let places: Vec<String> = decls.iter().map(|f| format!("{}:{}", file_name(f.0), f.2.line)).collect();

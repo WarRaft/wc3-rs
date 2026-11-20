@@ -50,7 +50,8 @@ Warcraft III language support for VS Code.
 - Symbol navigation across the whole project, in every language: go to
   definition, find references, hover with the declaration, outline, go
   to symbol in workspace, and rename (F2), which refuses with a reason
-  when the rename wouldn't be safe. Parameters and locals resolve within their
+  when the rename wouldn't be safe, and asks before changing files
+  inside maps (Rename, Rename Outside Maps, Cancel). Parameters and locals resolve within their
   function; everything else across all project files.
 - Live diagnostics: parse errors and lint warnings
   shown in the Problems panel as you type —

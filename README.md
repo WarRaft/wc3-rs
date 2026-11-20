@@ -161,7 +161,7 @@ Problems panel shows the whole project's errors without opening anything.
   loads instead of its own) replaces the game's `Blizzard.j` for that
   map's scripts; it gets no diagnostics, and no other file sees it. A
   `common.j` in a map isn't treated this way: it's an ordinary file of
-  the map. A rename that would change one is refused. A map saved
+  the map. A rename may change them (see Rename below). A map saved
   again is re-read; a map that can't be read adds nothing.
 - **Maps as folders** (`server/src/mapfs.rs`). The editor shows a map as
   a folder under the `wc3map:` scheme, every file in it (found as
@@ -313,7 +313,13 @@ be done safely:
   JASS is checked as vJASS), JASS and Zinc names start with a letter, and
   JASS names don't end with `_`;
 - the new name is already declared in the same scope (for a project-wide
-  name, the same namespace).
+  name, the same namespace);
+- it's used in the game's scripts, or in a map that can't be written (see
+  maps as folders above).
+
+When some of the places are inside maps, the editor asks first: renaming
+there rewrites the map. **Rename** changes them all, **Rename Outside
+Maps** only the files on disk, **Cancel** nothing.
 
 An AngelScript class is renamed together with its constructors and
 destructor; F2 on a constructor renames the class.

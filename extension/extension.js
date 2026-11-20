@@ -205,15 +205,25 @@ function idOf(doc) {
  * @param {string} file
  */
 function inMap(file) {
+    return mapOf(file) !== null
+}
+
+/**
+ * The map (or game `.mpq`) a path inside one is in: the nearest folder
+ * above it named like an archive that's a file on disk.
+ *
+ * @param {string} file
+ */
+function mapOf(file) {
     for (let dir = path.dirname(file); dir !== path.dirname(dir); dir = path.dirname(dir)) {
         if (!MAP_NAME.test(dir)) continue
         try {
-            if (fs.statSync(dir).isFile()) return true
+            if (fs.statSync(dir).isFile()) return dir
         } catch {
             // Not there: keep looking above.
         }
     }
-    return false
+    return null
 }
 
 /**
@@ -412,11 +422,29 @@ function registerQueries(context) {
                 return {range: toLocation(here).range, placeholder: here.name}
             },
             provideRenameEdits: async (doc, pos, newName) => {
-                const edit = new WorkspaceEdit()
-                for (const l of await askRename(QUERY.RENAME, doc, pos, newName)) {
-                    const loc = toLocation(l)
-                    edit.replace(loc.uri, loc.range, newName)
+                let locations = (await askRename(QUERY.RENAME, doc, pos, newName)).map(toLocation)
+                // Changing a file inside a map rewrites the map: ask first.
+                const maps = new Set(locations.filter(l => l.uri.scheme === MAP_SCHEME).map(l => mapOf(l.uri.fsPath)))
+                if (maps.size) {
+                    const inside = locations.filter(l => l.uri.scheme === MAP_SCHEME).length
+                    const names = [...maps].map(m => path.basename(m)).join(', ')
+                    const rename = 'Rename'
+                    const outside = 'Rename Outside Maps'
+                    const choice = await window.showWarningMessage(
+                        `You are changing ${maps.size === 1 ? 'an archive' : 'archives'}!`,
+                        {
+                            modal: true,
+                            detail: `${inside} of the ${locations.length} places to rename are inside ${names}. ` +
+                                'Renaming there rewrites the map file.',
+                        },
+                        rename,
+                        outside,
+                    )
+                    if (!choice) return new WorkspaceEdit()
+                    if (choice === outside) locations = locations.filter(l => l.uri.scheme !== MAP_SCHEME)
                 }
+                const edit = new WorkspaceEdit()
+                for (const loc of locations) edit.replace(loc.uri, loc.range, newName)
                 return edit
             },
         }),

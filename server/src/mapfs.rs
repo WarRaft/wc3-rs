@@ -147,6 +147,15 @@ fn readonly_reason(archive: &Path, mpq: &MpqArchive) -> Option<String> {
     None
 }
 
+/// Why the archive at `archive` can't be written, if it can't (or can't
+/// be read).
+pub fn readonly(archive: &Path) -> Option<String> {
+    match MpqArchive::open(archive) {
+        Ok(mpq) => readonly_reason(archive, &mpq),
+        Err(e) => Some(format!("it can't be read: {e}")),
+    }
+}
+
 /// Where the archive's file data ends, relative to the MPQ start.
 fn data_end(mpq: &MpqArchive) -> u64 {
     mpq.block_table

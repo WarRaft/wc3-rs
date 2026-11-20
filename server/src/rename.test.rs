@@ -174,7 +174,7 @@ fn angelscript_rename_conflicts_only_within_the_namespace() {
 }
 
 #[test]
-fn refuses_when_a_file_in_a_map_uses_the_name() {
+fn renames_in_maps_too_but_not_in_the_games_archives() {
     let (tmp, mut ws) = workspace("ren-map", &[("lib.j", LIB)]);
     std::fs::write(tmp.0.join("wc3.bni"), "[project]\nsources=.\n").unwrap();
     ws.disk_changed(&[tmp.0.join("wc3.bni")]);
@@ -182,14 +182,13 @@ fn refuses_when_a_file_in_a_map_uses_the_name() {
     ws.disk_changed(&[tmp.0.join("Test.w3x")]);
     ws.take_reports();
     let a = ren(&ws, &tmp, "lib.j", 0, 10, "Assist");
-    assert!(a.locations.is_empty());
-    assert!(
-        a.text.contains("used in war3map.j inside the map Test.w3x"),
-        "{}",
-        a.text
-    );
-    // A name only the project's own files use still renames.
-    assert_eq!(edits(&ren(&ws, &tmp, "lib.j", 1, 20, "double")).len(), 2);
+    let files: Vec<String> = edits(&a).into_iter().map(|(f, _, _)| f).collect();
+    assert!(files.contains(&"war3map.j".to_string()) && files.contains(&"lib.j".to_string()), "{files:?}");
+    assert!(a.locations.iter().any(|l| l.id.contains("Test.w3x")));
+
+    // An archive that can't be written refuses.
+    assert!(crate::mapfs::readonly(&tmp.0.join("Test.w3x")).is_none());
+    assert!(crate::mapfs::readonly(&tmp.0.join("Missing.w3x")).is_some());
 }
 
 #[test]
