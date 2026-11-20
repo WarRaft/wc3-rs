@@ -15,6 +15,8 @@
 //!   names don't end with `_`;
 //! - **conflict**: the new name is already declared in the same scope
 //!   (for a project-wide name, the same namespace);
+//! - **the game's**: an occurrence is in one of the game's scripts
+//!   (`Blizzard.j`, say; see `workspace`);
 //! - **in a map**: an occurrence is in a file inside a map (`.w3x`,
 //!   `.w3m`), which is read-only (see `map`).
 //!
@@ -84,7 +86,7 @@ fn plan<'a>(ws: &'a Workspace, id: &'a str, pos: Position) -> Result<Vec<Found<'
     };
     // A constructor or destructor stands for its class.
     if target.scope == Scope::Member {
-        if let Some(class) = declarations(ws, |o| o.kind == SymbolKind::Class && o.name == target.name).next() {
+        if let Some(class) = declarations(ws, id, |o| o.kind == SymbolKind::Class && o.name == target.name).next() {
             target = class.2;
         }
     }
@@ -94,7 +96,7 @@ fn plan<'a>(ws: &'a Workspace, id: &'a str, pos: Position) -> Result<Vec<Found<'
     let mut found = matches(ws, id, target);
     if target.kind == SymbolKind::Class {
         let name = target.name.clone();
-        found.extend(declarations(ws, move |o| {
+        found.extend(declarations(ws, id, move |o| {
             o.scope == Scope::Member && o.kind == SymbolKind::Method && o.name == name
         }));
     }
@@ -107,6 +109,13 @@ fn plan<'a>(ws: &'a Workspace, id: &'a str, pos: Position) -> Result<Vec<Found<'
     }
     if decls.iter().any(|f| f.2.kind == SymbolKind::Native) {
         return Err(format!("`{}` is a native, part of the game's API: it can't be renamed.", target.name));
+    }
+    if let Some(f) = found.iter().find(|f| ws.is_game(f.0)) {
+        return Err(format!(
+            "`{}` is used in the game's {}, so it can't be renamed.",
+            target.name,
+            file_name(f.0)
+        ));
     }
     if let Some((map, name)) = found.iter().find_map(|f| map::split(f.1.path.as_deref()?)) {
         return Err(format!(
@@ -128,9 +137,9 @@ fn plan<'a>(ws: &'a Workspace, id: &'a str, pos: Position) -> Result<Vec<Found<'
     Ok(found)
 }
 
-/// Every declaration in the project matching `keep`.
-fn declarations<'a>(ws: &'a Workspace, keep: impl Fn(&Occurrence) -> bool + 'a) -> impl Iterator<Item = Found<'a>> + 'a {
-    ws.all_files()
+/// Every declaration `id` sees (see `Workspace::scope`) matching `keep`.
+fn declarations<'a>(ws: &'a Workspace, id: &str, keep: impl Fn(&Occurrence) -> bool + 'a) -> impl Iterator<Item = Found<'a>> + 'a {
+    ws.scope(id)
         .flat_map(|(id, doc, symbols)| symbols.iter().map(move |o| (id, doc, o)))
         .filter(move |(_, _, o)| o.declaration && keep(o))
 }
@@ -139,7 +148,7 @@ fn declarations<'a>(ws: &'a Workspace, keep: impl Fn(&Occurrence) -> bool + 'a) 
 /// project-wide one, the same namespace), if any.
 fn conflict<'a>(ws: &'a Workspace, id: &str, target: &Occurrence, name: &str) -> Option<(&'a str, &'a Occurrence)> {
     let scope = target.scope;
-    ws.all_files()
+    ws.scope(id)
         .flat_map(|(file, _, symbols)| symbols.iter().map(move |o| (file, o)))
         .find(|(file, o)| {
             o.declaration

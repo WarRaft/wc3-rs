@@ -313,3 +313,77 @@ fn excluded_files_and_map_scripts_leave_the_model() {
         vec!["Map.w3x/war3map.j", "Map.w3x/war3map.lua", "wc3.bni"]
     );
 }
+
+#[test]
+fn game_scripts_are_seen_by_their_projects_only() {
+    use crate::document::Position;
+    use crate::index::{answer, QueryKind};
+    const COMMON: &str = "native CreateTimer takes nothing returns timer\n";
+    const BLIZZARD: &str = "function BJDebugMsg takes string msg returns nothing\n    local integer unused\nendfunction\n";
+    const USE: &str = "function F takes nothing returns nothing\n    call BJDebugMsg(\"x\")\n    call CreateTimer()\nendfunction\n";
+
+    let tmp = project("ws-game", &[
+        ("game/wc3/README", ""),
+        ("game/ujapi/Scripts/common.j", "native CreateTimer takes nothing returns timer\nnative UjapiOnly takes nothing returns nothing\n"),
+        ("a/wc3.bni", "[project]\ngame=../game/wc3\n"),
+        ("a/main.j", USE),
+        ("b/wc3.bni", "[project]\ngame=../game/wc3\ngame=../game/ujapi\n"),
+        ("b/main.j", USE),
+    ]);
+    let patch = tmp.0.join("game/wc3/War3Patch.mpq");
+    crate::map::tests::make_map(&patch, &[("Scripts\\common.j", COMMON), ("Scripts\\Blizzard.j", BLIZZARD)]);
+    let mut ws = init(&tmp.0);
+    let raw = ws.take_reports();
+    let r: Vec<(String, usize)> = raw
+        .into_iter()
+        .map(|m| match m {
+            ServerMsg::File { id, diagnostics, .. } => (id, diagnostics.len()),
+            _ => unreachable!(),
+        })
+        .collect();
+    let common = path_id(&patch.join("Scripts/common.j"));
+    let blizzard = path_id(&patch.join("Scripts/Blizzard.j"));
+    let ujapi = path_id(&tmp.0.join("game/ujapi/Scripts/common.j"));
+    // Loaded once each, without diagnostics (Blizzard.j's unused local).
+    for id in [&common, &blizzard, &ujapi] {
+        let found: Vec<_> = r.iter().filter(|x| &x.0 == id).collect();
+        assert_eq!(found, vec![&(id.clone(), 0)], "{r:?}");
+        assert!(ws.is_game(id));
+    }
+
+    let definition = |file: &str, line: u32, ch: u32| -> Vec<String> {
+        let id = path_id(&tmp.0.join(file));
+        answer(&ws, QueryKind::Definition, &id, Position::new(line, ch), "")
+            .locations
+            .into_iter()
+            .map(|l| l.id)
+            .collect()
+    };
+    // `a` gets the game's common.j, `b` UJAPI's, which sits over it.
+    assert_eq!(definition("a/main.j", 2, 10), vec![common.clone()]);
+    assert_eq!(definition("b/main.j", 2, 10), vec![ujapi.clone()]);
+    // Blizzard.j is the same file for both.
+    assert_eq!(definition("a/main.j", 1, 10), vec![blizzard.clone()]);
+    assert_eq!(definition("b/main.j", 1, 10), vec![blizzard.clone()]);
+    // References of a project's function don't reach the other project.
+    let refs = answer(&ws, QueryKind::References, &path_id(&tmp.0.join("a/main.j")), Position::new(0, 10), "");
+    assert!(refs.locations.iter().all(|l| l.id.contains("/a/")), "{:?}", refs.locations);
+
+    // The game's functions can't be renamed.
+    let why = answer(&ws, QueryKind::PrepareRename, &path_id(&tmp.0.join("a/main.j")), Position::new(1, 10), "").text;
+    assert!(why.contains("the game's Blizzard.j"), "{why}");
+
+    // Opened and closed, a game file stays one.
+    ws.open(blizzard.clone(), Some(PathBuf::from(&blizzard)), Language::Jass, 1, BLIZZARD.into());
+    ws.close(&blizzard);
+    let r = reports(&mut ws);
+    assert_eq!(r, vec![(blizzard.clone(), 0, 0, 0)]);
+    assert!(ws.is_game(&blizzard));
+
+    // Without game= the files leave.
+    std::fs::write(tmp.0.join("a/wc3.bni"), "").unwrap();
+    std::fs::write(tmp.0.join("b/wc3.bni"), "").unwrap();
+    ws.disk_changed(&[tmp.0.join("a/wc3.bni")]);
+    reports(&mut ws);
+    assert!(ws.file(&common).is_none() && ws.file(&ujapi).is_none());
+}

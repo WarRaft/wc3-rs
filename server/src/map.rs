@@ -25,6 +25,12 @@ use crate::document::{Document, Language};
 /// Map file extensions (lowercase).
 pub const EXTENSIONS: [&str; 2] = ["w3x", "w3m"];
 
+/// Archives a path can lead into (lowercase): maps, and the game's own
+/// `.mpq`s, whose files (`War3Patch.mpq/Scripts/Blizzard.j`) the model
+/// holds as game files (see `workspace`). Only maps are found by walking
+/// a project.
+const ARCHIVES: [&str; 3] = ["w3x", "w3m", "mpq"];
+
 /// Where the game looks for a map's script.
 const SCRIPTS: [&str; 3] = ["war3map.j", "Scripts\\war3map.j", "war3map.lua"];
 
@@ -40,6 +46,14 @@ pub fn is_map(path: &Path) -> bool {
     is_map_name(path) && path.is_file()
 }
 
+/// Is `path` an archive on disk: a map or a game `.mpq`?
+fn is_archive(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| ARCHIVES.iter().any(|m| e.eq_ignore_ascii_case(m)))
+        && path.is_file()
+}
+
 /// The path of the file `name` (`\`-separated, as in the archive) inside
 /// `map`.
 pub fn inner_path(map: &Path, name: &str) -> PathBuf {
@@ -48,10 +62,11 @@ pub fn inner_path(map: &Path, name: &str) -> PathBuf {
     path
 }
 
-/// Splits a path inside a map into the map and the file's archive name:
-/// the nearest ancestor that's a map file on disk.
+/// Splits a path inside an archive (a map or a game `.mpq`) into the
+/// archive and the file's name in it: the nearest ancestor that's an
+/// archive on disk.
 pub fn split(path: &Path) -> Option<(&Path, String)> {
-    let map = path.ancestors().skip(1).find(|a| is_map(a))?;
+    let map = path.ancestors().skip(1).find(|a| is_archive(a))?;
     let rest = path.strip_prefix(map).ok()?;
     let parts: Vec<&str> = rest.iter().filter_map(|p| p.to_str()).collect();
     (!parts.is_empty()).then(|| (map, parts.join("\\")))
@@ -84,7 +99,7 @@ pub fn files(map: &Path) -> Vec<(PathBuf, Document)> {
     out
 }
 
-/// The document at `path`, a path inside a map.
+/// The document at `path`, a path inside a map or a game `.mpq`.
 pub fn load(path: &Path) -> Option<Document> {
     let (map, name) = split(path)?;
     let archive = MpqArchive::open(map).ok()?;

@@ -12,6 +12,16 @@
 //!   (a nested project owns its own files). Plus the manifest itself,
 //!   and the scripts inside every map (`.w3x`, `.w3m`) found the same
 //!   way, each at a path inside the map's (see `map`).
+//! - **Game files.** The game's scripts (`game::SCRIPTS`, `common.j` and
+//!   `Blizzard.j`) from each project's `game=` folders, at the path they're
+//!   found at: on disk, or inside an archive
+//!   (`War3Patch.mpq/Scripts/Blizzard.j`). Their declarations are visible
+//!   to the project's files; they get no diagnostics (they're the game's,
+//!   not the project's) and can't be renamed into. Projects with the same
+//!   `game=` folders share them.
+//! - **Visibility.** A file sees the files of its own project and that
+//!   project's game files (see [`Workspace::scope`]), so two projects with
+//!   different game folders don't see each other's `common.j`.
 //! - **Identity.** A file is identified by its path on disk, the form the
 //!   editor uses for files too; a document with no file (untitled) by the
 //!   editor's URI.
@@ -37,11 +47,19 @@ struct Entry {
     open: bool,
     /// From the last analysis; empty until the file is first analyzed.
     symbols: Vec<Occurrence>,
+    /// The root of the project it was last analyzed with.
+    project: Option<PathBuf>,
+    /// One of the game's scripts (see the module docs).
+    game: bool,
 }
 
 impl Entry {
     fn new(doc: Document, open: bool) -> Entry {
-        Entry { doc, open, symbols: Vec::new() }
+        Entry { doc, open, symbols: Vec::new(), project: None, game: false }
+    }
+
+    fn game(doc: Document, open: bool) -> Entry {
+        Entry { game: true, ..Entry::new(doc, open) }
     }
 }
 
@@ -56,6 +74,10 @@ pub struct Workspace {
     /// those the project excludes too: a manifest change re-checks them
     /// without reading the map again.
     maps: HashMap<PathBuf, Vec<String>>,
+    /// The game files of each set of `game=` folders, in their order.
+    games: HashMap<Vec<PathBuf>, Vec<String>>,
+    /// The game files each project (by root) sees.
+    project_games: HashMap<PathBuf, Vec<String>>,
     /// Files to analyze and report.
     dirty: HashSet<String>,
     /// Files the editor should forget: they left the model.
@@ -81,7 +103,9 @@ impl Workspace {
             .as_deref()
             .and_then(project::find_manifest)
             .is_some_and(|m| !self.manifests.contains(&m));
-        self.files.insert(id.clone(), Entry::new(Document { language, version, text, path }, true));
+        let doc = Document { language, version, text, path };
+        let entry = if self.is_game(&id) { Entry::game(doc, true) } else { Entry::new(doc, true) };
+        self.files.insert(id.clone(), entry);
         self.dirty.insert(id);
         if new_project {
             self.sync_disk();
@@ -119,6 +143,13 @@ impl Workspace {
             return;
         };
         let path = entry.doc.path.clone();
+        if self.is_game(id) {
+            if let Some(doc) = path.as_deref().and_then(load) {
+                self.files.insert(id.to_string(), Entry::game(doc, false));
+                self.dirty.insert(id.to_string());
+                return;
+            }
+        }
         let member = path.filter(|p| self.member(p).is_some());
         match member.and_then(|p| load(&p)) {
             Some(doc) => {
@@ -196,13 +227,61 @@ impl Workspace {
             let a = analysis::analyze(&entry.doc, project.as_deref(), entry.open);
             ((*id).clone(), entry.doc.version, a)
         });
-        for (id, version, a) in results {
+        let roots: HashMap<String, Option<PathBuf>> =
+            jobs.iter().map(|(id, _, p)| ((*id).clone(), p.as_ref().map(|p| p.root.clone()))).collect();
+        for (id, version, mut a) in results {
             if let Some(entry) = self.files.get_mut(&id) {
                 entry.symbols = a.symbols;
+                entry.project = roots.get(&id).cloned().flatten();
+                if entry.game {
+                    a.diagnostics.clear();
+                }
             }
             out.push(ServerMsg::File { id, version, diagnostics: a.diagnostics, tokens: a.tokens });
         }
         out
+    }
+
+    /// Is `id` one of the game's scripts?
+    pub fn is_game(&self, id: &str) -> bool {
+        self.games.values().any(|ids| ids.iter().any(|g| g == id))
+    }
+
+    /// The files `id` sees (see the module docs): its project's files and
+    /// game files; for a game file, the game files it comes with; for a
+    /// file with no project, every file.
+    pub fn scope<'a>(&'a self, id: &str) -> impl Iterator<Item = (&'a str, &'a Document, &'a [Occurrence])> + 'a {
+        let me = self.files.get(id);
+        let game: Option<HashSet<&str>> = if me.is_some_and(|e| e.game) {
+            Some(
+                self.games
+                    .values()
+                    .filter(|ids| ids.iter().any(|g| g == id))
+                    .flatten()
+                    .map(String::as_str)
+                    .collect(),
+            )
+        } else {
+            None
+        };
+        let project = me.and_then(|e| e.project.clone()).filter(|_| game.is_none());
+        let project_games: HashSet<&str> = project
+            .as_ref()
+            .and_then(|r| self.project_games.get(r))
+            .into_iter()
+            .flatten()
+            .map(String::as_str)
+            .collect();
+        self.files.iter().filter_map(move |(fid, e)| {
+            let visible = match (&game, &project) {
+                (Some(stack), _) => stack.contains(fid.as_str()),
+                (None, Some(root)) => {
+                    project_games.contains(fid.as_str()) || (!e.game && e.project.as_ref() == Some(root))
+                }
+                (None, None) => true,
+            };
+            visible.then_some((fid.as_str(), &e.doc, e.symbols.as_slice()))
+        })
     }
 
     /// One file's text and symbols.
@@ -375,12 +454,56 @@ impl Workspace {
         }
         self.maps = found_maps;
 
+        // The game files of every project, shared by projects with the same
+        // `game=` folders; each set is read once.
+        let mut games = HashMap::new();
+        let mut project_games = HashMap::new();
+        for manifest in &self.manifests.clone() {
+            let Some(project) = self.projects.for_file(manifest) else {
+                continue;
+            };
+            if project.game.is_empty() {
+                continue;
+            }
+            let ids: Vec<String> = match games.get(&project.game).or_else(|| self.games.get(&project.game)) {
+                Some(ids) => ids.clone(),
+                None => crate::game::scripts(&project.game)
+                    .into_iter()
+                    .map(|(path, doc)| {
+                        let id = path_id(&path);
+                        if !self.files.get(&id).is_some_and(|e| e.open) {
+                            self.files.insert(id.clone(), Entry::game(doc, false));
+                            self.dirty.insert(id.clone());
+                        }
+                        id
+                    })
+                    .collect(),
+            };
+            for id in &ids {
+                wanted.insert(id.clone(), PathBuf::from(id));
+            }
+            games.insert(project.game.clone(), ids.clone());
+            project_games.insert(project.root.clone(), ids);
+        }
+        self.games = games;
+        self.project_games = project_games;
+        // A file may have become a game file, or stopped being one.
+        let game_ids: HashSet<String> = self.games.values().flatten().cloned().collect();
+        for (id, entry) in self.files.iter_mut() {
+            let game = game_ids.contains(id);
+            if entry.game != game {
+                entry.game = game;
+                self.dirty.insert(id.clone());
+            }
+        }
+
         for (id, path) in &wanted {
             if self.files.contains_key(id) {
                 continue;
             }
             if let Some(doc) = load(path) {
-                self.files.insert(id.clone(), Entry::new(doc, false));
+                let entry = if self.is_game(id) { Entry::game(doc, false) } else { Entry::new(doc, false) };
+                self.files.insert(id.clone(), entry);
                 self.dirty.insert(id.clone());
             }
         }

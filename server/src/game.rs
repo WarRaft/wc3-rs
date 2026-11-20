@@ -21,6 +21,40 @@ use std::path::{Path, PathBuf};
 
 use storm_rs::MpqArchive;
 
+/// The game's scripts every map script builds on: their declarations
+/// (natives, `Blizzard.j`'s functions and globals) are visible to the
+/// project's files.
+pub const SCRIPTS: [&str; 2] = ["Scripts\\common.j", "Scripts\\Blizzard.j"];
+
+/// The game's scripts ([`SCRIPTS`]) from the game folders `folders`, each
+/// at the path it's found at: on disk, or inside an archive
+/// (`War3Patch.mpq/Scripts/Blizzard.j`, see `map`). Text is read as
+/// UTF-8, invalid bytes replaced.
+pub fn scripts(folders: &[PathBuf]) -> Vec<(PathBuf, crate::document::Document)> {
+    let (game, errors) = Game::open(folders);
+    for e in errors {
+        eprintln!("wc3-server: {e}");
+    }
+    SCRIPTS
+        .iter()
+        .filter_map(|name| {
+            let (bytes, source) = game.read(name)?;
+            let path = match source {
+                Source::Archive(archive) => crate::map::inner_path(&archive, name),
+                Source::File(path) => path,
+            };
+            let text = String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
+            let doc = crate::document::Document {
+                language: crate::document::Language::Jass,
+                version: 0,
+                text,
+                path: Some(path.clone()),
+            };
+            Some((path, doc))
+        })
+        .collect()
+}
+
 /// The game's archives, in the order it opens them: each one over the
 /// ones before.
 pub const ARCHIVES: [&str; 4] = ["War3.mpq", "War3x.mpq", "War3xLocal.mpq", "War3Patch.mpq"];
@@ -74,6 +108,7 @@ impl Game {
     }
 
     /// Where `name` comes from: the topmost layer that has it.
+    #[cfg(test)]
     pub fn find(&self, name: &str) -> Option<Source> {
         let name = mpq_name(name)?;
         self.layers.iter().rev().find_map(|layer| match layer {

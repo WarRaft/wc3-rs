@@ -181,7 +181,8 @@ pub(crate) fn at<'a>(ws: &'a Workspace, id: &str, pos: Position) -> Option<&'a O
         .min_by_key(|o| (o.end_col == col) as u8)
 }
 
-/// Every occurrence of `target`'s symbol, sorted by file and position.
+/// Every occurrence of `target`'s symbol that `id` sees (see
+/// `Workspace::scope`), sorted by file and position.
 pub(crate) fn matches<'a>(ws: &'a Workspace, id: &'a str, target: &Occurrence) -> Vec<(&'a str, &'a Document, &'a Occurrence)> {
     let mut found: Vec<(&str, &Document, &Occurrence)> = match target.scope {
         Scope::Local(_) => ws
@@ -191,7 +192,7 @@ pub(crate) fn matches<'a>(ws: &'a Workspace, id: &'a str, target: &Occurrence) -
             .filter(|(_, _, o)| o.same_symbol(target))
             .collect(),
         Scope::Member => ws
-            .all_files()
+            .scope(id)
             .flat_map(|(id, doc, symbols)| symbols.iter().map(move |o| (id, doc, o)))
             .filter(|(_, _, o)| o.same_symbol(target))
             .collect(),
@@ -199,14 +200,14 @@ pub(crate) fn matches<'a>(ws: &'a Workspace, id: &'a str, target: &Occurrence) -
             // The namespaces that declare the name, to resolve every
             // occurrence of it against.
             let declared: HashSet<&str> = ws
-                .all_files()
+                .scope(id)
                 .flat_map(|(_, _, symbols)| symbols)
                 .filter(|o| o.declaration && o.same_symbol(target))
                 .map(|o| o.namespace.as_str())
                 .collect();
             let declares = |ns: &str| declared.contains(ns);
             let namespace = target.resolve(declares);
-            ws.all_files()
+            ws.scope(id)
                 .flat_map(|(id, doc, symbols)| symbols.iter().map(move |o| (id, doc, o)))
                 .filter(|(_, _, o)| o.same_symbol(target) && o.resolve(declares) == namespace)
                 .collect()

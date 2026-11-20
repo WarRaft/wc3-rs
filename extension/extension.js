@@ -18,7 +18,8 @@
  * index.
  *
  * Scripts inside maps (`.w3x`, `.w3m`) are files of the model too, at a
- * path inside the map's (`<map.w3x>/war3map.j`). VS Code can't read them,
+ * path inside the map's (`<map.w3x>/war3map.j`), and so are the game's
+ * `common.j` and `Blizzard.j` when they come from its `.mpq`s. VS Code can't read them,
  * so they're shown under the `wc3map:` scheme with that path, read-only,
  * their text asked from the server.
  *
@@ -57,8 +58,9 @@ const {encode, decode, FrameReader, QUERY} = require('./protocol.js')
 /** The scheme of files inside maps. */
 const MAP_SCHEME = 'wc3map'
 
-/** Map file names (the server's `map::EXTENSIONS`). */
-const MAP_NAME = /\.w3[xm]$/i
+/** Archives a path can lead into: maps, and the game's `.mpq`s (the
+ * server's `map::ARCHIVES`). */
+const MAP_NAME = /\.(w3[xm]|mpq)$/i
 
 /** Language ids the server analyzes (its `Language::from_id`). */
 const LANGUAGES = new Set(['jass', 'zinc', 'lua', 'angelscript', 'bni'])

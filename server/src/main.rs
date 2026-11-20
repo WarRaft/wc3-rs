@@ -11,8 +11,6 @@
 
 mod analysis;
 mod document;
-// Not used by the server yet: game files aren't loaded into the model.
-#[allow(dead_code)]
 mod game;
 mod glob;
 mod index;

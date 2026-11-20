@@ -64,8 +64,10 @@ dialect=vjass
   `War3Patch.mpq`; any case on disk, missing ones skipped); then the
   folder below. So with the manifest above, `Scripts\common.j` comes from
   `../ujapi/Scripts/common.j` if it's there, and `Scripts\Blizzard.j` from
-  the game's `War3Patch.mpq`. Each value is one path, so quote it if it
-  contains a comma. A folder that doesn't exist is only a warning and the
+  the game's `War3Patch.mpq`. These two, the game's scripts, are part of
+  the project's model (see below), so natives and `Blizzard.j` functions
+  resolve: go to definition, hover and references reach them. Each value
+  is one path, so quote it if it contains a comma. A folder that doesn't exist is only a warning and the
   setting is kept, so a manifest shared between machines still loads.
 - **Settings apply below the manifest.** A file under the project folder
   but outside `sources` isn't loaded as part of the project, but when it's
@@ -111,6 +113,18 @@ Problems panel shows the whole project's errors without opening anything.
   `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`); hidden folders
   (`.git`, `.idea`, ...) are skipped; a nested project owns its own files.
   `sources` may point outside the project folder (`sources=src,../shared`).
+- **Game files.** The game's `Scripts\common.j` and `Scripts\Blizzard.j`,
+  looked up through the project's `game=` folders, at the path they're
+  found at: on disk (`../ujapi/Scripts/common.j`) or inside an archive
+  (`War3Patch.mpq/Scripts/Blizzard.j`, opened read-only like a map's
+  files). They get no diagnostics, being the game's, and a rename that
+  would change them is refused. Projects with the same `game=` folders
+  share them.
+- **Visibility.** A file sees the files of its own project and that
+  project's game files: names resolve there, references are found there,
+  and two projects with different `game=` folders (one with a custom
+  `common.j`) don't see each other's declarations. A file outside every
+  project sees all files.
 - **Maps.** A map (`.w3x`, `.w3m`) found the same way, under the project
   folder or its `sources` (or named in them: `sources=Main.w3x`), is
   read like a folder: its scripts are project files at paths inside the
@@ -227,10 +241,10 @@ Lua and AngelScript. BNI is data and has none.
 - **Everything else** (JASS functions, natives, globals, constants and
   types; Zinc libraries and anything outside a library; Lua globals;
   AngelScript's namespace members, as above) is project-wide, across
-  languages: every file of the model means the same
-  symbol. So with `common.j` and `Blizzard.j` among a project's files, go
-  to definition on `CreateTimer`, from JASS, Zinc or Lua, lands on its
-  `native` in `common.j`.
+  languages: every file the project sees (its own files and its game
+  files, see [Visibility](#projects)) means the same symbol. So with
+  `game=` set, go to definition on `CreateTimer`, from JASS, Zinc or Lua,
+  lands on its `native` in the game's `common.j`.
 
 **What the editor gets** (`server/src/index.rs`), all asked with one
 `query` message and answered after every earlier change is analyzed:
