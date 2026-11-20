@@ -477,6 +477,12 @@ impl Workspace {
         self.member(path).or_else(|| self.projects.for_file(path))
     }
 
+    /// The `game=` folders of the project the file `path` is read with
+    /// (see `settings_for`); none outside every project.
+    pub fn game_folders(&mut self, path: &Path) -> Vec<PathBuf> {
+        self.settings_for(path).map(|p| p.game.clone()).unwrap_or_default()
+    }
+
     /// Every folder whose changes matter: the workspace folders, and the
     /// roots, sources and game folders of every loaded project (which may
     /// lie outside them). Folders inside another listed one are left out.

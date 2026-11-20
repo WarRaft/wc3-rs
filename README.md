@@ -213,20 +213,32 @@ BNI, written and read by [`w3abdhqtu-rs`](../w3abdhqtu-rs/README.md)
 [w3a]
 version=2
 
-[ACwe]                      // a changed standard object
-arlv=6
+[ACwe]
+arlv=6 // Required Level
 
-[A000]                      // a custom one, and what it's based on
-_parent=ANwm
-anam="Blizzard"
-aub1[2]="Line one"\n"Line two"
-Hbz1[3].B=unreal 0.25
+[A000]
+_parent=AHbz
+anam="Blizzard" // Name
+aub1[2]="Line one"\n"Line two" // Tooltip - Normal - Extended
+Hbz1[3].B=unreal 0.25 // Number of Waves
 ```
+
+`[ACwe]` is a changed standard object, `[A000]` a custom one with the
+object it's based on.
 
 Every field is its four-character id, then `[level]` and `.column`
 (`Data A` is `.A`) for abilities, upgrades and doodads. Every file goes
 to text and back to the same bytes; the format and its rarer parts
-(sets, `end` ids) are in the `w3abdhqtu-rs` README. The editor reads the
+(sets, `end` ids) are in the `w3abdhqtu-rs` README.
+
+The comment after a field is the name World Editor gives it, from the
+game's metadata tables (`Units\AbilityMetaData.slk` ...) and its strings
+(`UI\WorldEditStrings.txt`), found in the `game=` folders of the file's
+project like the game's scripts. A file outside every project, or a
+project without `game=`, gets no names. They're read each time a file is
+opened.
+
+The editor reads the
 text as BNI, so it's highlighted and checked like any BNI, plus what
 would stop it from saving (a value that isn't one, a level on a unit
 field). Saving such text fails with the reason, and the file stays as it

@@ -9,7 +9,7 @@
 
 use std::collections::HashSet;
 use std::io::{self, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender};
 
 use crate::document::{Language, Position};
@@ -172,7 +172,8 @@ impl<W: Write> Server<W> {
                 self.answers.push(ServerMsg::Texture { request, texture: crate::texture::decode(&data) });
             }
             ClientMsg::Objects { request, op, name, data } => {
-                let (error, data) = match crate::objects::convert(op, &name, &data) {
+                let game = ws.game_folders(Path::new(&name));
+                let (error, data) = match crate::objects::convert(op, &name, &data, &game) {
                     Ok(data) => (String::new(), data),
                     Err(error) => (error, Vec::new()),
                 };

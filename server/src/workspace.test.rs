@@ -610,3 +610,13 @@ fn a_maps_own_blizzard_j_replaces_the_games_for_that_map() {
     // The map's Blizzard.j sees common.j.
     assert_eq!(definition(Path::new(&own), 2), vec![common]);
 }
+
+#[test]
+fn game_folders_of_a_file() {
+    let tmp = project("ws-game-folders", &[("p/wc3.bni", "[project]\ngame=wc3\n"), ("p/wc3/x", "")]);
+    let mut ws = Workspace::default();
+    let p = tmp.0.join("p");
+    // In a map in the project too; nothing outside it.
+    assert_eq!(ws.game_folders(&p.join("maps/a.w3x/war3map.w3u")), vec![p.join("wc3")]);
+    assert_eq!(ws.game_folders(&tmp.0.join("war3map.w3u")), Vec::<PathBuf>::new());
+}

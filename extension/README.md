@@ -58,7 +58,8 @@ Warcraft III language support for VS Code.
 - Object data: a `.w3a`, `.w3b`, `.w3d`, `.w3h`, `.w3q`, `.w3t` or
   `.w3u` (on disk or inside a map) opens as text, in BNI, with
   highlighting and live errors, and saving writes the file back. Every
-  file goes to text and back to the same bytes.
+  file goes to text and back to the same bytes. With the project's
+  `game=` folders, each field gets its World Editor name as a comment.
 - Symbol navigation across the whole project, in every language: go to
   definition, find references, hover with the declaration, outline, go
   to symbol in workspace, and rename (F2), which refuses with a reason
