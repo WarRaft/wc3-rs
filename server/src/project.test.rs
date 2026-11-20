@@ -274,3 +274,13 @@ fn game_checks() {
     let (_, issues) = load(&tmp.0, "[project]\ngame=a,b\n");
     assert!(issues[0].message.contains("single path"));
 }
+
+#[test]
+fn backslashes_separate_path_parts() {
+    let tmp = TempDir::new("backslash");
+    std::fs::create_dir_all(tmp.0.join("a/b")).unwrap();
+    let (project, issues) = load(&tmp.0, "[project]\nsources=a\\b\ngame=.\\a\n");
+    assert!(issues.is_empty(), "{issues:?}");
+    assert_eq!(project.sources, vec![tmp.0.join("a/b")]);
+    assert_eq!(project.game, vec![tmp.0.join("a")]);
+}

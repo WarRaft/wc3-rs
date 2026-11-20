@@ -19,6 +19,20 @@
   "main": "./extension.js",
   "activationEvents": [],
   "contributes": {
+    "commands": [
+      {
+        "command": "wc3.revealFolder",
+        "title": "WC3: Reveal Folder"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "wc3.revealFolder",
+          "when": "false"
+        }
+      ]
+    },
     "languages": [
       {
         "id": "jass",

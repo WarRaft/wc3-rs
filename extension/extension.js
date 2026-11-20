@@ -21,6 +21,11 @@
  * path inside the map's (`<map.w3x>/war3map.j`). VS Code can't read them,
  * so they're shown under the `wc3map:` scheme with that path, read-only,
  * their text asked from the server.
+ *
+ * In `wc3.bni`, the paths of `game=` and `sources=` complete from the disk
+ * and every folder along them is a link that reveals that folder (in the
+ * Explorer when it's in the workspace, in the system's file manager
+ * otherwise). The server finds both (`server/src/paths.rs`).
  */
 
 const path = require('path')
@@ -30,6 +35,10 @@ const {
     workspace,
     languages,
     window,
+    commands,
+    CompletionItem,
+    CompletionItemKind,
+    DocumentLink,
     Uri,
     Range,
     Location,
@@ -406,6 +415,54 @@ function registerQueries(context) {
     )
 }
 
+/** The command a path link runs: reveals a folder. */
+const REVEAL_FOLDER = 'wc3.revealFolder'
+
+/**
+ * Path completion and folder links in `wc3.bni` (see the header).
+ *
+ * @param {import('vscode').ExtensionContext} context
+ */
+function registerManifestPaths(context) {
+    const manifest = {language: 'bni', pattern: '**/wc3.bni'}
+    const zero = {line: 0, character: 0}
+    const toRange = l => new Range(...l.range)
+    context.subscriptions.push(
+        commands.registerCommand(REVEAL_FOLDER, folder => {
+            const uri = Uri.file(folder)
+            return commands.executeCommand(workspace.getWorkspaceFolder(uri) ? 'revealInExplorer' : 'revealFileInOS', uri)
+        }),
+        languages.registerCompletionItemProvider(manifest, {
+            provideCompletionItems: async (doc, pos) => {
+                const answer = await query(QUERY.PATH_COMPLETION, idOf(doc), pos)
+                return (answer?.locations ?? []).map(l => {
+                    const folder = l.container === 'folder'
+                    const item = new CompletionItem(l.name, folder ? CompletionItemKind.Folder : CompletionItemKind.File)
+                    item.range = toRange(l)
+                    item.detail = l.id
+                    if (folder) {
+                        // Keep going down: the next folder's entries.
+                        item.insertText = l.name + '/'
+                        item.command = {command: 'editor.action.triggerSuggest', title: 'Suggest'}
+                    }
+                    return item
+                })
+            },
+        }, '/', '\\', '=', '"'),
+        languages.registerDocumentLinkProvider(manifest, {
+            provideDocumentLinks: async doc => {
+                const answer = await query(QUERY.PATH_LINKS, idOf(doc), zero)
+                return (answer?.locations ?? []).map(l => {
+                    const args = encodeURIComponent(JSON.stringify([l.id]))
+                    const link = new DocumentLink(toRange(l), Uri.parse(`command:${REVEAL_FOLDER}?${args}`))
+                    link.tooltip = `Reveal ${l.id}`
+                    return link
+                })
+            },
+        }),
+    )
+}
+
 /**
  * Highlighting for every language, served from the tokens the server
  * pushed. If the document is newer than those, waits (briefly) for the
@@ -493,6 +550,7 @@ module.exports = {
         if (!command) return
         startServer(command, context)
         registerQueries(context)
+        registerManifestPaths(context)
 
         sendRoots()
         context.subscriptions.push(

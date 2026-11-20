@@ -39,6 +39,8 @@ const QUERY = {
     PREPARE_RENAME: 5,
     RENAME: 6,
     CONTENT: 7,
+    PATH_COMPLETION: 8,
+    PATH_LINKS: 9,
 }
 
 /** Symbol kinds, in wire order (`parser_rs::SymbolKind`). */

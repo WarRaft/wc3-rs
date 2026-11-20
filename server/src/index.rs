@@ -40,6 +40,53 @@ pub enum QueryKind {
     /// The text of a file, as the model has it: for the editor to show a
     /// file it can't read itself, one inside a map.
     Content,
+    /// In a `wc3.bni`: the entries completing the path at the cursor
+    /// (see `paths`). Each location's `name` is an entry, its `id` the
+    /// entry's path, its `range` what the entry replaces, its `container`
+    /// `folder` or `file`.
+    PathCompletion,
+    /// In a `wc3.bni`: every folder along every path, a location whose
+    /// `range` is the path part and `id` the folder.
+    PathLinks,
+}
+
+/// Path completion and links in a manifest; nothing for any other file.
+fn manifest_paths(ws: &Workspace, kind: QueryKind, id: &str, pos: Position) -> Answer {
+    let Some((doc, _)) = ws.file(id) else {
+        return Answer::default();
+    };
+    let Some(root) = doc.path.as_deref().filter(|p| crate::project::is_manifest(p)).and_then(|p| p.parent()) else {
+        return Answer::default();
+    };
+    let text = doc.text.as_str();
+    let lines = LineIndex::new(text);
+    let location = |id: &std::path::Path, range: Range, name: String, container: &str| Location {
+        id: id.to_string_lossy().into_owned(),
+        range,
+        name,
+        kind: SymbolKind::Namespace,
+        container: container.to_string(),
+    };
+    let locations = if kind == QueryKind::PathLinks {
+        crate::paths::links(root, text)
+            .into_iter()
+            .map(|l| location(&l.target, lines.range(text, l.line, l.col, l.end_col), String::new(), "folder"))
+            .collect()
+    } else {
+        let line = pos.line as usize + 1;
+        let col = lines.column(text, pos);
+        match crate::paths::complete(root, text, line, col) {
+            Some(c) => {
+                let range = lines.range(text, c.line, c.col, c.end_col);
+                c.entries
+                    .into_iter()
+                    .map(|e| location(&e.path, range, e.name, if e.is_dir { "folder" } else { "file" }))
+                    .collect()
+            }
+            None => Vec::new(),
+        }
+    };
+    Answer { locations, text: String::new() }
 }
 
 /// One place in a file.
@@ -80,6 +127,7 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             };
             return Answer { locations: Vec::new(), text };
         }
+        QueryKind::PathCompletion | QueryKind::PathLinks => return manifest_paths(ws, kind, id, pos),
         QueryKind::Definition | QueryKind::References | QueryKind::Hover => {
             let Some(target) = at(ws, id, pos) else {
                 return Answer::default();

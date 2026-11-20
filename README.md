@@ -58,6 +58,15 @@ dialect=vjass
   but outside `sources` isn't loaded as part of the project, but when it's
   opened it's still read with the project's settings.
 
+**Paths in the editor.** In `game=` and `sources=` values, every folder
+along the path is a link (Cmd/Ctrl+click) that reveals that folder: in
+the Explorer when it's in the workspace, in the system's file manager
+otherwise. Typing a path completes it from the disk: folders for `game`,
+folders and files for `sources`, starting from the project folder for a
+relative path; picking a folder goes straight on to its entries. Both
+come from the server (`server/src/paths.rs`). In every path, `\`
+separates parts like `/`.
+
 **Checks.** In the editor, `wc3.bni` gets BNI's own syntax errors and lint
 plus checks of its settings, at the exact name or value:
 

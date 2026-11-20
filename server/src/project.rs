@@ -170,6 +170,14 @@ pub fn normalize(path: &Path) -> PathBuf {
     out
 }
 
+/// The path a setting's value `text` names: against `root`, an absolute
+/// path as written. `\` separates parts like `/` (Warcraft III paths are
+/// often written the Windows way), and `.` / `..` resolve.
+pub fn resolve(root: &Path, text: &str) -> PathBuf {
+    let text = if cfg!(windows) { text.to_string() } else { text.replace('\\', "/") };
+    normalize(&root.join(text))
+}
+
 /// Is `path` a project manifest?
 pub fn is_manifest(path: &Path) -> bool {
     path.file_name().is_some_and(|n| n == MANIFEST)
@@ -345,7 +353,7 @@ fn read_game(root: &Path, item: &Item, project: &mut Project, issues: &mut Vec<I
         issues.push(at_field(field, Level::Error, "'game' needs a value: the Warcraft III folder".into()));
         return;
     }
-    let path = normalize(&root.join(text));
+    let path = resolve(root, text);
     if !path.exists() {
         issues.push(at_field(field, Level::Warning, format!("game folder '{text}' does not exist")));
     } else if !path.is_dir() {
@@ -362,7 +370,7 @@ fn read_sources(root: &Path, item: &Item, project: &mut Project, issues: &mut Ve
             issues.push(at_field(field, Level::Warning, "empty source path".into()));
             continue;
         }
-        let path = normalize(&root.join(text));
+        let path = resolve(root, text);
         if !path.exists() {
             issues.push(at_field(
                 field,

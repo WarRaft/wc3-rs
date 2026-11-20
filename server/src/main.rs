@@ -16,6 +16,7 @@ mod document;
 mod game;
 mod index;
 mod map;
+mod paths;
 mod project;
 mod protocol;
 mod rename;
