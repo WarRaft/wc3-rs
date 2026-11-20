@@ -123,7 +123,8 @@ fn the_script_in_scripts_wins_over_the_one_at_the_top() {
     assert_eq!(all, vec!["Scripts\\war3map.j", "war3map.j", "war3map.w3i", "war3mapMisc.txt"]);
     assert!(is_unused_script(&all, "war3map.j") && !is_unused_script(&all, "Scripts\\war3map.j"));
     let scripts: Vec<PathBuf> = files(&map).into_iter().map(|(p, _)| p).collect();
-    assert_eq!(scripts, vec![map.join("Scripts").join("war3map.j")]);
+    // `war3mapMisc.txt` is BNI, a source too.
+    assert_eq!(scripts, vec![map.join("Scripts").join("war3map.j"), map.join("war3mapMisc.txt")]);
 
     // Without one in `Scripts`, the top one is the script.
     let top = tmp.0.join("Top.w3x");

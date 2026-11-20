@@ -27,7 +27,9 @@ Warcraft III language support for VS Code.
   comments, and `//! zinc` … `//! endzinc` blocks, which are parsed,
   linted and highlighted as Zinc with file-accurate positions. One project
   can mix both.
-- BNI (`.bni`, including `wc3.bni`) via [`bni-rs`](https://github.com/WarRaft/bni-rs):
+- BNI (`.bni`, including `wc3.bni`; the game's BNI `.txt` files by name,
+  `HumanUnitFunc.txt`, `WorldEditStrings.txt`, `TriggerData.txt` ...; a
+  map's `war3map*.txt`) via [`bni-rs`](https://github.com/WarRaft/bni-rs):
   semantic highlighting, syntax errors and lint.
 - Projects: a `wc3.bni` file marks a project root and holds its settings,
   such as the default JASS dialect. Every file of the project is analyzed,

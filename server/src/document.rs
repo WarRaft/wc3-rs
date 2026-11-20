@@ -71,9 +71,14 @@ impl Language {
     }
 
     /// The language of a file on disk, by its extension, the same mapping
-    /// as the extension's `package.json` (BNI only as `.bni`: `.txt` is
-    /// too common to claim).
+    /// as the extension's `package.json`. BNI is `.bni`, and of `.txt`
+    /// files, too common to claim, only the game's BNI ones by name
+    /// ([`BNI_FILES`]) and a map's `war3map*.txt` (`war3mapSkin.txt` ...).
     pub fn from_path(path: &Path) -> Option<Language> {
+        let name = path.file_name()?.to_str()?.to_ascii_lowercase();
+        if BNI_FILES.contains(&name.as_str()) || (name.starts_with("war3map") && name.ends_with(".txt")) {
+            return Some(Language::Bni);
+        }
         let ext = path.extension()?.to_str()?.to_ascii_lowercase();
         Some(match ext.as_str() {
             "j" | "vj" | "pld" | "ai" => Language::Jass,
@@ -88,6 +93,79 @@ impl Language {
         })
     }
 }
+
+/// The game's `.txt` files that are BNI, lowercase: `Units\\*Func.txt`,
+/// `Units\\*Strings.txt`, `UI\\WorldEditStrings.txt`, `UI\\TriggerData.txt`
+/// ... (checked: each parses without errors, but `ItemStrings.txt`'s one
+/// line without a key). Not the ones that aren't BNI: `HelpStrings.txt`,
+/// `StartupStrings.txt`, `UI\\Captions\\*`, the chat icon lists, the
+/// licenses. Not `config.txt` either, a name too common to claim. The
+/// same list as the extension's `package.json` (`filenames` of `bni`).
+pub const BNI_FILES: &[&str] = &[
+    "aieditordata.txt",
+    "campaignabilityfunc.txt",
+    "campaignabilitystrings.txt",
+    "campaignstrings.txt",
+    "campaignstrings_exp.txt",
+    "campaignunitfunc.txt",
+    "campaignunitstrings.txt",
+    "campaignupgradefunc.txt",
+    "campaignupgradestrings.txt",
+    "commandfunc.txt",
+    "commandstrings.txt",
+    "commonabilityfunc.txt",
+    "commonabilitystrings.txt",
+    "humanabilityfunc.txt",
+    "humanabilitystrings.txt",
+    "humanunitfunc.txt",
+    "humanunitstrings.txt",
+    "humanupgradefunc.txt",
+    "humanupgradestrings.txt",
+    "itemabilityfunc.txt",
+    "itemabilitystrings.txt",
+    "itemfunc.txt",
+    "itemstrings.txt",
+    "macstrings.txt",
+    "macworldeditstrings.txt",
+    "miscdata.txt",
+    "miscgame.txt",
+    "miscui.txt",
+    "neutralabilityfunc.txt",
+    "neutralabilitystrings.txt",
+    "neutralunitfunc.txt",
+    "neutralunitstrings.txt",
+    "neutralupgradefunc.txt",
+    "neutralupgradestrings.txt",
+    "nightelfabilityfunc.txt",
+    "nightelfabilitystrings.txt",
+    "nightelfunitfunc.txt",
+    "nightelfunitstrings.txt",
+    "nightelfupgradefunc.txt",
+    "nightelfupgradestrings.txt",
+    "orcabilityfunc.txt",
+    "orcabilitystrings.txt",
+    "orcunitfunc.txt",
+    "orcunitstrings.txt",
+    "orcupgradefunc.txt",
+    "orcupgradestrings.txt",
+    "telemetry.txt",
+    "tipstrings.txt",
+    "triggerdata.txt",
+    "triggerstrings.txt",
+    "undeadabilityfunc.txt",
+    "undeadabilitystrings.txt",
+    "undeadunitfunc.txt",
+    "undeadunitstrings.txt",
+    "undeadupgradefunc.txt",
+    "undeadupgradestrings.txt",
+    "uniteditordata.txt",
+    "unitglobalstrings.txt",
+    "war3skins.txt",
+    "worldeditdata.txt",
+    "worldeditgamestrings.txt",
+    "worldeditlayout.txt",
+    "worldeditstrings.txt",
+];
 
 #[derive(Debug, Clone)]
 pub struct Document {

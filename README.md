@@ -117,7 +117,14 @@ Problems panel shows the whole project's errors without opening anything.
 - **Which files.** What the project's `sources` match, less what
   `exclude` matches, plus
   `wc3.bni` itself. Only known extensions count (`.j`, `.vj`, `.pld`,
-  `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`); hidden folders
+  `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`), and the `.txt`
+  files that are BNI: a map's `war3map*.txt` (`war3mapSkin.txt`,
+  `war3mapMisc.txt`, `war3mapExtra.txt`) and the game's own by name
+  (`Units\HumanUnitFunc.txt`, `UI\WorldEditStrings.txt`, ...; the list
+  is `BNI_FILES` in `server/src/document.rs`, the same as `package.json`).
+  The game's `.txt` files that aren't BNI (`HelpStrings.txt`, the
+  captions, the licenses) and `config.txt`, too common a name, aren't;
+  hidden folders
   (`.git`, `.idea`, ...) are skipped; a nested project owns its own files.
   `sources` may point outside the project folder (`sources=src,../shared`).
 - **Game files.** The game's `Scripts\common.j`, `Scripts\Blizzard.j` and
