@@ -123,10 +123,12 @@ Problems panel shows the whole project's errors without opening anything.
 - **Visibility.** A file sees the files of its own project and the game
   files the game runs it with: a map script `common.j` and `Blizzard.j`,
   an AI script (`.ai`) `common.j` and `common.ai` (the game loads neither
-  `Blizzard.j` for AI nor `common.ai` for maps). Names resolve there, references are found there,
+  `Blizzard.j` for AI nor `common.ai` for maps). An AI script runs on
+  its own, so of the project's files it sees only itself, and map
+  scripts don't see AI scripts. Names resolve there, references are found there,
   and two projects with different `game=` folders (one with a custom
   `common.j`) don't see each other's declarations. A file outside every
-  project sees all files.
+  project sees all files, AI scripts kept apart the same way.
 - **Maps.** A map (`.w3x`, `.w3m`) found the same way, under the project
   folder or its `sources` (or named in them: `sources=Main.w3x`), is
   read like a folder: its scripts are project files at paths inside the

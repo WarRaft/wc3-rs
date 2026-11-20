@@ -22,7 +22,9 @@
 //!   `game=` folders share them.
 //! - **Visibility.** A file sees the files of its own project and that
 //!   project's game files (see [`Workspace::scope`]), so two projects with
-//!   different game folders don't see each other's `common.j`.
+//!   different game folders don't see each other's `common.j`. An AI
+//!   script (`.ai`) runs on its own: it sees no other project file, and
+//!   none sees it.
 //! - **Identity.** A file is identified by its path on disk, the form the
 //!   editor uses for files too; a document with no file (untitled) by the
 //!   editor's URI.
@@ -252,7 +254,9 @@ impl Workspace {
     /// the game files it's run with (`game::Script::sees`: an AI script
     /// gets `common.ai`, any other `Blizzard.j`, both `common.j`); for a
     /// game file, the game files it comes with; for a file with no
-    /// project, every file.
+    /// project, every file. An AI script runs on its own, so among the
+    /// project's files it sees only itself, and the other files don't see
+    /// it.
     pub fn scope<'a>(&'a self, id: &str) -> impl Iterator<Item = (&'a str, &'a Document, &'a [Occurrence])> + 'a {
         use crate::game::Script;
         let me = self.files.get(id);
@@ -262,6 +266,13 @@ impl Workspace {
             Script::for_file(Path::new(id))
         };
         let sees = move |fid: &str| Script::of(Path::new(fid)).is_none_or(|s| viewer.sees(s));
+        // Among non-game files: an AI script only itself, anything else
+        // anything but AI scripts.
+        let me_id = id.to_string();
+        let shares = move |fid: &str| match viewer {
+            Script::Ai => fid == me_id,
+            _ => Script::for_file(Path::new(fid)) != Script::Ai,
+        };
         let game: Option<HashSet<&str>> = if me.is_some_and(|e| e.game) {
             Some(
                 self.games
@@ -287,9 +298,9 @@ impl Workspace {
                 (Some(stack), _) => stack.contains(fid.as_str()) && sees(fid),
                 (None, Some(root)) => {
                     (project_games.contains(fid.as_str()) && sees(fid))
-                        || (!e.game && e.project.as_ref() == Some(root))
+                        || (!e.game && e.project.as_ref() == Some(root) && shares(fid))
                 }
-                (None, None) => true,
+                (None, None) => e.game || shares(fid),
             };
             visible.then_some((fid.as_str(), &e.doc, e.symbols.as_slice()))
         })

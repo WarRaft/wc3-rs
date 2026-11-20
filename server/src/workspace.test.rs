@@ -432,3 +432,37 @@ fn ai_scripts_see_common_ai_and_map_scripts_blizzard_j() {
     assert_eq!(definition(&in_game("common.ai"), 2), vec![in_game("common.j")]);
     assert!(ws.is_game(&in_game("common.ai")));
 }
+
+#[test]
+fn an_ai_script_runs_on_its_own() {
+    use crate::document::Position;
+    use crate::index::{answer, QueryKind};
+    let tmp = project("ws-ai-alone", &[
+        ("wc3.bni", ""),
+        ("main.j", "function MapOnly takes nothing returns nothing\n    call Shared()\n    call AiOnly()\nendfunction\n"),
+        ("lib.j", "function Shared takes nothing returns nothing\nendfunction\n"),
+        ("elf.ai", "function AiOnly takes nothing returns nothing\nendfunction\nfunction main takes nothing returns nothing\n    call AiOnly()\n    call MapOnly()\n    call OtherAi()\nendfunction\n"),
+        ("orc.ai", "function OtherAi takes nothing returns nothing\nendfunction\nfunction AiOnly takes nothing returns nothing\nendfunction\n"),
+    ]);
+    let mut ws = init(&tmp.0);
+    reports(&mut ws);
+    let id = |f: &str| path_id(&tmp.0.join(f));
+    let definition = |file: &str, line: u32| -> Vec<String> {
+        answer(&ws, QueryKind::Definition, &id(file), Position::new(line, 10), "")
+            .locations
+            .into_iter()
+            .map(|l| l.id)
+            .collect()
+    };
+    // Map scripts see each other, not AI scripts.
+    assert_eq!(definition("main.j", 1), vec![id("lib.j")]);
+    assert!(definition("main.j", 2).is_empty());
+    // An AI script sees itself only: its own AiOnly, not orc.ai's.
+    assert_eq!(definition("elf.ai", 3), vec![id("elf.ai")]);
+    assert!(definition("elf.ai", 4).is_empty());
+    assert!(definition("elf.ai", 5).is_empty());
+    // References of an AI script's function stay in it.
+    let refs = answer(&ws, QueryKind::References, &id("elf.ai"), Position::new(0, 10), "");
+    assert!(refs.locations.iter().all(|l| l.id == id("elf.ai")), "{:?}", refs.locations);
+    assert_eq!(refs.locations.len(), 2);
+}
