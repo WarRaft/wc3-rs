@@ -21,12 +21,19 @@ pub struct Diagnostic {
     pub rule: &'static str,
 }
 
-/// The dialect a `.j` document is read in: whatever its own header
-/// declares (`// @dialect vjass`), else its project's default
-/// (`[jass] dialect=` in `wc3.bni`), else plain JASS. The header wins, so
-/// a project can still mix dialects.
-pub fn jass_dialect(text: &str, project: Option<&Project>) -> jass_rs::Dialect {
-    jass_rs::Dialect::declared(text)
+/// The dialect a JASS document is read in: whatever its own header
+/// declares (`// @dialect vjass`), else vJASS for a `.vj` file, else its
+/// project's default (`[jass] dialect=` in `wc3.bni`), else plain JASS.
+/// The header wins, so a project can still mix dialects.
+pub fn jass_dialect(doc: &Document, project: Option<&Project>) -> jass_rs::Dialect {
+    let vj = doc
+        .path
+        .as_deref()
+        .and_then(|p| p.extension())
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("vj"));
+    jass_rs::Dialect::declared(&doc.text)
+        .or(vj.then_some(jass_rs::Dialect::VJass))
         .or_else(|| project.and_then(|p| p.jass_dialect))
         .unwrap_or_default()
 }
@@ -42,7 +49,7 @@ pub fn diagnostics(doc: &Document, project: Option<&Project>) -> Vec<Diagnostic>
         // In a vJASS file, `//! zinc` blocks are handed to zinc-rs (lines
         // stay file-absolute; Zinc lint is included).
         Language::Jass => {
-            jass_rs::parse_with(text, jass_dialect(text, project)).map(|p| jass_rs::lint(&p))
+            jass_rs::parse_with(text, jass_dialect(doc, project)).map(|p| jass_rs::lint(&p))
         }
         Language::Zinc => zinc_rs::parse(text).map(|p| zinc_rs::lint(&p)),
         Language::Lua => lua_rs::parse(text).map(|c| lua_rs::lint(&c)),
@@ -115,7 +122,7 @@ pub fn analyze(doc: &Document, project: Option<&Project>, highlight: bool) -> An
     let text = doc.text.as_str();
     let (tokens, symbols) = match doc.language {
         Language::Jass => {
-            let dialect = jass_dialect(text, project);
+            let dialect = jass_dialect(doc, project);
             if highlight {
                 let (tokens, symbols) = jass_rs::semantic_tokens_and_symbols(text, dialect);
                 (parser_rs::semantic::encode(tokens, text), symbols)
@@ -149,7 +156,7 @@ pub fn analyze(doc: &Document, project: Option<&Project>, highlight: bool) -> An
 pub fn semantic_tokens(doc: &Document, project: Option<&Project>) -> Vec<u32> {
     let text = doc.text.as_str();
     match doc.language {
-        Language::Jass => jass_rs::encoded_semantic_tokens(text, jass_dialect(text, project)),
+        Language::Jass => jass_rs::encoded_semantic_tokens(text, jass_dialect(doc, project)),
         Language::Zinc => zinc_rs::encoded_semantic_tokens(text),
         Language::Lua => lua_rs::encoded_semantic_tokens(text),
         Language::AngelScript => as_rs::encoded_semantic_tokens(text),

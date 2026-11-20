@@ -76,7 +76,7 @@ const MAP_SCHEME = 'wc3map'
 const MAP_NAME = /\.(w3[xm]|mpq)$/i
 
 /** Language ids the server analyzes (its `Language::from_id`). */
-const LANGUAGES = new Set(['jass', 'zinc', 'lua', 'angelscript', 'bni'])
+const LANGUAGES = new Set(['jass', 'vjass', 'zinc', 'lua', 'angelscript', 'bni'])
 
 /** How long highlighting waits for the server to analyze a new version. */
 const TOKENS_WAIT_MS = 1000

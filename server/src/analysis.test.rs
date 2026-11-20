@@ -193,3 +193,18 @@ fn bni_lint_follows_the_project_too() {
     assert_eq!(diags(Language::Bni, src)[0].rule, "duplicate-section");
     assert!(diagnostics(&doc(Language::Bni, src, Some(&path)), project.as_deref()).is_empty());
 }
+
+#[test]
+fn a_vj_file_is_vjass_unless_its_header_says_otherwise() {
+    let file = |name: &str, text: &str| doc(Language::Jass, text, Some(Path::new(name)));
+    assert_eq!(jass_dialect(&file("/p/a.vj", ""), None), jass_rs::Dialect::VJass);
+    assert_eq!(jass_dialect(&file("/p/A.VJ", ""), None), jass_rs::Dialect::VJass);
+    assert_eq!(jass_dialect(&file("/p/a.vj", "// @dialect jass\n"), None), jass_rs::Dialect::Jass);
+    assert_eq!(jass_dialect(&file("/p/a.j", ""), None), jass_rs::Dialect::Jass);
+    assert_eq!(Language::from_path(Path::new("/p/a.vj")), Some(Language::Jass));
+    assert_eq!(Language::from_id("vjass"), Some(Language::Jass));
+    // `library` is a vJASS keyword: an error only in plain JASS.
+    let src = "globals\n    integer library = 1\nendglobals\n";
+    assert!(!diagnostics(&file("/p/a.vj", src), None).is_empty());
+    assert!(diagnostics(&file("/p/a.j", src), None).is_empty());
+}

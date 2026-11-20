@@ -46,7 +46,8 @@ pub enum Language {
 impl Language {
     pub fn from_id(id: &str) -> Option<Language> {
         Some(match id {
-            "jass" => Language::Jass,
+            // `.vj` files: JASS read as vJASS (see `analysis::jass_dialect`).
+            "jass" | "vjass" => Language::Jass,
             "zinc" => Language::Zinc,
             "lua" => Language::Lua,
             "angelscript" => Language::AngelScript,
@@ -72,7 +73,7 @@ impl Language {
     pub fn from_path(path: &Path) -> Option<Language> {
         let ext = path.extension()?.to_str()?.to_ascii_lowercase();
         Some(match ext.as_str() {
-            "j" | "pld" | "ai" => Language::Jass,
+            "j" | "vj" | "pld" | "ai" => Language::Jass,
             "zn" => Language::Zinc,
             "lua" => Language::Lua,
             "as" | "angelscript" => Language::AngelScript,

@@ -40,7 +40,8 @@ dialect=vjass
 
 - **`dialect`.** A file's own header always wins over the project, so a
   project can still mix dialects. Without either, a file is plain JASS.
-  The order is header, then project, then plain JASS.
+  A `.vj` file is vJASS unless its header says otherwise. The order is
+  header, then `.vj`, then project, then plain JASS.
 - **`sources`** is what makes up the project (see the project model
   below), and nothing else does: every value is a **mask**, and a file
   is in the project when a mask matches it or a folder or map it's in.
@@ -115,7 +116,7 @@ Problems panel shows the whole project's errors without opening anything.
   the workspace folders).
 - **Which files.** What the project's `sources` match, less what
   `exclude` matches, plus
-  `wc3.bni` itself. Only known extensions count (`.j`, `.pld`,
+  `wc3.bni` itself. Only known extensions count (`.j`, `.vj`, `.pld`,
   `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`); hidden folders
   (`.git`, `.idea`, ...) are skipped; a nested project owns its own files.
   `sources` may point outside the project folder (`sources=src,../shared`).

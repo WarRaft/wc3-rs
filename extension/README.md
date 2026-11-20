@@ -4,7 +4,8 @@ Warcraft III language support for VS Code.
 
 ## Features
 
-- JASS syntax highlighting (`.j`, `.pld`, `.ai`): comments, string/rawcode
+- JASS syntax highlighting (`.j`, `.pld`, `.ai`; `.vj` is vJASS, with its
+  own icon): comments, string/rawcode
   literals, bracket matching, indent-on-keyword rules for
   `function`/`if`/`loop`/`globals` blocks.
 - Zinc syntax highlighting (`.zn`): keywords, declarations, line/block
