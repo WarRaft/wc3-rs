@@ -146,3 +146,16 @@ fn queries_answer_in_the_open_manifest() {
     let a_j = tmp.0.join("src/a.j").to_string_lossy().into_owned();
     assert!(answer(&ws, QueryKind::PathLinks, &a_j, Position::new(0, 0), "").locations.is_empty());
 }
+
+#[test]
+fn exclude_and_masks_link_and_complete_their_literal_part() {
+    let tmp = tree("paths-masks");
+    let src = "[project]\nsources=Games/*/Maps,src/**/*.j\nexclude=src/a.j\n";
+    assert_eq!(linked(&tmp.0, src), pairs(&[("Games", "Games"), ("src", "src"), ("src", "src")]));
+    assert_eq!(
+        complete_at(&tmp.0, "exclude=src/|"),
+        Some((String::new(), vec![("a.j".into(), false)]))
+    );
+    // Past a wildcard there's no one folder to list.
+    assert_eq!(complete_at(&tmp.0, "sources=Games/*/|"), None);
+}

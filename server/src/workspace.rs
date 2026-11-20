@@ -52,7 +52,9 @@ pub struct Workspace {
     projects: Projects,
     /// Manifests of the projects loaded so far.
     manifests: HashSet<PathBuf>,
-    /// The maps in the model, and the ids of their files.
+    /// The maps in the model, and the ids of all their source files,
+    /// those the project excludes too: a manifest change re-checks them
+    /// without reading the map again.
     maps: HashMap<PathBuf, Vec<String>>,
     /// Files to analyze and report.
     dirty: HashSet<String>,
@@ -217,15 +219,17 @@ impl Workspace {
     /// read again. Open ones keep the editor's text.
     fn reload_map(&mut self, path: &Path) {
         let old = self.maps.remove(path).unwrap_or_default();
-        let mut ids = Vec::new();
+        let mut all = Vec::new();
+        let mut kept = Vec::new();
         if map::is_map(path) {
             if let Some(project) = self.member(path) {
                 for (inner, doc) in map::files(path) {
+                    let id = path_id(&inner);
+                    all.push(id.clone());
                     if !project.contains(&inner) {
                         continue;
                     }
-                    let id = path_id(&inner);
-                    ids.push(id.clone());
+                    kept.push(id.clone());
                     if self.files.get(&id).is_some_and(|e| e.open) {
                         continue;
                     }
@@ -235,12 +239,12 @@ impl Workspace {
             }
         }
         for id in old {
-            if !ids.contains(&id) && self.files.get(&id).is_some_and(|e| !e.open) {
+            if !kept.contains(&id) && self.files.get(&id).is_some_and(|e| !e.open) {
                 self.remove(&id);
             }
         }
-        if !ids.is_empty() {
-            self.maps.insert(path.to_path_buf(), ids);
+        if !all.is_empty() {
+            self.maps.insert(path.to_path_buf(), all);
         }
     }
 
@@ -285,7 +289,7 @@ impl Workspace {
         for m in manifests {
             if let Some(project) = self.projects.for_file(&m) {
                 paths.push(project.root.clone());
-                paths.extend(project.sources.iter().filter(|s| s.is_dir()).cloned());
+                paths.extend(project.scopes().into_iter().filter(|s| s.is_dir()));
             }
         }
         paths.sort();
@@ -342,7 +346,9 @@ impl Workspace {
         }
         self.manifests = manifests;
 
-        // A map already in the model keeps its files; a new one is read.
+        // A map already in the model isn't read again: its files are known,
+        // and the ones the project (still) wants are loaded below if they
+        // aren't yet. A new map is read once.
         let mut found_maps = HashMap::new();
         for (path, project) in maps {
             let ids = match self.maps.remove(&path) {
@@ -350,11 +356,8 @@ impl Workspace {
                 None => {
                     let mut ids = Vec::new();
                     for (inner, doc) in map::files(&path) {
-                        if !project.contains(&inner) {
-                            continue;
-                        }
                         let id = path_id(&inner);
-                        if !self.files.contains_key(&id) {
+                        if project.contains(&inner) && !self.files.contains_key(&id) {
                             self.files.insert(id.clone(), Entry::new(doc, false));
                             self.dirty.insert(id.clone());
                         }
@@ -363,7 +366,7 @@ impl Workspace {
                     ids
                 }
             };
-            for id in &ids {
+            for id in ids.iter().filter(|id| project.contains(Path::new(id))) {
                 wanted.insert(id.clone(), PathBuf::from(id));
             }
             if !ids.is_empty() {

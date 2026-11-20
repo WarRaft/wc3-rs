@@ -5,7 +5,8 @@
 //!
 //! ```ini
 //! [project]
-//! sources=src,lib
+//! sources=src,lib,maps/*.w3x
+//! exclude=**/old/**,test.j
 //! game=C:/Games/Warcraft III
 //! game=../my-common-j
 //!
@@ -28,6 +29,8 @@ use std::time::SystemTime;
 use bni_rs::ast::{Field, Item, Name};
 use parser_rs::Level;
 
+use crate::glob::{self, Glob};
+
 /// The manifest's file name.
 pub const MANIFEST: &str = "wc3.bni";
 
@@ -40,8 +43,15 @@ pub struct Project {
     /// none. A header always wins.
     pub jass_dialect: Option<jass_rs::Dialect>,
     /// `[project] sources=`: the project's source folders and files,
-    /// resolved against `root`, in the order written.
+    /// resolved against `root`, in the order written. Masks are in
+    /// `source_masks`.
     pub sources: Vec<PathBuf>,
+    /// `[project] sources=` masks (`maps/*.w3x`): the files they match
+    /// (see `glob`) are sources too.
+    pub source_masks: Vec<Glob>,
+    /// `[project] exclude=`: masks of what isn't part of the project, even
+    /// inside its sources.
+    pub exclude: Vec<Glob>,
     /// `[project] game=`: the game folders, resolved against `root` (an
     /// absolute path stays as written), in the order written. A file in a
     /// later folder overrides the same file in an earlier one; see `game`.
@@ -119,28 +129,42 @@ impl Project {
         self.root.join(MANIFEST)
     }
 
-    /// Where the project's files are: its `sources`, or the whole root
-    /// when it lists none.
+    /// Where the project's files are: its `sources` and the folders its
+    /// source masks look in, or the whole root when it lists none.
     pub fn scopes(&self) -> Vec<PathBuf> {
-        if self.sources.is_empty() {
-            vec![self.root.clone()]
-        } else {
-            self.sources.clone()
+        if self.sources.is_empty() && self.source_masks.is_empty() {
+            return vec![self.root.clone()];
         }
+        let mut scopes = self.sources.clone();
+        for mask in &self.source_masks {
+            if !scopes.contains(&mask.base) {
+                scopes.push(mask.base.clone());
+            }
+        }
+        scopes
     }
 
     /// Is `path` one of the project's files: the manifest itself, or a
-    /// file inside one of its scopes and not inside a hidden (`.name`)
-    /// folder below that scope. Doesn't check which project is nearest;
-    /// see [`find_manifest`].
+    /// file inside one of its sources (or matching a source mask), not
+    /// inside a hidden (`.name`) folder below it, and not excluded.
+    /// Doesn't check which project is nearest; see [`find_manifest`].
     pub fn contains(&self, path: &Path) -> bool {
-        path == self.manifest()
-            || self.scopes().iter().any(|scope| {
-                path.strip_prefix(scope).is_ok_and(|rel| {
-                    !rel.parent()
-                        .is_some_and(|dirs| dirs.components().any(|c| is_hidden(c.as_os_str())))
-                })
+        if path == self.manifest() {
+            return true;
+        }
+        let visible = |scope: &Path| {
+            path.strip_prefix(scope).is_ok_and(|rel| {
+                !rel.parent()
+                    .is_some_and(|dirs| dirs.components().any(|c| is_hidden(c.as_os_str())))
             })
+        };
+        let listed = if self.sources.is_empty() && self.source_masks.is_empty() {
+            visible(&self.root)
+        } else {
+            self.sources.iter().any(|s| visible(s))
+                || self.source_masks.iter().any(|m| visible(&m.base) && m.matches(path))
+        };
+        listed && !self.exclude.iter().any(|m| m.matches(path))
     }
 }
 
@@ -203,6 +227,7 @@ pub fn load(root: &Path, src: &str) -> (Project, Vec<Issue>) {
                 for item in items {
                     match key_of(item, &mut issues) {
                         Some("sources") => read_sources(root, item, &mut project, &mut issues),
+                        Some("exclude") => read_exclude(root, item, &mut project, &mut issues),
                         Some("game") => read_game(root, item, &mut project, &mut issues),
                         Some(_) => unknown_key(item, "project", &mut issues),
                         None => {}
@@ -268,7 +293,7 @@ fn key_of<'a>(item: &'a Item, issues: &mut Vec<Issue>) -> Option<&'a str> {
 fn unknown_key(item: &Item, section: &str, issues: &mut Vec<Issue>) {
     let key = item.key.as_ref().expect("key_of returned a key");
     let expected = match section {
-        "project" => "sources' or 'game",
+        "project" => "sources', 'exclude' or 'game",
         _ => "dialect",
     };
     issues.push(at_name(
@@ -370,6 +395,14 @@ fn read_sources(root: &Path, item: &Item, project: &mut Project, issues: &mut Ve
             issues.push(at_field(field, Level::Warning, "empty source path".into()));
             continue;
         }
+        if glob::is_mask(text) {
+            let mask = Glob::new(root, text);
+            if !matches_anything(&mask) {
+                issues.push(at_field(field, Level::Warning, format!("source mask '{text}' matches nothing")));
+            }
+            project.source_masks.push(mask);
+            continue;
+        }
         let path = resolve(root, text);
         if !path.exists() {
             issues.push(at_field(
@@ -379,6 +412,39 @@ fn read_sources(root: &Path, item: &Item, project: &mut Project, issues: &mut Ve
             ));
         }
         project.sources.push(path);
+    }
+}
+
+/// Does anything under the mask's base folder match it?
+fn matches_anything(mask: &Glob) -> bool {
+    fn walk(dir: &Path, mask: &Glob) -> bool {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return false;
+        };
+        entries.flatten().any(|e| {
+            let path = e.path();
+            mask.matches(&path)
+                || (e.file_type().is_ok_and(|t| t.is_dir()) && !is_hidden(&e.file_name()) && walk(&path, mask))
+        })
+    }
+    walk(&mask.base, mask)
+}
+
+/// `exclude=<mask>,...`: what isn't part of the project. A mask that
+/// matches nothing isn't reported: there may be nothing to exclude yet.
+fn read_exclude(root: &Path, item: &Item, project: &mut Project, issues: &mut Vec<Issue>) {
+    if item.fields.is_empty() {
+        let key = item.key.as_ref().expect("key_of returned a key");
+        issues.push(at_name(key, Level::Warning, "empty exclude mask".into()));
+    }
+    for field in &item.fields {
+        let text = field.text();
+        let text = text.trim();
+        if text.is_empty() {
+            issues.push(at_field(field, Level::Warning, "empty exclude mask".into()));
+            continue;
+        }
+        project.exclude.push(Glob::new(root, text));
     }
 }
 

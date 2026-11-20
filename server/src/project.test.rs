@@ -81,7 +81,7 @@ fn unknown_sections_and_keys_are_warnings() {
         messages,
         vec![
             (1, "unknown section [jas] (expected [project], [jass] or [lint])"),
-            (4, "unknown setting 'source' in [project] (expected 'sources' or 'game')"),
+            (4, "unknown setting 'source' in [project] (expected 'sources', 'exclude' or 'game')"),
             (5, "setting without a name"),
         ]
     );
@@ -283,4 +283,43 @@ fn backslashes_separate_path_parts() {
     assert!(issues.is_empty(), "{issues:?}");
     assert_eq!(project.sources, vec![tmp.0.join("a/b")]);
     assert_eq!(project.game, vec![tmp.0.join("a")]);
+}
+
+#[test]
+fn source_masks_and_excludes() {
+    let tmp = TempDir::new("masks");
+    for dir in ["src/old", "maps"] {
+        std::fs::create_dir_all(tmp.0.join(dir)).unwrap();
+    }
+    for f in ["src/a.j", "src/old/b.j", "maps/A.w3x", "test.j", "c.j"] {
+        std::fs::write(tmp.0.join(f), "").unwrap();
+    }
+    let src = "[project]\nsources=src,maps/*.w3x,nope/*.j,test.j\nexclude=**/OLD/**,test.j\nexclude=\n";
+    let (project, issues) = load(&tmp.0, src);
+    let got: Vec<_> = issues.iter().map(|i| (i.line, i.message.as_str())).collect();
+    assert_eq!(got, vec![(2, "source mask 'nope/*.j' matches nothing"), (4, "empty exclude mask")]);
+    assert_eq!(project.sources, vec![tmp.0.join("src"), tmp.0.join("test.j")]);
+    assert_eq!(project.source_masks.len(), 2);
+    assert_eq!(project.exclude.len(), 2);
+    assert_eq!(project.scopes(), vec![tmp.0.join("src"), tmp.0.join("test.j"), tmp.0.join("maps"), tmp.0.join("nope")]);
+
+    let has = |rel: &str| project.contains(&tmp.0.join(rel));
+    assert!(has("src/a.j"));
+    assert!(!has("src/old/b.j"), "excluded");
+    assert!(has("maps/A.w3x/war3map.j"), "inside a map the mask matches");
+    assert!(!has("maps/other.j"), "under a mask's folder but not matching it");
+    assert!(!has("test.j"), "exclude wins over sources");
+    assert!(!has("c.j"));
+    assert!(has("wc3.bni"));
+}
+
+#[test]
+fn exclude_works_without_sources() {
+    let (project, issues) = load(Path::new("/p"), "[project]\nexclude=test.j,**/*.w3x/war3map.lua\n");
+    assert!(issues.is_empty(), "{issues:?}");
+    assert!(project.contains(Path::new("/p/a/b.j")));
+    assert!(!project.contains(Path::new("/p/test.j")));
+    assert!(!project.contains(Path::new("/p/m/Map.w3x/war3map.lua")));
+    assert!(project.contains(Path::new("/p/m/Map.w3x/war3map.j")));
+    assert_eq!(project.scopes(), vec![PathBuf::from("/p")]);
 }

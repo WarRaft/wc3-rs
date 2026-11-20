@@ -20,7 +20,8 @@ belongs to the project and is read with its settings.
 ```ini
 // wc3.bni
 [project]
-sources=src,lib
+sources=src,lib,maps/*.w3x
+exclude=**/old/**,test.j
 game="C:/Games/Warcraft III"
 game=../ujapi
 
@@ -30,7 +31,8 @@ dialect=vjass
 
 | section     | key       | value                                    | meaning                                                                 |
 |-------------|-----------|------------------------------------------|-------------------------------------------------------------------------|
-| `[project]` | `sources` | paths, comma-separated, relative to the project root | the project's source folders and files                     |
+| `[project]` | `sources` | paths or masks, comma-separated, relative to the project root | the project's source folders and files            |
+| `[project]` | `exclude` | masks, comma-separated, relative to the project root | what isn't part of the project, even inside `sources` |
 | `[project]` | `game`    | one path per line, absolute or relative to the project root | a game folder; repeat for more, each over the ones before |
 | `[jass]`    | `dialect` | `jass` or `vjass` (case-insensitive)     | the dialect of `.j` files that don't declare one in a `// @dialect` header |
 | `[lint]`    | a rule or group id | `off`, `warning` or `error`     | turn a lint rule (or every rule of a group) off or on, at that level (see [Lint](#lint)) |
@@ -41,7 +43,18 @@ dialect=vjass
 - **`sources`** lists the folders and files that make up the project (see
   the project model below); without it, the whole project folder does.
   `./src` and `a/../src` mean `src`. Quote a path that contains a comma:
-  `sources="my, folder"`.
+  `sources="my, folder"`. A value with `*` or `?` is a **mask** and
+  brings in what it matches: `maps/*.w3x` is every map in `maps`.
+- **Masks** (`server/src/glob.rs`): `*` is any part of a name, `?` one
+  character, `**` any number of folders (none included). They're
+  relative to the project folder unless absolute, case doesn't matter,
+  and `/` and `\` both separate folders. A mask matching a folder or a
+  map covers everything in it: `**/old` and `**/old/**` both drop every
+  `old` folder, and `**/war3map.lua` a file inside every map.
+- **`exclude`** drops what its masks match from the project, whether it's
+  in `sources` or in the whole project folder: `exclude=test.j,**/old/**`.
+  It wins over `sources`. Repeat the line to add more. An excluded file
+  that's opened is still read with the project's settings.
 - **`game`** is the folder Warcraft III is installed in, and each further
   `game=` line adds a folder on top of it, to replace some of the game's
   files (a custom `Scripts/common.j`, say). A game file (`Scripts\common.j`,
@@ -58,12 +71,14 @@ dialect=vjass
   but outside `sources` isn't loaded as part of the project, but when it's
   opened it's still read with the project's settings.
 
-**Paths in the editor.** In `game=` and `sources=` values, every folder
+**Paths in the editor.** In `game=`, `sources=` and `exclude=` values, every folder
 along the path is a link (Cmd/Ctrl+click) that reveals that folder: in
 the Explorer when it's in the workspace, in the system's file manager
 otherwise. Typing a path completes it from the disk: folders for `game`,
-folders and files for `sources`, starting from the project folder for a
-relative path; picking a folder goes straight on to its entries. Both
+folders and files for `sources` and `exclude`, starting from the project
+folder for a relative path; picking a folder goes straight on to its
+entries. In a mask, the part before the first wildcard links and
+completes the same way. Both
 come from the server (`server/src/paths.rs`). In every path, `\`
 separates parts like `/`.
 
@@ -74,7 +89,10 @@ plus checks of its settings, at the exact name or value:
   go unnoticed);
 - an unknown dialect, or `dialect` with no value or several (an error);
 - `dialect` set twice (a warning; the first one is used);
-- a `sources` path that doesn't exist, or an empty one (a warning);
+- a `sources` path that doesn't exist, a mask that matches nothing, or
+  an empty one (a warning); an empty `exclude` mask (a warning; one that
+  matches nothing isn't reported, as there may be nothing to exclude
+  yet);
 - `game` with no value or several on one line (an error), a `game` path
   that doesn't exist or isn't a folder (a warning);
 - an unknown lint rule or group (a warning), or a setting that isn't `off`,
@@ -87,8 +105,9 @@ Problems panel shows the whole project's errors without opening anything.
 - **Which projects.** Every `wc3.bni` under the workspace folders, and
   the project of any file opened from elsewhere (even a `wc3.bni` above
   the workspace folders).
-- **Which files.** The project's `sources`, or its whole folder without
-  them, plus `wc3.bni` itself. Only known extensions count (`.j`, `.pld`,
+- **Which files.** The project's `sources` (and what its masks match), or
+  its whole folder without them, less what `exclude` matches, plus
+  `wc3.bni` itself. Only known extensions count (`.j`, `.pld`,
   `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`); hidden folders
   (`.git`, `.idea`, ...) are skipped; a nested project owns its own files.
   `sources` may point outside the project folder (`sources=src,../shared`).

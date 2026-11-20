@@ -279,3 +279,37 @@ fn sources_can_name_a_map() {
     let mut ws = init(&tmp.0);
     assert_eq!(names(&tmp.0, &reports(&mut ws)), vec!["Main.w3m/war3map.j", "wc3.bni"]);
 }
+
+#[test]
+fn excluded_files_and_map_scripts_leave_the_model() {
+    let tmp = project("ws-exclude", &[
+        ("wc3.bni", "[project]\nexclude=test.j,**/old/**\n"),
+        ("a.j", OK),
+        ("test.j", BAD),
+        ("lib/old/b.j", BAD),
+    ]);
+    crate::map::tests::make_map(&tmp.0.join("Map.w3x"), &[("war3map.j", OK), ("war3map.lua", "local x = 1\n")]);
+    let mut ws = init(&tmp.0);
+    assert_eq!(
+        names(&tmp.0, &reports(&mut ws)),
+        vec!["Map.w3x/war3map.j", "Map.w3x/war3map.lua", "a.j", "wc3.bni"]
+    );
+
+    // Excluding a map's script drops just that file.
+    std::fs::write(tmp.0.join("wc3.bni"), "[project]\nexclude=test.j,**/old/**,**/war3map.lua\n").unwrap();
+    ws.disk_changed(&[tmp.0.join("wc3.bni")]);
+    let r = reports(&mut ws);
+    assert_eq!(r[0], (path_id(&tmp.0.join("Map.w3x/war3map.lua")), 0, 0, 0), "cleared first: {r:?}");
+    assert!(ws.file(&path_id(&tmp.0.join("Map.w3x/war3map.lua"))).is_none());
+
+    // Source masks: only the matching maps.
+    std::fs::write(tmp.0.join("wc3.bni"), "[project]\nsources=*.w3x\n").unwrap();
+    ws.disk_changed(&[tmp.0.join("wc3.bni")]);
+    reports(&mut ws);
+    let mut ids: Vec<_> = ws.all_files().map(|(id, _, _)| id.to_string()).collect();
+    ids.sort();
+    assert_eq!(
+        names(&tmp.0, &ids.into_iter().map(|id| (id, 0, 0, 0)).collect::<Vec<_>>()),
+        vec!["Map.w3x/war3map.j", "Map.w3x/war3map.lua", "wc3.bni"]
+    );
+}

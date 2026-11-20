@@ -1,13 +1,14 @@
 //! Paths in a project manifest (`wc3.bni`): the values of `[project]`
-//! `game=` and `sources=`. The editor gets
+//! `game=`, `sources=` and `exclude=`. The editor gets
 //!
 //! - **links**: every folder along a path is a link to that folder, so
 //!   in `game=/Games/Warcraft III/Maps` each of `Games`, `Warcraft III`
 //!   and `Maps` leads to its own folder;
 //! - **completion**: at the cursor in such a value, the entries of the
 //!   folder typed so far: folders for `game` (it names folders), folders
-//!   and files for `sources`. Hidden entries (`.git`) only once a `.` is
-//!   typed.
+//!   and files for `sources` and `exclude`. Hidden entries (`.git`) only
+//!   once a `.` is typed. In a mask, the parts before the first wildcard
+//!   link and complete the same way.
 //!
 //! Paths resolve like the settings themselves (`project::load`): against
 //! the project root, an absolute path as written, `/` or `\` between
@@ -51,7 +52,7 @@ pub struct Entry {
 fn path_key(item: &Item) -> Option<bool> {
     match item.key.as_ref()?.text.as_str() {
         "game" => Some(false),
-        "sources" => Some(true),
+        "sources" | "exclude" => Some(true),
         _ => None,
     }
 }
