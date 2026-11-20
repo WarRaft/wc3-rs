@@ -18,3 +18,9 @@ as-rs = { path = "../../as-rs" }
 bni-rs = { path = "../../bni-rs" }
 storm-rs = { path = "../../storm-rs" }
 notify = "8.2.0"
+
+# The parsers do the heavy work: optimize them even in debug builds, so a
+# debug server (build-mac.sh) keeps up with big map scripts while the
+# server crate itself still builds fast.
+[profile.dev.package."*"]
+opt-level = 3

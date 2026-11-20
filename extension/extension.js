@@ -429,9 +429,18 @@ function registerTokens(msg, context) {
             const cached = tokens.get(id)
             if ((cached && cached.version >= doc.version) || !tracked.has(id)) return latest()
             return new Promise(resolve => {
-                const timer = setTimeout(() => resolve(latest()), TOKENS_WAIT_MS)
+                const waiter = {version: doc.version, done: () => (clearTimeout(timer), resolve(latest()))}
+                // Gave up waiting: answer with what there is, and leave the
+                // queue, so the tokens arriving later count as unasked for
+                // and make VS Code ask again (see onFile).
+                const timer = setTimeout(() => {
+                    const queue = (waiting.get(id) || []).filter(w => w !== waiter)
+                    if (queue.length) waiting.set(id, queue)
+                    else waiting.delete(id)
+                    resolve(latest())
+                }, TOKENS_WAIT_MS)
                 const queue = waiting.get(id) || []
-                queue.push({version: doc.version, done: () => (clearTimeout(timer), resolve(latest()))})
+                queue.push(waiter)
                 waiting.set(id, queue)
             })
         },
