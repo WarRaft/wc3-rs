@@ -224,18 +224,17 @@ fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
     path.is_file().then_some(path)
 }
 
-/// The entry `name` of `dir`: that exact name, or else the one entry
-/// whose name matches it in any case.
+/// The entry `name` of `dir`, under its name on disk: that exact name, or
+/// else the entry whose name matches it in any case. Read from the folder,
+/// not checked with `exists`, which on a case-insensitive disk would say
+/// yes under the name asked for.
 fn find_entry(dir: &Path, name: &str) -> Option<PathBuf> {
-    let exact = dir.join(name);
-    if exact.exists() {
-        return Some(exact);
-    }
-    std::fs::read_dir(dir)
-        .ok()?
-        .flatten()
-        .find(|e| e.file_name().to_str().is_some_and(|n| n.eq_ignore_ascii_case(name)))
-        .map(|e| e.path())
+    let names: Vec<std::ffi::OsString> = std::fs::read_dir(dir).ok()?.flatten().map(|e| e.file_name()).collect();
+    let found = names
+        .iter()
+        .find(|n| n.to_str() == Some(name))
+        .or_else(|| names.iter().find(|n| n.to_str().is_some_and(|n| n.eq_ignore_ascii_case(name))))?;
+    Some(dir.join(found))
 }
 
 #[cfg(test)]

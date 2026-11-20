@@ -81,6 +81,12 @@ pub struct Workspace {
     games: HashMap<Vec<PathBuf>, Vec<String>>,
     /// The game files each project (by root) sees.
     project_games: HashMap<PathBuf, Vec<String>>,
+    /// The game files of the project the last name query came from: a
+    /// game file shared by projects with different `game=` folders (the
+    /// game's `Blizzard.j` under a custom `common.j` and under the stock
+    /// one) is read with these when they include it, so it sees one file
+    /// per game path, the one that project sees.
+    context: std::sync::Mutex<Option<Vec<String>>>,
     /// Files to analyze and report.
     dirty: HashSet<String>,
     /// Files the editor should forget: they left the model.
@@ -268,6 +274,37 @@ impl Workspace {
         out
     }
 
+    /// The set of game files read together with the game file `id` (or,
+    /// for `None`, with a file outside every project): the last name
+    /// query's project's, if it has `id`; else the first set (by `game=`
+    /// folders) that has it. Each game path appears once in a set, so a
+    /// name never resolves to two of the game's files.
+    fn game_set(&self, id: Option<&str>) -> Option<&Vec<String>> {
+        let has = |ids: &Vec<String>| id.is_none_or(|id| ids.iter().any(|g| g == id));
+        let context = self.context.lock().ok().and_then(|c| c.clone());
+        if let Some(ctx) = context.filter(|c| has(c)) {
+            return self.games.values().find(|ids| **ids == ctx);
+        }
+        let mut sets: Vec<(&Vec<PathBuf>, &Vec<String>)> = self.games.iter().filter(|(_, ids)| has(ids)).collect();
+        sets.sort();
+        sets.first().map(|(_, ids)| *ids)
+    }
+
+    /// A name query comes from `id`: if it's a project's file, its
+    /// project's game files become the ones a shared game file is read
+    /// with (see `context`).
+    pub fn note_context(&self, id: &str) {
+        let Some(entry) = self.files.get(id).filter(|e| !e.game) else {
+            return;
+        };
+        let Some(ids) = entry.project.as_ref().and_then(|r| self.project_games.get(r)) else {
+            return;
+        };
+        if let Ok(mut c) = self.context.lock() {
+            *c = Some(ids.clone());
+        }
+    }
+
     /// Is `id` one of the game's scripts?
     pub fn is_game(&self, id: &str) -> bool {
         self.games.values().any(|ids| ids.iter().any(|g| g == id))
@@ -296,17 +333,17 @@ impl Workspace {
             Script::Ai => fid == me_id,
             _ => Script::for_file(Path::new(fid)) != Script::Ai,
         };
+        // A game file sees the one set of game files it's read with.
         let game: Option<HashSet<&str>> = if me.is_some_and(|e| e.game) {
-            Some(
-                self.games
-                    .values()
-                    .filter(|ids| ids.iter().any(|g| g == id))
-                    .flatten()
-                    .map(String::as_str)
-                    .collect(),
-            )
+            Some(self.game_set(Some(id)).into_iter().flatten().map(String::as_str).collect())
         } else {
             None
+        };
+        // A file outside every project: one set of game files too.
+        let loose_games: HashSet<&str> = if me.is_some_and(|e| !e.game && e.project.is_none()) {
+            self.game_set(None).into_iter().flatten().map(String::as_str).collect()
+        } else {
+            HashSet::new()
         };
         let project = me.and_then(|e| e.project.clone()).filter(|_| game.is_none());
         let project_games: HashSet<&str> = project
@@ -323,7 +360,13 @@ impl Workspace {
                     (project_games.contains(fid.as_str()) && sees(fid))
                         || (!e.game && e.project.as_ref() == Some(root) && shares(fid))
                 }
-                (None, None) => e.game || shares(fid),
+                (None, None) => {
+                    if e.game {
+                        loose_games.contains(fid.as_str()) && sees(fid)
+                    } else {
+                        shares(fid)
+                    }
+                }
             };
             visible.then_some((fid.as_str(), &e.doc, e.symbols.as_slice()))
         })

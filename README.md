@@ -120,6 +120,15 @@ Problems panel shows the whole project's errors without opening anything.
   files). They get no diagnostics, being the game's, and a rename that
   would change them is refused. Projects with the same `game=` folders
   share them.
+- **One file per game path.** Game paths ignore case, and a file in a
+  later `game=` folder replaces the file at the same path below it, so a
+  project sees exactly one `common.j`, one `Blizzard.j` and one
+  `common.ai`. An empty `Scripts/blizzard.j` in the last folder takes all
+  of `Blizzard.j`'s functions away. A game file that projects with
+  different `game=` folders share (the stock `Blizzard.j` under both the
+  stock and a custom `common.j`) is read with the game files of the
+  project the last go to definition, references or hover came from, so
+  from it too every name leads to one file: the one that project sees.
 - **Visibility.** A file sees the files of its own project and the game
   files the game runs it with: a map script `common.j` and `Blizzard.j`,
   an AI script (`.ai`) `common.j` and `common.ai` (the game loads neither

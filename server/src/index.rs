@@ -129,6 +129,7 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
         }
         QueryKind::PathCompletion | QueryKind::PathLinks => return manifest_paths(ws, kind, id, pos),
         QueryKind::Definition | QueryKind::References | QueryKind::Hover => {
+            ws.note_context(id);
             let Some(target) = at(ws, id, pos) else {
                 return Answer::default();
             };

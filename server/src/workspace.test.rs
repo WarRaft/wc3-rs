@@ -516,3 +516,43 @@ fn game_folders_are_watched_and_reread() {
     ws.disk_changed(&[tmp.0.join("game/Maps/A.w3x")]);
     assert!(reports(&mut ws).is_empty());
 }
+
+#[test]
+fn one_file_per_game_path_whichever_project_led_there() {
+    use crate::document::Position;
+    use crate::index::{answer, QueryKind};
+    let tmp = project("ws-game-one", &[
+        ("game/Scripts/common.j", "constant integer STATE = 1\n"),
+        ("game/Scripts/Blizzard.j", "function BJ takes nothing returns integer\n    return STATE\nendfunction\n"),
+        ("ujapi/Scripts/COMMON.J", "constant integer STATE = 2\n"),
+        ("noblizz/Scripts/blizzard.j", ""),
+        ("a/wc3.bni", "[project]\ngame=../game\n"),
+        ("a/main.j", "function F takes nothing returns nothing\n    call BJ()\nendfunction\n"),
+        ("b/wc3.bni", "[project]\ngame=../game\ngame=../ujapi\n"),
+        ("b/main.j", "function F takes nothing returns nothing\n    call BJ()\nendfunction\n"),
+        ("c/wc3.bni", "[project]\ngame=../game\ngame=../noblizz\n"),
+        ("c/main.j", "function F takes nothing returns nothing\n    call BJ()\nendfunction\n"),
+    ]);
+    let mut ws = init(&tmp.0);
+    reports(&mut ws);
+    let id = |f: &str| path_id(&tmp.0.join(f));
+    let definition = |file: &str, line: u32, ch: u32| -> Vec<String> {
+        answer(&ws, QueryKind::Definition, &id(file), Position::new(line, ch), "")
+            .locations
+            .into_iter()
+            .map(|l| l.id)
+            .collect()
+    };
+    let blizzard = "game/Scripts/Blizzard.j";
+    // Opened on its own: Blizzard.j sees one common.j.
+    assert_eq!(definition(blizzard, 1, 12).len(), 1);
+    // Reached from b: b's common.j (UJAPI's, any case).
+    assert_eq!(definition("b/main.j", 1, 10), vec![id(blizzard)]);
+    assert_eq!(definition(blizzard, 1, 12), vec![id("ujapi/Scripts/COMMON.J")]);
+    // Reached from a: the game's.
+    assert_eq!(definition("a/main.j", 1, 10), vec![id(blizzard)]);
+    assert_eq!(definition(blizzard, 1, 12), vec![id("game/Scripts/common.j")]);
+    // An empty blizzard.j above it takes Blizzard.j's functions away.
+    assert!(definition("c/main.j", 1, 10).is_empty());
+    assert!(ws.is_game(&id("noblizz/Scripts/blizzard.j")));
+}
