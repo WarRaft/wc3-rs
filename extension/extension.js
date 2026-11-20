@@ -300,7 +300,9 @@ function onOpen(doc) {
     }
     if (!supported(doc) || tracked.has(id)) return
     tracked.set(id, doc.languageId)
-    const file = hasPath(doc.uri) ? doc.uri.fsPath : ''
+    // The text form of object data names the file it shows, so the server
+    // finds its project: its settings and its game's metadata.
+    const file = hasPath(doc.uri) || doc.uri.scheme === OBJECTS_SCHEME ? doc.uri.fsPath : ''
     send(encode.open(id, file, doc.languageId, doc.version, doc.getText()))
 }
 

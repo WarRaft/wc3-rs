@@ -9,6 +9,7 @@ use parser_rs::{Level, Occurrence, ParseError};
 
 use crate::document::{Document, Language, LineIndex, Range};
 use crate::project::{self, Project};
+use w3abdhqtu_rs::Metadata;
 
 /// A diagnostic as the editor shows it: an exact range, a severity, a
 /// message, for lint the id of its rule (empty for parse errors and
@@ -51,7 +52,14 @@ pub fn jass_dialect(doc: &Document, project: Option<&Project>) -> jass_rs::Diale
 /// Parse errors and lint warnings of `doc`, read with the settings of its
 /// `project` (its dialect, its lint rules; the default rules without one),
 /// sorted by line. Pure, so documents can be analyzed in parallel.
+#[cfg(test)]
 pub fn diagnostics(doc: &Document, project: Option<&Project>) -> Vec<Diagnostic> {
+    diagnostics_with(doc, project, None)
+}
+
+/// [`diagnostics`], with `objects`, the game's metadata when `doc` is the
+/// text form of object data, to check its fields against.
+pub fn diagnostics_with(doc: &Document, project: Option<&Project>, objects: Option<&Metadata>) -> Vec<Diagnostic> {
     let text = doc.text.as_str();
     let lines = LineIndex::new(text);
     let out = Out { text, lines: &lines };
@@ -64,7 +72,7 @@ pub fn diagnostics(doc: &Document, project: Option<&Project>) -> Vec<Diagnostic>
         Language::Zinc => zinc_rs::parse(text).map(|p| zinc_rs::lint(&p)),
         Language::Lua => lua_rs::parse(text).map(|c| lua_rs::lint(&c)),
         Language::AngelScript => as_rs::parse(text).map(|s| as_rs::lint(&s)),
-        Language::Bni => return bni(doc, project, &out),
+        Language::Bni => return bni(doc, project, objects, &out),
     };
     match result {
         Err(err) => vec![out.error(&err)],
@@ -76,12 +84,15 @@ pub fn diagnostics(doc: &Document, project: Option<&Project>) -> Vec<Diagnostic>
 /// lint still runs. The text form of object data also gets the errors
 /// that would stop it from saving. A project manifest (`wc3.bni`) also gets its settings
 /// checked, against the text being edited rather than the saved file.
-fn bni(doc: &Document, project: Option<&Project>, out: &Out) -> Vec<Diagnostic> {
+fn bni(doc: &Document, project: Option<&Project>, objects: Option<&Metadata>, out: &Out) -> Vec<Diagnostic> {
     let parsed = bni_rs::parse(out.text);
     let mut diags: Vec<Diagnostic> = parsed.errors.iter().map(|e| out.error(e)).collect();
-    // The text form of object data (`.w3a` ...): what it can't save.
-    diags.extend(crate::objects::text_errors(&parsed).iter().map(|e| out.error(e)));
-    let lint = project::apply_lint(bni_rs::lint(&parsed), project);
+    // The text form of object data (`.w3a` ...): what it can't save, and
+    // what the game's metadata says is wrong with its fields.
+    let (errors, mut lint) = crate::objects::diagnostics(&parsed, objects);
+    diags.extend(errors.iter().map(|e| out.error(e)));
+    lint.extend(bni_rs::lint(&parsed));
+    let lint = project::apply_lint(lint, project);
     diags.extend(lint.into_iter().map(|d| out.lint(d)));
     if let Some(path) = doc.path.as_deref().filter(|p| project::is_manifest(p)) {
         let root = path.parent().unwrap_or(Path::new(""));
@@ -139,8 +150,8 @@ pub struct Analysis {
 /// Analyzes `doc` with the settings of its `project`. Pure, so documents
 /// can be analyzed in parallel. Tokens and symbols come from one
 /// classification pass where the language supports it.
-pub fn analyze(doc: &Document, project: Option<&Project>, highlight: bool) -> Analysis {
-    let diagnostics = diagnostics(doc, project);
+pub fn analyze(doc: &Document, project: Option<&Project>, highlight: bool, objects: Option<&Metadata>) -> Analysis {
+    let diagnostics = diagnostics_with(doc, project, objects);
     let text = doc.text.as_str();
     let (tokens, symbols) = match doc.language {
         Language::Jass => {

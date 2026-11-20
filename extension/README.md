@@ -59,7 +59,10 @@ Warcraft III language support for VS Code.
   `.w3u` (on disk or inside a map) opens as text, in BNI, with
   highlighting and live errors, and saving writes the file back. Every
   file goes to text and back to the same bytes. With the project's
-  `game=` folders, each field gets its World Editor name as a comment.
+  `game=` folders, each field gets its World Editor name and type as a
+  comment, and the fields are checked against the game's metadata as you
+  type (types, limits, unknown fields, levels, whose field it is), with
+  quick fixes.
 - Symbol navigation across the whole project, in every language: go to
   definition, find references, hover with the declaration, outline, go
   to symbol in workspace, and rename (F2), which refuses with a reason
@@ -112,7 +115,8 @@ dependencies besides the VS Code API.
   so inside maps too) and has the server convert it to text (`objects`
   message), and writing it has the server convert the text back, then
   writes the file. The text's language is the file's (`w3a` ...), which
-  the server reads as BNI.
+  the server reads as BNI; the text is opened with the file's path, so
+  the server reads it with the file's project and its game.
 - **Queries.** Only what depends on the cursor is asked (`query` →
   `answer`): definition, references, hover, document and workspace
   symbols, rename, answered from the server's symbol index after every earlier

@@ -172,8 +172,8 @@ impl<W: Write> Server<W> {
                 self.answers.push(ServerMsg::Texture { request, texture: crate::texture::decode(&data) });
             }
             ClientMsg::Objects { request, op, name, data } => {
-                let game = ws.game_folders(Path::new(&name));
-                let (error, data) = match crate::objects::convert(op, &name, &data, &game) {
+                let meta = ws.object_metadata(Path::new(&name)).unwrap_or_default();
+                let (error, data) = match crate::objects::convert(op, &name, &data, &meta) {
                     Ok(data) => (String::new(), data),
                     Err(error) => (error, Vec::new()),
                 };
@@ -184,7 +184,8 @@ impl<W: Write> Server<W> {
 
     /// Watches every folder the model cares about (see
     /// `Workspace::watch_paths`) that isn't watched yet. Only manifests,
-    /// source files, maps and the game's archives are passed on, so a build writing thousands of
+    /// source files, maps, the game's archives and its metadata tables
+    /// (`objects::is_game_file_name`) are passed on, so a build writing thousands of
     /// other files doesn't wake the loop.
     fn update_watch(&mut self) {
         use notify::Watcher;
@@ -211,6 +212,7 @@ impl<W: Write> Server<W> {
                             || Language::from_path(p).is_some()
                             || crate::map::is_map_name(p)
                             || crate::game::is_archive_name(p)
+                            || crate::objects::is_game_file_name(p)
                     })
                     .collect();
                 if !paths.is_empty() {

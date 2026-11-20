@@ -638,3 +638,38 @@ fn object_data_files_are_not_analyzed() {
     let mut ws = init(&tmp.0);
     assert_eq!(names(&tmp.0, &reports(&mut ws)), vec!["a.j", "wc3.bni"]);
 }
+
+#[test]
+fn object_text_is_checked_with_its_projects_game() {
+    let meta = "C;X1;Y1;K\"ID\"\nC;X2;K\"type\"\nC;X3;K\"field\"\nC;X1;Y2;K\"umvs\"\nC;X2;K\"int\"\nC;X3;K\"Speed\"\n";
+    let tmp = project(
+        "ws-object-text",
+        &[
+            ("p/wc3.bni", "[project]\ngame=wc3\nsources=src\n[lint]\nobject-value-range=off\n"),
+            ("p/wc3/Units/UnitMetaData.slk", meta),
+        ],
+    );
+    let p = tmp.0.join("p");
+    let mut ws = init(&tmp.0);
+    reports(&mut ws);
+    // The editor's text form of src/war3map.w3u: its id is the text's,
+    // its path the file's.
+    let text = "[w3u]\nversion=2\n[hfoo]\numvs=1.5\n";
+    ws.open("wc3obj:/x".into(), Some(p.join("src/war3map.w3u")), Language::Bni, 1, text.into());
+    let found: Vec<_> = ws
+        .take_reports()
+        .into_iter()
+        .filter_map(|m| match m {
+            ServerMsg::File { id, diagnostics, .. } if id == "wc3obj:/x" => Some(diagnostics),
+            _ => None,
+        })
+        .flatten()
+        .map(|d| (d.rule, d.range.start.line))
+        .collect();
+    assert_eq!(found, vec![("object-value-type", 3)]);
+
+    // Outside `sources`: no game, no checks.
+    ws.open("wc3obj:/y".into(), Some(p.join("war3map.w3u")), Language::Bni, 1, text.into());
+    let found = ws.take_reports().into_iter().any(|m| matches!(m, ServerMsg::File { id, diagnostics, .. } if id == "wc3obj:/y" && !diagnostics.is_empty()));
+    assert!(!found);
+}

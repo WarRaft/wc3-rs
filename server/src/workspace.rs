@@ -45,6 +45,7 @@ use crate::document::{Document, Language};
 use crate::map;
 use crate::project::{self, Project, Projects};
 use crate::protocol::ServerMsg;
+use w3abdhqtu_rs::{Kind, Metadata};
 
 struct Entry {
     doc: Document,
@@ -68,6 +69,12 @@ impl Entry {
     }
 }
 
+/// What a file is read with: its project's settings, and the game's
+/// metadata when it's the text form of object data.
+type Settings = (Option<Arc<Project>>, Option<Arc<Metadata>>);
+/// A file to analyze, by id, with its [`Settings`].
+type Job<'a> = (&'a String, &'a Entry, Option<Arc<Project>>, Option<Arc<Metadata>>);
+
 #[derive(Default)]
 pub struct Workspace {
     roots: Vec<PathBuf>,
@@ -89,6 +96,8 @@ pub struct Workspace {
     /// one) is read with these when they include it, so it sees one file
     /// per game path, the one that project sees.
     context: std::sync::Mutex<Option<Vec<String>>>,
+    /// The game's metadata for the text forms of object data.
+    objects: crate::objects::Cache,
     /// Files to analyze and report.
     dirty: HashSet<String>,
     /// Files the editor should forget: they left the model.
@@ -177,6 +186,15 @@ impl Workspace {
     /// script (`game::affects`) reads its game files again. Open files keep
     /// the editor's text.
     pub fn disk_changed(&mut self, paths: &[PathBuf]) {
+        // The game's metadata changed: check the object-data texts again.
+        if self.objects.disk_changed(paths) {
+            let texts = self.files.iter().filter(|(_, e)| {
+                e.doc.language == Language::Bni
+                    && e.doc.path.as_deref().is_some_and(|p| Kind::from_path(&p.to_string_lossy()).is_some())
+            });
+            let ids: Vec<String> = texts.map(|(id, _)| id.clone()).collect();
+            self.dirty.extend(ids);
+        }
         if paths.iter().any(|p| project::is_manifest(p)) {
             self.sync_disk();
             self.dirty.extend(self.files.keys().cloned());
@@ -244,26 +262,30 @@ impl Workspace {
 
         let mut ids: Vec<String> = std::mem::take(&mut self.dirty).into_iter().collect();
         ids.sort();
-        let settings: Vec<Option<Arc<Project>>> = ids
+        let settings: Vec<Settings> = ids
             .iter()
             .map(|id| {
-                let path = self.files.get(id)?.doc.path.clone()?;
-                self.settings_for(&path)
+                let Some(path) = self.files.get(id).and_then(|e| e.doc.path.clone()) else {
+                    return (None, None);
+                };
+                let objects = self.files[id].doc.language == Language::Bni;
+                let objects = objects.then(|| self.object_metadata(&path)).flatten();
+                (self.settings_for(&path), objects)
             })
             .collect();
-        let mut jobs: Vec<(&String, &Entry, Option<Arc<Project>>)> = Vec::new();
-        for (id, project) in ids.iter().zip(settings) {
+        let mut jobs: Vec<Job> = Vec::new();
+        for (id, (project, objects)) in ids.iter().zip(settings) {
             if let Some(entry) = self.files.get(id) {
-                jobs.push((id, entry, project));
+                jobs.push((id, entry, project, objects));
             }
         }
-        let results = parallel_map(&jobs, |(id, entry, project)| {
-            let a = analysis::analyze(&entry.doc, project.as_deref(), entry.open);
+        let results = parallel_map(&jobs, |(id, entry, project, objects)| {
+            let a = analysis::analyze(&entry.doc, project.as_deref(), entry.open, objects.as_deref());
             ((*id).clone(), entry.doc.version, a)
         });
         let quiet: HashSet<String> = ids.iter().filter(|id| self.is_map_blizzard(id)).cloned().collect();
         let roots: HashMap<String, Option<PathBuf>> =
-            jobs.iter().map(|(id, _, p)| ((*id).clone(), p.as_ref().map(|p| p.root.clone()))).collect();
+            jobs.iter().map(|(id, _, p, _)| ((*id).clone(), p.as_ref().map(|p| p.root.clone()))).collect();
         for (id, version, mut a) in results {
             if let Some(entry) = self.files.get_mut(&id) {
                 entry.symbols = a.symbols;
@@ -490,6 +512,15 @@ impl Workspace {
     /// file goes with is the project's to say.
     pub fn game_folders(&mut self, path: &Path) -> Vec<PathBuf> {
         self.owner(path).map(|p| p.game.clone()).unwrap_or_default()
+    }
+
+    /// The game's metadata for the object-data file `path` (`.w3a` ...),
+    /// from its project's game folders (`game_folders`): empty outside a
+    /// project. `None` when `path` isn't object data.
+    pub fn object_metadata(&mut self, path: &Path) -> Option<Arc<Metadata>> {
+        let kind = Kind::from_path(&path.to_string_lossy())?;
+        let game = self.game_folders(path);
+        Some(self.objects.get(&game, kind))
     }
 
     /// Every folder whose changes matter: the workspace folders, and the

@@ -231,15 +231,22 @@ Every field is its four-character id, then `[level]` and `.column`
 to text and back to the same bytes; the format and its rarer parts
 (sets, `end` ids) are in the `w3abdhqtu-rs` README.
 
-The comment after a field is the name World Editor gives it, from the
+The comment after a field is the name World Editor gives it and its type, from the
 game's metadata tables (`Units\AbilityMetaData.slk` ...) and its strings
 (`UI\WorldEditStrings.txt`), found in the `game=` folders of the project
 whose `sources` take the file in (a map they match takes in its files),
 over each other in order, like the game's scripts. The game's version
 decides the fields, so there's no guessing: a file outside every
 project's `sources` (even one below a `wc3.bni`) or in a project without
-`game=` gets no names. They're read each time a file is
-opened.
+`game=` gets no names and no checks. They're read once per set of
+`game=` folders and kind, and again when an archive or one of the tables
+changes on disk.
+
+While the text is edited, its fields are checked against the same
+metadata: a value stored as the wrong type (an error: the game misreads
+it), a number past World Editor's limits, an unknown field, a level or
+data column that doesn't fit, a field of another object. Each is a lint
+rule (`object-...` below), so the project's `[lint]` switches it.
 
 The editor reads the
 text as BNI, so it's highlighted and checked like any BNI, plus what
@@ -300,6 +307,11 @@ aren't lint: they can't be turned off. The rules are defined in
 | `implicit-signature`             | JASS                         | **off** | a `function` or `native` without `takes` or `returns`, which the game requires (group `pure`) |
 | `declaration-after-function`     | JASS                         | **off** | a global, `globals` block, `native` or `type` after a function; the game reads them only before the first one (group `pure`) |
 | `global-outside-globals`         | JASS                         | **off** | a variable at the top level outside `globals ... endglobals`, where the game doesn't read it (group `pure`) |
+| `object-value-type`              | Object data                  | on      | a value stored as another type than the game's metadata gives the field (`1` for a real, a number for a string); an error, the game misreads it. Quick fix: the right type |
+| `object-value-range`             | Object data                  | on      | a number outside World Editor's limits for the field, or a flag other than 0 or 1 |
+| `object-unknown-field`           | Object data                  | on      | a field the game's metadata doesn't have, like one of a newer game version |
+| `object-field-level`             | Object data                  | on      | a level on a field without levels, none on one with, another data column than its own. Quick fix: the right key |
+| `object-field-owner`             | Object data                  | on      | a field of other objects: an ability's data of another ability (by its code), a units-only field of an item |
 
 **Why `infinite-loop` is off.** A thread that loops forever and sleeps is
 normal Warcraft III code: the game's own AI scripts are full of them (161
