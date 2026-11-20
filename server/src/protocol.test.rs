@@ -42,6 +42,7 @@ fn client_messages_round_trip() {
             flags: fs_flags::OVERWRITE,
             data: vec![0, 1, 255],
         },
+        ClientMsg::Texture { request: 4, data: b"BLP1".to_vec() },
     ];
     for msg in messages {
         assert_eq!(decode_client(&msg.encode()), msg);
@@ -138,4 +139,28 @@ fn fs_answers_carry_errors_stats_entries_and_bytes() {
     assert_eq!(body[11], 2);
     assert_eq!(&body[12..20], &(1u64 << 40).to_le_bytes());
     assert!(body.ends_with(&[2, 0, 0, 0, 9, 8]));
+}
+
+#[test]
+fn texture_answers_round_trip() {
+    use crate::texture::{Mip, Texture};
+    let msg = ServerMsg::Texture {
+        request: 8,
+        texture: Texture {
+            error: String::new(),
+            version: "BLP1".into(),
+            encoding: "JPEG".into(),
+            alpha_bits: 8,
+            width: 2,
+            height: 1,
+            mips: vec![
+                Mip { width: 2, height: 1, error: String::new(), rgba: vec![1, 2, 3, 4, 5, 6, 7, 8] },
+                Mip { width: 1, height: 1, error: "not in the file".into(), rgba: Vec::new() },
+            ],
+        },
+    };
+    let frame = msg.encode();
+    assert_eq!(frame[4], 132);
+    let (kind, body) = read_frame(&mut &frame[..]).unwrap().unwrap();
+    assert_eq!(ServerMsg::decode(kind, &body).unwrap(), Some(msg));
 }

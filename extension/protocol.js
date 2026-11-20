@@ -25,10 +25,12 @@ const KIND = {
     CLOSE: 5,
     QUERY: 6,
     FS: 7,
+    TEXTURE: 8,
     FILE: 128,
     LEGEND: 129,
     ANSWER: 130,
     FS_ANSWER: 131,
+    TEXTURE_ANSWER: 132,
 }
 
 /** File system operations inside maps (`protocol::FsOp` on the Rust side). */
@@ -238,6 +240,17 @@ const encode = {
         w.bytes(data)
         return w.frame(KIND.FS)
     },
+
+    /**
+     * @param {number} request  echoed in the answer
+     * @param {Uint8Array} data  the texture file's bytes
+     */
+    texture(request, data) {
+        const w = new Writer()
+        w.u32(request)
+        w.bytes(data)
+        return w.frame(KIND.TEXTURE)
+    },
 }
 
 /** Reads the fields of one frame's body in order. */
@@ -316,7 +329,10 @@ class Reader {
  * @typedef {{kind: 'file', id: string, version: number, diagnostics: WireDiagnostic[], tokens: Uint32Array}
  *         | {kind: 'legend', types: string[], modifiers: string[]}
  *         | {kind: 'answer', request: number, text: string, locations: WireLocation[]}
- *         | {kind: 'fs', request: number, error: string | null, message: string, stat: FsStat | null, entries: [string, 'file' | 'dir'][], data: Uint8Array}} ServerMessage
+ *         | {kind: 'fs', request: number, error: string | null, message: string, stat: FsStat | null, entries: [string, 'file' | 'dir'][], data: Uint8Array}
+ *         | {kind: 'texture', request: number, texture: Texture}} ServerMessage
+ * @typedef {{error: string, version: string, encoding: string, alphaBits: number, width: number, height: number, mips: TextureMip[]}} Texture
+ * @typedef {{width: number, height: number, error: string, rgba: Uint8Array}} TextureMip
  * @typedef {{type: 'file' | 'dir', size: number, mtime: number, readonly: boolean, note: string}} FsStat
  */
 
@@ -365,6 +381,14 @@ function decode(kind, body) {
             const entries = []
             for (let n = r.u32(); n > 0; n--) entries.push([r.string(), r.u8() === 2 ? 'dir' : 'file'])
             return {kind: 'fs', request, error, message, stat, entries, data: r.bytes()}
+        }
+        case KIND.TEXTURE_ANSWER: {
+            const request = r.u32()
+            const texture = {error: r.string(), version: r.string(), encoding: r.string(), alphaBits: r.u8(), width: r.u32(), height: r.u32(), mips: []}
+            for (let n = r.u32(); n > 0; n--) {
+                texture.mips.push({width: r.u32(), height: r.u32(), error: r.string(), rgba: r.bytes()})
+            }
+            return {kind: 'texture', request, texture}
         }
         default:
             return null

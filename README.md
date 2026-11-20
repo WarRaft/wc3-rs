@@ -191,6 +191,16 @@ Problems panel shows the whole project's errors without opening anything.
 - **Cost.** Files are analyzed in parallel: 25 MB of JASS (60 copies of
   `Blizzard.j`) loads in about 0.2 s.
 
+## Textures
+
+A `.blp` opens in the editor's texture viewer, from disk or from inside a
+map. The server decodes it with [`blp-rs`](../blp-rs/README.md)
+(`server/src/texture.rs`) without its encoder, so the server stays pure
+Rust: every BLP1 and BLP2 kind (JPEG, palette with 0/1/4/8-bit alpha,
+DXT1/3/5, raw BGRA) and every mip, each on its own, so a damaged or
+missing mip leaves the others viewable. BLP0, the Warcraft III beta's
+format, keeps its mips in separate `.b00`… files, and isn't shown.
+
 ## Lint
 
 Every lint diagnostic names its **rule**, shown as the diagnostic's code

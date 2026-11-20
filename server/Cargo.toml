@@ -2,7 +2,7 @@
 name = "wc3-server"
 version = "0.1.0"
 edition = "2021"
-description = "Language backend of the WC3 VS Code extension (binary protocol over stdio) — parses, lints and highlights JASS/vJASS, Zinc, Lua, AngelScript and BNI via jass-rs / zinc-rs / lua-rs / as-rs / bni-rs, and reads wc3.bni projects."
+description = "Language backend of the WC3 VS Code extension (binary protocol over stdio) — parses, lints and highlights JASS/vJASS, Zinc, Lua, AngelScript and BNI via jass-rs / zinc-rs / lua-rs / as-rs / bni-rs, reads wc3.bni projects, and decodes BLP textures for the viewer."
 license = "CC0-1.0"
 
 [[bin]]
@@ -17,6 +17,9 @@ lua-rs = { path = "../../lua-rs" }
 as-rs = { path = "../../as-rs" }
 bni-rs = { path = "../../bni-rs" }
 storm-rs = { path = "../../storm-rs" }
+# Decoding only: no libjpeg-turbo (a C build), so cross-compiling stays
+# pure Rust.
+blp = { path = "../../blp-rs", default-features = false }
 notify = "8.2.0"
 
 # The parsers do the heavy work: optimize them even in debug builds, so a

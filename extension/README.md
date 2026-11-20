@@ -48,6 +48,13 @@ Warcraft III language support for VS Code.
   (some protected ones) are read-only. Search (Ctrl+Shift+F, Ctrl+P)
   doesn't look inside maps: VS Code only offers that to its own file
   systems.
+- Textures: a `.blp` (on disk or inside a map) opens in a viewer that
+  decodes it with [`blp-rs`](https://github.com/WarRaft/blp-rs): every
+  kind Warcraft III and World of Warcraft use (JPEG, palette, DXT1/3/5,
+  raw). Pick a mip; show RGBA, RGB or the alpha alone, on a checkerboard,
+  black or white; zoom (Fit, 1:1, +/−, Ctrl/Cmd + wheel, keys `0` `1`
+  `+` `-`, `[` `]` for the mips), read the pixel under the cursor, save
+  the mip as PNG. It reloads when the file changes.
 - Symbol navigation across the whole project, in every language: go to
   definition, find references, hover with the declaration, outline, go
   to symbol in workspace, and rename (F2), which refuses with a reason
@@ -89,6 +96,11 @@ dependencies besides the VS Code API.
 - **Ids.** A document is identified by its path on disk (`fsPath`) when
   it's a file, so it matches the files the server finds itself, and by its
   URI otherwise.
+- **Textures.** The viewer (`webview/texture.js`) reads the file through
+  VS Code (so a map's file system works too) and sends its bytes in a
+  `texture` message; the server decodes it with `blp-rs` (decoding only,
+  no C code, so cross-compiling is unaffected) and answers with the
+  header and every mip as RGBA.
 - **Queries.** Only what depends on the cursor is asked (`query` →
   `answer`): definition, references, hover, document and workspace
   symbols, rename, answered from the server's symbol index after every earlier

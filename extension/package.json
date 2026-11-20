@@ -1,8 +1,8 @@
 {
   "name": "wc3",
   "displayName": "WC3",
-  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects.",
-  "version": "0.0.2",
+  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects; maps as folders and a BLP texture viewer.",
+  "version": "0.0.3",
   "publisher": "WarRaft",
   "icon": "images/logo.png",
   "license": "CC0-1.0",
@@ -58,6 +58,19 @@
           },
           {
             "filenamePattern": "*.W3M"
+          }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "wc3.blp",
+        "displayName": "BLP Texture",
+        "selector": [
+          {
+            "filenamePattern": "*.blp"
+          },
+          {
+            "filenamePattern": "*.BLP"
           }
         ],
         "priority": "default"

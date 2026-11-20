@@ -64,8 +64,8 @@ pub struct Server<W: Write> {
     queries: Vec<Query>,
     /// Maps as folders, for `Fs` messages.
     mapfs: crate::mapfs::MapFs,
-    /// `Fs` answers to send.
-    fs_answers: Vec<ServerMsg>,
+    /// Answers to send that don't wait for analysis: `Fs`, `Texture`.
+    answers: Vec<ServerMsg>,
 }
 
 struct Query {
@@ -86,7 +86,7 @@ impl<W: Write> Server<W> {
             watched: HashSet::new(),
             queries: Vec::new(),
             mapfs: Default::default(),
-            fs_answers: Vec::new(),
+            answers: Vec::new(),
         }
     }
 
@@ -159,13 +159,16 @@ impl<W: Write> Server<W> {
                         ws.disk_changed(&[archive]);
                     }
                 }
-                self.fs_answers.push(ServerMsg::Fs {
+                self.answers.push(ServerMsg::Fs {
                     request,
                     error: answer.error,
                     stat: answer.stat,
                     entries: answer.entries,
                     data: answer.data,
                 });
+            }
+            ClientMsg::Texture { request, data } => {
+                self.answers.push(ServerMsg::Texture { request, texture: crate::texture::decode(&data) });
             }
         }
     }
@@ -228,10 +231,10 @@ impl<W: Write> Server<W> {
     /// Sends the reports of everything changed, then answers the waiting
     /// queries against that up-to-date model.
     fn flush(&mut self) -> io::Result<()> {
-        if self.workspace.is_idle() && self.queries.is_empty() && self.fs_answers.is_empty() {
+        if self.workspace.is_idle() && self.queries.is_empty() && self.answers.is_empty() {
             return Ok(());
         }
-        for msg in std::mem::take(&mut self.fs_answers) {
+        for msg in std::mem::take(&mut self.answers) {
             self.out.write_all(&msg.encode())?;
         }
         for msg in self.workspace.take_reports() {

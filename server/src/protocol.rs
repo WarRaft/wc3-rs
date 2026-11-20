@@ -29,7 +29,9 @@
 //! (VS Code's `fsPath`), its URI otherwise (an untitled document). A file
 //! inside a map has a path inside the map's, `<map.w3x>/war3map.j`; the
 //! editor shows it under the `wc3map:` scheme with that path, a file
-//! system it reaches through `Fs` messages (see `mapfs`). The
+//! system it reaches through `Fs` messages (see `mapfs`). A texture the
+//! editor shows is sent as its bytes in a `Texture` message and comes back
+//! decoded (see `texture`). The
 //! server reports files the editor never opened, and a path is what both
 //! sides know them by. A reader skips frames of a kind it doesn't know, so either
 //! side can add messages without breaking the other. The JavaScript twin
@@ -43,6 +45,7 @@ use crate::analysis::Diagnostic;
 use crate::document::{Position, Range};
 use crate::index::{Location, QueryKind};
 use crate::mapfs::{FsError, Kind, Stat};
+use crate::texture::Texture;
 
 /// Header size: `u32` body length + `u8` kind.
 pub const HEADER: usize = 5;
@@ -105,6 +108,9 @@ pub enum ClientMsg {
         flags: u8,
         data: Vec<u8>,
     },
+    /// Kind 8. A texture file's bytes (`u32` length, then the bytes), to
+    /// decode for the viewer; answered at once by `Texture`.
+    Texture { request: u32, data: Vec<u8> },
 }
 
 /// The operations of `ClientMsg::Fs`, in wire order.
@@ -176,6 +182,12 @@ pub enum ServerMsg {
         entries: Vec<(String, Kind)>,
         data: Vec<u8>,
     },
+    /// Kind 132. The answer to `ClientMsg::Texture` number `request`:
+    /// error (empty if it decoded), version (`BLP1`), encoding (`JPEG`),
+    /// `u8` alpha bits, `u32` width, `u32` height, then the mips, the base
+    /// one first: `u32` width, `u32` height, error, RGBA bytes (empty for
+    /// a mip that's missing or doesn't decode).
+    Texture { request: u32, texture: Texture },
 }
 
 fn kind_code(kind: Kind) -> u8 {
@@ -230,10 +242,12 @@ mod kind {
     pub const CLOSE: u8 = 5;
     pub const QUERY: u8 = 6;
     pub const FS: u8 = 7;
+    pub const TEXTURE: u8 = 8;
     pub const FILE: u8 = 128;
     pub const LEGEND: u8 = 129;
     pub const ANSWER: u8 = 130;
     pub const FS_ANSWER: u8 = 131;
+    pub const TEXTURE_ANSWER: u8 = 132;
 }
 
 /// Reads one frame: `Ok(None)` at a clean end of input (between frames).
@@ -308,6 +322,7 @@ impl ClientMsg {
                 flags: r.u8()?,
                 data: r.bytes()?,
             },
+            kind::TEXTURE => ClientMsg::Texture { request: r.u32()?, data: r.bytes()? },
             _ => return Ok(None),
         };
         Ok(Some(msg))
@@ -365,6 +380,11 @@ impl ClientMsg {
                 w.u8(*flags);
                 w.bytes(data);
                 kind::FS
+            }
+            ClientMsg::Texture { request, data } => {
+                w.u32(*request);
+                w.bytes(data);
+                kind::TEXTURE
             }
         };
         w.frame(kind)
@@ -444,6 +464,22 @@ impl ServerMsg {
                 w.bytes(data);
                 kind::FS_ANSWER
             }
+            ServerMsg::Texture { request, texture: t } => {
+                w.u32(*request);
+                w.string(&t.error);
+                w.string(&t.version);
+                w.string(&t.encoding);
+                w.u8(t.alpha_bits);
+                w.u32(t.width);
+                w.u32(t.height);
+                w.list(&t.mips, |w, m| {
+                    w.u32(m.width);
+                    w.u32(m.height);
+                    w.string(&m.error);
+                    w.bytes(&m.rgba);
+                });
+                kind::TEXTURE_ANSWER
+            }
         };
         w.frame(kind)
     }
@@ -509,6 +545,18 @@ impl ServerMsg {
                 let entries = r.list(|r| Ok((r.string()?, kind_of(r.u8()?))))?;
                 ServerMsg::Fs { request, error, stat, entries, data: r.bytes()? }
             }
+            kind::TEXTURE_ANSWER => ServerMsg::Texture {
+                request: r.u32()?,
+                texture: Texture {
+                    error: r.string()?,
+                    version: r.string()?,
+                    encoding: r.string()?,
+                    alpha_bits: r.u8()?,
+                    width: r.u32()?,
+                    height: r.u32()?,
+                    mips: r.list(|r| Ok(crate::texture::Mip { width: r.u32()?, height: r.u32()?, error: r.string()?, rgba: r.bytes()? }))?,
+                },
+            },
             _ => return Ok(None),
         };
         Ok(Some(msg))

@@ -6,8 +6,10 @@
 //! project in memory (`workspace`, projects are `wc3.bni`, see `project`),
 //! watching the disk, parsing and linting with
 //! the language crates (`jass-rs`, `zinc-rs`, `lua-rs`, `as-rs`, `bni-rs`,
-//! all built on `parser-rs`), and sending the results back. The process
-//! ends when its stdin closes, i.e. when the editor goes away.
+//! all built on `parser-rs`), and sending the results back. It also
+//! decodes BLP textures for the editor's viewer (`texture`, with
+//! `blp-rs`). The process ends when its stdin closes, i.e. when the
+//! editor goes away.
 
 mod analysis;
 mod document;
@@ -21,6 +23,7 @@ mod project;
 mod protocol;
 mod rename;
 mod server;
+mod texture;
 mod workspace;
 
 use std::io::{BufWriter, stdin, stdout};

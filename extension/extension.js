@@ -27,6 +27,10 @@
  * opens in), and then its files are listed, opened, saved, copied, added,
  * renamed and deleted like any others. The game's `.mpq`s are read-only.
  *
+ * A `.blp` texture opens in a viewer (`webview/texture.js`): the extension
+ * reads the file (from disk or from inside a map), the server decodes it
+ * with `blp-rs` (`server/src/texture.rs`), and the page draws its mips.
+ *
  * In `wc3.bni`, the paths of `game=` and `sources=` complete from the disk
  * and every folder along them is a link that reveals that folder (in the
  * Explorer when it's in the workspace, in the system's file manager
@@ -65,6 +69,7 @@ const {
     FileChangeType,
     FileDecoration,
     Disposable,
+    RelativePattern,
 } = require('vscode')
 const {encode, decode, FrameReader, QUERY, FS_OP, FS_FLAG} = require('./protocol.js')
 
@@ -725,6 +730,128 @@ document.getElementById('open').onclick = () => vscode.postMessage('open')
 }
 
 /**
+ * Asks the server to decode a texture file's bytes; resolves with the
+ * decoded texture (whose `error` says why when it isn't one).
+ *
+ * @param {Uint8Array} data
+ * @returns {Promise<import('./protocol.js').Texture>}
+ */
+function textureRequest(data) {
+    if (!server) return Promise.reject(new Error('The WC3 server isn\'t running.'))
+    const request = nextRequest = (nextRequest + 1) >>> 0
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            pendingQueries.delete(request)
+            reject(new Error('The WC3 server didn\'t answer in time.'))
+        }, FS_TIMEOUT_MS)
+        pendingQueries.set(request, answer => {
+            clearTimeout(timer)
+            resolve(answer.texture)
+        })
+        send(encode.texture(request, data))
+    })
+}
+
+/**
+ * The texture viewer (see the header): the editor `.blp` files open in.
+ * The page (`webview/texture.js`) asks for the texture once it's loaded,
+ * and again whenever it's shown after being hidden; the file is read
+ * again when it changes.
+ *
+ * @param {import('vscode').ExtensionContext} context
+ */
+function registerTextures(context) {
+    const media = Uri.joinPath(context.extensionUri, 'webview')
+
+    /** The page, its script and style from `webview/`. */
+    const html = webview => {
+        const nonce = [...Array(32)].map(() => Math.floor(Math.random() * 36).toString(36)).join('')
+        const asset = name => webview.asWebviewUri(Uri.joinPath(media, name))
+        return `<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'">
+<link rel="stylesheet" href="${asset('texture.css')}">
+</head><body>
+<div id="loading" class="message"><p>Decoding…</p></div>
+<div id="error" class="message" hidden><h2>Can't show this texture</h2><p id="error-text"></p></div>
+<div id="viewer" hidden>
+  <div class="bar">
+    <div class="group" id="mips"><span class="label">Mip</span></div>
+    <div class="group" id="channels"><span class="label">Channels</span></div>
+    <div class="group" id="background"><span class="label">Background</span></div>
+    <div class="group">
+      <button id="zoom-out" title="Zoom out (−)">−</button>
+      <span id="zoom-value" class="zoom-value"></span>
+      <button id="zoom-in" title="Zoom in (+)">+</button>
+      <button id="zoom-fit" title="Fit (0)">Fit</button>
+      <button id="zoom-1" title="Actual size (1)">1:1</button>
+    </div>
+    <div class="spacer"></div>
+    <span id="info" class="info"></span>
+    <button id="save" title="Save this mip as PNG">Save PNG</button>
+  </div>
+  <div id="stage" class="stage">
+    <div id="frame" class="frame checker"><canvas id="canvas"></canvas></div>
+    <div id="missing" class="message" hidden><p id="missing-text"></p></div>
+  </div>
+  <div class="status">
+    <span id="pixel" class="pixel" hidden>
+      <span id="pos"></span><span id="swatch" class="swatch"></span><span id="rgba"></span><span id="hex"></span>
+    </span>
+  </div>
+</div>
+<script nonce="${nonce}" src="${asset('texture.js')}"></script>
+</body></html>`
+    }
+
+    /** Saves a mip's PNG (encoded by the page), next to the texture or its map. */
+    const saveMip = async (uri, mip, png) => {
+        const base = path.posix.basename(uri.path).replace(/\.[^.]+$/, '')
+        const name = mip ? `${base}_mip${mip}.png` : `${base}.png`
+        const file = uri.scheme === MAP_SCHEME ? mapOf(uri.fsPath) : uri.scheme === 'file' ? uri.fsPath : null
+        const target = await window.showSaveDialog({
+            defaultUri: file ? Uri.file(path.join(path.dirname(file), name)) : undefined,
+            filters: {'PNG image': ['png']},
+        })
+        if (!target) return
+        await workspace.fs.writeFile(target, png)
+        window.setStatusBarMessage(`Saved ${workspace.asRelativePath(target)}`, 3000)
+    }
+
+    const editor = {
+        openCustomDocument: uri => ({uri, dispose() {}}),
+        resolveCustomEditor(document, panel) {
+            const {uri} = document
+            const {webview} = panel
+            webview.options = {enableScripts: true, localResourceRoots: [media]}
+            panel.iconPath = Uri.joinPath(context.extensionUri, 'icons', 'blp.svg')
+            webview.html = html(webview)
+
+            const load = async () => {
+                try {
+                    const data = await workspace.fs.readFile(uri)
+                    webview.postMessage({type: 'texture', size: data.length, texture: await textureRequest(data)})
+                } catch (e) {
+                    webview.postMessage({type: 'error', message: e instanceof Error ? e.message : String(e)})
+                }
+            }
+            const dir = uri.with({path: path.posix.dirname(uri.path)})
+            const watcher = workspace.createFileSystemWatcher(new RelativePattern(dir, path.posix.basename(uri.path)))
+            const subscriptions = [
+                watcher,
+                watcher.onDidChange(load),
+                watcher.onDidCreate(load),
+                webview.onDidReceiveMessage(msg => {
+                    if (msg.type === 'ready') load()
+                    else if (msg.type === 'save') saveMip(uri, msg.mip, msg.png).catch(e => window.showErrorMessage(`WC3: ${e.message}`))
+                }),
+            ]
+            panel.onDidDispose(() => subscriptions.forEach(d => d.dispose()))
+        },
+    }
+    context.subscriptions.push(window.registerCustomEditorProvider('wc3.blp', editor, {supportsMultipleEditorsPerDocument: true}))
+}
+
+/**
  * Highlighting for every language, served from the tokens the server
  * pushed. If the document is newer than those, waits (briefly) for the
  * server's answer to the edit instead of showing stale colors.
@@ -792,7 +919,7 @@ function startServer(command, context) {
             const msg = decode(kind, body)
             if (!msg) continue
             if (msg.kind === 'file') onFile(msg)
-            else if (msg.kind === 'answer' || msg.kind === 'fs') {
+            else if (msg.kind === 'answer' || msg.kind === 'fs' || msg.kind === 'texture') {
                 const done = pendingQueries.get(msg.request)
                 pendingQueries.delete(msg.request)
                 if (done) done(msg)
@@ -813,6 +940,7 @@ module.exports = {
         registerQueries(context)
         registerManifestPaths(context)
         registerMaps(context)
+        registerTextures(context)
 
         sendRoots()
         context.subscriptions.push(
