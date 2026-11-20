@@ -15,7 +15,8 @@ belongs to the project and is read with its settings.
   comments, quoted values and comma-separated lists work as in any other
   BNI file. Section and key names are case-sensitive.
 - **Every setting is optional.** An empty `wc3.bni` is a valid project
-  that only marks its root.
+  that only marks its root: its settings apply below it, but it has no
+  files until `sources` names them.
 
 ```ini
 // wc3.bni
@@ -31,7 +32,7 @@ dialect=vjass
 
 | section     | key       | value                                    | meaning                                                                 |
 |-------------|-----------|------------------------------------------|-------------------------------------------------------------------------|
-| `[project]` | `sources` | paths or masks, comma-separated, relative to the project root | the project's source folders and files            |
+| `[project]` | `sources` | masks (a plain path too), comma-separated, relative to the project root | everything in the project; none: only `wc3.bni` |
 | `[project]` | `exclude` | masks, comma-separated, relative to the project root | what isn't part of the project, even inside `sources` |
 | `[project]` | `game`    | one path per line, absolute or relative to the project root | a game folder; repeat for more, each over the ones before |
 | `[jass]`    | `dialect` | `jass` or `vjass` (case-insensitive)     | the dialect of `.j` files that don't declare one in a `// @dialect` header |
@@ -40,14 +41,16 @@ dialect=vjass
 - **`dialect`.** A file's own header always wins over the project, so a
   project can still mix dialects. Without either, a file is plain JASS.
   The order is header, then project, then plain JASS.
-- **`sources`** lists the folders and files that make up the project (see
-  the project model below); without it, the whole project folder does,
-  except maps: those come in only when `sources` names them, as a path,
-  a folder they're in (`sources=.` is the whole folder, maps included) or
-  a mask.
-  `./src` and `a/../src` mean `src`. Quote a path that contains a comma:
-  `sources="my, folder"`. A value with `*` or `?` is a **mask** and
-  brings in what it matches: `maps/*.w3x` is every map in `maps`.
+- **`sources`** is what makes up the project (see the project model
+  below), and nothing else does: every value is a **mask**, and a file
+  is in the project when a mask matches it or a folder or map it's in.
+  A plain path is a mask without wildcards: `src` is everything in
+  `src`, `Main.w3x` every script in that map, `.` the whole project
+  folder, maps included; `maps/*.w3x` is every map in `maps`,
+  `**/*.j` every `.j` outside maps. Without `sources` the project has no
+  files but `wc3.bni` (its settings still apply to files opened from
+  under it). `./src` and `a/../src` mean `src`. Quote a path that
+  contains a comma: `sources="my, folder"`.
 - **Masks** (`server/src/glob.rs`): `*` is any part of a name, `?` one
   character, `**` any number of folders (none included). They're
   relative to the project folder unless absolute, case doesn't matter,
@@ -55,7 +58,7 @@ dialect=vjass
   map covers everything in it: `**/old` and `**/old/**` both drop every
   `old` folder, and `**/war3map.lua` a file inside every map.
 - **`exclude`** drops what its masks match from the project, whether it's
-  in `sources` or in the whole project folder: `exclude=test.j,**/old/**`.
+  matched by `sources`: `exclude=test.j,**/old/**`.
   It wins over `sources`. Repeat the line to add more. An excluded file
   that's opened is still read with the project's settings.
 - **`game`** is the folder Warcraft III is installed in, and each further
@@ -110,8 +113,8 @@ Problems panel shows the whole project's errors without opening anything.
 - **Which projects.** Every `wc3.bni` under the workspace folders, and
   the project of any file opened from elsewhere (even a `wc3.bni` above
   the workspace folders).
-- **Which files.** The project's `sources` (and what its masks match), or
-  its whole folder without them (maps left out), less what `exclude` matches, plus
+- **Which files.** What the project's `sources` match, less what
+  `exclude` matches, plus
   `wc3.bni` itself. Only known extensions count (`.j`, `.pld`,
   `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`); hidden folders
   (`.git`, `.idea`, ...) are skipped; a nested project owns its own files.
@@ -141,8 +144,8 @@ Problems panel shows the whole project's errors without opening anything.
   and two projects with different `game=` folders (one with a custom
   `common.j`) don't see each other's declarations. A file outside every
   project sees all files, AI scripts kept apart the same way.
-- **Maps.** A map (`.w3x`, `.w3m`) under the project's `sources` (or
-  named in them: `sources=Main.w3x`; not without `sources`), is
+- **Maps.** A map (`.w3x`, `.w3m`) that `sources` matches, or that's in
+  a folder it matches (`sources=Main.w3x`, `sources=.`), is
   read like a folder: its scripts are project files at paths inside the
   map's, `Main.w3x/war3map.j`. Those are every file the map's
   `(listfile)` names with a known extension, plus the map script under

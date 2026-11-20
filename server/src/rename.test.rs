@@ -3,7 +3,7 @@ use crate::project::tests::TempDir;
 
 fn workspace(name: &str, files: &[(&str, &str)]) -> (TempDir, Workspace) {
     let tmp = TempDir::new(name);
-    std::fs::write(tmp.0.join("wc3.bni"), "").unwrap();
+    std::fs::write(tmp.0.join("wc3.bni"), "[project]\nsources=.\n").unwrap();
     for (file, text) in files {
         std::fs::write(tmp.0.join(file), text).unwrap();
     }

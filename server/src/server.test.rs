@@ -136,7 +136,7 @@ fn unknown_languages_and_documents_are_ignored() {
 #[test]
 fn init_reports_every_project_file_without_opening_it() {
     let tmp = TempDir::new("server-init");
-    std::fs::write(tmp.0.join(project::MANIFEST), "[jass]\ndialect=vjass\n").unwrap();
+    std::fs::write(tmp.0.join(project::MANIFEST), "[project]\nsources=.\n[jass]\ndialect=vjass\n").unwrap();
     std::fs::write(tmp.0.join("bad.j"), "globals\n    integer library = 1\nendglobals").unwrap();
     let bad = tmp.0.join("bad.j").to_str().unwrap().to_string();
 

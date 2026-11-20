@@ -32,7 +32,7 @@ fn reads_dialect_and_sources() {
     assert!(issues.is_empty(), "{issues:?}");
     assert_eq!(project.root, tmp.0);
     assert_eq!(project.jass_dialect, Some(Dialect::VJass));
-    assert_eq!(project.sources, vec![tmp.0.join("src")]);
+    assert_eq!(project.scopes(), vec![tmp.0.join("src")]);
 }
 
 #[test]
@@ -141,18 +141,19 @@ fn projects_reload_a_changed_manifest() {
 #[test]
 fn source_paths_are_normalized() {
     let (project, _) = load(Path::new("/p"), "[project]\nsources=./src,a/../lib\n");
-    assert_eq!(project.sources, vec![PathBuf::from("/p/src"), PathBuf::from("/p/lib")]);
+    assert_eq!(project.scopes(), vec![PathBuf::from("/p/src"), PathBuf::from("/p/lib")]);
 }
 
 #[test]
 fn a_project_contains_its_scopes_and_manifest_but_not_hidden_folders() {
-    let whole = Project { root: "/p".into(), ..Project::default() };
+    let (whole, _) = load(Path::new("/p"), "[project]\nsources=.\n");
     assert!(whole.contains(Path::new("/p/a.j")));
     assert!(whole.contains(Path::new("/p/deep/er/a.j")));
+    assert!(whole.contains(Path::new("/p/m/Map.w3x/war3map.j")), "a map is a folder like any other");
     assert!(!whole.contains(Path::new("/p/.git/a.j")));
     assert!(!whole.contains(Path::new("/q/a.j")));
 
-    let src = Project { root: "/p".into(), sources: vec!["/p/src".into()], ..Project::default() };
+    let (src, _) = load(Path::new("/p"), "[project]\nsources=src\n");
     assert!(src.contains(Path::new("/p/src/a.j")));
     assert!(src.contains(Path::new("/p/wc3.bni")));
     assert!(!src.contains(Path::new("/p/other/a.j")));
@@ -281,7 +282,7 @@ fn backslashes_separate_path_parts() {
     std::fs::create_dir_all(tmp.0.join("a/b")).unwrap();
     let (project, issues) = load(&tmp.0, "[project]\nsources=a\\b\ngame=.\\a\n");
     assert!(issues.is_empty(), "{issues:?}");
-    assert_eq!(project.sources, vec![tmp.0.join("a/b")]);
+    assert_eq!(project.scopes(), vec![tmp.0.join("a/b")]);
     assert_eq!(project.game, vec![tmp.0.join("a")]);
 }
 
@@ -298,10 +299,9 @@ fn source_masks_and_excludes() {
     let (project, issues) = load(&tmp.0, src);
     let got: Vec<_> = issues.iter().map(|i| (i.line, i.message.as_str())).collect();
     assert_eq!(got, vec![(2, "source mask 'nope/*.j' matches nothing"), (4, "empty exclude mask")]);
-    assert_eq!(project.sources, vec![tmp.0.join("src"), tmp.0.join("test.j")]);
-    assert_eq!(project.source_masks.len(), 2);
+    assert_eq!(project.sources.len(), 4);
     assert_eq!(project.exclude.len(), 2);
-    assert_eq!(project.scopes(), vec![tmp.0.join("src"), tmp.0.join("test.j"), tmp.0.join("maps"), tmp.0.join("nope")]);
+    assert_eq!(project.scopes(), vec![tmp.0.join("src"), tmp.0.join("maps"), tmp.0.join("nope"), tmp.0.join("test.j")]);
 
     let has = |rel: &str| project.contains(&tmp.0.join(rel));
     assert!(has("src/a.j"));
@@ -314,25 +314,23 @@ fn source_masks_and_excludes() {
 }
 
 #[test]
-fn exclude_works_without_sources() {
-    let (project, issues) = load(Path::new("/p"), "[project]\nexclude=test.j,**/*.w3x/war3map.lua\n");
+fn without_sources_a_project_has_only_its_manifest() {
+    let (project, issues) = load(Path::new("/p"), "[project]\nexclude=test.j\n");
     assert!(issues.is_empty(), "{issues:?}");
-    assert!(project.contains(Path::new("/p/a/b.j")));
-    assert!(!project.contains(Path::new("/p/test.j")));
-    assert!(!project.contains(Path::new("/p/m/Map.w3x/war3map.lua")));
-    assert_eq!(project.scopes(), vec![PathBuf::from("/p")]);
+    assert!(project.contains(Path::new("/p/wc3.bni")));
+    assert!(!project.contains(Path::new("/p/a.j")));
+    assert!(!project.contains(Path::new("/p/m/Map.w3x/war3map.j")));
+    assert!(project.scopes().is_empty());
 }
 
 #[test]
-fn maps_come_in_only_when_sources_names_them() {
-    let (project, _) = load(Path::new("/p"), "[project]
-");
-    assert!(project.contains(Path::new("/p/a/b.j")));
-    assert!(!project.contains(Path::new("/p/m/Map.w3x")));
-    assert!(!project.contains(Path::new("/p/m/Map.w3x/war3map.j")));
-    assert!(!project.contains(Path::new("/p/m/MAP.W3M/Scripts/war3map.j")));
-    for sources in ["sources=.", "sources=m", "sources=m/Map.w3x", "sources=**/*.w3x"] {
+fn every_source_is_a_mask_and_covers_what_is_inside_what_it_matches() {
+    for sources in ["sources=.", "sources=m", "sources=M/map.W3X", "sources=**/*.w3x", "sources=m/*"] {
         let (project, _) = load(Path::new("/p"), &format!("[project]\n{sources}\n"));
         assert!(project.contains(Path::new("/p/m/Map.w3x/war3map.j")), "{sources}");
     }
+    let (project, _) = load(Path::new("/p"), "[project]\nsources=**/*.j\nexclude=**/*.w3x\n");
+    assert!(project.contains(Path::new("/p/a/b.j")));
+    assert!(!project.contains(Path::new("/p/m/Map.w3x/war3map.j")));
 }
+

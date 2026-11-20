@@ -45,9 +45,17 @@ fn init(root: &Path) -> Workspace {
 }
 
 #[test]
-fn loads_the_whole_root_when_there_are_no_sources() {
+fn without_sources_only_the_manifest_is_loaded() {
+    let tmp = project("ws-no-sources", &[("wc3.bni", "[jass]\ndialect=vjass\n"), ("a.j", OK)]);
+    crate::map::tests::make_map(&tmp.0.join("Map.w3x"), &[("war3map.j", OK)]);
+    let mut ws = init(&tmp.0);
+    assert_eq!(names(&tmp.0, &reports(&mut ws)), vec!["wc3.bni"]);
+}
+
+#[test]
+fn sources_dot_is_the_whole_folder() {
     let tmp = project("ws-whole", &[
-        ("wc3.bni", ""),
+        ("wc3.bni", "[project]\nsources=.\n"),
         ("a.j", OK),
         ("deep/b.zn", "library L {}"),
         ("notes.txt", "not code"),
@@ -74,9 +82,9 @@ fn sources_limit_the_files_and_the_manifest_is_always_one() {
 #[test]
 fn a_nested_project_owns_its_files() {
     let tmp = project("ws-nested", &[
-        ("wc3.bni", ""),
+        ("wc3.bni", "[project]\nsources=.\n"),
         ("a.j", OK),
-        ("inner/wc3.bni", "[jass]\ndialect=vjass\n"),
+        ("inner/wc3.bni", "[project]\nsources=.\n[jass]\ndialect=vjass\n"),
         ("inner/b.j", "globals\n    integer library = 1\nendglobals"),
     ]);
     let mut ws = init(&tmp.0);
@@ -95,7 +103,7 @@ fn files_without_a_project_are_not_loaded() {
 
 #[test]
 fn opening_a_file_from_an_unknown_project_loads_that_project() {
-    let tmp = project("ws-open", &[("wc3.bni", ""), ("a.j", OK), ("b.j", BAD)]);
+    let tmp = project("ws-open", &[("wc3.bni", "[project]\nsources=.\n"), ("a.j", OK), ("b.j", BAD)]);
     let mut ws = Workspace::default(); // no workspace folders at all
     let a = tmp.0.join("a.j");
     ws.open(path_id(&a), Some(a.clone()), Language::Jass, 3, OK.into());
@@ -108,7 +116,7 @@ fn opening_a_file_from_an_unknown_project_loads_that_project() {
 
 #[test]
 fn closing_a_project_file_reverts_it_to_disk() {
-    let tmp = project("ws-close", &[("wc3.bni", ""), ("a.j", OK)]);
+    let tmp = project("ws-close", &[("wc3.bni", "[project]\nsources=.\n"), ("a.j", OK)]);
     let mut ws = init(&tmp.0);
     reports(&mut ws);
     let a = tmp.0.join("a.j");
@@ -131,7 +139,7 @@ fn closing_anything_else_clears_it() {
 
 #[test]
 fn disk_changes_update_add_and_drop_files() {
-    let tmp = project("ws-disk", &[("wc3.bni", ""), ("a.j", OK)]);
+    let tmp = project("ws-disk", &[("wc3.bni", "[project]\nsources=.\n"), ("a.j", OK)]);
     let mut ws = init(&tmp.0);
     reports(&mut ws);
     let (a, b) = (tmp.0.join("a.j"), tmp.0.join("b.j"));
@@ -149,7 +157,7 @@ fn disk_changes_update_add_and_drop_files() {
 
 #[test]
 fn the_editor_text_wins_over_the_disk_while_open() {
-    let tmp = project("ws-open-wins", &[("wc3.bni", ""), ("a.j", OK)]);
+    let tmp = project("ws-open-wins", &[("wc3.bni", "[project]\nsources=.\n"), ("a.j", OK)]);
     let mut ws = init(&tmp.0);
     let a = tmp.0.join("a.j");
     ws.open(path_id(&a), Some(a.clone()), Language::Jass, 5, OK.into());
@@ -162,7 +170,7 @@ fn the_editor_text_wins_over_the_disk_while_open() {
 #[test]
 fn a_manifest_change_reloads_projects_and_re_analyzes_everything() {
     let tmp = project("ws-manifest", &[
-        ("wc3.bni", ""),
+        ("wc3.bni", "[project]\nsources=.\n"),
         ("src/a.j", "globals\n    integer library = 1\nendglobals"),
         ("tools/b.j", OK),
     ]);
@@ -202,7 +210,7 @@ fn sources_outside_the_root_are_loaded_and_watched() {
 
 #[test]
 fn legacy_encodings_are_read_lossily() {
-    let tmp = project("ws-latin1", &[("wc3.bni", "")]);
+    let tmp = project("ws-latin1", &[("wc3.bni", "[project]\nsources=.\n")]);
     std::fs::write(tmp.0.join("a.j"), b"// caf\xe9\nfunction F takes nothing returns nothing\nendfunction").unwrap();
     let mut ws = init(&tmp.0);
     let r = reports(&mut ws);
@@ -214,7 +222,7 @@ fn legacy_encodings_are_read_lossily() {
 fn many_files_are_analyzed_in_parallel_in_a_stable_order() {
     let files: Vec<(String, &str)> = (0..40).map(|i| (format!("f{i:02}.j"), if i % 2 == 0 { OK } else { BAD })).collect();
     let refs: Vec<(&str, &str)> = files.iter().map(|(n, t)| (n.as_str(), *t)).collect();
-    let mut all = vec![("wc3.bni", "")];
+    let mut all = vec![("wc3.bni", "[project]\nsources=.\n")];
     all.extend(refs);
     let tmp = project("ws-many", &all);
     let mut ws = init(&tmp.0);
@@ -325,9 +333,9 @@ fn game_scripts_are_seen_by_their_projects_only() {
     let tmp = project("ws-game", &[
         ("game/wc3/README", ""),
         ("game/ujapi/Scripts/common.j", "native CreateTimer takes nothing returns timer\nnative UjapiOnly takes nothing returns nothing\n"),
-        ("a/wc3.bni", "[project]\ngame=../game/wc3\n"),
+        ("a/wc3.bni", "[project]\ngame=../game/wc3\nsources=.\n"),
         ("a/main.j", USE),
-        ("b/wc3.bni", "[project]\ngame=../game/wc3\ngame=../game/ujapi\n"),
+        ("b/wc3.bni", "[project]\ngame=../game/wc3\ngame=../game/ujapi\nsources=.\n"),
         ("b/main.j", USE),
     ]);
     let patch = tmp.0.join("game/wc3/War3Patch.mpq");
@@ -438,7 +446,7 @@ fn an_ai_script_runs_on_its_own() {
     use crate::document::Position;
     use crate::index::{answer, QueryKind};
     let tmp = project("ws-ai-alone", &[
-        ("wc3.bni", ""),
+        ("wc3.bni", "[project]\nsources=.\n"),
         ("main.j", "function MapOnly takes nothing returns nothing\n    call Shared()\n    call AiOnly()\nendfunction\n"),
         ("lib.j", "function Shared takes nothing returns nothing\nendfunction\n"),
         ("elf.ai", "function AiOnly takes nothing returns nothing\nendfunction\nfunction main takes nothing returns nothing\n    call AiOnly()\n    call MapOnly()\n    call OtherAi()\nendfunction\n"),
@@ -472,7 +480,7 @@ fn game_folders_are_watched_and_reread() {
     let tmp = project("ws-game-watch", &[
         ("game/Maps/README", ""),
         ("over/README", ""),
-        ("p/wc3.bni", "[project]\ngame=../game\ngame=../over\n"),
+        ("p/wc3.bni", "[project]\ngame=../game\ngame=../over\nsources=.\n"),
         ("p/main.j", OK),
     ]);
     let patch = tmp.0.join("game/War3Patch.mpq");
@@ -526,11 +534,11 @@ fn one_file_per_game_path_whichever_project_led_there() {
         ("game/Scripts/Blizzard.j", "function BJ takes nothing returns integer\n    return STATE\nendfunction\n"),
         ("ujapi/Scripts/COMMON.J", "constant integer STATE = 2\n"),
         ("noblizz/Scripts/blizzard.j", ""),
-        ("a/wc3.bni", "[project]\ngame=../game\n"),
+        ("a/wc3.bni", "[project]\ngame=../game\nsources=.\n"),
         ("a/main.j", "function F takes nothing returns nothing\n    call BJ()\nendfunction\n"),
-        ("b/wc3.bni", "[project]\ngame=../game\ngame=../ujapi\n"),
+        ("b/wc3.bni", "[project]\ngame=../game\ngame=../ujapi\nsources=.\n"),
         ("b/main.j", "function F takes nothing returns nothing\n    call BJ()\nendfunction\n"),
-        ("c/wc3.bni", "[project]\ngame=../game\ngame=../noblizz\n"),
+        ("c/wc3.bni", "[project]\ngame=../game\ngame=../noblizz\nsources=.\n"),
         ("c/main.j", "function F takes nothing returns nothing\n    call BJ()\nendfunction\n"),
     ]);
     let mut ws = init(&tmp.0);

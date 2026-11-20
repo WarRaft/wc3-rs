@@ -42,13 +42,12 @@ pub struct Project {
     /// `[jass] dialect=`: the dialect of `.j` files whose header declares
     /// none. A header always wins.
     pub jass_dialect: Option<jass_rs::Dialect>,
-    /// `[project] sources=`: the project's source folders and files,
-    /// resolved against `root`, in the order written. Masks are in
-    /// `source_masks`.
-    pub sources: Vec<PathBuf>,
-    /// `[project] sources=` masks (`maps/*.w3x`): the files they match
-    /// (see `glob`) are sources too.
-    pub source_masks: Vec<Glob>,
+    /// `[project] sources=`: what makes up the project, as masks
+    /// resolved against `root`, in the order written. A plain path is a
+    /// mask without wildcards. A file is the project's when a mask
+    /// matches it or a folder (or map) it's in; see `glob`. Without
+    /// `sources` the project has no files but its manifest.
+    pub sources: Vec<Glob>,
     /// `[project] exclude=`: masks of what isn't part of the project, even
     /// inside its sources.
     pub exclude: Vec<Glob>,
@@ -129,14 +128,10 @@ impl Project {
         self.root.join(MANIFEST)
     }
 
-    /// Where the project's files are: its `sources` and the folders its
-    /// source masks look in, or the whole root when it lists none.
+    /// Where the project's files are: the folders its `sources` look in.
     pub fn scopes(&self) -> Vec<PathBuf> {
-        if self.sources.is_empty() && self.source_masks.is_empty() {
-            return vec![self.root.clone()];
-        }
-        let mut scopes = self.sources.clone();
-        for mask in &self.source_masks {
+        let mut scopes: Vec<PathBuf> = Vec::new();
+        for mask in &self.sources {
             if !scopes.contains(&mask.base) {
                 scopes.push(mask.base.clone());
             }
@@ -145,28 +140,22 @@ impl Project {
     }
 
     /// Is `path` one of the project's files: the manifest itself, or a
-    /// file inside one of its sources (or matching a source mask), or,
-    /// without `sources`, anywhere under the root except in a map; not
+    /// file one of its `sources` masks matches (itself or a folder or
+    /// map it's in), not
     /// inside a hidden (`.name`) folder below it, and not excluded.
     /// Doesn't check which project is nearest; see [`find_manifest`].
     pub fn contains(&self, path: &Path) -> bool {
         if path == self.manifest() {
             return true;
         }
-        let visible = |scope: &Path| {
-            path.strip_prefix(scope).is_ok_and(|rel| {
-                !rel.parent()
-                    .is_some_and(|dirs| dirs.components().any(|c| is_hidden(c.as_os_str())))
-            })
+        // No hidden folder below the mask's base; `matches` has checked
+        // the base itself, in any case.
+        let visible = |base: &Path| {
+            let parts: Vec<_> = path.components().skip(base.components().count()).collect();
+            !parts.split_last().is_some_and(|(_, dirs)| dirs.iter().any(|c| is_hidden(c.as_os_str())))
         };
-        let listed = if self.sources.is_empty() && self.source_masks.is_empty() {
-            // Maps come in only when `sources` names them.
-            visible(&self.root) && !path.ancestors().any(crate::map::is_map_name)
-        } else {
-            self.sources.iter().any(|s| visible(s))
-                || self.source_masks.iter().any(|m| visible(&m.base) && m.matches(path))
-        };
-        listed && !self.exclude.iter().any(|m| m.matches(path))
+        self.sources.iter().any(|m| m.matches(path) && visible(&m.base))
+            && !self.exclude.iter().any(|m| m.matches(path))
     }
 }
 
@@ -402,18 +391,18 @@ fn read_sources(root: &Path, item: &Item, project: &mut Project, issues: &mut Ve
             if !matches_anything(&mask) {
                 issues.push(at_field(field, Level::Warning, format!("source mask '{text}' matches nothing")));
             }
-            project.source_masks.push(mask);
+            project.sources.push(mask);
             continue;
         }
-        let path = resolve(root, text);
-        if !path.exists() {
+        let mask = Glob::new(root, text);
+        if !mask.base.exists() {
             issues.push(at_field(
                 field,
                 Level::Warning,
                 format!("source path '{text}' does not exist"),
             ));
         }
-        project.sources.push(path);
+        project.sources.push(mask);
     }
 }
 
