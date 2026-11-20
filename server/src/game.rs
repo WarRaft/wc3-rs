@@ -21,10 +21,51 @@ use std::path::{Path, PathBuf};
 
 use storm_rs::MpqArchive;
 
-/// The game's scripts every map script builds on: their declarations
-/// (natives, `Blizzard.j`'s functions and globals) are visible to the
-/// project's files.
-pub const SCRIPTS: [&str; 2] = ["Scripts\\common.j", "Scripts\\Blizzard.j"];
+/// The game's scripts the project's files build on: their declarations
+/// (natives, `Blizzard.j`'s functions and globals, `common.ai`'s AI API)
+/// are visible to the project's files, each to the scripts the game runs
+/// it with (see [`Script::sees`]).
+pub const SCRIPTS: [&str; 3] = ["Scripts\\common.j", "Scripts\\Blizzard.j", "Scripts\\common.ai"];
+
+/// Which of the game's scripts a file is, or which ones a file is run
+/// with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Script {
+    /// `common.j`: the natives, under every script.
+    Common,
+    /// `Blizzard.j`: map scripts run with it (and `common.j`).
+    Blizzard,
+    /// `common.ai`: AI scripts (`.ai`) run with it (and `common.j`), not
+    /// with `Blizzard.j`.
+    Ai,
+}
+
+impl Script {
+    /// The game script `path` is, by its file name.
+    pub fn of(path: &Path) -> Option<Script> {
+        let name = path.file_name()?.to_str()?.to_ascii_lowercase();
+        match name.as_str() {
+            "common.j" => Some(Script::Common),
+            "blizzard.j" => Some(Script::Blizzard),
+            "common.ai" => Some(Script::Ai),
+            _ => None,
+        }
+    }
+
+    /// The scripts a project file is run with: an AI script (`.ai`) with
+    /// `common.ai`, anything else with `Blizzard.j`.
+    pub fn for_file(path: &Path) -> Script {
+        let ai = path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("ai"));
+        if ai { Script::Ai } else { Script::Blizzard }
+    }
+
+    /// Does code run with `self` see the game script `other`? `common.j`
+    /// is under everything; `Blizzard.j` and `common.ai` don't see each
+    /// other. As a viewer, `Common` (`common.j` itself) sees all three.
+    pub fn sees(self, other: Script) -> bool {
+        self == Script::Common || other == Script::Common || self == other
+    }
+}
 
 /// The game's scripts ([`SCRIPTS`]) from the game folders `folders`, each
 /// at the path it's found at: on disk, or inside an archive

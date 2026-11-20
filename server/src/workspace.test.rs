@@ -387,3 +387,48 @@ fn game_scripts_are_seen_by_their_projects_only() {
     reports(&mut ws);
     assert!(ws.file(&common).is_none() && ws.file(&ujapi).is_none());
 }
+
+#[test]
+fn ai_scripts_see_common_ai_and_map_scripts_blizzard_j() {
+    use crate::document::Position;
+    use crate::index::{answer, QueryKind};
+    const COMMON: &str = "native CreateTimer takes nothing returns timer\n";
+    const BLIZZARD: &str = "function BJDebugMsg takes string msg returns nothing\nendfunction\n";
+    const COMMON_AI: &str = "native GetUnitCountDone takes integer unitid returns integer\nfunction InitAI takes nothing returns nothing\n    call CreateTimer()\nendfunction\n";
+    const CALLS: &str = "function F takes nothing returns nothing\n    call CreateTimer()\n    call BJDebugMsg(\"x\")\n    call InitAI()\nendfunction\n";
+
+    let tmp = project("ws-game-ai", &[
+        ("game/README", ""),
+        ("p/wc3.bni", "[project]\ngame=../game\n"),
+        ("p/main.j", CALLS),
+        ("p/ai/elf.ai", CALLS),
+    ]);
+    let patch = tmp.0.join("game/War3Patch.mpq");
+    crate::map::tests::make_map(
+        &patch,
+        &[("Scripts\\common.j", COMMON), ("Scripts\\Blizzard.j", BLIZZARD), ("Scripts\\common.ai", COMMON_AI)],
+    );
+    let mut ws = init(&tmp.0);
+    reports(&mut ws);
+    let in_game = |name: &str| path_id(&patch.join("Scripts").join(name));
+    let definition = |id: &str, line: u32| -> Vec<String> {
+        answer(&ws, QueryKind::Definition, id, Position::new(line, 10), "")
+            .locations
+            .into_iter()
+            .map(|l| l.id)
+            .collect()
+    };
+    let main = path_id(&tmp.0.join("p/main.j"));
+    let ai = path_id(&tmp.0.join("p/ai/elf.ai"));
+    // A map script: common.j and Blizzard.j, not common.ai.
+    assert_eq!(definition(&main, 1), vec![in_game("common.j")]);
+    assert_eq!(definition(&main, 2), vec![in_game("Blizzard.j")]);
+    assert!(definition(&main, 3).is_empty());
+    // An AI script: common.j and common.ai, not Blizzard.j.
+    assert_eq!(definition(&ai, 1), vec![in_game("common.j")]);
+    assert!(definition(&ai, 2).is_empty());
+    assert_eq!(definition(&ai, 3), vec![in_game("common.ai")]);
+    // common.ai itself sees common.j.
+    assert_eq!(definition(&in_game("common.ai"), 2), vec![in_game("common.j")]);
+    assert!(ws.is_game(&in_game("common.ai")));
+}

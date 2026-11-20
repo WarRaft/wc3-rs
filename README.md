@@ -64,8 +64,8 @@ dialect=vjass
   `War3Patch.mpq`; any case on disk, missing ones skipped); then the
   folder below. So with the manifest above, `Scripts\common.j` comes from
   `../ujapi/Scripts/common.j` if it's there, and `Scripts\Blizzard.j` from
-  the game's `War3Patch.mpq`. These two, the game's scripts, are part of
-  the project's model (see below), so natives and `Blizzard.j` functions
+  the game's `War3Patch.mpq`. These, and `common.ai` for AI scripts, are
+  part of the project's model (see below), so natives and `Blizzard.j` functions
   resolve: go to definition, hover and references reach them. Each value
   is one path, so quote it if it contains a comma. A folder that doesn't exist is only a warning and the
   setting is kept, so a manifest shared between machines still loads.
@@ -113,15 +113,17 @@ Problems panel shows the whole project's errors without opening anything.
   `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`); hidden folders
   (`.git`, `.idea`, ...) are skipped; a nested project owns its own files.
   `sources` may point outside the project folder (`sources=src,../shared`).
-- **Game files.** The game's `Scripts\common.j` and `Scripts\Blizzard.j`,
-  looked up through the project's `game=` folders, at the path they're
+- **Game files.** The game's `Scripts\common.j`, `Scripts\Blizzard.j` and
+  `Scripts\common.ai`, looked up through the project's `game=` folders, at the path they're
   found at: on disk (`../ujapi/Scripts/common.j`) or inside an archive
   (`War3Patch.mpq/Scripts/Blizzard.j`, opened read-only like a map's
   files). They get no diagnostics, being the game's, and a rename that
   would change them is refused. Projects with the same `game=` folders
   share them.
-- **Visibility.** A file sees the files of its own project and that
-  project's game files: names resolve there, references are found there,
+- **Visibility.** A file sees the files of its own project and the game
+  files the game runs it with: a map script `common.j` and `Blizzard.j`,
+  an AI script (`.ai`) `common.j` and `common.ai` (the game loads neither
+  `Blizzard.j` for AI nor `common.ai` for maps). Names resolve there, references are found there,
   and two projects with different `game=` folders (one with a custom
   `common.j`) don't see each other's declarations. A file outside every
   project sees all files.

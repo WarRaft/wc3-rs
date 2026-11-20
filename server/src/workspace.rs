@@ -12,11 +12,12 @@
 //!   (a nested project owns its own files). Plus the manifest itself,
 //!   and the scripts inside every map (`.w3x`, `.w3m`) found the same
 //!   way, each at a path inside the map's (see `map`).
-//! - **Game files.** The game's scripts (`game::SCRIPTS`, `common.j` and
-//!   `Blizzard.j`) from each project's `game=` folders, at the path they're
+//! - **Game files.** The game's scripts (`game::SCRIPTS`: `common.j`,
+//!   `Blizzard.j`, `common.ai`) from each project's `game=` folders, at the path they're
 //!   found at: on disk, or inside an archive
 //!   (`War3Patch.mpq/Scripts/Blizzard.j`). Their declarations are visible
-//!   to the project's files; they get no diagnostics (they're the game's,
+//!   to the project's files the game runs with them: `Blizzard.j` to map
+//!   scripts, `common.ai` to AI scripts (`.ai`), `common.j` to both; they get no diagnostics (they're the game's,
 //!   not the project's) and can't be renamed into. Projects with the same
 //!   `game=` folders share them.
 //! - **Visibility.** A file sees the files of its own project and that
@@ -248,10 +249,19 @@ impl Workspace {
     }
 
     /// The files `id` sees (see the module docs): its project's files and
-    /// game files; for a game file, the game files it comes with; for a
-    /// file with no project, every file.
+    /// the game files it's run with (`game::Script::sees`: an AI script
+    /// gets `common.ai`, any other `Blizzard.j`, both `common.j`); for a
+    /// game file, the game files it comes with; for a file with no
+    /// project, every file.
     pub fn scope<'a>(&'a self, id: &str) -> impl Iterator<Item = (&'a str, &'a Document, &'a [Occurrence])> + 'a {
+        use crate::game::Script;
         let me = self.files.get(id);
+        let viewer = if me.is_some_and(|e| e.game) {
+            Script::of(Path::new(id)).unwrap_or(Script::Common)
+        } else {
+            Script::for_file(Path::new(id))
+        };
+        let sees = move |fid: &str| Script::of(Path::new(fid)).is_none_or(|s| viewer.sees(s));
         let game: Option<HashSet<&str>> = if me.is_some_and(|e| e.game) {
             Some(
                 self.games
@@ -274,9 +284,10 @@ impl Workspace {
             .collect();
         self.files.iter().filter_map(move |(fid, e)| {
             let visible = match (&game, &project) {
-                (Some(stack), _) => stack.contains(fid.as_str()),
+                (Some(stack), _) => stack.contains(fid.as_str()) && sees(fid),
                 (None, Some(root)) => {
-                    project_games.contains(fid.as_str()) || (!e.game && e.project.as_ref() == Some(root))
+                    (project_games.contains(fid.as_str()) && sees(fid))
+                        || (!e.game && e.project.as_ref() == Some(root))
                 }
                 (None, None) => true,
             };
