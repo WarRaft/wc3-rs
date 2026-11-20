@@ -68,7 +68,7 @@
         {
           "id": "wc3.maps",
           "name": "WC3 Maps",
-          "icon": "$(package)"
+          "icon": "./icons/w3x.svg"
         }
       ]
     },
@@ -178,6 +178,32 @@
           "dark": "./icons/bni.svg"
         },
         "configuration": "./syntaxes/bni.language-configuration.json"
+      },
+      {
+        "id": "w3x",
+        "aliases": [
+          "Warcraft III Map (TFT)"
+        ],
+        "extensions": [
+          ".w3x"
+        ],
+        "icon": {
+          "light": "./icons/w3x.svg",
+          "dark": "./icons/w3x.svg"
+        }
+      },
+      {
+        "id": "w3m",
+        "aliases": [
+          "Warcraft III Map (RoC)"
+        ],
+        "extensions": [
+          ".w3m"
+        ],
+        "icon": {
+          "light": "./icons/w3m.svg",
+          "dark": "./icons/w3m.svg"
+        }
       }
     ],
     "grammars": [

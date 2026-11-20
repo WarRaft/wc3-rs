@@ -56,7 +56,6 @@ const {
     EventEmitter,
     SemanticTokens,
     SemanticTokensLegend,
-    ThemeIcon,
     ThemeColor,
     TreeItem,
     TreeItemCollapsibleState,
@@ -636,6 +635,7 @@ function registerMaps(context) {
             const map = document.uri.fsPath
             const isOpen = (workspace.workspaceFolders ?? []).some(f => f.uri.toString() === mapFolderUri(map).toString())
             panel.webview.options = {enableScripts: true}
+            panel.iconPath = mapIcon(map)
             const size = (() => {
                 try {
                     return `${(fs.statSync(map).size / 1048576).toFixed(1)} MB`
@@ -667,6 +667,8 @@ document.getElementById('open').onclick = () => vscode.postMessage('open')
     // The list of maps in the workspace; a click opens one as a folder.
     const listChanged = new EventEmitter()
     const byName = (a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'})
+    /** A map's icon: its own for `.w3m`, `.w3x`'s otherwise. */
+    const mapIcon = map => Uri.file(path.join(context.extensionPath, 'icons', /\.w3m$/i.test(map) ? 'w3m.svg' : 'w3x.svg'))
     const list = {
         onDidChangeTreeData: listChanged.event,
         async getChildren(node) {
@@ -680,7 +682,7 @@ document.getElementById('open').onclick = () => vscode.postMessage('open')
         getTreeItem({map}) {
             const item = new TreeItem(path.basename(map), TreeItemCollapsibleState.None)
             item.id = map
-            item.iconPath = new ThemeIcon('package')
+            item.iconPath = mapIcon(map)
             item.description = workspace.asRelativePath(path.dirname(map))
             item.tooltip = map
             item.resourceUri = Uri.file(map)
