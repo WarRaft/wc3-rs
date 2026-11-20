@@ -204,6 +204,265 @@
           "light": "./icons/w3m.svg",
           "dark": "./icons/w3m.svg"
         }
+      },
+      {
+        "id": "mpq",
+        "aliases": [
+          "MPQ Archive"
+        ],
+        "extensions": [
+          ".mpq"
+        ],
+        "icon": {
+          "light": "./icons/mpq.svg",
+          "dark": "./icons/mpq.svg"
+        }
+      },
+      {
+        "id": "blp",
+        "aliases": [
+          "BLP Texture"
+        ],
+        "extensions": [
+          ".blp"
+        ],
+        "icon": {
+          "light": "./icons/blp.svg",
+          "dark": "./icons/blp.svg"
+        }
+      },
+      {
+        "id": "mdx",
+        "aliases": [
+          "Warcraft III Model"
+        ],
+        "extensions": [
+          ".mdx",
+          ".mdl"
+        ],
+        "icon": {
+          "light": "./icons/mdx.svg",
+          "dark": "./icons/mdx.svg"
+        }
+      },
+      {
+        "id": "slk",
+        "aliases": [
+          "SLK Table"
+        ],
+        "extensions": [
+          ".slk"
+        ],
+        "icon": {
+          "light": "./icons/slk.svg",
+          "dark": "./icons/slk.svg"
+        }
+      },
+      {
+        "id": "wts",
+        "aliases": [
+          "Map Strings"
+        ],
+        "extensions": [
+          ".wts"
+        ],
+        "icon": {
+          "light": "./icons/wts.svg",
+          "dark": "./icons/wts.svg"
+        }
+      },
+      {
+        "id": "doo",
+        "aliases": [
+          "Doodads"
+        ],
+        "extensions": [
+          ".doo"
+        ],
+        "icon": {
+          "light": "./icons/doo.svg",
+          "dark": "./icons/doo.svg"
+        }
+      },
+      {
+        "id": "w3a",
+        "aliases": [
+          "Abilities"
+        ],
+        "extensions": [
+          ".w3a"
+        ],
+        "icon": {
+          "light": "./icons/w3a.svg",
+          "dark": "./icons/w3a.svg"
+        }
+      },
+      {
+        "id": "w3b",
+        "aliases": [
+          "Destructibles"
+        ],
+        "extensions": [
+          ".w3b"
+        ],
+        "icon": {
+          "light": "./icons/w3b.svg",
+          "dark": "./icons/w3b.svg"
+        }
+      },
+      {
+        "id": "w3d",
+        "aliases": [
+          "Doodad Types"
+        ],
+        "extensions": [
+          ".w3d"
+        ],
+        "icon": {
+          "light": "./icons/w3d.svg",
+          "dark": "./icons/w3d.svg"
+        }
+      },
+      {
+        "id": "w3e",
+        "aliases": [
+          "Terrain"
+        ],
+        "extensions": [
+          ".w3e"
+        ],
+        "icon": {
+          "light": "./icons/w3e.svg",
+          "dark": "./icons/w3e.svg"
+        }
+      },
+      {
+        "id": "w3h",
+        "aliases": [
+          "Buffs"
+        ],
+        "extensions": [
+          ".w3h"
+        ],
+        "icon": {
+          "light": "./icons/w3h.svg",
+          "dark": "./icons/w3h.svg"
+        }
+      },
+      {
+        "id": "w3i",
+        "aliases": [
+          "Map Info"
+        ],
+        "extensions": [
+          ".w3i"
+        ],
+        "icon": {
+          "light": "./icons/w3i.svg",
+          "dark": "./icons/w3i.svg"
+        }
+      },
+      {
+        "id": "w3n",
+        "aliases": [
+          "Warcraft III Campaign"
+        ],
+        "extensions": [
+          ".w3n"
+        ],
+        "icon": {
+          "light": "./icons/w3n.svg",
+          "dark": "./icons/w3n.svg"
+        }
+      },
+      {
+        "id": "w3q",
+        "aliases": [
+          "Upgrades"
+        ],
+        "extensions": [
+          ".w3q"
+        ],
+        "icon": {
+          "light": "./icons/w3q.svg",
+          "dark": "./icons/w3q.svg"
+        }
+      },
+      {
+        "id": "w3r",
+        "aliases": [
+          "Regions"
+        ],
+        "extensions": [
+          ".w3r"
+        ],
+        "icon": {
+          "light": "./icons/w3r.svg",
+          "dark": "./icons/w3r.svg"
+        }
+      },
+      {
+        "id": "w3t",
+        "aliases": [
+          "Items"
+        ],
+        "extensions": [
+          ".w3t"
+        ],
+        "icon": {
+          "light": "./icons/w3t.svg",
+          "dark": "./icons/w3t.svg"
+        }
+      },
+      {
+        "id": "w3u",
+        "aliases": [
+          "Units"
+        ],
+        "extensions": [
+          ".w3u"
+        ],
+        "icon": {
+          "light": "./icons/w3u.svg",
+          "dark": "./icons/w3u.svg"
+        }
+      },
+      {
+        "id": "wc3-preview",
+        "aliases": [
+          "Map Preview"
+        ],
+        "filenames": [
+          "war3mapPreview.tga",
+          "war3mapMap.blp",
+          "war3mapMap.tga",
+          "war3mapMap.b00"
+        ],
+        "icon": {
+          "light": "./icons/preview.svg",
+          "dark": "./icons/preview.svg"
+        }
+      },
+      {
+        "id": "wc3-binary",
+        "aliases": [
+          "Map Data"
+        ],
+        "extensions": [
+          ".shd",
+          ".wpm",
+          ".mmp",
+          ".imp",
+          ".w3c",
+          ".w3s",
+          ".wtg",
+          ".wct",
+          ".w3o"
+        ],
+        "icon": {
+          "light": "./icons/bin.svg",
+          "dark": "./icons/bin.svg"
+        }
       }
     ],
     "grammars": [
