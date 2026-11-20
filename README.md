@@ -149,8 +149,13 @@ Problems panel shows the whole project's errors without opening anything.
   read like a folder: its scripts are project files at paths inside the
   map's, `Main.w3x/war3map.j`. Those are every file the map's
   `(listfile)` names with a known extension, plus the map script under
-  the names the game looks for (`war3map.j`, `Scripts\war3map.j`,
-  `war3map.lua`), which protected maps often leave out of the list. Maps
+  the names the game looks for (`Scripts\war3map.j`, `war3map.j`,
+  `war3map.lua`; a `war3map.j` beside `Scripts\war3map.j` is never run, so
+  it isn't loaded), which protected maps often leave out of the list,
+  and the game's own files the map carries, found by name from the
+  game's full file list (`server/src/war3.listfile.txt`). The tree of
+  maps also finds the files the editor keeps at the top of a map
+  (`war3map.w3i`, `war3mapMisc.txt`, ...) the same way. Maps
   are MPQ archives, read with [`storm-rs`](../storm-rs). A map's own
   `Scripts\Blizzard.j` (maps often carry an optimized one, which the game
   loads instead of its own) replaces the game's `Blizzard.j` for that
@@ -159,7 +164,9 @@ Problems panel shows the whole project's errors without opening anything.
   the map. The editor opens
   these files read-only (as `wc3map:` documents), and a rename that would
   change one is refused. A map saved again is re-read; a map that can't
-  be read adds nothing.
+  be read adds nothing. The editor's WC3 Maps tree shows every map in
+  the workspace, in a project or not, with all the files inside it (the
+  server lists them); its text files open the same way.
 - **Text.** An open file uses the editor's text; any other file its text
   on disk, read as UTF-8 with invalid bytes replaced (old maps often use a
   legacy code page). Closing a project file goes back to its disk text.

@@ -82,7 +82,7 @@ pub enum ClientMsg {
     /// 3 document symbols, 4 workspace symbols, 5 prepare rename,
     /// 6 rename (`text` is the new name), 7 content (the answer's `text`
     /// is the file's text), 8 path completion and 9 path links in a
-    /// `wc3.bni` (see `index::QueryKind`). An unknown one gets an empty
+    /// `wc3.bni`, 10 the files inside a map (see `index::QueryKind`). An unknown one gets an empty
     /// answer.
     Query {
         request: u32,
@@ -132,7 +132,7 @@ pub enum ServerMsg {
     },
 }
 
-const QUERY_KINDS: [QueryKind; 10] = [
+const QUERY_KINDS: [QueryKind; 11] = [
     QueryKind::Definition,
     QueryKind::References,
     QueryKind::Hover,
@@ -143,6 +143,7 @@ const QUERY_KINDS: [QueryKind; 10] = [
     QueryKind::Content,
     QueryKind::PathCompletion,
     QueryKind::PathLinks,
+    QueryKind::ArchiveFiles,
 ];
 
 const SYMBOL_KINDS: [SymbolKind; 17] = [

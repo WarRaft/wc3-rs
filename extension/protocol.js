@@ -41,6 +41,7 @@ const QUERY = {
     CONTENT: 7,
     PATH_COMPLETION: 8,
     PATH_LINKS: 9,
+    ARCHIVE_FILES: 10,
 }
 
 /** Symbol kinds, in wire order (`parser_rs::SymbolKind`). */

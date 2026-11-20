@@ -23,6 +23,10 @@
  * so they're shown under the `wc3map:` scheme with that path, read-only,
  * their text asked from the server.
  *
+ * The Explorer has a tree of the workspace's maps: each opens like a
+ * folder into the files inside it (the server lists them), and a text
+ * file opens read-only like the scripts above.
+ *
  * In `wc3.bni`, the paths of `game=` and `sources=` complete from the disk
  * and every folder along them is a link that reveals that folder (in the
  * Explorer when it's in the workspace, in the system's file manager
@@ -52,6 +56,9 @@ const {
     EventEmitter,
     SemanticTokens,
     SemanticTokensLegend,
+    ThemeIcon,
+    TreeItem,
+    TreeItemCollapsibleState,
 } = require('vscode')
 const {encode, decode, FrameReader, QUERY} = require('./protocol.js')
 
@@ -465,6 +472,120 @@ function registerManifestPaths(context) {
     )
 }
 
+/** The id of the tree of maps (`package.json`). */
+const MAPS_VIEW = 'wc3.maps'
+
+/** Maps the tree lists. */
+const MAP_GLOB = '**/*.{w3x,w3m,W3X,W3M}'
+
+/**
+ * The tree of maps in the Explorer (see the header). A node is
+ * `{map}` (a map file), `{map, folder}` (a folder inside it, `\`-separated
+ * as in the archive) or `{map, file}` (a file: its name in the archive, its
+ * path, whether it's text, and whether it's a script the game doesn't
+ * run).
+ *
+ * @param {import('vscode').ExtensionContext} context
+ */
+function registerMapTree(context) {
+    const changed = new EventEmitter()
+    /** map path → Promise of its files: [{name, id, text}]. */
+    const listings = new Map()
+    const filesOf = map => {
+        if (!listings.has(map)) {
+            listings.set(map, query(QUERY.ARCHIVE_FILES, map, {line: 0, character: 0}).then(answer =>
+                (answer?.locations ?? []).map(l => ({name: l.name.replace(/\//g, '\\'), id: l.id, text: l.container !== 'binary', unused: l.container === 'unused'}))))
+        }
+        return listings.get(map)
+    }
+    const refresh = () => {
+        listings.clear()
+        changed.fire(undefined)
+    }
+    const byName = (a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'})
+
+    const provider = {
+        onDidChangeTreeData: changed.event,
+
+        async getChildren(node) {
+            if (!node) {
+                const found = await workspace.findFiles(MAP_GLOB)
+                return found
+                    .map(uri => uri.fsPath)
+                    .sort((a, b) => byName(path.basename(a), path.basename(b)) || byName(a, b))
+                    .map(map => ({map}))
+            }
+            if (node.file) return []
+            // What's directly inside the map or the folder.
+            const prefix = node.folder ? node.folder + '\\' : ''
+            const folders = new Map()
+            const files = []
+            for (const file of await filesOf(node.map)) {
+                if (!file.name.toLowerCase().startsWith(prefix.toLowerCase())) continue
+                const rest = file.name.slice(prefix.length)
+                const cut = rest.search(/[\\/]/)
+                if (cut < 0) files.push({map: node.map, file})
+                else {
+                    const folder = prefix + rest.slice(0, cut)
+                    const key = folder.toLowerCase()
+                    if (!folders.has(key)) folders.set(key, {map: node.map, folder})
+                }
+            }
+            const leaf = n => (n.folder ?? n.file.name).split(/[\\/]/).pop()
+            return [
+                ...[...folders.values()].sort((a, b) => byName(leaf(a), leaf(b))),
+                ...files.sort((a, b) => byName(leaf(a), leaf(b))),
+            ]
+        },
+
+        getTreeItem(node) {
+            if (!node.folder && !node.file) {
+                const item = new TreeItem(path.basename(node.map), TreeItemCollapsibleState.Collapsed)
+                item.id = node.map
+                item.iconPath = new ThemeIcon('package')
+                item.description = workspace.asRelativePath(path.dirname(node.map))
+                item.tooltip = node.map
+                item.resourceUri = Uri.file(node.map)
+                item.contextValue = 'wc3.map'
+                return item
+            }
+            if (node.folder) {
+                const item = new TreeItem(node.folder.split('\\').pop(), TreeItemCollapsibleState.Collapsed)
+                item.id = `${node.map}|${node.folder.toLowerCase()}`
+                item.iconPath = ThemeIcon.Folder
+                item.resourceUri = Uri.file(path.join(node.map, ...node.folder.split('\\'))).with({scheme: MAP_SCHEME})
+                return item
+            }
+            const {file} = node
+            const uri = Uri.file(file.id).with({scheme: MAP_SCHEME})
+            const item = new TreeItem(uri, TreeItemCollapsibleState.None)
+            item.id = `${node.map}|${file.name.toLowerCase()}`
+            item.iconPath = ThemeIcon.File
+            item.tooltip = file.name
+            if (file.text) item.command = {command: 'vscode.open', title: 'Open', arguments: [uri]}
+            else item.description = 'binary'
+            if (file.unused) {
+                item.description = 'unused'
+                item.tooltip = `${file.name}: not run, Scripts\\war3map.j is`
+            }
+            return item
+        },
+    }
+
+    const watcher = workspace.createFileSystemWatcher(MAP_GLOB)
+    context.subscriptions.push(
+        changed,
+        watcher,
+        watcher.onDidCreate(refresh),
+        watcher.onDidDelete(refresh),
+        watcher.onDidChange(refresh),
+        workspace.onDidChangeWorkspaceFolders(refresh),
+        window.createTreeView(MAPS_VIEW, {treeDataProvider: provider, showCollapseAll: true}),
+        commands.registerCommand('wc3.maps.refresh', refresh),
+        commands.registerCommand('wc3.maps.reveal', node => node?.map && commands.executeCommand('revealInExplorer', Uri.file(node.map))),
+    )
+}
+
 /**
  * Highlighting for every language, served from the tokens the server
  * pushed. If the document is newer than those, waits (briefly) for the
@@ -553,6 +674,7 @@ module.exports = {
         startServer(command, context)
         registerQueries(context)
         registerManifestPaths(context)
+        registerMapTree(context)
 
         sendRoots()
         context.subscriptions.push(

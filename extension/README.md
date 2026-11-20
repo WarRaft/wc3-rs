@@ -37,6 +37,10 @@ Warcraft III language support for VS Code.
 - Maps: the scripts inside `.w3x` / `.w3m` maps a project's `sources=` matches are project
   files too (`war3map.j`, `war3map.lua`, ...), analyzed and searchable
   like any other; they open read-only.
+- WC3 Maps, a tree in the Explorer: every `.w3x` / `.w3m` in the
+  workspace opens like a folder into the files inside it. Text files
+  (scripts, `.fdf`, `.txt`, `.slk`, ...) open read-only; binary ones are
+  marked as such. It follows maps being saved, added and removed.
 - Symbol navigation across the whole project, in every language: go to
   definition, find references, hover with the declaration, outline, go
   to symbol in workspace, and rename (F2), which refuses with a reason

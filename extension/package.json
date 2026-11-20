@@ -23,13 +23,50 @@
       {
         "command": "wc3.revealFolder",
         "title": "WC3: Reveal Folder"
+      },
+      {
+        "command": "wc3.maps.refresh",
+        "title": "Refresh",
+        "category": "WC3",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "wc3.maps.reveal",
+        "title": "Reveal in Explorer",
+        "category": "WC3"
       }
     ],
+    "views": {
+      "explorer": [
+        {
+          "id": "wc3.maps",
+          "name": "WC3 Maps",
+          "icon": "$(package)"
+        }
+      ]
+    },
     "menus": {
       "commandPalette": [
         {
           "command": "wc3.revealFolder",
           "when": "false"
+        },
+        {
+          "command": "wc3.maps.reveal",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "wc3.maps.refresh",
+          "when": "view == wc3.maps",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "wc3.maps.reveal",
+          "when": "view == wc3.maps && viewItem == wc3.map"
         }
       ]
     },

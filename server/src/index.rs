@@ -48,6 +48,36 @@ pub enum QueryKind {
     /// In a `wc3.bni`: every folder along every path, a location whose
     /// `range` is the path part and `id` the folder.
     PathLinks,
+    /// The files inside the map (or `.mpq`) the id names, for the tree of
+    /// maps: each location's `name` is the file's name in the archive
+    /// (`Scripts\\war3map.j`), its `id` the file's path, its `container`
+    /// `text`, `binary` or `unused` (a text script the game doesn't run:
+    /// `war3map.j` beside `Scripts\\war3map.j`).
+    ArchiveFiles,
+}
+
+/// Every file inside the archive at `id`; see [`QueryKind::ArchiveFiles`].
+fn archive_files(id: &str) -> Answer {
+    let archive = std::path::Path::new(id);
+    let names = crate::map::names(archive);
+    let locations = names
+        .iter()
+        .map(|name| Location {
+            id: crate::map::inner_path(archive, name).to_string_lossy().into_owned(),
+            range: Range::default(),
+            container: if crate::map::is_unused_script(&names, name) {
+                "unused"
+            } else if crate::map::is_text_name(name) {
+                "text"
+            } else {
+                "binary"
+            }
+            .into(),
+            name: name.clone(),
+            kind: SymbolKind::Namespace,
+        })
+        .collect();
+    Answer { locations, text: String::new() }
 }
 
 /// Path completion and links in a manifest; nothing for any other file.
@@ -123,11 +153,12 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
         QueryKind::Content => {
             let text = match ws.file(id) {
                 Some((doc, _)) => doc.text.clone(),
-                None => crate::map::load(std::path::Path::new(id)).map(|d| d.text).unwrap_or_default(),
+                None => crate::map::text(std::path::Path::new(id)).unwrap_or_default(),
             };
             return Answer { locations: Vec::new(), text };
         }
         QueryKind::PathCompletion | QueryKind::PathLinks => return manifest_paths(ws, kind, id, pos),
+        QueryKind::ArchiveFiles => return archive_files(id),
         QueryKind::Definition | QueryKind::References | QueryKind::Hover => {
             ws.note_context(id);
             let Some(target) = at(ws, id, pos) else {
