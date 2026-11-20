@@ -62,6 +62,10 @@ pub struct Server<W: Write> {
     watched: HashSet<PathBuf>,
     /// Queries waiting for the changes before them to be analyzed.
     queries: Vec<Query>,
+    /// Maps as folders, for `Fs` messages.
+    mapfs: crate::mapfs::MapFs,
+    /// `Fs` answers to send.
+    fs_answers: Vec<ServerMsg>,
 }
 
 struct Query {
@@ -81,6 +85,8 @@ impl<W: Write> Server<W> {
             watcher: None,
             watched: HashSet::new(),
             queries: Vec::new(),
+            mapfs: Default::default(),
+            fs_answers: Vec::new(),
         }
     }
 
@@ -138,6 +144,28 @@ impl<W: Write> Server<W> {
             ClientMsg::Close { id } => ws.close(&id),
             ClientMsg::Query { request, kind, id, pos, text } => {
                 self.queries.push(Query { request, kind, id, pos, text })
+            }
+            ClientMsg::Fs { request, op, path, to, flags, data } => {
+                let path = PathBuf::from(path);
+                let answer = crate::mapfs::answer(&mut self.mapfs, op, &path, std::path::Path::new(&to), flags, data);
+                // A change to a map is a change to the model's files in it,
+                // right away rather than when the watcher notices.
+                if answer.changed {
+                    for archive in [crate::mapfs::locate(&path), crate::mapfs::locate(std::path::Path::new(&to))]
+                        .into_iter()
+                        .flatten()
+                        .map(|(a, _)| a)
+                    {
+                        ws.disk_changed(&[archive]);
+                    }
+                }
+                self.fs_answers.push(ServerMsg::Fs {
+                    request,
+                    error: answer.error,
+                    stat: answer.stat,
+                    entries: answer.entries,
+                    data: answer.data,
+                });
             }
         }
     }
@@ -200,8 +228,11 @@ impl<W: Write> Server<W> {
     /// Sends the reports of everything changed, then answers the waiting
     /// queries against that up-to-date model.
     fn flush(&mut self) -> io::Result<()> {
-        if self.workspace.is_idle() && self.queries.is_empty() {
+        if self.workspace.is_idle() && self.queries.is_empty() && self.fs_answers.is_empty() {
             return Ok(());
+        }
+        for msg in std::mem::take(&mut self.fs_answers) {
+            self.out.write_all(&msg.encode())?;
         }
         for msg in self.workspace.take_reports() {
             self.out.write_all(&msg.encode())?;

@@ -34,7 +34,7 @@ fn session(events: Vec<Event>) -> Vec<Answer> {
                 answers.push(Answer { id, version, diagnostics, tokens })
             }
             Some(ServerMsg::Legend { .. }) => assert!(answers.is_empty(), "the legend comes first"),
-            Some(ServerMsg::Answer { .. }) => {}
+            Some(ServerMsg::Answer { .. } | ServerMsg::Fs { .. }) => {}
             None => panic!("unknown frame {kind}"),
         }
     }
@@ -201,4 +201,29 @@ fn queries_are_answered_after_the_edits_before_them() {
     assert_eq!(locations.len(), 1);
     assert_eq!(locations[0].name, "G");
     assert_eq!(locations[0].range, Range::new(Position::new(0, 9), Position::new(0, 10)));
+}
+
+#[test]
+fn fs_messages_change_maps_and_the_model_follows() {
+    use crate::protocol::{fs_flags, FsOp};
+    let tmp = TempDir::new("server-fs");
+    std::fs::write(tmp.0.join(project::MANIFEST), "[project]\nsources=.\n").unwrap();
+    let map = tmp.0.join("Map.w3x");
+    crate::map::tests::make_map(&map, &[("war3map.j", "function main takes nothing returns nothing\nendfunction\n")]);
+    let script = map.join("war3map.j").to_string_lossy().into_owned();
+
+    let fs = |request, op, path: &str, flags, data: &[u8]| {
+        Event::Client(ClientMsg::Fs { request, op: Some(op), path: path.into(), to: String::new(), flags, data: data.to_vec() })
+    };
+    let answers = session(vec![
+        Event::Client(ClientMsg::Init { roots: vec![tmp.0.to_string_lossy().into_owned()] }),
+        fs(1, FsOp::Write, &script, fs_flags::OVERWRITE, b"function main takes nothing returns nothing\n"),
+    ]);
+    // Saved with an error in it: the model read the map again.
+    let last = answers.iter().rev().find(|a| a.id == script).expect("the script is reported");
+    assert_eq!(last.diagnostics.len(), 1, "{:?}", last.diagnostics);
+    assert_eq!(
+        crate::map::load(&map.join("war3map.j")).unwrap().text,
+        "function main takes nothing returns nothing\n"
+    );
 }

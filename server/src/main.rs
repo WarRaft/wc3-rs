@@ -15,6 +15,7 @@ mod game;
 mod glob;
 mod index;
 mod map;
+mod mapfs;
 mod paths;
 mod project;
 mod protocol;

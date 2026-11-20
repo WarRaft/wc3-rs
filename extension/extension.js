@@ -20,12 +20,12 @@
  * Scripts inside maps (`.w3x`, `.w3m`) are files of the model too, at a
  * path inside the map's (`<map.w3x>/war3map.j`), and so are the game's
  * `common.j` and `Blizzard.j` when they come from its `.mpq`s. VS Code can't read them,
- * so they're shown under the `wc3map:` scheme with that path, read-only,
- * their text asked from the server.
- *
- * The Explorer has a tree of the workspace's maps: each opens like a
- * folder into the files inside it (the server lists them), and a text
- * file opens read-only like the scripts above.
+ * so they're shown under the `wc3map:` scheme with that path: a file
+ * system whose every operation the server carries out with `storm-rs`
+ * (`server/src/mapfs.rs`). A map opens as a workspace folder (Open Map as
+ * Folder, from the Explorer, the WC3 Maps list, or the page a map file
+ * opens in), and then its files are listed, opened, saved, copied, added,
+ * renamed and deleted like any others. The game's `.mpq`s are read-only.
  *
  * In `wc3.bni`, the paths of `game=` and `sources=` complete from the disk
  * and every folder along them is a link that reveals that folder (in the
@@ -57,10 +57,17 @@ const {
     SemanticTokens,
     SemanticTokensLegend,
     ThemeIcon,
+    ThemeColor,
     TreeItem,
     TreeItemCollapsibleState,
+    FileSystemError,
+    FileType,
+    FilePermission,
+    FileChangeType,
+    FileDecoration,
+    Disposable,
 } = require('vscode')
-const {encode, decode, FrameReader, QUERY} = require('./protocol.js')
+const {encode, decode, FrameReader, QUERY, FS_OP, FS_FLAG} = require('./protocol.js')
 
 /** The scheme of files inside maps. */
 const MAP_SCHEME = 'wc3map'
@@ -413,10 +420,6 @@ function registerQueries(context) {
                 return edit
             },
         }),
-        workspace.registerTextDocumentContentProvider(MAP_SCHEME, {
-            provideTextDocumentContent: async uri =>
-                (await query(QUERY.CONTENT, uri.fsPath, {line: 0, character: 0}))?.text ?? '',
-        }),
         languages.registerWorkspaceSymbolProvider({
             provideWorkspaceSymbols: async text =>
                 ((await query(QUERY.WORKSPACE_SYMBOLS, '', {line: 0, character: 0}, text))?.locations ?? []).map(toSymbol),
@@ -472,117 +475,222 @@ function registerManifestPaths(context) {
     )
 }
 
-/** The id of the tree of maps (`package.json`). */
+/** The id of the list of maps (`package.json`). */
 const MAPS_VIEW = 'wc3.maps'
 
-/** Maps the tree lists. */
+/** Maps the list shows. */
 const MAP_GLOB = '**/*.{w3x,w3m,W3X,W3M}'
 
+/** The command that opens a map as a workspace folder. */
+const OPEN_MAP = 'wc3.openMapAsFolder'
+
+/** How long a file system operation may take: writing rebuilds a map. */
+const FS_TIMEOUT_MS = 60000
+
 /**
- * The tree of maps in the Explorer (see the header). A node is
- * `{map}` (a map file), `{map, folder}` (a folder inside it, `\`-separated
- * as in the archive) or `{map, file}` (a file: its name in the archive, its
- * path, whether it's text, and whether it's a script the game doesn't
- * run).
+ * A file system operation inside a map, answered by the server (see
+ * `server/src/mapfs.rs`). Rejects with the matching `FileSystemError`.
+ *
+ * @param {number} op  one of FS_OP
+ * @param {import('vscode').Uri} uri
+ * @param {{to?: import('vscode').Uri, flags?: number, data?: Uint8Array}} [more]
+ */
+function fsRequest(op, uri, more = {}) {
+    if (!server) return Promise.reject(FileSystemError.Unavailable(uri))
+    const request = nextRequest = (nextRequest + 1) >>> 0
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            pendingQueries.delete(request)
+            reject(FileSystemError.Unavailable(uri))
+        }, FS_TIMEOUT_MS)
+        pendingQueries.set(request, answer => {
+            clearTimeout(timer)
+            if (!answer.error) return resolve(answer)
+            const make = FileSystemError[answer.error] ?? FileSystemError.Unavailable
+            reject(answer.message ? make(`${uri.fsPath}: ${answer.message}`) : make(uri))
+        })
+        send(encode.fs(request, op, uri.fsPath, more.to?.fsPath ?? '', more.flags ?? 0, more.data ?? new Uint8Array()))
+    })
+}
+
+/** The `wc3map:` URI of a map file, the folder it opens as. */
+function mapFolderUri(map) {
+    return Uri.file(map).with({scheme: MAP_SCHEME})
+}
+
+/**
+ * Maps as folders (see the header): the file system under `wc3map:`, the
+ * command that adds a map to the workspace, the editor a map file opens
+ * in, notes on files that don't count, and the list of maps.
  *
  * @param {import('vscode').ExtensionContext} context
  */
-function registerMapTree(context) {
+function registerMaps(context) {
     const changed = new EventEmitter()
-    /** map path → Promise of its files: [{name, id, text}]. */
-    const listings = new Map()
-    const filesOf = map => {
-        if (!listings.has(map)) {
-            listings.set(map, query(QUERY.ARCHIVE_FILES, map, {line: 0, character: 0}).then(answer =>
-                (answer?.locations ?? []).map(l => ({name: l.name.replace(/\//g, '\\'), id: l.id, text: l.container !== 'binary', unused: l.container === 'unused'}))))
-        }
-        return listings.get(map)
-    }
-    const refresh = () => {
-        listings.clear()
-        changed.fire(undefined)
-    }
-    const byName = (a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'})
+    const fire = (type, ...uris) => changed.fire(uris.map(uri => ({type, uri})))
+    const parent = uri => uri.with({path: path.posix.dirname(uri.path)})
 
     const provider = {
-        onDidChangeTreeData: changed.event,
+        onDidChangeFile: changed.event,
+        // The server notices changes to maps itself; see the watcher below.
+        watch: () => new Disposable(() => {}),
 
-        async getChildren(node) {
-            if (!node) {
-                const found = await workspace.findFiles(MAP_GLOB)
-                return found
-                    .map(uri => uri.fsPath)
-                    .sort((a, b) => byName(path.basename(a), path.basename(b)) || byName(a, b))
-                    .map(map => ({map}))
+        async stat(uri) {
+            const {stat} = await fsRequest(FS_OP.STAT, uri)
+            return {
+                type: stat.type === 'dir' ? FileType.Directory : FileType.File,
+                ctime: stat.mtime,
+                mtime: stat.mtime,
+                size: stat.size,
+                permissions: stat.readonly ? FilePermission.Readonly : undefined,
             }
-            if (node.file) return []
-            // What's directly inside the map or the folder.
-            const prefix = node.folder ? node.folder + '\\' : ''
-            const folders = new Map()
-            const files = []
-            for (const file of await filesOf(node.map)) {
-                if (!file.name.toLowerCase().startsWith(prefix.toLowerCase())) continue
-                const rest = file.name.slice(prefix.length)
-                const cut = rest.search(/[\\/]/)
-                if (cut < 0) files.push({map: node.map, file})
-                else {
-                    const folder = prefix + rest.slice(0, cut)
-                    const key = folder.toLowerCase()
-                    if (!folders.has(key)) folders.set(key, {map: node.map, folder})
-                }
-            }
-            const leaf = n => (n.folder ?? n.file.name).split(/[\\/]/).pop()
-            return [
-                ...[...folders.values()].sort((a, b) => byName(leaf(a), leaf(b))),
-                ...files.sort((a, b) => byName(leaf(a), leaf(b))),
-            ]
         },
+        async readDirectory(uri) {
+            const {entries} = await fsRequest(FS_OP.READ_DIR, uri)
+            return entries.map(([name, type]) => [name, type === 'dir' ? FileType.Directory : FileType.File])
+        },
+        async readFile(uri) {
+            return (await fsRequest(FS_OP.READ, uri)).data
+        },
+        async writeFile(uri, data, options) {
+            const exists = await provider.stat(uri).then(() => true, () => false)
+            const flags = (options.create ? FS_FLAG.CREATE : 0) | (options.overwrite ? FS_FLAG.OVERWRITE : 0)
+            await fsRequest(FS_OP.WRITE, uri, {flags, data})
+            if (exists) fire(FileChangeType.Changed, uri)
+            else fire(FileChangeType.Created, uri)
+        },
+        async delete(uri, options) {
+            await fsRequest(FS_OP.DELETE, uri, {flags: options.recursive ? FS_FLAG.RECURSIVE : 0})
+            fire(FileChangeType.Deleted, uri)
+        },
+        async rename(from, to, options) {
+            await fsRequest(FS_OP.RENAME, from, {to, flags: options.overwrite ? FS_FLAG.OVERWRITE : 0})
+            changed.fire([{type: FileChangeType.Deleted, uri: from}, {type: FileChangeType.Created, uri: to}])
+        },
+        async createDirectory(uri) {
+            await fsRequest(FS_OP.CREATE_DIR, uri)
+            fire(FileChangeType.Created, uri)
+        },
+    }
 
-        getTreeItem(node) {
-            if (!node.folder && !node.file) {
-                const item = new TreeItem(path.basename(node.map), TreeItemCollapsibleState.Collapsed)
-                item.id = node.map
-                item.iconPath = new ThemeIcon('package')
-                item.description = workspace.asRelativePath(path.dirname(node.map))
-                item.tooltip = node.map
-                item.resourceUri = Uri.file(node.map)
-                item.contextValue = 'wc3.map'
-                return item
-            }
-            if (node.folder) {
-                const item = new TreeItem(node.folder.split('\\').pop(), TreeItemCollapsibleState.Collapsed)
-                item.id = `${node.map}|${node.folder.toLowerCase()}`
-                item.iconPath = ThemeIcon.Folder
-                item.resourceUri = Uri.file(path.join(node.map, ...node.folder.split('\\'))).with({scheme: MAP_SCHEME})
-                return item
-            }
-            const {file} = node
-            const uri = Uri.file(file.id).with({scheme: MAP_SCHEME})
-            const item = new TreeItem(uri, TreeItemCollapsibleState.None)
-            item.id = `${node.map}|${file.name.toLowerCase()}`
-            item.iconPath = ThemeIcon.File
-            item.tooltip = file.name
-            if (file.text) item.command = {command: 'vscode.open', title: 'Open', arguments: [uri]}
-            else item.description = 'binary'
-            if (file.unused) {
-                item.description = 'unused'
-                item.tooltip = `${file.name}: not run, Scripts\\war3map.j is`
-            }
+    // A file a map holds but the game doesn't use, or a map that can't be
+    // written: said next to it.
+    const decorationsChanged = new EventEmitter()
+    const decorations = {
+        onDidChangeFileDecorations: decorationsChanged.event,
+        async provideFileDecoration(uri) {
+            if (uri.scheme !== MAP_SCHEME) return undefined
+            const stat = await fsRequest(FS_OP.STAT, uri).then(a => a.stat, () => null)
+            if (!stat?.note) return undefined
+            const unused = stat.type === 'file'
+            const decoration = new FileDecoration(unused ? '−' : undefined, stat.note)
+            if (unused) decoration.color = new ThemeColor('disabledForeground')
+            return decoration
+        },
+    }
+
+    /** Adds the map to the workspace, or shows it if it's there. */
+    const openMap = target => {
+        const map = target instanceof Uri ? target.fsPath : target?.map ?? window.activeTextEditor?.document.uri.fsPath
+        if (!map || !MAP_NAME.test(map)) return
+        const uri = mapFolderUri(map)
+        const folders = workspace.workspaceFolders ?? []
+        if (folders.some(f => f.uri.toString() === uri.toString())) {
+            return commands.executeCommand('revealInExplorer', uri)
+        }
+        workspace.updateWorkspaceFolders(folders.length, 0, {uri, name: path.basename(map)})
+    }
+
+    // A map file opens as a page that offers to open it as a folder.
+    const editor = {
+        openCustomDocument: uri => ({uri, dispose() {}}),
+        resolveCustomEditor(document, panel) {
+            const map = document.uri.fsPath
+            const isOpen = (workspace.workspaceFolders ?? []).some(f => f.uri.toString() === mapFolderUri(map).toString())
+            panel.webview.options = {enableScripts: true}
+            const size = (() => {
+                try {
+                    return `${(fs.statSync(map).size / 1048576).toFixed(1)} MB`
+                } catch {
+                    return ''
+                }
+            })()
+            const html = s => s.replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})[c])
+            panel.webview.html = `<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<style>
+body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: 2em; }
+h1 { font-size: 1.4em; font-weight: 600; margin: 0 0 .3em; }
+p { color: var(--vscode-descriptionForeground); margin: 0 0 1.5em; }
+button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; padding: .5em 1.2em; font: inherit; cursor: pointer; border-radius: 2px; }
+button:hover { background: var(--vscode-button-hoverBackground); }
+</style></head><body>
+<h1>${html(path.basename(map))}</h1>
+<p>${html(path.dirname(map))}${size ? ' · ' + size : ''}</p>
+<button id="open">${isOpen ? 'Show in Explorer' : 'Open as Folder'}</button>
+<script>
+const vscode = acquireVsCodeApi()
+document.getElementById('open').onclick = () => vscode.postMessage('open')
+</script></body></html>`
+            panel.webview.onDidReceiveMessage(() => openMap(document.uri))
+        },
+    }
+
+    // The list of maps in the workspace; a click opens one as a folder.
+    const listChanged = new EventEmitter()
+    const byName = (a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'})
+    const list = {
+        onDidChangeTreeData: listChanged.event,
+        async getChildren(node) {
+            if (node) return []
+            const found = await workspace.findFiles(MAP_GLOB)
+            return found
+                .map(uri => uri.fsPath)
+                .sort((a, b) => byName(path.basename(a), path.basename(b)) || byName(a, b))
+                .map(map => ({map}))
+        },
+        getTreeItem({map}) {
+            const item = new TreeItem(path.basename(map), TreeItemCollapsibleState.None)
+            item.id = map
+            item.iconPath = new ThemeIcon('package')
+            item.description = workspace.asRelativePath(path.dirname(map))
+            item.tooltip = map
+            item.resourceUri = Uri.file(map)
+            item.contextValue = 'wc3.map'
+            item.command = {command: OPEN_MAP, title: 'Open as Folder', arguments: [Uri.file(map)]}
             return item
         },
     }
 
+    // A map changed on disk (saved by the World Editor, or by us): what's
+    // shown of it is read again.
+    const mapChanged = uri => {
+        const root = mapFolderUri(uri.fsPath)
+        const inside = workspace.textDocuments
+            .map(d => d.uri)
+            .filter(u => u.scheme === MAP_SCHEME && u.fsPath.toLowerCase().startsWith(uri.fsPath.toLowerCase() + path.sep))
+        fire(FileChangeType.Changed, root, ...inside)
+        decorationsChanged.fire(undefined)
+    }
+    const listRefresh = () => listChanged.fire(undefined)
     const watcher = workspace.createFileSystemWatcher(MAP_GLOB)
+
     context.subscriptions.push(
         changed,
+        decorationsChanged,
+        listChanged,
         watcher,
-        watcher.onDidCreate(refresh),
-        watcher.onDidDelete(refresh),
-        watcher.onDidChange(refresh),
-        workspace.onDidChangeWorkspaceFolders(refresh),
-        window.createTreeView(MAPS_VIEW, {treeDataProvider: provider, showCollapseAll: true}),
-        commands.registerCommand('wc3.maps.refresh', refresh),
+        workspace.registerFileSystemProvider(MAP_SCHEME, provider, {isCaseSensitive: false}),
+        window.registerFileDecorationProvider(decorations),
+        window.registerCustomEditorProvider('wc3.map', editor, {supportsMultipleEditorsPerDocument: true}),
+        window.createTreeView(MAPS_VIEW, {treeDataProvider: list}),
+        commands.registerCommand(OPEN_MAP, openMap),
+        commands.registerCommand('wc3.maps.refresh', listRefresh),
         commands.registerCommand('wc3.maps.reveal', node => node?.map && commands.executeCommand('revealInExplorer', Uri.file(node.map))),
+        watcher.onDidChange(mapChanged),
+        watcher.onDidCreate(listRefresh),
+        watcher.onDidDelete(listRefresh),
+        workspace.onDidChangeWorkspaceFolders(listRefresh),
     )
 }
 
@@ -654,7 +762,7 @@ function startServer(command, context) {
             const msg = decode(kind, body)
             if (!msg) continue
             if (msg.kind === 'file') onFile(msg)
-            else if (msg.kind === 'answer') {
+            else if (msg.kind === 'answer' || msg.kind === 'fs') {
                 const done = pendingQueries.get(msg.request)
                 pendingQueries.delete(msg.request)
                 if (done) done(msg)
@@ -674,7 +782,7 @@ module.exports = {
         startServer(command, context)
         registerQueries(context)
         registerManifestPaths(context)
-        registerMapTree(context)
+        registerMaps(context)
 
         sendRoots()
         context.subscriptions.push(

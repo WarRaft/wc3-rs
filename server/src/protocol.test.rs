@@ -34,6 +34,14 @@ fn client_messages_round_trip() {
             pos: Position::new(3, 4),
             text: "q".into(),
         },
+        ClientMsg::Fs {
+            request: 3,
+            op: Some(FsOp::Rename),
+            path: "/m/Map.w3x/a.j".into(),
+            to: "/m/Map.w3x/b.j".into(),
+            flags: fs_flags::OVERWRITE,
+            data: vec![0, 1, 255],
+        },
     ];
     for msg in messages {
         assert_eq!(decode_client(&msg.encode()), msg);
@@ -108,4 +116,26 @@ fn unknown_query_kinds_decode_to_none() {
     body.extend_from_slice(&0u32.to_le_bytes()); // text ""
     let Some(ClientMsg::Query { kind, .. }) = ClientMsg::decode(6, &body).unwrap() else { panic!() };
     assert_eq!(kind, None);
+}
+
+#[test]
+fn fs_answers_carry_errors_stats_entries_and_bytes() {
+    use crate::mapfs::{FsError, Kind, Stat};
+    let msg = ServerMsg::Fs {
+        request: 5,
+        error: Some(FsError::NoPermissions("no".into())),
+        stat: Some(Stat { kind: Kind::Dir, size: 1 << 40, mtime: 7, readonly: true, note: "n".into() }),
+        entries: vec![("a.j".into(), Kind::File)],
+        data: vec![9, 8],
+    };
+    let frame = msg.encode();
+    let body = &frame[HEADER..];
+    assert_eq!(frame[4], 131);
+    // request, error 5 + "no", stat: folder, size, time, read-only, "n".
+    assert_eq!(&body[..4], &5u32.to_le_bytes());
+    assert_eq!(body[4], 5);
+    assert_eq!(&body[5..11], &[2, 0, 0, 0, b'n', b'o']);
+    assert_eq!(body[11], 2);
+    assert_eq!(&body[12..20], &(1u64 << 40).to_le_bytes());
+    assert!(body.ends_with(&[2, 0, 0, 0, 9, 8]));
 }

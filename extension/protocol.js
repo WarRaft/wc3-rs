@@ -24,10 +24,33 @@ const KIND = {
     LANG: 4,
     CLOSE: 5,
     QUERY: 6,
+    FS: 7,
     FILE: 128,
     LEGEND: 129,
     ANSWER: 130,
+    FS_ANSWER: 131,
 }
+
+/** File system operations inside maps (`protocol::FsOp` on the Rust side). */
+const FS_OP = {
+    STAT: 0,
+    READ_DIR: 1,
+    READ: 2,
+    WRITE: 3,
+    DELETE: 4,
+    RENAME: 5,
+    CREATE_DIR: 6,
+}
+
+/** Flags of a file system operation. */
+const FS_FLAG = {
+    CREATE: 1,
+    OVERWRITE: 2,
+    RECURSIVE: 4,
+}
+
+/** File system errors, by wire code. */
+const FS_ERRORS = [null, 'FileNotFound', 'FileExists', 'FileNotADirectory', 'FileIsADirectory', 'NoPermissions', 'Unavailable']
 
 /** Query kinds (`index::QueryKind` on the Rust side). */
 const QUERY = {
@@ -41,7 +64,6 @@ const QUERY = {
     CONTENT: 7,
     PATH_COMPLETION: 8,
     PATH_LINKS: 9,
-    ARCHIVE_FILES: 10,
 }
 
 /** Symbol kinds, in wire order (`parser_rs::SymbolKind`). */
@@ -92,6 +114,14 @@ class Writer {
         this.ensure(n)
         this.buf.write(s, this.len, n, 'utf8')
         this.len += n
+    }
+
+    /** @param {Uint8Array} bytes */
+    bytes(bytes) {
+        this.u32(bytes.length)
+        this.ensure(bytes.length)
+        this.buf.set(bytes, this.len)
+        this.len += bytes.length
     }
 
     /** @param {import('vscode').Range} r */
@@ -189,6 +219,25 @@ const encode = {
         w.string(text)
         return w.frame(KIND.QUERY)
     },
+
+    /**
+     * @param {number} request  echoed in the answer
+     * @param {number} op  one of {@link FS_OP}
+     * @param {string} path
+     * @param {string} to  a rename's target, empty otherwise
+     * @param {number} flags  {@link FS_FLAG}s
+     * @param {Uint8Array} data  a write's bytes
+     */
+    fs(request, op, path, to, flags, data) {
+        const w = new Writer()
+        w.u32(request)
+        w.u8(op)
+        w.string(path)
+        w.string(to)
+        w.u8(flags)
+        w.bytes(data)
+        return w.frame(KIND.FS)
+    },
 }
 
 /** Reads the fields of one frame's body in order. */
@@ -213,6 +262,21 @@ class Reader {
         const v = this.body.readInt32LE(this.at)
         this.at += 4
         return v
+    }
+
+    u64() {
+        const v = Number(this.body.readBigUInt64LE(this.at))
+        this.at += 8
+        return v
+    }
+
+    /** A copy of the next bytes field. */
+    bytes() {
+        const n = this.u32()
+        const out = new Uint8Array(n)
+        out.set(this.body.subarray(this.at, this.at + n))
+        this.at += n
+        return out
     }
 
     string() {
@@ -251,7 +315,9 @@ class Reader {
  * @typedef {{id: string, range: [number, number, number, number], name: string, container: string, kind: string}} WireLocation
  * @typedef {{kind: 'file', id: string, version: number, diagnostics: WireDiagnostic[], tokens: Uint32Array}
  *         | {kind: 'legend', types: string[], modifiers: string[]}
- *         | {kind: 'answer', request: number, text: string, locations: WireLocation[]}} ServerMessage
+ *         | {kind: 'answer', request: number, text: string, locations: WireLocation[]}
+ *         | {kind: 'fs', request: number, error: string | null, message: string, stat: FsStat | null, entries: [string, 'file' | 'dir'][], data: Uint8Array}} ServerMessage
+ * @typedef {{type: 'file' | 'dir', size: number, mtime: number, readonly: boolean, note: string}} FsStat
  */
 
 /**
@@ -284,6 +350,21 @@ function decode(kind, body) {
                 locations.push({id: r.string(), range: r.range(), name: r.string(), container: r.string(), kind: SYMBOL_KINDS[r.u8()]})
             }
             return {kind: 'answer', request, text, locations}
+        }
+        case KIND.FS_ANSWER: {
+            const request = r.u32()
+            const code = r.u8()
+            const error = code ? FS_ERRORS[code] ?? 'Unavailable' : null
+            const message = r.string()
+            const type = r.u8()
+            const size = r.u64()
+            const mtime = r.u64()
+            const readonly = r.u8() !== 0
+            const note = r.string()
+            const stat = type ? {type: type === 2 ? 'dir' : 'file', size, mtime, readonly, note} : null
+            const entries = []
+            for (let n = r.u32(); n > 0; n--) entries.push([r.string(), r.u8() === 2 ? 'dir' : 'file'])
+            return {kind: 'fs', request, error, message, stat, entries, data: r.bytes()}
         }
         default:
             return null
@@ -331,4 +412,4 @@ class FrameReader {
     }
 }
 
-module.exports = {encode, decode, FrameReader, KIND, QUERY, HEADER}
+module.exports = {encode, decode, FrameReader, KIND, QUERY, FS_OP, FS_FLAG, HEADER}

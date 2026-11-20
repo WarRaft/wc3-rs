@@ -28,8 +28,8 @@
 //! A document is identified by an **id**: its path on disk for a file
 //! (VS Code's `fsPath`), its URI otherwise (an untitled document). A file
 //! inside a map has a path inside the map's, `<map.w3x>/war3map.j`; the
-//! editor shows it under the `wc3map:` scheme with that path, read-only,
-//! its text from a `content` query. The
+//! editor shows it under the `wc3map:` scheme with that path, a file
+//! system it reaches through `Fs` messages (see `mapfs`). The
 //! server reports files the editor never opened, and a path is what both
 //! sides know them by. A reader skips frames of a kind it doesn't know, so either
 //! side can add messages without breaking the other. The JavaScript twin
@@ -42,6 +42,7 @@ use parser_rs::{Level, SymbolKind};
 use crate::analysis::Diagnostic;
 use crate::document::{Position, Range};
 use crate::index::{Location, QueryKind};
+use crate::mapfs::{FsError, Kind, Stat};
 
 /// Header size: `u32` body length + `u8` kind.
 pub const HEADER: usize = 5;
@@ -82,7 +83,7 @@ pub enum ClientMsg {
     /// 3 document symbols, 4 workspace symbols, 5 prepare rename,
     /// 6 rename (`text` is the new name), 7 content (the answer's `text`
     /// is the file's text), 8 path completion and 9 path links in a
-    /// `wc3.bni`, 10 the files inside a map (see `index::QueryKind`). An unknown one gets an empty
+    /// `wc3.bni` (see `index::QueryKind`). An unknown one gets an empty
     /// answer.
     Query {
         request: u32,
@@ -91,6 +92,39 @@ pub enum ClientMsg {
         pos: Position,
         text: String,
     },
+    /// Kind 7. A file system operation inside a map (see `mapfs`), answered
+    /// at once by `Fs`: `u8` op (0 stat, 1 read folder, 2 read, 3 write,
+    /// 4 delete, 5 rename, 6 make folder), `path`, `to` (rename's target),
+    /// `u8` flags (1 create, 2 overwrite, 4 recursive), `data` (write's
+    /// bytes: `u32` length, then the bytes).
+    Fs {
+        request: u32,
+        op: Option<FsOp>,
+        path: String,
+        to: String,
+        flags: u8,
+        data: Vec<u8>,
+    },
+}
+
+/// The operations of `ClientMsg::Fs`, in wire order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FsOp {
+    Stat,
+    ReadDir,
+    Read,
+    Write,
+    Delete,
+    Rename,
+    CreateDir,
+}
+
+const FS_OPS: [FsOp; 7] = [FsOp::Stat, FsOp::ReadDir, FsOp::Read, FsOp::Write, FsOp::Delete, FsOp::Rename, FsOp::CreateDir];
+
+pub mod fs_flags {
+    pub const CREATE: u8 = 1;
+    pub const OVERWRITE: u8 = 2;
+    pub const RECURSIVE: u8 = 4;
 }
 
 /// Server → editor.
@@ -130,9 +164,28 @@ pub enum ServerMsg {
         text: String,
         locations: Vec<Location>,
     },
+    /// Kind 131. The answer to `ClientMsg::Fs` number `request`: `u8`
+    /// error (0 none, 1 not found, 2 exists, 3 not a folder, 4 a folder,
+    /// 5 no permission, 6 other) and its message; `u8` stat kind (0 none,
+    /// 1 file, 2 folder), `u64` size, `u64` time (ms), `u8` read-only, note;
+    /// the folder's entries (name, `u8` kind); the file's bytes.
+    Fs {
+        request: u32,
+        error: Option<FsError>,
+        stat: Option<Stat>,
+        entries: Vec<(String, Kind)>,
+        data: Vec<u8>,
+    },
 }
 
-const QUERY_KINDS: [QueryKind; 11] = [
+fn kind_code(kind: Kind) -> u8 {
+    match kind {
+        Kind::File => 1,
+        Kind::Dir => 2,
+    }
+}
+
+const QUERY_KINDS: [QueryKind; 10] = [
     QueryKind::Definition,
     QueryKind::References,
     QueryKind::Hover,
@@ -143,7 +196,6 @@ const QUERY_KINDS: [QueryKind; 11] = [
     QueryKind::Content,
     QueryKind::PathCompletion,
     QueryKind::PathLinks,
-    QueryKind::ArchiveFiles,
 ];
 
 const SYMBOL_KINDS: [SymbolKind; 17] = [
@@ -177,9 +229,11 @@ mod kind {
     pub const LANG: u8 = 4;
     pub const CLOSE: u8 = 5;
     pub const QUERY: u8 = 6;
+    pub const FS: u8 = 7;
     pub const FILE: u8 = 128;
     pub const LEGEND: u8 = 129;
     pub const ANSWER: u8 = 130;
+    pub const FS_ANSWER: u8 = 131;
 }
 
 /// Reads one frame: `Ok(None)` at a clean end of input (between frames).
@@ -246,6 +300,14 @@ impl ClientMsg {
                 pos: Position::new(r.u32()?, r.u32()?),
                 text: r.string()?,
             },
+            kind::FS => ClientMsg::Fs {
+                request: r.u32()?,
+                op: FS_OPS.get(r.u8()? as usize).copied(),
+                path: r.string()?,
+                to: r.string()?,
+                flags: r.u8()?,
+                data: r.bytes()?,
+            },
             _ => return Ok(None),
         };
         Ok(Some(msg))
@@ -295,6 +357,15 @@ impl ClientMsg {
                 w.string(text);
                 kind::QUERY
             }
+            ClientMsg::Fs { request, op, path, to, flags, data } => {
+                w.u32(*request);
+                w.u8(op.map_or(u8::MAX, |o| FS_OPS.iter().position(|x| *x == o).unwrap() as u8));
+                w.string(path);
+                w.string(to);
+                w.u8(*flags);
+                w.bytes(data);
+                kind::FS
+            }
         };
         w.frame(kind)
     }
@@ -336,6 +407,42 @@ impl ServerMsg {
                     w.u8(symbol_kind_code(l.kind));
                 });
                 kind::ANSWER
+            }
+            ServerMsg::Fs { request, error, stat, entries, data } => {
+                w.u32(*request);
+                let (code, message) = match error {
+                    None => (0, ""),
+                    Some(FsError::NotFound) => (1, ""),
+                    Some(FsError::Exists) => (2, ""),
+                    Some(FsError::NotADirectory) => (3, ""),
+                    Some(FsError::IsADirectory) => (4, ""),
+                    Some(FsError::NoPermissions(m)) => (5, m.as_str()),
+                    Some(FsError::Other(m)) => (6, m.as_str()),
+                };
+                w.u8(code);
+                w.string(message);
+                match stat {
+                    Some(s) => {
+                        w.u8(kind_code(s.kind));
+                        w.u64(s.size);
+                        w.u64(s.mtime);
+                        w.u8(s.readonly as u8);
+                        w.string(&s.note);
+                    }
+                    None => {
+                        w.u8(0);
+                        w.u64(0);
+                        w.u64(0);
+                        w.u8(0);
+                        w.string("");
+                    }
+                }
+                w.list(entries, |w, (name, kind)| {
+                    w.string(name);
+                    w.u8(kind_code(*kind));
+                });
+                w.bytes(data);
+                kind::FS_ANSWER
             }
         };
         w.frame(kind)
@@ -384,6 +491,24 @@ impl ServerMsg {
                     })
                 })?,
             },
+            kind::FS_ANSWER => {
+                let request = r.u32()?;
+                let error = match (r.u8()?, r.string()?) {
+                    (0, _) => None,
+                    (1, _) => Some(FsError::NotFound),
+                    (2, _) => Some(FsError::Exists),
+                    (3, _) => Some(FsError::NotADirectory),
+                    (4, _) => Some(FsError::IsADirectory),
+                    (5, m) => Some(FsError::NoPermissions(m)),
+                    (_, m) => Some(FsError::Other(m)),
+                };
+                let code = r.u8()?;
+                let (size, mtime, readonly, note) = (r.u64()?, r.u64()?, r.u8()? != 0, r.string()?);
+                let kind_of = |c: u8| if c == 2 { Kind::Dir } else { Kind::File };
+                let stat = (code != 0).then(|| Stat { kind: kind_of(code), size, mtime, readonly, note });
+                let entries = r.list(|r| Ok((r.string()?, kind_of(r.u8()?))))?;
+                ServerMsg::Fs { request, error, stat, entries, data: r.bytes()? }
+            }
             _ => return Ok(None),
         };
         Ok(Some(msg))
@@ -406,6 +531,15 @@ impl Writer {
 
     fn i32(&mut self, v: i32) {
         self.buf.extend_from_slice(&v.to_le_bytes());
+    }
+
+    fn u64(&mut self, v: u64) {
+        self.buf.extend_from_slice(&v.to_le_bytes());
+    }
+
+    fn bytes(&mut self, b: &[u8]) {
+        self.u32(b.len() as u32);
+        self.buf.extend_from_slice(b);
     }
 
     fn string(&mut self, s: &str) {
@@ -460,6 +594,16 @@ impl Reader<'_> {
 
     fn i32(&mut self) -> Result<i32, DecodeError> {
         Ok(i32::from_le_bytes(self.take(4)?.try_into().unwrap()))
+    }
+
+    #[cfg(test)]
+    fn u64(&mut self) -> Result<u64, DecodeError> {
+        Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
+    }
+
+    fn bytes(&mut self) -> Result<Vec<u8>, DecodeError> {
+        let len = self.u32()? as usize;
+        Ok(self.take(len)?.to_vec())
     }
 
     fn string(&mut self) -> Result<String, DecodeError> {

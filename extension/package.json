@@ -34,6 +34,33 @@
         "command": "wc3.maps.reveal",
         "title": "Reveal in Explorer",
         "category": "WC3"
+      },
+      {
+        "command": "wc3.openMapAsFolder",
+        "title": "Open Map as Folder",
+        "category": "WC3",
+        "icon": "$(folder-opened)"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "wc3.map",
+        "displayName": "Warcraft III Map",
+        "selector": [
+          {
+            "filenamePattern": "*.w3x"
+          },
+          {
+            "filenamePattern": "*.w3m"
+          },
+          {
+            "filenamePattern": "*.W3X"
+          },
+          {
+            "filenamePattern": "*.W3M"
+          }
+        ],
+        "priority": "default"
       }
     ],
     "views": {
@@ -65,8 +92,20 @@
       ],
       "view/item/context": [
         {
+          "command": "wc3.openMapAsFolder",
+          "when": "view == wc3.maps && viewItem == wc3.map",
+          "group": "inline"
+        },
+        {
           "command": "wc3.maps.reveal",
           "when": "view == wc3.maps && viewItem == wc3.map"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "wc3.openMapAsFolder",
+          "when": "resourceScheme == file && resourceExtname =~ /^\\.(w3x|w3m)$/i",
+          "group": "navigation"
         }
       ]
     },

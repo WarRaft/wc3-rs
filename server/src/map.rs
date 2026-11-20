@@ -88,7 +88,7 @@ pub fn is_map(path: &Path) -> bool {
 }
 
 /// Is `path` an archive on disk: a map or a game `.mpq`?
-fn is_archive(path: &Path) -> bool {
+pub fn is_archive(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .is_some_and(|e| ARCHIVES.iter().any(|m| e.eq_ignore_ascii_case(m)))
@@ -144,13 +144,16 @@ pub fn files(map: &Path) -> Vec<(PathBuf, Document)> {
 /// game looks for and the game's own files the map replaces. Sorted, names differing only in case once, the
 /// archive's own `(listfile)`-style entries left out. Empty if the map
 /// can't be read. For the editor's tree of maps.
+#[cfg(test)]
 pub fn names(map: &Path) -> Vec<String> {
-    let Ok(archive) = MpqArchive::open(map) else {
-        return Vec::new();
-    };
+    MpqArchive::open(map).map(|a| names_in(&a)).unwrap_or_default()
+}
+
+/// [`names`] of an archive already open.
+pub fn names_in(archive: &MpqArchive) -> Vec<String> {
     // The first spelling wins: the map's own `(listfile)` comes first.
     let mut seen = HashSet::new();
-    let mut out: Vec<String> = candidates(&archive)
+    let mut out: Vec<String> = candidates(archive)
         .filter(|n| !n.is_empty() && !SPECIAL.iter().any(|s| n.eq_ignore_ascii_case(s)))
         .filter(|n| seen.insert(n.to_ascii_lowercase()) && archive.has_file(n))
         .collect();
@@ -162,17 +165,6 @@ pub fn names(map: &Path) -> Vec<String> {
 /// one too, so the game never runs it? `names` is everything in the map.
 pub fn is_unused_script(names: &[String], name: &str) -> bool {
     name.eq_ignore_ascii_case(ROOT_SCRIPT) && names.iter().any(|n| n.eq_ignore_ascii_case(SCRIPTS[0]))
-}
-
-/// Can a file named like this be shown as text?
-pub fn is_text_name(name: &str) -> bool {
-    const TEXT: [&str; 10] = ["txt", "fdf", "toc", "slk", "wts", "ini", "xml", "json", "mdl", "csv"];
-    let path = Path::new(name);
-    Language::from_path(path).is_some()
-        || path
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| TEXT.iter().any(|t| e.eq_ignore_ascii_case(t)))
 }
 
 /// The text of any file inside an archive, as UTF-8 with invalid bytes

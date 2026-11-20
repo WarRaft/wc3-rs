@@ -80,7 +80,6 @@ fn lists_every_file_of_a_map_and_reads_any_as_text() {
     let map = tmp.0.join("Test.w3x");
     make_map(&map, &[("war3map.j", "j"), ("UI\\a.fdf", "fdf"), ("war3map.w3i", "bin"), ("Units\\b.mdx", "x")]);
     assert_eq!(names(&map), vec!["UI\\a.fdf", "Units\\b.mdx", "war3map.j", "war3map.w3i"]);
-    assert!(is_text_name("UI\\a.fdf") && is_text_name("war3map.j") && !is_text_name("war3map.w3i"));
     assert_eq!(text(&map.join("UI/a.fdf")).as_deref(), Some("fdf"));
     assert_eq!(text(&map.join("war3map.w3i")).as_deref(), Some("bin"));
     assert!(names(&tmp.0.join("missing.w3x")).is_empty());

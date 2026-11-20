@@ -122,8 +122,8 @@ Problems panel shows the whole project's errors without opening anything.
 - **Game files.** The game's `Scripts\common.j`, `Scripts\Blizzard.j` and
   `Scripts\common.ai`, looked up through the project's `game=` folders, at the path they're
   found at: on disk (`../ujapi/Scripts/common.j`) or inside an archive
-  (`War3Patch.mpq/Scripts/Blizzard.j`, opened read-only like a map's
-  files). They get no diagnostics, being the game's, and a rename that
+  (`War3Patch.mpq/Scripts/Blizzard.j`, opened read-only: the game's
+  archives are never written). They get no diagnostics, being the game's, and a rename that
   would change them is refused. Projects with the same `game=` folders
   share them.
 - **One file per game path.** Game paths ignore case, and a file in a
@@ -161,12 +161,19 @@ Problems panel shows the whole project's errors without opening anything.
   loads instead of its own) replaces the game's `Blizzard.j` for that
   map's scripts; it gets no diagnostics, and no other file sees it. A
   `common.j` in a map isn't treated this way: it's an ordinary file of
-  the map. The editor opens
-  these files read-only (as `wc3map:` documents), and a rename that would
-  change one is refused. A map saved again is re-read; a map that can't
-  be read adds nothing. The editor's WC3 Maps tree shows every map in
-  the workspace, in a project or not, with all the files inside it (the
-  server lists them); its text files open the same way.
+  the map. A rename that would change one is refused. A map saved
+  again is re-read; a map that can't be read adds nothing.
+- **Maps as folders** (`server/src/mapfs.rs`). The editor shows a map as
+  a folder under the `wc3map:` scheme, every file in it (found as
+  above), and the server carries out what's done there: read, write,
+  rename, delete, make a folder. A write goes to a copy of the map
+  beside it, which replaces the map only once it reads back right: the
+  old files' bytes where they were, the new ones equal to what was
+  written, none missing. A map whose tables come before its files (some
+  protectors do that; `storm-rs` appends after the files) and the
+  game's `.mpq`s are read-only. MPQ has no folders, so an empty one made
+  in the editor lasts until the server stops. Writing one file of a map
+  doesn't make the editor think its other files changed on disk.
 - **Text.** An open file uses the editor's text; any other file its text
   on disk, read as UTF-8 with invalid bytes replaced (old maps often use a
   legacy code page). Closing a project file goes back to its disk text.
