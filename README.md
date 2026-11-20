@@ -145,7 +145,12 @@ Problems panel shows the whole project's errors without opening anything.
   `(listfile)` names with a known extension, plus the map script under
   the names the game looks for (`war3map.j`, `Scripts\war3map.j`,
   `war3map.lua`), which protected maps often leave out of the list. Maps
-  are MPQ archives, read with [`storm-rs`](../storm-rs). The editor opens
+  are MPQ archives, read with [`storm-rs`](../storm-rs). A map's own
+  `Scripts\Blizzard.j` (maps often carry an optimized one, which the game
+  loads instead of its own) replaces the game's `Blizzard.j` for that
+  map's scripts; it gets no diagnostics, and no other file sees it. A
+  `common.j` in a map isn't treated this way: it's an ordinary file of
+  the map. The editor opens
   these files read-only (as `wc3map:` documents), and a rename that would
   change one is refused. A map saved again is re-read; a map that can't
   be read adds nothing.

@@ -24,7 +24,9 @@
 //!   project's game files (see [`Workspace::scope`]), so two projects with
 //!   different game folders don't see each other's `common.j`. An AI
 //!   script (`.ai`) runs on its own: it sees no other project file, and
-//!   none sees it.
+//!   none sees it. A map's own `Scripts\Blizzard.j` (often an optimized
+//!   copy) replaces the game's for that map's files, gets no diagnostics,
+//!   and no other file sees it.
 //! - **Identity.** A file is identified by its path on disk, the form the
 //!   editor uses for files too; a document with no file (untitled) by the
 //!   editor's URI.
@@ -259,13 +261,14 @@ impl Workspace {
             let a = analysis::analyze(&entry.doc, project.as_deref(), entry.open);
             ((*id).clone(), entry.doc.version, a)
         });
+        let quiet: HashSet<String> = ids.iter().filter(|id| self.is_map_blizzard(id)).cloned().collect();
         let roots: HashMap<String, Option<PathBuf>> =
             jobs.iter().map(|(id, _, p)| ((*id).clone(), p.as_ref().map(|p| p.root.clone()))).collect();
         for (id, version, mut a) in results {
             if let Some(entry) = self.files.get_mut(&id) {
                 entry.symbols = a.symbols;
                 entry.project = roots.get(&id).cloned().flatten();
-                if entry.game {
+                if entry.game || quiet.contains(&id) {
                     a.diagnostics.clear();
                 }
             }
@@ -345,6 +348,9 @@ impl Workspace {
         } else {
             HashSet::new()
         };
+        // A map's own Blizzard.j replaces the game's for that map's files,
+        // and no other file sees it.
+        let my_blizzard = self.map_of(id).and_then(|m| self.map_blizzard(m));
         let project = me.and_then(|e| e.project.clone()).filter(|_| game.is_none());
         let project_games: HashSet<&str> = project
             .as_ref()
@@ -357,8 +363,12 @@ impl Workspace {
             let visible = match (&game, &project) {
                 (Some(stack), _) => stack.contains(fid.as_str()) && sees(fid),
                 (None, Some(root)) => {
-                    (project_games.contains(fid.as_str()) && sees(fid))
-                        || (!e.game && e.project.as_ref() == Some(root) && shares(fid))
+                    let replaced = my_blizzard.is_some() && Script::of(Path::new(fid)) == Some(Script::Blizzard);
+                    (project_games.contains(fid.as_str()) && sees(fid) && !replaced)
+                        || (!e.game
+                            && e.project.as_ref() == Some(root)
+                            && shares(fid)
+                            && (my_blizzard == Some(fid.as_str()) || !self.is_map_blizzard(fid)))
                 }
                 (None, None) => {
                     if e.game {
@@ -370,6 +380,26 @@ impl Workspace {
             };
             visible.then_some((fid.as_str(), &e.doc, e.symbols.as_slice()))
         })
+    }
+
+    /// The map `id` is inside, if any.
+    fn map_of(&self, id: &str) -> Option<&Path> {
+        self.maps.keys().find(|m| Path::new(id).starts_with(m)).map(PathBuf::as_path)
+    }
+
+    /// The map's own `Scripts\Blizzard.j`, if it has one in the model.
+    fn map_blizzard(&self, map: &Path) -> Option<&str> {
+        self.maps
+            .get(map)?
+            .iter()
+            .find(|id| is_blizzard_in(map, id) && self.files.contains_key(*id))
+            .map(String::as_str)
+    }
+
+    /// Is `id` a map's own `Scripts\Blizzard.j`? Maps often carry an
+    /// optimized one, which the game loads instead of its own.
+    pub fn is_map_blizzard(&self, id: &str) -> bool {
+        self.map_of(id).is_some_and(|m| is_blizzard_in(m, id))
     }
 
     /// One file's text and symbols.
@@ -606,6 +636,14 @@ impl Workspace {
             self.remove(&id);
         }
     }
+}
+
+/// Is `id` the file `Scripts\Blizzard.j` (any case) inside `map`?
+fn is_blizzard_in(map: &Path, id: &str) -> bool {
+    Path::new(id).strip_prefix(map).is_ok_and(|rel| {
+        let parts: Vec<String> = rel.iter().map(|p| p.to_string_lossy().to_lowercase()).collect();
+        parts == ["scripts", "blizzard.j"]
+    })
 }
 
 /// A file's disk version (from inside its map for a file in a map), or

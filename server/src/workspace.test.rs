@@ -556,3 +556,49 @@ fn one_file_per_game_path_whichever_project_led_there() {
     assert!(definition("c/main.j", 1, 10).is_empty());
     assert!(ws.is_game(&id("noblizz/Scripts/blizzard.j")));
 }
+
+#[test]
+fn a_maps_own_blizzard_j_replaces_the_games_for_that_map() {
+    use crate::document::Position;
+    use crate::index::{answer, QueryKind};
+    const CALLS: &str = "function F takes nothing returns nothing\n    call Stock()\n    call Optimized()\n    call N()\nendfunction\n";
+    let tmp = project("ws-map-blizzard", &[
+        ("game/Scripts/common.j", "native N takes nothing returns nothing\n"),
+        ("game/Scripts/Blizzard.j", "function Stock takes nothing returns nothing\nendfunction\n"),
+        ("p/wc3.bni", "[project]\ngame=../game\n"),
+        ("p/main.j", CALLS),
+    ]);
+    let a = tmp.0.join("p/A.w3x");
+    crate::map::tests::make_map(&a, &[
+        ("war3map.j", CALLS),
+        ("scripts\\BLIZZARD.J", "function Optimized takes nothing returns nothing\n    local integer unused\n    call N()\nendfunction\n"),
+    ]);
+    crate::map::tests::make_map(&tmp.0.join("p/B.w3x"), &[("war3map.j", CALLS)]);
+    let mut ws = init(&tmp.0.join("p"));
+    let raw = ws.take_reports();
+    let own = path_id(&a.join("scripts/BLIZZARD.J"));
+    let quiet = raw.iter().any(|m| matches!(m, ServerMsg::File { id, diagnostics, .. } if *id == own && diagnostics.is_empty()));
+    assert!(quiet, "the map's Blizzard.j is reported without diagnostics");
+    assert!(ws.is_map_blizzard(&own));
+
+    let definition = |file: &Path, line: u32| -> Vec<String> {
+        answer(&ws, QueryKind::Definition, &path_id(file), Position::new(line, 10), "")
+            .locations
+            .into_iter()
+            .map(|l| l.id)
+            .collect()
+    };
+    let stock = path_id(&tmp.0.join("game/Scripts/Blizzard.j"));
+    let common = path_id(&tmp.0.join("game/Scripts/common.j"));
+    // In map A: its own Blizzard.j, not the game's.
+    assert!(definition(&a.join("war3map.j"), 1).is_empty());
+    assert_eq!(definition(&a.join("war3map.j"), 2), vec![own.clone()]);
+    assert_eq!(definition(&a.join("war3map.j"), 3), vec![common.clone()]);
+    // Map B and the project's own files: the game's, never A's.
+    for file in [tmp.0.join("p/B.w3x/war3map.j"), tmp.0.join("p/main.j")] {
+        assert_eq!(definition(&file, 1), vec![stock.clone()], "{}", file.display());
+        assert!(definition(&file, 2).is_empty(), "{}", file.display());
+    }
+    // The map's Blizzard.j sees common.j.
+    assert_eq!(definition(Path::new(&own), 2), vec![common]);
+}
