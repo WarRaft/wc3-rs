@@ -96,6 +96,26 @@ pub fn scripts(folders: &[PathBuf]) -> Vec<(PathBuf, crate::document::Document)>
         .collect()
 }
 
+/// Does a change to `path` change what the game folder `folder` gives:
+/// is it one of its archives ([`ARCHIVES`], directly in it) or one of the
+/// game's scripts ([`SCRIPTS`]) in it, in any case?
+pub fn affects(folder: &Path, path: &Path) -> bool {
+    let lower = |p: &Path| p.to_string_lossy().replace('\\', "/").to_lowercase();
+    let (folder, path) = (lower(folder), lower(path));
+    let Some(rel) = path.strip_prefix(&folder).and_then(|r| r.strip_prefix('/')) else {
+        return false;
+    };
+    ARCHIVES.iter().any(|a| rel == a.to_lowercase())
+        || SCRIPTS.iter().any(|s| rel == s.replace('\\', "/").to_lowercase())
+}
+
+/// Is `path` named like one of the game's archives?
+pub fn is_archive_name(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| ARCHIVES.iter().any(|a| n.eq_ignore_ascii_case(a)))
+}
+
 /// The game's archives, in the order it opens them: each one over the
 /// ones before.
 pub const ARCHIVES: [&str; 4] = ["War3.mpq", "War3x.mpq", "War3xLocal.mpq", "War3Patch.mpq"];

@@ -144,11 +144,15 @@ Problems panel shows the whole project's errors without opening anything.
   on disk, read as UTF-8 with invalid bytes replaced (old maps often use a
   legacy code page). Closing a project file goes back to its disk text.
 - **Disk.** The server watches the workspace folders and every project's
-  folders and sources itself. A changed, created or deleted source file is
-  re-read and re-analyzed (unless it's open), and so is a changed map; a
-  changed `wc3.bni` reloads
-  the projects and re-analyzes everything, since its settings and
-  `sources` apply to all files.
+  folders, sources and `game=` folders itself. A changed, created or
+  deleted source file is re-read and re-analyzed (unless it's open), and
+  so is a changed map. In a game folder, a change to one of its archives
+  (`War3.mpq`, `War3x.mpq`, `War3xLocal.mpq`, `War3Patch.mpq`) or to its
+  `Scripts/common.j`, `Blizzard.j` or `common.ai` reads the game files
+  again, so a new or deleted override takes effect at once; anything else
+  there (its `Maps`, say) is ignored. A changed `wc3.bni` reloads the
+  projects and re-analyzes everything, since its settings and `sources`
+  apply to all files.
 - **Cost.** Files are analyzed in parallel: 25 MB of JASS (60 copies of
   `Blizzard.j`) loads in about 0.2 s.
 

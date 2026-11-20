@@ -97,3 +97,18 @@ fn real_game_with_an_override() {
     assert!(matches!(from, Source::Archive(_)), "{from:?}");
     assert!(String::from_utf8_lossy(&common).contains("native ConvertRace"));
 }
+
+#[test]
+fn which_changes_affect_a_game_folder() {
+    let folder = Path::new("/G/Warcraft III");
+    assert!(affects(folder, Path::new("/G/Warcraft III/War3Patch.mpq")));
+    assert!(affects(folder, Path::new("/g/warcraft iii/war3.MPQ")));
+    assert!(affects(folder, Path::new("/G/Warcraft III/Scripts/common.j")));
+    assert!(affects(folder, Path::new("/G/Warcraft III/scripts/BLIZZARD.J")));
+    assert!(affects(folder, Path::new("/G/Warcraft III/Scripts/common.ai")));
+    assert!(!affects(folder, Path::new("/G/Warcraft III/Maps/A.w3x")));
+    assert!(!affects(folder, Path::new("/G/Warcraft III/Scripts/human.ai")));
+    assert!(!affects(folder, Path::new("/G/Warcraft III/Sub/War3.mpq")));
+    assert!(!affects(folder, Path::new("/G/Warcraft III2/War3.mpq")));
+    assert!(is_archive_name(Path::new("/x/war3xlocal.mpq")) && !is_archive_name(Path::new("/x/other.mpq")));
+}

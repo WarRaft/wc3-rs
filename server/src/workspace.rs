@@ -165,14 +165,37 @@ impl Workspace {
 
     /// Files changed on disk (created, modified or deleted). A manifest
     /// change reloads every project, since `sources` may have changed and
-    /// settings apply to all files. Open files keep the editor's text.
+    /// settings apply to all files. A change to a game folder's archive or
+    /// script (`game::affects`) reads its game files again. Open files keep
+    /// the editor's text.
     pub fn disk_changed(&mut self, paths: &[PathBuf]) {
         if paths.iter().any(|p| project::is_manifest(p)) {
             self.sync_disk();
             self.dirty.extend(self.files.keys().cloned());
             return;
         }
+        // A game folder's archive or script changed: the game files of
+        // every set of folders with it in are read again.
+        let mut game_changed = false;
         for path in paths {
+            let stale: Vec<Vec<PathBuf>> = self
+                .games
+                .keys()
+                .filter(|stack| stack.iter().any(|folder| crate::game::affects(folder, path)))
+                .cloned()
+                .collect();
+            for stack in stale {
+                self.games.remove(&stack);
+                game_changed = true;
+            }
+        }
+        if game_changed {
+            self.sync_disk();
+        }
+        for path in paths {
+            if self.is_game(&path_id(path)) || crate::game::is_archive_name(path) {
+                continue;
+            }
             if map::is_map_name(path) {
                 self.reload_map(path);
                 continue;
@@ -382,8 +405,8 @@ impl Workspace {
     }
 
     /// Every folder whose changes matter: the workspace folders, and the
-    /// roots and sources of every loaded project (which may lie outside
-    /// them). Folders inside another listed one are left out.
+    /// roots, sources and game folders of every loaded project (which may
+    /// lie outside them). Folders inside another listed one are left out.
     pub fn watch_paths(&mut self) -> Vec<PathBuf> {
         let mut paths = self.roots.clone();
         let manifests: Vec<PathBuf> = self.manifests.iter().cloned().collect();
@@ -391,6 +414,7 @@ impl Workspace {
             if let Some(project) = self.projects.for_file(&m) {
                 paths.push(project.root.clone());
                 paths.extend(project.scopes().into_iter().filter(|s| s.is_dir()));
+                paths.extend(project.game.iter().filter(|g| g.is_dir()).cloned());
             }
         }
         paths.sort();

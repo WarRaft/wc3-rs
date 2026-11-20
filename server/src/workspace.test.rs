@@ -466,3 +466,53 @@ fn an_ai_script_runs_on_its_own() {
     assert!(refs.locations.iter().all(|l| l.id == id("elf.ai")), "{:?}", refs.locations);
     assert_eq!(refs.locations.len(), 2);
 }
+
+#[test]
+fn game_folders_are_watched_and_reread() {
+    let tmp = project("ws-game-watch", &[
+        ("game/Maps/README", ""),
+        ("over/README", ""),
+        ("p/wc3.bni", "[project]\ngame=../game\ngame=../over\n"),
+        ("p/main.j", OK),
+    ]);
+    let patch = tmp.0.join("game/War3Patch.mpq");
+    crate::map::tests::make_map(&patch, &[("Scripts\\common.j", "native A takes nothing returns nothing\n")]);
+    let mut ws = init(&tmp.0.join("p"));
+    reports(&mut ws);
+    let in_mpq = path_id(&patch.join("Scripts/common.j"));
+    assert!(ws.watch_paths().contains(&tmp.0.join("game")));
+    assert!(ws.watch_paths().contains(&tmp.0.join("over")));
+
+    // The archive is saved again: common.j is read again.
+    crate::map::tests::make_map(&patch, &[("Scripts\\common.j", "native B takes nothing returns nothing\n")]);
+    ws.disk_changed(std::slice::from_ref(&patch));
+    assert_eq!(names(&tmp.0, &reports(&mut ws)), vec!["game/War3Patch.mpq/Scripts/common.j"]);
+    assert!(ws.file(&in_mpq).unwrap().0.text.contains("native B"));
+
+    // A loose common.j in a folder above replaces it.
+    let loose = tmp.0.join("over/Scripts/common.j");
+    std::fs::create_dir_all(loose.parent().unwrap()).unwrap();
+    std::fs::write(&loose, "native C takes nothing returns nothing\n").unwrap();
+    ws.disk_changed(std::slice::from_ref(&loose));
+    assert_eq!(
+        names(&tmp.0, &reports(&mut ws)),
+        vec!["game/War3Patch.mpq/Scripts/common.j", "over/Scripts/common.j"]
+    );
+    assert!(ws.file(&in_mpq).is_none());
+    assert!(ws.is_game(&path_id(&loose)));
+
+    // Edited, then deleted: back to the archive's.
+    std::fs::write(&loose, "native D takes nothing returns nothing\n").unwrap();
+    ws.disk_changed(std::slice::from_ref(&loose));
+    reports(&mut ws);
+    assert!(ws.file(&path_id(&loose)).unwrap().0.text.contains("native D"));
+    std::fs::remove_file(&loose).unwrap();
+    ws.disk_changed(std::slice::from_ref(&loose));
+    reports(&mut ws);
+    assert!(ws.file(&path_id(&loose)).is_none());
+    assert!(ws.file(&in_mpq).unwrap().0.text.contains("native B"));
+
+    // Anything else in a game folder doesn't reload it.
+    ws.disk_changed(&[tmp.0.join("game/Maps/A.w3x")]);
+    assert!(reports(&mut ws).is_empty());
+}
