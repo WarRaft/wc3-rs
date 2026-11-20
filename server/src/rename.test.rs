@@ -176,6 +176,8 @@ fn angelscript_rename_conflicts_only_within_the_namespace() {
 #[test]
 fn refuses_when_a_file_in_a_map_uses_the_name() {
     let (tmp, mut ws) = workspace("ren-map", &[("lib.j", LIB)]);
+    std::fs::write(tmp.0.join("wc3.bni"), "[project]\nsources=.\n").unwrap();
+    ws.disk_changed(&[tmp.0.join("wc3.bni")]);
     crate::map::tests::make_map(&tmp.0.join("Test.w3x"), &[("war3map.j", USER)]);
     ws.disk_changed(&[tmp.0.join("Test.w3x")]);
     ws.take_reports();

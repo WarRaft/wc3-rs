@@ -228,7 +228,7 @@ fn many_files_are_analyzed_in_parallel_in_a_stable_order() {
 
 #[test]
 fn scripts_inside_maps_are_project_files() {
-    let tmp = project("ws-maps", &[("wc3.bni", ""), ("a.j", OK), (".hidden/x.j", BAD)]);
+    let tmp = project("ws-maps", &[("wc3.bni", "[project]\nsources=.\n"), ("a.j", OK), (".hidden/x.j", BAD)]);
     let map = tmp.0.join("Test.w3x");
     crate::map::tests::make_map(&map, &[("war3map.j", BAD), ("Scripts\\lib.j", OK), ("war3map.w3i", "x")]);
     std::fs::write(tmp.0.join(".hidden/Hidden.w3x"), "").unwrap();
@@ -257,7 +257,7 @@ fn scripts_inside_maps_are_project_files() {
     assert!(ws.file(&path_id(&map.join("Scripts/lib.j"))).is_none());
 
     // A manifest change keeps the map's files without reading it again.
-    std::fs::write(tmp.0.join("wc3.bni"), "[jass]\ndialect=vjass\n").unwrap();
+    std::fs::write(tmp.0.join("wc3.bni"), "[project]\nsources=.\n[jass]\ndialect=vjass\n").unwrap();
     ws.disk_changed(&[tmp.0.join("wc3.bni")]);
     assert_eq!(
         names(&tmp.0, &reports(&mut ws)),
@@ -283,7 +283,7 @@ fn sources_can_name_a_map() {
 #[test]
 fn excluded_files_and_map_scripts_leave_the_model() {
     let tmp = project("ws-exclude", &[
-        ("wc3.bni", "[project]\nexclude=test.j,**/old/**\n"),
+        ("wc3.bni", "[project]\nsources=.\nexclude=test.j,**/old/**\n"),
         ("a.j", OK),
         ("test.j", BAD),
         ("lib/old/b.j", BAD),
@@ -296,7 +296,7 @@ fn excluded_files_and_map_scripts_leave_the_model() {
     );
 
     // Excluding a map's script drops just that file.
-    std::fs::write(tmp.0.join("wc3.bni"), "[project]\nexclude=test.j,**/old/**,**/war3map.lua\n").unwrap();
+    std::fs::write(tmp.0.join("wc3.bni"), "[project]\nsources=.\nexclude=test.j,**/old/**,**/war3map.lua\n").unwrap();
     ws.disk_changed(&[tmp.0.join("wc3.bni")]);
     let r = reports(&mut ws);
     assert_eq!(r[0], (path_id(&tmp.0.join("Map.w3x/war3map.lua")), 0, 0, 0), "cleared first: {r:?}");
@@ -399,7 +399,7 @@ fn ai_scripts_see_common_ai_and_map_scripts_blizzard_j() {
 
     let tmp = project("ws-game-ai", &[
         ("game/README", ""),
-        ("p/wc3.bni", "[project]\ngame=../game\n"),
+        ("p/wc3.bni", "[project]\ngame=../game\nsources=.\n"),
         ("p/main.j", CALLS),
         ("p/ai/elf.ai", CALLS),
     ]);
@@ -565,7 +565,7 @@ fn a_maps_own_blizzard_j_replaces_the_games_for_that_map() {
     let tmp = project("ws-map-blizzard", &[
         ("game/Scripts/common.j", "native N takes nothing returns nothing\n"),
         ("game/Scripts/Blizzard.j", "function Stock takes nothing returns nothing\nendfunction\n"),
-        ("p/wc3.bni", "[project]\ngame=../game\n"),
+        ("p/wc3.bni", "[project]\ngame=../game\nsources=.\n"),
         ("p/main.j", CALLS),
     ]);
     let a = tmp.0.join("p/A.w3x");

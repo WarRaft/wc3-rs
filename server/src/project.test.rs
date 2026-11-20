@@ -320,6 +320,19 @@ fn exclude_works_without_sources() {
     assert!(project.contains(Path::new("/p/a/b.j")));
     assert!(!project.contains(Path::new("/p/test.j")));
     assert!(!project.contains(Path::new("/p/m/Map.w3x/war3map.lua")));
-    assert!(project.contains(Path::new("/p/m/Map.w3x/war3map.j")));
     assert_eq!(project.scopes(), vec![PathBuf::from("/p")]);
+}
+
+#[test]
+fn maps_come_in_only_when_sources_names_them() {
+    let (project, _) = load(Path::new("/p"), "[project]
+");
+    assert!(project.contains(Path::new("/p/a/b.j")));
+    assert!(!project.contains(Path::new("/p/m/Map.w3x")));
+    assert!(!project.contains(Path::new("/p/m/Map.w3x/war3map.j")));
+    assert!(!project.contains(Path::new("/p/m/MAP.W3M/Scripts/war3map.j")));
+    for sources in ["sources=.", "sources=m", "sources=m/Map.w3x", "sources=**/*.w3x"] {
+        let (project, _) = load(Path::new("/p"), &format!("[project]\n{sources}\n"));
+        assert!(project.contains(Path::new("/p/m/Map.w3x/war3map.j")), "{sources}");
+    }
 }

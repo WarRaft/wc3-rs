@@ -145,7 +145,8 @@ impl Project {
     }
 
     /// Is `path` one of the project's files: the manifest itself, or a
-    /// file inside one of its sources (or matching a source mask), not
+    /// file inside one of its sources (or matching a source mask), or,
+    /// without `sources`, anywhere under the root except in a map; not
     /// inside a hidden (`.name`) folder below it, and not excluded.
     /// Doesn't check which project is nearest; see [`find_manifest`].
     pub fn contains(&self, path: &Path) -> bool {
@@ -159,7 +160,8 @@ impl Project {
             })
         };
         let listed = if self.sources.is_empty() && self.source_masks.is_empty() {
-            visible(&self.root)
+            // Maps come in only when `sources` names them.
+            visible(&self.root) && !path.ancestors().any(crate::map::is_map_name)
         } else {
             self.sources.iter().any(|s| visible(s))
                 || self.source_masks.iter().any(|m| visible(&m.base) && m.matches(path))

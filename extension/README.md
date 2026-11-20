@@ -34,7 +34,7 @@ Warcraft III language support for VS Code.
   README).
 - `wc3.bni` paths: `game=` and `sources=` complete from the disk as you
   type, and each folder along a path is a link that reveals it.
-- Maps: the scripts inside `.w3x` / `.w3m` maps in a project are project
+- Maps: the scripts inside `.w3x` / `.w3m` maps a project's `sources=` names are project
   files too (`war3map.j`, `war3map.lua`, ...), analyzed and searchable
   like any other; they open read-only.
 - Symbol navigation across the whole project, in every language: go to

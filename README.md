@@ -41,7 +41,10 @@ dialect=vjass
   project can still mix dialects. Without either, a file is plain JASS.
   The order is header, then project, then plain JASS.
 - **`sources`** lists the folders and files that make up the project (see
-  the project model below); without it, the whole project folder does.
+  the project model below); without it, the whole project folder does,
+  except maps: those come in only when `sources` names them, as a path,
+  a folder they're in (`sources=.` is the whole folder, maps included) or
+  a mask.
   `./src` and `a/../src` mean `src`. Quote a path that contains a comma:
   `sources="my, folder"`. A value with `*` or `?` is a **mask** and
   brings in what it matches: `maps/*.w3x` is every map in `maps`.
@@ -108,7 +111,7 @@ Problems panel shows the whole project's errors without opening anything.
   the project of any file opened from elsewhere (even a `wc3.bni` above
   the workspace folders).
 - **Which files.** The project's `sources` (and what its masks match), or
-  its whole folder without them, less what `exclude` matches, plus
+  its whole folder without them (maps left out), less what `exclude` matches, plus
   `wc3.bni` itself. Only known extensions count (`.j`, `.pld`,
   `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`); hidden folders
   (`.git`, `.idea`, ...) are skipped; a nested project owns its own files.
@@ -138,8 +141,8 @@ Problems panel shows the whole project's errors without opening anything.
   and two projects with different `game=` folders (one with a custom
   `common.j`) don't see each other's declarations. A file outside every
   project sees all files, AI scripts kept apart the same way.
-- **Maps.** A map (`.w3x`, `.w3m`) found the same way, under the project
-  folder or its `sources` (or named in them: `sources=Main.w3x`), is
+- **Maps.** A map (`.w3x`, `.w3m`) under the project's `sources` (or
+  named in them: `sources=Main.w3x`; not without `sources`), is
   read like a folder: its scripts are project files at paths inside the
   map's, `Main.w3x/war3map.j`. Those are every file the map's
   `(listfile)` names with a known extension, plus the map script under
