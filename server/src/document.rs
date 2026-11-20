@@ -171,6 +171,17 @@ impl LineIndex {
         )
     }
 
+    /// The editor range of a parser span, which may cross lines (1-based
+    /// lines, codepoint columns; column 1 of a line is its start).
+    pub fn span(&self, text: &str, span: parser_rs::Span) -> Range {
+        let pos = |line: usize, col: usize| {
+            let line0 = line.saturating_sub(1);
+            let line_text = self.line(text, line0);
+            Position::new(line0 as u32, ColumnEncoding::Utf16.from_codepoints(line_text, col).saturating_sub(1) as u32)
+        };
+        Range::new(pos(span.start_line, span.start_col), pos(span.end_line, span.end_col))
+    }
+
     /// The editor range covering 1-based `line` as a whole.
     pub fn whole_line(&self, text: &str, line: usize) -> Range {
         let line0 = line.saturating_sub(1);

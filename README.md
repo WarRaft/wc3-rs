@@ -239,7 +239,7 @@ aren't lint: they can't be turned off. The rules are defined in
 | `shadowed-variable`              | AngelScript                  | on      | a local that hides a variable of an outer scope |
 | `missing-return`                 | JASS, Zinc, AngelScript      | on      | a function (or `get` accessor) with a return type that may not return a value |
 | `infinite-loop`                  | JASS, Zinc, Lua, AngelScript | **off** | a loop with no way out: a JASS `loop` without `exitwhen`, a `while (true)` without `break` or `return` |
-| `empty-branch`                   | JASS, Zinc, Lua, AngelScript | on      | an empty `then` / `else` / `if` body |
+| `empty-branch`                   | JASS, Zinc, Lua, AngelScript | on      | an empty `then` / `else` / `if` body; an empty `else` is marked on `else` and has a quick fix that removes it |
 | `break-outside-loop`             | Zinc, Lua, AngelScript       | on      | `break` outside a loop (or switch) |
 | `continue-outside-loop`          | AngelScript                  | on      | `continue` outside a loop |
 | `duplicate-label`                | Lua                          | on      | a label defined twice in the same block |

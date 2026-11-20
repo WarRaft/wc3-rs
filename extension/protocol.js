@@ -324,7 +324,8 @@ class Reader {
 }
 
 /**
- * @typedef {{severity: number, range: [number, number, number, number], message: string, rule: string}} WireDiagnostic
+ * @typedef {{severity: number, range: [number, number, number, number], message: string, rule: string, fix: WireFix | null}} WireDiagnostic
+ * @typedef {{title: string, edits: {range: [number, number, number, number], text: string}[]}} WireFix
  * @typedef {{id: string, range: [number, number, number, number], name: string, container: string, kind: string}} WireLocation
  * @typedef {{kind: 'file', id: string, version: number, diagnostics: WireDiagnostic[], tokens: Uint32Array}
  *         | {kind: 'legend', types: string[], modifiers: string[]}
@@ -352,7 +353,12 @@ function decode(kind, body) {
             const version = r.i32()
             const diagnostics = []
             for (let n = r.u32(); n > 0; n--) {
-                diagnostics.push({severity: r.u8(), range: r.range(), message: r.string(), rule: r.string()})
+                const d = {severity: r.u8(), range: r.range(), message: r.string(), rule: r.string(), fix: null}
+                const title = r.string()
+                const edits = []
+                for (let e = r.u32(); e > 0; e--) edits.push({range: r.range(), text: r.string()})
+                if (title) d.fix = {title, edits}
+                diagnostics.push(d)
             }
             return {kind: 'file', id, version, diagnostics, tokens: r.u32s()}
         }

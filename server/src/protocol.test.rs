@@ -55,8 +55,14 @@ fn file_messages_round_trip() {
         id: "u".into(),
         version: 3,
         diagnostics: vec![
-            Diagnostic { range: range(0, 1, 0, 2), level: Level::Error, message: "bad".into(), rule: "" },
-            Diagnostic { range: range(5, 0, 5, 9), level: Level::Warning, message: "meh".into(), rule: "unused-local" },
+            Diagnostic { range: range(0, 1, 0, 2), level: Level::Error, message: "bad".into(), rule: "", fix: None },
+            Diagnostic {
+                range: range(5, 0, 5, 9),
+                level: Level::Warning,
+                message: "meh".into(),
+                rule: "empty-branch",
+                fix: Some(crate::analysis::Fix { title: "Remove".into(), edits: vec![(range(5, 0, 7, 0), String::new())] }),
+            },
         ],
         tokens: vec![0, 1, 2, 3, 4],
     };

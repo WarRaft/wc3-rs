@@ -146,7 +146,8 @@ pub enum ServerMsg {
     /// Kind 128. Everything known about one file at `version`:
     /// diagnostics (`u8` severity, 0 error / 1 warning, as
     /// `vscode.DiagnosticSeverity`; range; message; the lint rule's id, as
-    /// `vscode.Diagnostic.code`, empty for a parse error) and semantic tokens (a
+    /// `vscode.Diagnostic.code`, empty for a parse error; its quick fix:
+    /// title, empty for none, and edits, each a range and its new text) and semantic tokens (a
     /// list of `u32`, five per token, ready for `vscode.SemanticTokens`).
     /// Tokens are only sent for documents open in the editor; a project
     /// file that isn't open has version 0 and diagnostics only. A file
@@ -407,6 +408,19 @@ impl ServerMsg {
                     w.range(d.range);
                     w.string(&d.message);
                     w.string(d.rule);
+                    match &d.fix {
+                        Some(fix) => {
+                            w.string(&fix.title);
+                            w.list(&fix.edits, |w, (range, text)| {
+                                w.range(*range);
+                                w.string(text);
+                            });
+                        }
+                        None => {
+                            w.string("");
+                            w.u32(0);
+                        }
+                    }
                 });
                 w.list(tokens, |w, t| w.u32(*t));
                 kind::FILE
@@ -504,7 +518,10 @@ impl ServerMsg {
                     // known one back to it.
                     let rule = r.string()?;
                     let rule = parser_rs::find_rule(&rule).map_or("", |known| known.id);
-                    Ok(Diagnostic { level, range, message, rule })
+                    let title = r.string()?;
+                    let edits = r.list(|r| Ok((r.range()?, r.string()?)))?;
+                    let fix = (!title.is_empty()).then(|| crate::analysis::Fix { title, edits });
+                    Ok(Diagnostic { level, range, message, rule, fix })
                 })?,
                 tokens: r.list(|r| r.u32())?,
             },

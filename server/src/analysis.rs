@@ -11,14 +11,24 @@ use crate::document::{Document, Language, LineIndex, Range};
 use crate::project::{self, Project};
 
 /// A diagnostic as the editor shows it: an exact range, a severity, a
-/// message, and for lint the id of its rule (empty for parse errors and
-/// manifest checks), which is what `[lint]` in `wc3.bni` refers to.
+/// message, for lint the id of its rule (empty for parse errors and
+/// manifest checks), which is what `[lint]` in `wc3.bni` refers to, and
+/// the quick fix the rule offers, if any.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Diagnostic {
     pub range: Range,
     pub level: Level,
     pub message: String,
     pub rule: &'static str,
+    pub fix: Option<Fix>,
+}
+
+/// A quick fix in editor coordinates: a title and edits (replace the range
+/// with the text).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Fix {
+    pub title: String,
+    pub edits: Vec<(Range, String)>,
 }
 
 /// The dialect a JASS document is read in: whatever its own header
@@ -93,13 +103,22 @@ impl Out<'_> {
         self.make(range, Level::Error, err.message.clone(), "")
     }
 
-    /// Lint diagnostics carry a line, not columns: they cover it whole.
+    /// A lint diagnostic covers its span, or its whole line when the rule
+    /// only knows the line.
     fn lint(&self, d: parser_rs::Diagnostic) -> Diagnostic {
-        self.make(self.lines.whole_line(self.text, d.line), d.level, d.message, d.rule)
+        let range = match d.span {
+            Some(span) => self.lines.span(self.text, span),
+            None => self.lines.whole_line(self.text, d.line),
+        };
+        let fix = d.fix.map(|f| Fix {
+            title: f.title,
+            edits: f.edits.into_iter().map(|e| (self.lines.span(self.text, e.span), e.text)).collect(),
+        });
+        Diagnostic { fix, ..self.make(range, d.level, d.message, d.rule) }
     }
 
     fn make(&self, range: Range, level: Level, message: String, rule: &'static str) -> Diagnostic {
-        Diagnostic { range, level, message, rule }
+        Diagnostic { range, level, message, rule, fix: None }
     }
 }
 

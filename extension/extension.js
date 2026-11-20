@@ -70,6 +70,8 @@ const {
     FileDecoration,
     Disposable,
     RelativePattern,
+    CodeAction,
+    CodeActionKind,
 } = require('vscode')
 const {encode, decode, FrameReader, QUERY, FS_OP, FS_FLAG} = require('./protocol.js')
 
@@ -109,6 +111,9 @@ const tokens = new Map()
 const waiting = new Map()
 
 const tokensChanged = new EventEmitter()
+
+/** The quick fix the server sent with a diagnostic. */
+const fixes = new WeakMap()
 
 /** How long a query waits for its answer. */
 const QUERY_TIMEOUT_MS = 5000
@@ -319,6 +324,7 @@ function onFile(msg) {
         diagnostic.source = 'wc3'
         // The lint rule, as named in `[lint]` of wc3.bni.
         if (d.rule) diagnostic.code = d.rule
+        if (d.fix) fixes.set(diagnostic, d.fix)
         return diagnostic
     }))
 
@@ -457,6 +463,33 @@ function registerQueries(context) {
                 ((await query(QUERY.WORKSPACE_SYMBOLS, '', {line: 0, character: 0}, text))?.locations ?? []).map(toSymbol),
         }),
     )
+}
+
+/**
+ * Quick fixes: the ones the server sent with the diagnostics at the
+ * cursor (removing an empty `else`, say).
+ *
+ * @param {import('vscode').ExtensionContext} context
+ */
+function registerFixes(context) {
+    const selector = [...LANGUAGES].map(language => ({language}))
+    context.subscriptions.push(languages.registerCodeActionsProvider(selector, {
+        provideCodeActions(doc, _range, ctx) {
+            // VS Code hands over copies: find ours by range and message.
+            const ours = diagnostics.get(doc.uri) ?? []
+            return ctx.diagnostics.flatMap(diagnostic => {
+                const same = ours.find(o => fixes.has(o) && o.range.isEqual(diagnostic.range) && o.message === diagnostic.message)
+                const fix = same && fixes.get(same)
+                if (!fix) return []
+                const action = new CodeAction(fix.title, CodeActionKind.QuickFix)
+                action.edit = new WorkspaceEdit()
+                for (const {range, text} of fix.edits) action.edit.replace(doc.uri, new Range(...range), text)
+                action.diagnostics = [diagnostic]
+                action.isPreferred = true
+                return [action]
+            })
+        },
+    }, {providedCodeActionKinds: [CodeActionKind.QuickFix]}))
 }
 
 /** The command a path link runs: reveals a folder. */
@@ -938,6 +971,7 @@ module.exports = {
         if (!command) return
         startServer(command, context)
         registerQueries(context)
+        registerFixes(context)
         registerManifestPaths(context)
         registerMaps(context)
         registerTextures(context)

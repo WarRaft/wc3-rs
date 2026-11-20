@@ -62,7 +62,8 @@ Warcraft III language support for VS Code.
   inside maps (Rename, Rename Outside Maps, Cancel). Parameters and locals resolve within their
   function; everything else across all project files.
 - Live diagnostics: parse errors and lint warnings
-  shown in the Problems panel as you type —
+  shown in the Problems panel as you type, with quick fixes where a rule
+  offers one (Remove empty 'else') —
   - JASS via [`jass-rs`](https://github.com/WarRaft/jass-rs): duplicate declarations, unused
     locals, `loop` without `exitwhen`, missing `return`, ...
   - Zinc via [`zinc-rs`](https://github.com/WarRaft/zinc-rs): duplicate libraries/members/

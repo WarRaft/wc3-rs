@@ -208,3 +208,12 @@ fn a_vj_file_is_vjass_unless_its_header_says_otherwise() {
     assert!(!diagnostics(&file("/p/a.vj", src), None).is_empty());
     assert!(diagnostics(&file("/p/a.j", src), None).is_empty());
 }
+
+#[test]
+fn an_empty_else_is_marked_on_else_with_a_fix_that_deletes_it() {
+    let text = "function F takes nothing returns nothing\n    if true then\n        call F()\n    else\n    endif\nendfunction\n";
+    let d = diags(Language::Jass, text).into_iter().find(|d| d.message == "empty 'else' branch").expect("reported");
+    assert_eq!(d.range, Range::new(Position::new(3, 4), Position::new(3, 8)));
+    let fix = d.fix.expect("a fix");
+    assert_eq!(fix.edits, vec![(Range::new(Position::new(3, 0), Position::new(4, 0)), String::new())]);
+}
