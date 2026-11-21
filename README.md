@@ -316,6 +316,34 @@ field left out takes World Editor's default; a field the layout doesn't
 have, a value that isn't a number, an unknown or repeated field are
 errors while the text is edited, and saving refuses them.
 
+## Regions
+
+A map's regions, `war3map.w3r`, open as text the same way
+([`w3r-rs`](../w3r-rs/README.md), `server/src/regions.rs`): a `[w3r]`
+section, then a section per region named after it (the script's
+`gg_rct_<name>`).
+
+```ini
+[w3r]
+version=5
+
+[RegionDust]
+index=12
+left=4544
+bottom=4000
+right=4608
+top=4992
+weather=WNcw
+sound="gg_snd_N06Furion30"
+color=255,255,255,255 // red, green, blue, alpha
+```
+
+`weather` is an effect's id, `0x00000000` for none; `sound` a sound
+variable, quoted. A field left out takes its default (no weather, no
+sound, white, the next index); a value that isn't one, an unknown or
+repeated field are errors while the text is edited, and saving refuses
+them.
+
 ## Terrain
 
 A map's terrain, `war3map.w3e`, opens as text too, but only its header:

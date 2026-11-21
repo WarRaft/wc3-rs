@@ -178,6 +178,8 @@ impl<W: Write> Server<W> {
                     crate::terrain::convert(op, &name, &data)
                 } else if crate::mapinfo::is_info_file(Path::new(&name)) {
                     crate::mapinfo::convert(op, &name, &data)
+                } else if crate::regions::is_region_file(Path::new(&name)) {
+                    crate::regions::convert(op, &name, &data)
                 } else {
                     let meta = ws.object_metadata(Path::new(&name)).unwrap_or_default();
                     crate::objects::convert(op, &name, &data, &meta)

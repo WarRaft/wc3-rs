@@ -83,7 +83,7 @@ pub fn diagnostics_with(doc: &Document, project: Option<&Project>, objects: Opti
 }
 
 /// BNI never fails as a whole: every malformed line is its own error, and
-/// lint still runs. The text form of object data, cameras, terrain or map info also gets the
+/// lint still runs. The text form of object data, cameras, regions, terrain or map info also gets the
 /// errors that would stop it from saving. A project manifest (`wc3.bni`) also gets its settings
 /// checked, against the text being edited rather than the saved file.
 fn bni(doc: &Document, project: Option<&Project>, objects: Option<&Metadata>, out: &Out) -> Vec<Diagnostic> {
@@ -102,6 +102,9 @@ fn bni(doc: &Document, project: Option<&Project>, objects: Option<&Metadata>, ou
     // Map info (`.w3i`): what it can't save.
     let info = crate::mapinfo::diagnostics(doc.path.as_deref(), &parsed);
     diags.extend(info.iter().map(|e| out.error(e)));
+    // Regions (`.w3r`): what they can't save.
+    let regions = crate::regions::diagnostics(doc.path.as_deref(), &parsed);
+    diags.extend(regions.iter().map(|e| out.error(e)));
     lint.extend(bni_rs::lint(&parsed));
     let lint = project::apply_lint(lint, project);
     diags.extend(lint.into_iter().map(|d| out.lint(d)));

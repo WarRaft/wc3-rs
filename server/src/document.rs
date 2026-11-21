@@ -62,7 +62,7 @@ impl Language {
             // (see `objects`).
             "w3a" | "w3b" | "w3d" | "w3h" | "w3q" | "w3t" | "w3u" => Language::Bni,
             // Cameras, in their BNI text form too (see `cameras`).
-            "w3c" | "w3e" | "w3i" => Language::Bni,
+            "w3c" | "w3e" | "w3i" | "w3r" => Language::Bni,
             _ => return None,
         })
     }
