@@ -226,3 +226,18 @@ fn object_text_errors() {
     assert_eq!(d[0].range, Range::new(Position::new(3, 5), Position::new(3, 6)));
     assert!(d[0].message.starts_with("expected a value"));
 }
+
+#[test]
+fn string_table_errors_lint_and_tokens() {
+    let text = "STRING 1\n{\nKnight\n}\nSTRING 1\n{\nx\n}\nhello\n";
+    let d = diagnostics(&doc(Language::Wts, text, None), None);
+    let found: Vec<(u32, &str, &str)> = d.iter().map(|d| (d.range.start.line, d.rule, d.message.as_str())).collect();
+    assert_eq!(
+        found,
+        vec![
+            (4, "duplicate-string", "STRING 1 is already defined at line 1"),
+            (8, "", "expected `STRING <number>`, a `// comment`, '{' or '}', found 'hello'"),
+        ]
+    );
+    assert!(!semantic_tokens(&doc(Language::Wts, text, None), None).is_empty());
+}

@@ -101,3 +101,9 @@ fn bni_files_match_the_extension() {
     let patterns: Vec<&str> = patterns[..patterns.find(']').unwrap()].split('"').skip(3).step_by(2).collect();
     assert_eq!(patterns, vec!["war3map*.txt"]);
 }
+
+#[test]
+fn decoded_without_a_bom() {
+    assert_eq!(decode(b"\xEF\xBB\xBFSTRING 1".to_vec()), "STRING 1");
+    assert_eq!(decode(b"a\xFFb".to_vec()), "a\u{FFFD}b");
+}

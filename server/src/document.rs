@@ -43,6 +43,8 @@ pub enum Language {
     Bni,
     /// SYLK tables (`.slk`), via `slk-rs`.
     Slk,
+    /// Map string tables (`war3map.wts`), via `wts-rs`.
+    Wts,
 }
 
 impl Language {
@@ -55,6 +57,7 @@ impl Language {
             "angelscript" => Language::AngelScript,
             "bni" => Language::Bni,
             "slk" => Language::Slk,
+            "wts" => Language::Wts,
             // Object data, which the editor shows in its BNI text form
             // (see `objects`).
             "w3a" | "w3b" | "w3d" | "w3h" | "w3q" | "w3t" | "w3u" => Language::Bni,
@@ -71,6 +74,7 @@ impl Language {
             Language::AngelScript => "angelscript",
             Language::Bni => "bni",
             Language::Slk => "slk",
+            Language::Wts => "wts",
         }
     }
 
@@ -91,6 +95,7 @@ impl Language {
             "as" | "angelscript" => Language::AngelScript,
             "bni" => Language::Bni,
             "slk" => Language::Slk,
+            "wts" => Language::Wts,
             // Not object data (`.w3a` ...): the files are binary. Only
             // their text form, which the editor opens under its own
             // scheme with the file's language id, is BNI (`from_id`).
@@ -171,6 +176,18 @@ pub const BNI_FILES: &[&str] = &[
     "worldeditlayout.txt",
     "worldeditstrings.txt",
 ];
+
+/// A file's text as the server keeps it: UTF-8, invalid bytes replaced,
+/// without a leading byte-order mark. The editor holds the text without
+/// it too, so positions agree; `war3map.wts` and other World Editor files
+/// start with one.
+pub fn decode(bytes: Vec<u8>) -> String {
+    let text = String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
+    match text.strip_prefix('\u{FEFF}') {
+        Some(rest) => rest.to_string(),
+        None => text,
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Document {

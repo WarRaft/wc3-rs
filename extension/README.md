@@ -68,6 +68,9 @@ Warcraft III language support for VS Code.
   type (types, limits, unknown fields, levels, whose field it is), with
   quick fixes. Hovering over a field shows its name, type, limits, levels,
   data column and whose field it is.
+- String tables (`.wts`, `war3map.wts`): highlighting of headers, numbers,
+  comments, text and color codes (`|cffff0000`, `|r`, `|n`), with live
+  errors.
 - SLK tables (`.slk`): highlighted text with live errors, or, with **Open
   as Table** (title bar, Explorer context menu), a table to edit: frozen
   header row and column A, find, keyboard editing, copy and paste. **Open

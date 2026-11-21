@@ -714,7 +714,7 @@ fn load(path: &Path) -> Option<Document> {
     }
     let language = Language::from_path(path)?;
     let bytes = std::fs::read(path).ok()?;
-    let text = String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
+    let text = crate::document::decode(bytes);
     Some(Document { language, version: 0, text, path: Some(path.to_path_buf()) })
 }
 

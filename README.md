@@ -117,7 +117,7 @@ Problems panel shows the whole project's errors without opening anything.
 - **Which files.** What the project's `sources` match, less what
   `exclude` matches, plus
   `wc3.bni` itself. Only known extensions count (`.j`, `.vj`, `.pld`,
-  `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`, `.slk`), and the `.txt`
+  `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`, `.slk`, `.wts`), and the `.txt`
   files that are BNI: a map's `war3map*.txt` (`war3mapSkin.txt`,
   `war3mapMisc.txt`, `war3mapExtra.txt`) and the game's own by name
   (`Units\HumanUnitFunc.txt`, `UI\WorldEditStrings.txt`, ...; the list
@@ -324,10 +324,23 @@ of 50,000 cells scrolls like a small one.
 this repository: an MCP server that reads, queries and edits the game's
 SLK tables, from disk or from inside an MPQ archive or a map, and looks
 into and changes MPQ archives and maps (list, read, extract, verify, add,
-remove, rename) and object data (list, read, text, check, set, add and
-remove objects), on the same `slk-rs`, `storm-rs` and `w3abdhqtu-rs` as
-the editor. Build it first (`cargo build --release` in
+remove, rename), object data (list, read, text, check, set, add and
+remove objects; `TRIGSTR_<n>` names as their text) and string tables
+(`war3map.wts`: list, read, resolve, set), on the same `slk-rs`,
+`storm-rs`, `w3abdhqtu-rs` and `wts-rs` as the editor. Build it first (`cargo build --release` in
 `../wc3-mcp`); Claude Code asks once whether to use it.
+
+## String tables
+
+A `.wts` (`war3map.wts`, `war3campaign.wts`: the text a map's object data,
+triggers and info name as `TRIGSTR_<n>`) is highlighted and checked by
+[`wts-rs`](../wts-rs/README.md): `STRING` headers and their numbers,
+World Editor's comments, the text, and its color codes (`|cffff0000`,
+`|r`, `|n`); parse errors and lint (`duplicate-string`) as you type. A
+map's `war3map.wts` is one of the project's files like its scripts.
+
+Files are read without their byte-order mark (World Editor writes one in
+`.wts` and other files), as the editor holds them, so positions agree.
 
 ## Lint
 
@@ -388,6 +401,7 @@ aren't lint: they can't be turned off. The rules are defined in
 | `object-field-owner`             | Object data                  | on      | a field of other objects: an ability's data of another ability (by its code), a units-only field of an item |
 | `duplicate-cell`                 | SLK                          | on      | a cell whose value or formula two records set; the later one wins |
 | `cell-outside-bounds`            | SLK                          | on      | a cell past the size the `B` record gives, which readers that trust `B` lose |
+| `duplicate-string`               | WTS                          | on      | a string number defined twice in a string table (`war3map.wts`) |
 
 **Why `infinite-loop` is off.** A thread that loops forever and sleeps is
 normal Warcraft III code: the game's own AI scripts are full of them (161

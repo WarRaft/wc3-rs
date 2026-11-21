@@ -83,7 +83,7 @@ pub fn scripts(folders: &[PathBuf]) -> Vec<(PathBuf, crate::document::Document)>
                 Source::Archive(archive) => crate::map::inner_path(&archive, name),
                 Source::File(path) => path,
             };
-            let text = String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
+            let text = crate::document::decode(bytes);
             let doc = crate::document::Document {
                 language: crate::document::Language::Jass,
                 version: 0,

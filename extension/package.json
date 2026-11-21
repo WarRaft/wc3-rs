@@ -464,7 +464,8 @@
         "icon": {
           "light": "./icons/wts.svg",
           "dark": "./icons/wts.svg"
-        }
+        },
+        "configuration": "./syntaxes/wts.language-configuration.json"
       },
       {
         "id": "doo",

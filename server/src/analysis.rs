@@ -74,6 +74,7 @@ pub fn diagnostics_with(doc: &Document, project: Option<&Project>, objects: Opti
         Language::AngelScript => as_rs::parse(text).map(|s| as_rs::lint(&s)),
         Language::Bni => return bni(doc, project, objects, &out),
         Language::Slk => return slk(project, &out),
+        Language::Wts => return wts(project, &out),
     };
     match result {
         Err(err) => vec![out.error(&err)],
@@ -111,6 +112,17 @@ fn slk(project: Option<&Project>, out: &Out) -> Vec<Diagnostic> {
     let parsed = slk_rs::parse(out.text);
     let mut diags: Vec<Diagnostic> = parsed.errors.iter().map(|e| out.error(e)).collect();
     let lint = project::apply_lint(slk_rs::lint(&parsed), project);
+    diags.extend(lint.into_iter().map(|d| out.lint(d)));
+    diags.sort_by_key(|d| d.range.start.line);
+    diags
+}
+
+/// A string table never fails as a whole either: its parse errors, then
+/// its lint.
+fn wts(project: Option<&Project>, out: &Out) -> Vec<Diagnostic> {
+    let parsed = wts_rs::parse(out.text);
+    let mut diags: Vec<Diagnostic> = parsed.errors.iter().map(|e| out.error(e)).collect();
+    let lint = project::apply_lint(wts_rs::lint(&parsed), project);
     diags.extend(lint.into_iter().map(|d| out.lint(d)));
     diags.sort_by_key(|d| d.range.start.line);
     diags
@@ -206,6 +218,7 @@ pub fn semantic_tokens(doc: &Document, project: Option<&Project>) -> Vec<u32> {
         Language::AngelScript => as_rs::encoded_semantic_tokens(text),
         Language::Bni => bni_rs::encoded_semantic_tokens(text),
         Language::Slk => slk_rs::encoded_semantic_tokens(text),
+        Language::Wts => wts_rs::encoded_semantic_tokens(text),
     }
 }
 
