@@ -339,6 +339,14 @@ World Editor's comments, the text, and its color codes (`|cffff0000`,
 `|r`, `|n`); parse errors and lint (`duplicate-string`) as you type. A
 map's `war3map.wts` is one of the project's files like its scripts.
 
+**Hovering over `TRIGSTR_<n>`**, in any file (`war3map.j`, the text of
+object data, ...), shows string `n`'s text from the map's
+`war3map.wts`: the one next to the file, in the same folder or inside the
+same map. The text shows its colors (`|cffffcc00...|r`) and line breaks,
+and under it World Editor's comments say what uses the string. A table
+the editor has open is read as it is, unsaved edits and all
+(`server/src/trigstr.rs`).
+
 Files are read without their byte-order mark (World Editor writes one in
 `.wts` and other files), as the editor holds them, so positions agree.
 

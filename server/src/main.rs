@@ -27,6 +27,7 @@ mod rename;
 mod server;
 mod sheet;
 mod texture;
+mod trigstr;
 mod workspace;
 
 use std::io::{BufWriter, stdin, stdout};

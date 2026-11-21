@@ -70,7 +70,8 @@ Warcraft III language support for VS Code.
   data column and whose field it is.
 - String tables (`.wts`, `war3map.wts`): highlighting of headers, numbers,
   comments, text and color codes (`|cffff0000`, `|r`, `|n`), with live
-  errors.
+  errors. Hovering over `TRIGSTR_<n>` in any file of a map shows the
+  string's text, in its colors, and what uses it.
 - SLK tables (`.slk`): highlighted text with live errors, or, with **Open
   as Table** (title bar, Explorer context menu), a table to edit: frozen
   header row and column A, find, keyboard editing, copy and paste. **Open

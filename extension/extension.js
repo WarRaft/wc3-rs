@@ -441,7 +441,11 @@ function registerQueries(context) {
         languages.registerHoverProvider(selector, {
             provideHover: async (doc, pos) => {
                 const answer = await query(QUERY.HOVER, idOf(doc), pos)
-                return answer && answer.text ? new Hover(new MarkdownString(answer.text)) : null
+                if (!answer || !answer.text) return null
+                const text = new MarkdownString(answer.text)
+                // A string table's colors come as <span style="color:...">.
+                text.supportHtml = true
+                return new Hover(text)
             },
         }),
         languages.registerDocumentSymbolProvider(selector, {
