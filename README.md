@@ -330,6 +330,12 @@ remove objects; `TRIGSTR_<n>` names as their text) and string tables
 `storm-rs`, `w3abdhqtu-rs` and `wts-rs` as the editor. Build it first (`cargo build --release` in
 `../wc3-mcp`); Claude Code asks once whether to use it.
 
+Planned for it: checking JASS (syntax, names, order as the game reads a
+map's `war3map.j`), lint, listing natives with their comments, and
+renaming symbols across the project. For that the server becomes a
+library as well, and `wc3-mcp` uses its project model in-process: see the
+[`wc3-mcp` README](../wc3-mcp/README.md#planned-jass).
+
 ## String tables
 
 A `.wts` (`war3map.wts`, `war3campaign.wts`: the text a map's object data,
