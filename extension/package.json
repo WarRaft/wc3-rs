@@ -1,7 +1,7 @@
 {
   "name": "wc3",
   "displayName": "WC3",
-  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects; maps as folders and a BLP texture viewer; object data (.w3a .w3u ...), cameras (.w3c), regions (.w3r), sounds (.w3s), the terrain's header (.w3e), map info (.w3i) and the custom script (.wct) as editable text.",
+  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects; maps as folders and a BLP texture viewer; object data (.w3a .w3u ...), cameras (.w3c), regions (.w3r), sounds (.w3s), the terrain's header (.w3e), map info (.w3i) and the custom script (.wct) as editable text; pathing maps (.wpm) as a picture.",
   "version": "0.0.3",
   "publisher": "WarRaft",
   "icon": "images/logo.png",
@@ -79,13 +79,25 @@
       },
       {
         "viewType": "wc3.blp",
-        "displayName": "BLP Texture",
+        "displayName": "BLP and TGA Image, Pathing Map",
         "selector": [
           {
             "filenamePattern": "*.blp"
           },
           {
             "filenamePattern": "*.BLP"
+          },
+          {
+            "filenamePattern": "*.tga"
+          },
+          {
+            "filenamePattern": "*.TGA"
+          },
+          {
+            "filenamePattern": "*.wpm"
+          },
+          {
+            "filenamePattern": "*.WPM"
           }
         ],
         "priority": "default"
@@ -664,8 +676,8 @@
           ".wct"
         ],
         "icon": {
-          "light": "./icons/jass.svg",
-          "dark": "./icons/jass.svg"
+          "light": "./icons/wct.svg",
+          "dark": "./icons/wct.svg"
         },
         "configuration": "./syntaxes/jass.language-configuration.json"
       },
@@ -728,21 +740,213 @@
         }
       },
       {
-        "id": "wc3-binary",
+        "id": "fdf",
         "aliases": [
-          "Map Data"
+          "Frame Definitions"
         ],
         "extensions": [
-          ".shd",
-          ".wpm",
-          ".mmp",
-          ".imp",
-          ".wtg",
+          ".fdf"
+        ],
+        "icon": {
+          "light": "./icons/fdf.svg",
+          "dark": "./icons/fdf.svg"
+        }
+      },
+      {
+        "id": "wc3-toc",
+        "aliases": [
+          "Frame Definition List"
+        ],
+        "extensions": [
+          ".toc"
+        ],
+        "icon": {
+          "light": "./icons/toc.svg",
+          "dark": "./icons/toc.svg"
+        }
+      },
+      {
+        "id": "tga",
+        "aliases": [
+          "TGA Image"
+        ],
+        "extensions": [
+          ".tga"
+        ],
+        "icon": {
+          "light": "./icons/tga.svg",
+          "dark": "./icons/tga.svg"
+        }
+      },
+      {
+        "id": "wtg",
+        "aliases": [
+          "Triggers"
+        ],
+        "extensions": [
+          ".wtg"
+        ],
+        "icon": {
+          "light": "./icons/wtg.svg",
+          "dark": "./icons/wtg.svg"
+        }
+      },
+      {
+        "id": "shd",
+        "aliases": [
+          "Shadow Map"
+        ],
+        "extensions": [
+          ".shd"
+        ],
+        "icon": {
+          "light": "./icons/shd.svg",
+          "dark": "./icons/shd.svg"
+        }
+      },
+      {
+        "id": "mmp",
+        "aliases": [
+          "Minimap Icons"
+        ],
+        "extensions": [
+          ".mmp"
+        ],
+        "icon": {
+          "light": "./icons/mmp.svg",
+          "dark": "./icons/mmp.svg"
+        }
+      },
+      {
+        "id": "imp",
+        "aliases": [
+          "Imported Files"
+        ],
+        "extensions": [
+          ".imp"
+        ],
+        "icon": {
+          "light": "./icons/imp.svg",
+          "dark": "./icons/imp.svg"
+        }
+      },
+      {
+        "id": "w3o",
+        "aliases": [
+          "Object Collection"
+        ],
+        "extensions": [
           ".w3o"
         ],
         "icon": {
-          "light": "./icons/bin.svg",
-          "dark": "./icons/bin.svg"
+          "light": "./icons/w3o.svg",
+          "dark": "./icons/w3o.svg"
+        }
+      },
+      {
+        "id": "wai",
+        "aliases": [
+          "AI Editor Data"
+        ],
+        "extensions": [
+          ".wai"
+        ],
+        "icon": {
+          "light": "./icons/wai.svg",
+          "dark": "./icons/wai.svg"
+        }
+      },
+      {
+        "id": "w3f",
+        "aliases": [
+          "Campaign Info"
+        ],
+        "extensions": [
+          ".w3f"
+        ],
+        "icon": {
+          "light": "./icons/w3f.svg",
+          "dark": "./icons/w3f.svg"
+        }
+      },
+      {
+        "id": "w3g",
+        "aliases": [
+          "Replay"
+        ],
+        "extensions": [
+          ".w3g"
+        ],
+        "icon": {
+          "light": "./icons/w3g.svg",
+          "dark": "./icons/w3g.svg"
+        }
+      },
+      {
+        "id": "w3z",
+        "aliases": [
+          "Saved Game"
+        ],
+        "extensions": [
+          ".w3z"
+        ],
+        "icon": {
+          "light": "./icons/w3z.svg",
+          "dark": "./icons/w3z.svg"
+        }
+      },
+      {
+        "id": "w3v",
+        "aliases": [
+          "Game Cache"
+        ],
+        "extensions": [
+          ".w3v"
+        ],
+        "icon": {
+          "light": "./icons/w3v.svg",
+          "dark": "./icons/w3v.svg"
+        }
+      },
+      {
+        "id": "wc3-audio",
+        "aliases": [
+          "Sound"
+        ],
+        "extensions": [
+          ".wav",
+          ".mp3",
+          ".mid"
+        ],
+        "icon": {
+          "light": "./icons/audio.svg",
+          "dark": "./icons/audio.svg"
+        }
+      },
+      {
+        "id": "wc3-units",
+        "aliases": [
+          "Placed Units"
+        ],
+        "filenames": [
+          "war3mapUnits.doo"
+        ],
+        "icon": {
+          "light": "./icons/units.svg",
+          "dark": "./icons/units.svg"
+        }
+      },
+      {
+        "id": "wpm",
+        "aliases": [
+          "Pathing Map"
+        ],
+        "extensions": [
+          ".wpm"
+        ],
+        "icon": {
+          "light": "./icons/wpm.svg",
+          "dark": "./icons/wpm.svg"
         }
       }
     ],

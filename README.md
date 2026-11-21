@@ -303,12 +303,23 @@ Problems panel shows the whole project's errors without opening anything.
 ## Textures
 
 A `.blp` opens in the editor's texture viewer, from disk or from inside a
-map. The server decodes it with [`blp-rs`](../blp-rs/README.md)
+map, and so does a `.tga` (map previews, loading screens, model
+textures: decoded with the `image` crate, every one of the game's 383). The server decodes it with [`blp-rs`](../blp-rs/README.md)
 (`server/src/texture.rs`) without its encoder, so the server stays pure
 Rust: every BLP1 and BLP2 kind (JPEG, palette with 0/1/4/8-bit alpha,
 DXT1/3/5, raw BGRA) and every mip, each on its own, so a damaged or
 missing mip leaves the others viewable. BLP0, the Warcraft III beta's
 format, keeps its mips in separate `.b00`… files, and isn't shown.
+
+A map's pathing, `war3map.wpm`, has no text: it opens in the same viewer
+as a picture ([`wpm-rs`](../wpm-rs/README.md)). A pixel is a cell (32
+world units, four to a terrain cell), north up, drawn as the game's
+pathing textures draw pathing: red where units can't walk, green where
+they can't fly, blue where nothing can be built, so white forbids all
+three. **Show** switches to one flag at a time (no walking, no flying,
+no building, blight, no water, boundary, the two unused bits), white
+where it's set; under the cursor, the cell (from the bottom left, as the
+file counts) and its flags by name. Save PNG saves the picture.
 
 ## Object data
 

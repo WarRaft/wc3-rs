@@ -363,7 +363,7 @@ class Reader {
  *         | {kind: 'fs', request: number, error: string | null, message: string, stat: FsStat | null, entries: [string, 'file' | 'dir'][], data: Uint8Array}
  *         | {kind: 'texture', request: number, texture: Texture}
  *         | {kind: 'objects', request: number, error: string, data: Uint8Array}} ServerMessage
- * @typedef {{error: string, version: string, encoding: string, alphaBits: number, width: number, height: number, mips: TextureMip[]}} Texture
+ * @typedef {{error: string, version: string, encoding: string, alphaBits: number, width: number, height: number, mips: TextureMip[], cells: Uint8Array, flags: {bit: number, name: string}[]}} Texture
  * @typedef {{width: number, height: number, error: string, rgba: Uint8Array}} TextureMip
  * @typedef {{type: 'file' | 'dir', size: number, mtime: number, readonly: boolean, note: string}} FsStat
  */
@@ -425,6 +425,10 @@ function decode(kind, body) {
             for (let n = r.u32(); n > 0; n--) {
                 texture.mips.push({width: r.u32(), height: r.u32(), error: r.string(), rgba: r.bytes()})
             }
+            // A pathing map's: each pixel's flags, and the flags' names.
+            texture.cells = r.bytes()
+            texture.flags = []
+            for (let n = r.u32(); n > 0; n--) texture.flags.push({bit: r.u8(), name: r.string()})
             return {kind: 'texture', request, texture}
         }
         case KIND.OBJECTS_ANSWER:

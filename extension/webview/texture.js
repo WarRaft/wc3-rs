@@ -8,6 +8,11 @@
  * background, how big; the pixel under the cursor; saving a mip as PNG
  * (encoded here by the canvas, written by the extension).
  *
+ * A pathing map (`.wpm`) comes as a texture too, with its cells' flags
+ * (`cells`, one byte per pixel) and their names (`flags`): the page shows
+ * its picture, or one flag at a time (white where it's set), and names a
+ * cell's flags under the cursor.
+ *
  * Messages in: `{type: 'texture', size, texture}`, `{type: 'error', message}`.
  * Messages out: `{type: 'ready'}`, `{type: 'save', mip, png}`.
  */
@@ -16,7 +21,7 @@
 const vscode = acquireVsCodeApi()
 
 /** @typedef {{width: number, height: number, error: string, rgba: Uint8Array}} Mip */
-/** @typedef {{error: string, version: string, encoding: string, alphaBits: number, width: number, height: number, mips: Mip[]}} Texture */
+/** @typedef {{error: string, version: string, encoding: string, alphaBits: number, width: number, height: number, mips: Mip[], cells: Uint8Array, flags: {bit: number, name: string}[]}} Texture */
 
 const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id))
 
@@ -25,7 +30,12 @@ const ZOOM_MAX = 64
 const ZOOM_STEP = 1.25
 
 /** What the page remembers across reloads of the same editor. */
-const state = Object.assign({mip: 0, channels: 'rgba', background: 'checker', zoom: 'fit'}, vscode.getState() || {})
+const state = Object.assign({mip: 0, channels: 'rgba', background: 'checker', zoom: 'fit', flag: 0}, vscode.getState() || {})
+
+/** Is the texture a pathing map: has it cells? */
+function isPathing() {
+    return !!texture && texture.cells && texture.cells.length > 0
+}
 
 /** @type {Texture | null} */
 let texture = null
@@ -57,9 +67,20 @@ function save() {
     vscode.setState(state)
 }
 
-/** The mip's pixels as the chosen channels show them. */
+/** The mip's pixels as the chosen channels show them; a pathing map's as
+ * its picture, or one flag (`state.flag`): white where it's set. */
 function pixels(/** @type {Mip} */ mip) {
     const src = mip.rgba
+    if (isPathing() && state.flag) {
+        const cells = /** @type {Texture} */ (texture).cells
+        const out = new Uint8ClampedArray(src.length)
+        for (let i = 0; i < cells.length; i++) {
+            const on = cells[i] & state.flag ? 255 : 0
+            out[i * 4] = out[i * 4 + 1] = out[i * 4 + 2] = on
+            out[i * 4 + 3] = 255
+        }
+        return new ImageData(out, mip.width, mip.height)
+    }
     if (state.channels === 'rgba') return new ImageData(new Uint8ClampedArray(src.buffer, src.byteOffset, src.byteLength), mip.width, mip.height)
     const out = new Uint8ClampedArray(src.length)
     for (let i = 0; i < src.length; i += 4) {
@@ -159,9 +180,10 @@ function show(/** @type {Texture} */ t, /** @type {number} */ size) {
 
     // A texture without alpha has nothing for the A view to show.
     if (t.alphaBits === 0 && state.channels !== 'rgba') state.channels = 'rgba'
-    $('channels').hidden = t.alphaBits === 0
+    $('channels').hidden = t.alphaBits === 0 && !isPathing()
 
-    $('info').textContent = [t.version, t.encoding, `${t.width}×${t.height}`, t.alphaBits ? `alpha ${t.alphaBits} bit` : 'no alpha', bytes(size)].join(' · ')
+    const kind = isPathing() ? 'red no walking, green no flying, blue no building' : (t.alphaBits ? `alpha ${t.alphaBits} bit` : 'no alpha')
+    $('info').textContent = [t.version, t.encoding, `${t.width}×${t.height}`, kind, bytes(size)].join(' · ')
     $('info').title = `${t.mips.length} mip${t.mips.length === 1 ? '' : 's'}`
 
     const mips = $('mips')
@@ -177,11 +199,25 @@ function show(/** @type {Texture} */ t, /** @type {number} */ size) {
     })
     mips.hidden = t.mips.length < 2
 
-    toggles($('channels'), [['rgba', 'RGBA'], ['rgb', 'RGB', 'Ignore alpha'], ['a', 'A', 'Alpha as grayscale']], state.channels, v => {
-        state.channels = v
-        save()
-        draw()
-    })
+    if (isPathing()) {
+        // The picture, or one flag at a time.
+        $('channels-label').textContent = 'Show'
+        if (!t.flags.some(f => f.bit === state.flag)) state.flag = 0
+        const items = /** @type {[string, string, string?][]} */ ([['0', 'Pathing', 'Red: no walking, green: no flying, blue: no building']])
+        for (const f of t.flags) items.push([String(f.bit), `0x${f.bit.toString(16).padStart(2, '0')}`, f.name])
+        toggles($('channels'), items, String(state.flag), v => {
+            state.flag = Number(v)
+            save()
+            draw()
+        })
+    } else {
+        $('channels-label').textContent = 'Channels'
+        toggles($('channels'), [['rgba', 'RGBA'], ['rgb', 'RGB', 'Ignore alpha'], ['a', 'A', 'Alpha as grayscale']], state.channels, v => {
+            state.channels = v
+            save()
+            draw()
+        })
+    }
     toggles($('background'), [['checker', '▦', 'Checkerboard'], ['black', '■', 'Black'], ['white', '□', 'White']], state.background, v => {
         state.background = v
         frame.className = `frame ${v}`
@@ -218,9 +254,20 @@ canvas.addEventListener('mousemove', e => {
     const i = (y * mip.width + x) * 4
     const [r, g, b, a] = mip.rgba.subarray(i, i + 4)
     const hex = [r, g, b, a].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase()
-    $('pos').textContent = `${x}, ${y}`
-    $('rgba').textContent = `R ${r}  G ${g}  B ${b}  A ${a}`
-    $('hex').textContent = `#${hex}`
+    if (isPathing()) {
+        // The cell, counted from the bottom left as the file does, and its
+        // flags by name.
+        const t = /** @type {Texture} */ (texture)
+        const cell = t.cells[y * mip.width + x]
+        const names = t.flags.filter(f => cell & f.bit).map(f => f.name)
+        $('pos').textContent = `${x}, ${mip.height - 1 - y}`
+        $('rgba').textContent = names.length ? names.join(', ') : 'no flags'
+        $('hex').textContent = `0x${cell.toString(16).padStart(2, '0').toUpperCase()}`
+    } else {
+        $('pos').textContent = `${x}, ${y}`
+        $('rgba').textContent = `R ${r}  G ${g}  B ${b}  A ${a}`
+        $('hex').textContent = `#${hex}`
+    }
     $('swatch').style.background = `rgba(${r}, ${g}, ${b}, ${a / 255})`
     $('pixel').hidden = false
 })

@@ -29,7 +29,14 @@
  *
  * A `.blp` texture opens in a viewer (`webview/texture.js`): the extension
  * reads the file (from disk or from inside a map), the server decodes it
- * with `blp-rs` (`server/src/texture.rs`), and the page draws its mips.
+ * with `blp-rs` (`server/src/texture.rs`), and the page draws its mips. A
+ * `.tga` (map previews, loading screens) opens there too, decoded with the
+ * `image` crate.
+ * A pathing map (`.wpm`), which has no text, opens there too: the server
+ * draws it as the game's pathing textures draw pathing (red: no walking,
+ * green: no flying, blue: no building) and sends each cell's flags, and
+ * the page shows one flag at a time and names a cell's flags under the
+ * cursor.
  *
  * Object data (`.w3a`, `.w3b`, `.w3d`, `.w3h`, `.w3q`, `.w3t`, `.w3u`)
  * opens as text: its BNI text form (`w3abdhqtu-rs`), under the `wc3obj:`
@@ -862,7 +869,7 @@ function registerTextures(context) {
 <div id="viewer" hidden>
   <div class="bar">
     <div class="group" id="mips"><span class="label">Mip</span></div>
-    <div class="group" id="channels"><span class="label">Channels</span></div>
+    <div class="group" id="channels"><span class="label" id="channels-label">Channels</span></div>
     <div class="group" id="background"><span class="label">Background</span></div>
     <div class="group">
       <button id="zoom-out" title="Zoom out (−)">−</button>
@@ -909,7 +916,8 @@ function registerTextures(context) {
             const {uri} = document
             const {webview} = panel
             webview.options = {enableScripts: true, localResourceRoots: [media]}
-            panel.iconPath = Uri.joinPath(context.extensionUri, 'icons', 'blp.svg')
+            const kind = /\.(wpm|tga)$/i.exec(uri.path)?.[1].toLowerCase() ?? 'blp'
+            panel.iconPath = Uri.joinPath(context.extensionUri, 'icons', `${kind}.svg`)
             webview.html = html(webview)
 
             const load = async () => {

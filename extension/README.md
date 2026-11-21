@@ -56,7 +56,12 @@ Warcraft III language support for VS Code.
   raw). Pick a mip; show RGBA, RGB or the alpha alone, on a checkerboard,
   black or white; zoom (Fit, 1:1, +/−, Ctrl/Cmd + wheel, keys `0` `1`
   `+` `-`, `[` `]` for the mips), read the pixel under the cursor, save
-  the mip as PNG. It reloads when the file changes.
+  the mip as PNG. It reloads when the file changes. A `.tga` (map
+  previews, loading screens) opens there too, and a pathing map
+  (`.wpm`) as a picture.
+- File icons: every kind of Warcraft III file has its own, in one style
+  (`icons/`, see `icons/README.md`): scripts, data tables, object data,
+  a map's parts, maps and campaigns, images, models, sounds, replays.
 - Object data: a `.w3a`, `.w3b`, `.w3d`, `.w3h`, `.w3q`, `.w3t` or
   `.w3u` (on disk or inside a map) opens as text, in BNI, with
   highlighting and live errors, and saving writes the file back. Every

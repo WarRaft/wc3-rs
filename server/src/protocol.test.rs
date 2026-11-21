@@ -164,6 +164,8 @@ fn texture_answers_round_trip() {
                 Mip { width: 2, height: 1, error: String::new(), rgba: vec![1, 2, 3, 4, 5, 6, 7, 8] },
                 Mip { width: 1, height: 1, error: "not in the file".into(), rgba: Vec::new() },
             ],
+            cells: vec![0x40, 0xCA],
+            flags: vec![(0x02, "no walking".into())],
         },
     };
     let frame = msg.encode();

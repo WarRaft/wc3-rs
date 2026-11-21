@@ -516,6 +516,11 @@ impl ServerMsg {
                     w.string(&m.error);
                     w.bytes(&m.rgba);
                 });
+                w.bytes(&t.cells);
+                w.list(&t.flags, |w, (bit, name)| {
+                    w.u8(*bit);
+                    w.string(name);
+                });
                 kind::TEXTURE_ANSWER
             }
             ServerMsg::Objects { request, error, data } => {
@@ -602,6 +607,8 @@ impl ServerMsg {
                     width: r.u32()?,
                     height: r.u32()?,
                     mips: r.list(|r| Ok(crate::texture::Mip { width: r.u32()?, height: r.u32()?, error: r.string()?, rgba: r.bytes()? }))?,
+                    cells: r.bytes()?,
+                    flags: r.list(|r| Ok((r.u8()?, r.string()?)))?,
                 },
             },
             kind::OBJECTS_ANSWER => ServerMsg::Objects { request: r.u32()?, error: r.string()?, data: r.bytes()? },
