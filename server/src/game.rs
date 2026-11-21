@@ -19,7 +19,6 @@
 
 use std::path::{Path, PathBuf};
 
-use storm_rs::MpqArchive;
 
 /// The game's scripts the project's files build on: their declarations
 /// (natives, `Blizzard.j`'s functions and globals, `common.ai`'s AI API)
@@ -118,123 +117,35 @@ pub fn is_archive_name(path: &Path) -> bool {
 
 /// The game's archives, in the order it opens them: each one over the
 /// ones before.
-pub const ARCHIVES: [&str; 4] = ["War3.mpq", "War3x.mpq", "War3xLocal.mpq", "War3Patch.mpq"];
+pub const ARCHIVES: [&str; 4] = storm_rs::archive::WAR3_ARCHIVES;
 
-/// One place a game file can come from.
-#[derive(Debug)]
-enum Layer {
-    Archive(Box<MpqArchive>),
-    Folder(PathBuf),
-}
+pub use storm_rs::archive::Source;
 
-/// Where a game file was found.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Source {
-    /// In this archive.
-    Archive(PathBuf),
-    /// This file on disk.
-    File(PathBuf),
-}
-
-/// The game's files, layered: see the module docs.
+/// The game's files, layered: see the module docs. Built on
+/// `storm_rs::archive::Layers`, with the game's archives in its order.
 #[derive(Debug, Default)]
-pub struct Game {
-    /// Lowest first; a lookup walks them from the top.
-    layers: Vec<Layer>,
-}
+pub struct Game(storm_rs::archive::Layers);
 
 impl Game {
     /// Opens the game folders, lowest first. Never fails: an archive that
     /// can't be opened is left out and reported (`path: error`), and the
     /// rest still apply. A folder that doesn't exist adds nothing.
     pub fn open(folders: &[PathBuf]) -> (Game, Vec<String>) {
-        let mut game = Game::default();
-        let mut errors = Vec::new();
-        for folder in folders {
-            for name in ARCHIVES {
-                let Some(path) = find_entry(folder, name) else { continue };
-                if !path.is_file() {
-                    continue;
-                }
-                match MpqArchive::open(&path) {
-                    Ok(archive) => game.layers.push(Layer::Archive(Box::new(archive))),
-                    Err(e) => errors.push(format!("{}: {e}", path.display())),
-                }
-            }
-            if folder.is_dir() {
-                game.layers.push(Layer::Folder(folder.clone()));
-            }
-        }
-        (game, errors)
+        let (layers, errors) = storm_rs::archive::Layers::open(folders, &ARCHIVES);
+        (Game(layers), errors)
     }
 
     /// Where `name` comes from: the topmost layer that has it.
     #[cfg(test)]
     pub fn find(&self, name: &str) -> Option<Source> {
-        let name = mpq_name(name)?;
-        self.layers.iter().rev().find_map(|layer| match layer {
-            Layer::Archive(a) => a.has_file(&name).then(|| Source::Archive(PathBuf::from(&a.path))),
-            Layer::Folder(dir) => find_file(dir, &name).map(Source::File),
-        })
+        self.0.find(name)
     }
 
     /// The contents of `name` from the topmost layer that has it, and
-    /// where it came from. A layer that has the file but can't read it
-    /// is skipped, so the layer below it answers.
+    /// where it came from.
     pub fn read(&self, name: &str) -> Option<(Vec<u8>, Source)> {
-        let name = mpq_name(name)?;
-        self.layers.iter().rev().find_map(|layer| match layer {
-            Layer::Archive(a) => {
-                if !a.has_file(&name) {
-                    return None;
-                }
-                let data = a.read_file(&name).ok()?;
-                Some((data, Source::Archive(PathBuf::from(&a.path))))
-            }
-            Layer::Folder(dir) => {
-                let path = find_file(dir, &name)?;
-                let data = std::fs::read(&path).ok()?;
-                Some((data, Source::File(path)))
-            }
-        })
+        self.0.read(name)
     }
-}
-
-/// `name` as an archive names it: `\`-separated, without empty, `.` or
-/// `..` parts. `None` when nothing is left or it tries to climb out.
-fn mpq_name(name: &str) -> Option<String> {
-    let mut parts = Vec::new();
-    for part in name.split(['\\', '/']) {
-        match part {
-            "" | "." => {}
-            ".." => return None,
-            p => parts.push(p),
-        }
-    }
-    (!parts.is_empty()).then(|| parts.join("\\"))
-}
-
-/// The file `name` (`\`-separated) under `dir`, matching each part in
-/// any case.
-fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
-    let mut path = dir.to_path_buf();
-    for part in name.split('\\') {
-        path = find_entry(&path, part)?;
-    }
-    path.is_file().then_some(path)
-}
-
-/// The entry `name` of `dir`, under its name on disk: that exact name, or
-/// else the entry whose name matches it in any case. Read from the folder,
-/// not checked with `exists`, which on a case-insensitive disk would say
-/// yes under the name asked for.
-fn find_entry(dir: &Path, name: &str) -> Option<PathBuf> {
-    let names: Vec<std::ffi::OsString> = std::fs::read_dir(dir).ok()?.flatten().map(|e| e.file_name()).collect();
-    let found = names
-        .iter()
-        .find(|n| n.to_str() == Some(name))
-        .or_else(|| names.iter().find(|n| n.to_str().is_some_and(|n| n.eq_ignore_ascii_case(name))))?;
-    Some(dir.join(found))
 }
 
 #[cfg(test)]

@@ -87,17 +87,7 @@ pub fn metadata(game: &[PathBuf], kind: Kind) -> Metadata {
         return Metadata::default();
     }
     let (game, _) = crate::game::Game::open(game);
-    let read = |name: &str| game.read(name).map(|(bytes, _)| String::from_utf8_lossy(&bytes).into_owned());
-    let Some(table) = read(kind.metadata_file()) else {
-        return Metadata::default();
-    };
-    let strings: Vec<String> = STRINGS_FILES.iter().filter_map(|f| read(f)).collect();
-    let strings: Vec<&str> = strings.iter().map(String::as_str).collect();
-    let meta = Metadata::from_tables(&table, &strings);
-    match kind.objects_file().and_then(read) {
-        Some(objects) => meta.with_codes(&objects),
-        None => meta,
-    }
+    Metadata::load(kind, |name| game.read(name).map(|(bytes, _)| String::from_utf8_lossy(&bytes).into_owned()))
 }
 
 /// Metadata read so far, by game folders and kind: the checks run on
