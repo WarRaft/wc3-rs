@@ -213,6 +213,12 @@
           },
           {
             "filenamePattern": "*.WTG"
+          },
+          {
+            "filenamePattern": "*.w3o"
+          },
+          {
+            "filenamePattern": "*.W3O"
           }
         ],
         "priority": "default"
@@ -875,7 +881,8 @@
         "icon": {
           "light": "./icons/w3o.svg",
           "dark": "./icons/w3o.svg"
-        }
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
         "id": "wai",
@@ -1752,6 +1759,38 @@
       },
       {
         "language": "wtg",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "w3o",
         "scopes": {
           "comment": [
             "comment"

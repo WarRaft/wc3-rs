@@ -75,7 +75,8 @@
  * `server/src/placement.rs`), the layout from the `war3map.w3i` beside it.
  * Triggers (`.wtg`) too (`wtg-rs`, `server/src/triggers.rs`): their
  * events, conditions and actions as lines of calls; the server reads them
- * with the project's `UI\TriggerData.txt`.
+ * with the project's `UI\TriggerData.txt`. A collection of object data
+ * (`.w3o`, World Editor's export) too: `[w3o]`, then each kind's text form.
  *
  * In `wc3.bni`, the paths of `game=`, `sources=`, `exclude=` and `root=`
  * complete from the disk and every folder along them is a link that reveals that folder (in the
@@ -141,7 +142,7 @@ const OBJECTS_SCHEME = 'wc3obj'
  * (`w3r`), sounds (`w3s`) and the custom script (`wct`, whose text is
  * code: JASS, or Lua in a Lua map). As `wc3obj:` text they're BNI; a file opened as is is binary,
  * not text. */
-const OBJECT_LANGUAGES = new Set(['w3a', 'w3b', 'w3d', 'w3h', 'w3q', 'w3t', 'w3u', 'w3c', 'w3e', 'w3i', 'w3r', 'w3s', 'wct', 'imp', 'mmp', 'doo', 'wc3-units', 'wtg'])
+const OBJECT_LANGUAGES = new Set(['w3a', 'w3b', 'w3d', 'w3h', 'w3q', 'w3t', 'w3u', 'w3c', 'w3e', 'w3i', 'w3r', 'w3s', 'wct', 'imp', 'mmp', 'doo', 'wc3-units', 'wtg', 'w3o'])
 
 /** Language ids the server analyzes (its `Language::from_id`). */
 const LANGUAGES = new Set(['jass', 'vjass', 'zinc', 'lua', 'angelscript', 'bni', 'slk', 'wts', ...OBJECT_LANGUAGES])

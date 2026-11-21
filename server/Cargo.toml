@@ -36,6 +36,7 @@ mmp-rs = { path = "../../mmp-rs" }
 shd-rs = { path = "../../shd-rs" }
 doo-rs = { path = "../../doo-rs" }
 wtg-rs = { path = "../../wtg-rs" }
+w3o-rs = { path = "../../w3o-rs" }
 storm-rs = { path = "../../storm-rs" }
 # Decoding only: no libjpeg-turbo (a C build), so cross-compiling stays
 # pure Rust.

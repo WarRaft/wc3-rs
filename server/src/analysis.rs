@@ -9,7 +9,7 @@ use parser_rs::{Level, Occurrence, ParseError};
 
 use crate::document::{Document, Language, LineIndex, Range};
 use crate::project::{self, Project};
-use w3abdhqtu_rs::Metadata;
+use crate::objects::Meta as Metadata;
 
 /// A diagnostic as the editor shows it: an exact range, a severity, a
 /// message, for lint the id of its rule (empty for parse errors and
@@ -96,7 +96,7 @@ fn bni(doc: &Document, project: Option<&Project>, objects: Option<&Metadata>, ou
     let mut diags: Vec<Diagnostic> = parsed.errors.iter().map(|e| out.error(e)).collect();
     // The text form of object data (`.w3a` ...): what it can't save, and
     // what the game's metadata says is wrong with its fields.
-    let (errors, mut lint) = crate::objects::diagnostics(&parsed, objects);
+    let (errors, mut lint) = crate::objects::diagnostics(&parsed, out.text, objects);
     diags.extend(errors.iter().map(|e| out.error(e)));
     // The text form of cameras (`.w3c`): what it can't save.
     let cameras = crate::cameras::diagnostics(doc.path.as_deref(), &parsed);
@@ -124,7 +124,13 @@ fn bni(doc: &Document, project: Option<&Project>, objects: Option<&Metadata>, ou
     diags.extend(triggers.iter().map(|e| out.error(e)));
     let placed = crate::placement::diagnostics(doc.path.as_deref(), &parsed, out.text);
     diags.extend(placed.iter().map(|e| out.error(e)));
-    lint.extend(bni_rs::lint(&parsed));
+    // Text forms of binary files repeat their sections by design (a
+    // `[unit]` per unit, a `[trigger]` per trigger): only a file of the
+    // game's own is told about a repeated one.
+    let text_form = doc.path.as_deref().is_some_and(|p| {
+        p.extension().is_some_and(|e| !["ini", "txt", "bni", "fdf"].iter().any(|x| e.eq_ignore_ascii_case(x)))
+    });
+    lint.extend(bni_rs::lint(&parsed).into_iter().filter(|d| !(text_form && d.rule == parser_rs::rule::DUPLICATE_SECTION)));
     let lint = project::apply_lint(lint, project);
     diags.extend(lint.into_iter().map(|d| out.lint(d)));
     if let Some(path) = doc.path.as_deref().filter(|p| project::is_manifest(p)) {

@@ -9,6 +9,10 @@
 //! Editor does, with its type, in a comment after it, and check the
 //! fields while the text is edited ([`diagnostics`]). Without them,
 //! there are no names and no checks.
+//!
+//! A collection (`.w3o`, World Editor's export of every kind) shows as
+//! `[w3o]` and each kind's text form after it (`w3o-rs`); each block is
+//! read, hinted and checked with its kind's metadata ([`Meta`]).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -17,6 +21,59 @@ use crate::game::Lookup;
 use std::sync::Arc;
 
 use w3abdhqtu_rs::{Kind, Metadata, STRINGS_FILES, from_text, parse};
+
+/// The metadata a text form is read with: its kind's, or for a
+/// collection (`.w3o`) every kind's.
+#[derive(Default, Clone)]
+pub struct Meta(pub Vec<(Kind, Arc<Metadata>)>);
+
+static EMPTY: std::sync::LazyLock<Metadata> = std::sync::LazyLock::new(Metadata::default);
+
+impl Meta {
+    /// The metadata of `kind`; empty without it.
+    pub fn of(&self, kind: Kind) -> &Metadata {
+        self.0.iter().find(|(k, _)| *k == kind).map_or(&EMPTY, |(_, m)| m)
+    }
+
+    /// The one kind's metadata; empty for a collection's.
+    pub fn single(&self) -> &Metadata {
+        match self.0.as_slice() {
+            [(_, m)] => m,
+            _ => &EMPTY,
+        }
+    }
+
+    /// Is it a collection's, every kind's?
+    pub fn is_collection(&self) -> bool {
+        self.0.len() > 1
+    }
+}
+
+/// Is `path` a collection of object data (`.w3o`), by its extension?
+pub fn is_collection_file(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("w3o"))
+}
+
+/// [`convert`] for a collection (`.w3o`), each kind with its metadata.
+pub fn convert_collection(op: u8, name: &str, data: &[u8], meta: &Meta) -> Result<Vec<u8>, String> {
+    let file = Path::new(name).file_name().map_or(name.into(), |n| n.to_string_lossy());
+    match op {
+        TO_TEXT => {
+            let c = w3o_rs::parse(data).map_err(|err| format!("Can't read {file}: {err}"))?;
+            Ok(w3o_rs::text::to_text(&c, |k| meta.of(k)).into_bytes())
+        }
+        TO_BYTES => {
+            let text = std::str::from_utf8(data).map_err(|_| "the text isn't UTF-8".to_string())?;
+            let c = w3o_rs::text::from_text(text, |k| meta.of(k)).map_err(|errors| {
+                let e = &errors[0];
+                let more = if errors.len() > 1 { format!(" (and {} more)", errors.len() - 1) } else { String::new() };
+                format!("Can't save {file}: line {}: {}{more}", e.line, e.message)
+            })?;
+            c.to_bytes().map_err(|err| format!("Can't save {file}: {err}"))
+        }
+        _ => Err(format!("unknown op {op}")),
+    }
+}
 
 /// `ClientMsg::Objects`' ops.
 pub const TO_TEXT: u8 = 0;
@@ -144,7 +201,16 @@ fn to_bytes(kind: Kind, text: &str, meta: &Metadata) -> Result<Vec<u8>, String> 
 
 /// The hover for the field key at `pos` in the text form `text`: what
 /// `meta`, the game's metadata, says about the field. `None` off a key.
-pub fn hover(text: &str, pos: crate::document::Position, meta: &Metadata) -> Option<String> {
+pub fn hover(text: &str, pos: crate::document::Position, meta: &Meta) -> Option<String> {
+    if !meta.is_collection() {
+        return hover_with(text, pos, meta.single());
+    }
+    let line = pos.line as usize;
+    let block = w3o_rs::text::blocks(text).into_iter().find(|b| b.first <= line && line <= b.last)?;
+    hover_with(&block.text, pos, meta.of(block.kind?))
+}
+
+fn hover_with(text: &str, pos: crate::document::Position, meta: &Metadata) -> Option<String> {
     let lines = crate::document::LineIndex::new(text);
     let doc = bni_rs::parse(text);
     let at = w3abdhqtu_rs::field_at(&doc, pos.line as usize + 1, lines.column(text, pos), meta)?;
@@ -222,7 +288,25 @@ pub fn hover(text: &str, pos: crate::document::Position, meta: &Metadata) -> Opt
 /// JSON `[[line, character, "label"], ...]` in editor coordinates (0-based
 /// lines, UTF-16 characters). Only those lines are worked out: the editor
 /// asks for what's in view.
-pub fn hints(text: &str, first: u32, last: u32, meta: &Metadata) -> String {
+pub fn hints(text: &str, first: u32, last: u32, meta: &Meta) -> String {
+    if !meta.is_collection() {
+        return hints_with(text, first, last, meta.single());
+    }
+    let mut items = Vec::new();
+    for b in w3o_rs::text::blocks(text) {
+        let (Some(kind), from, to) = (b.kind, (first as usize).max(b.first), (last as usize).min(b.last)) else { continue };
+        if from <= to {
+            let json = hints_with(&b.text, from as u32, to as u32, meta.of(kind));
+            let inner = &json[1..json.len() - 1];
+            if !inner.is_empty() {
+                items.push(inner.to_string());
+            }
+        }
+    }
+    format!("[{}]", items.join(","))
+}
+
+fn hints_with(text: &str, first: u32, last: u32, meta: &Metadata) -> String {
     let doc = bni_rs::parse(text);
     let lines = crate::document::LineIndex::new(text);
     let found = w3abdhqtu_rs::field_hints(&doc, meta, first as usize + 1, last as usize + 1);
@@ -256,6 +340,32 @@ pub(crate) fn json_string(s: &str) -> String {
 /// from saving, and what the checks against `meta` find (lint, see
 /// `w3abdhqtu_rs::check`). Nothing for other BNI.
 pub fn diagnostics(
+    doc: &bni_rs::Document,
+    text: &str,
+    meta: Option<&Meta>,
+) -> (Vec<parser_rs::ParseError>, Vec<parser_rs::Diagnostic>) {
+    if w3o_rs::text::is_collection_text(doc) {
+        let (mut errors, mut lint) = (Vec::new(), Vec::new());
+        for b in w3o_rs::text::blocks(text) {
+            match b.kind {
+                None => {
+                    let bni = bni_rs::parse(&b.text).errors;
+                    errors.extend(w3o_rs::text::header(&b.text).into_iter().filter(|e| !bni.contains(e)));
+                }
+                Some(kind) => {
+                    let block = bni_rs::parse(&b.text);
+                    let (e, l) = diagnostics_with(&block, meta.map(|m| m.of(kind)));
+                    errors.extend(e);
+                    lint.extend(l);
+                }
+            }
+        }
+        return (errors, lint);
+    }
+    diagnostics_with(doc, meta.map(Meta::single))
+}
+
+fn diagnostics_with(
     doc: &bni_rs::Document,
     meta: Option<&Metadata>,
 ) -> (Vec<parser_rs::ParseError>, Vec<parser_rs::Diagnostic>) {

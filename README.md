@@ -401,6 +401,11 @@ field). Saving such text fails with the reason, and the file stays as it
 was. Comments and spacing aren't kept: the file has no room for them, so
 the next time it's opened the text is as the server writes it.
 
+A collection (`.w3o`: World Editor's File > Export All Object Data)
+opens as text too ([`w3o-rs`](../w3o-rs/README.md)): a `[w3o]` section,
+then each kind's text form as its own file's, from its section (`[w3u]`,
+`[w3t]` ...). Each block gets its kind's names, hints, hover and checks.
+
 ## Cameras
 
 A map's cameras, `war3map.w3c`, open as text the same way, from disk or

@@ -59,7 +59,7 @@ fn errors_are_messages() {
 fn diagnostics_only_for_object_text() {
     let doc = bni_rs::parse("[w3u]\nversion=2\n[hfoo]\nuhpm=x\nbroken line\numvs=1.5\n");
     assert_eq!(doc.errors.len(), 1);
-    let (errors, lint) = diagnostics(&doc, None);
+    let (errors, lint) = diagnostics_with(&doc, None);
     assert_eq!(errors.len(), 1);
     assert_eq!((errors[0].line, errors[0].col), (4, 6));
     assert!(lint.is_empty());
@@ -67,11 +67,11 @@ fn diagnostics_only_for_object_text() {
     // With the game's metadata, the fields are checked too.
     let table = "C;X1;Y1;K\"ID\"\nC;X2;K\"type\"\nC;X3;K\"field\"\nC;X1;Y2;K\"umvs\"\nC;X2;K\"int\"\nC;X3;K\"spd\"\n";
     let meta = Metadata::from_tables(table, &[]);
-    let (_, lint) = diagnostics(&doc, Some(&meta));
+    let (_, lint) = diagnostics_with(&doc, Some(&meta));
     let rules: Vec<_> = lint.iter().map(|d| (d.line, d.rule)).collect();
     assert_eq!(rules, vec![(6, parser_rs::rule::OBJECT_VALUE_TYPE)]);
 
-    assert_eq!(diagnostics(&bni_rs::parse("[Section]\nuhpm=x\n"), Some(&meta)), (Vec::new(), Vec::new()));
+    assert_eq!(diagnostics_with(&bni_rs::parse("[Section]\nuhpm=x\n"), Some(&meta)), (Vec::new(), Vec::new()));
 }
 
 #[test]
@@ -101,8 +101,28 @@ fn names_from_the_game() {
     assert!(text.contains("\nuhpm=500\n"), "{text}");
     assert_eq!(convert(TO_BYTES, "war3map.w3u", text.as_bytes(), &units).unwrap(), UNITS_SAVED);
     let line = text.lines().position(|l| l == "uhpm=500").unwrap() as u32;
-    assert_eq!(hints(&text, line, line, &units), format!("[[{line},8,\"Hit Points Maximum\"]]"));
-    assert_eq!(hints(&text, 0, 1, &units), "[]");
+    assert_eq!(hints_with(&text, line, line, &units), format!("[[{line},8,\"Hit Points Maximum\"]]"));
+    assert_eq!(hints_with(&text, 0, 1, &units), "[]");
+
+    // A collection: each kind's block with its metadata, lines kept.
+    let units = std::sync::Arc::new(units);
+    let meta = Meta(w3o_rs::KINDS.iter().map(|&k| (k, if k == Kind::Unit { units.clone() } else { Default::default() })).collect());
+    let mut c = w3o_rs::Collection::new();
+    c.set(Kind::Unit, Some(parse(UNITS, Kind::Unit).unwrap()));
+    c.set(Kind::Item, Some(w3abdhqtu_rs::ObjectData { kind: Kind::Item, version: 2, originals: vec![], customs: vec![] }));
+    let bytes = c.to_bytes().unwrap();
+    let text = String::from_utf8(convert_collection(TO_TEXT, "all.w3o", &bytes, &meta).unwrap()).unwrap();
+    assert!(text.starts_with("[w3o]\nversion=1\n\n[w3u]\n"), "{text}");
+    let line = text.lines().position(|l| l == "uhpm=500").unwrap() as u32;
+    assert_eq!(hints(&text, 0, 100, &meta), format!("[[{line},8,\"Hit Points Maximum\"]]"));
+    let pos = crate::document::Position { line, character: 1 };
+    assert!(hover(&text, pos, &meta).unwrap().contains("Hit Points Maximum"));
+    let saved = convert_collection(TO_BYTES, "all.w3o", text.as_bytes(), &meta).unwrap();
+    assert_eq!(w3o_rs::parse(&saved).unwrap().kinds.iter().flatten().count(), 2);
+    let bad = text.replace("uhpm=500", "uhpm=x");
+    let (errors, _) = diagnostics(&bni_rs::parse(&bad), &bad, Some(&meta));
+    assert_eq!(errors.iter().map(|e| e.line).collect::<Vec<_>>(), [line as usize + 1], "{errors:?}");
+    assert!(convert_collection(TO_BYTES, "all.w3o", bad.as_bytes(), &meta).unwrap_err().starts_with(&format!("Can't save all.w3o: line {}", line + 1)));
 }
 
 #[test]
@@ -154,18 +174,18 @@ C;X1;Y3;K\"aher\"\nC;X2;K\"Hero Ability\"\nC;X3;K\"bool\"\nC;X6;K0\nC;X7;K0\n";
     let objects = "C;X1;Y1;K\"alias\"\nC;X2;K\"code\"\nC;X1;Y2;K\"AIbz\"\nC;X2;K\"AHbz\"\n";
     let meta = Metadata::from_tables(table, &[]).with_codes(objects);
     let text = "[w3a]\nversion=2\n[A000]\n_parent=AIbz\nHbz1[2].A=x\naher=1\nzzzz=1\n";
-    let at = |line, character| hover(text, Position::new(line, character), &meta);
+    let at = |line, character| hover_with(text, Position::new(line, character), &meta);
     assert_eq!(
         at(4, 2).unwrap(),
         "**Number of Waves** `Hbz1`\n\n`int`: a whole number · 1 to 99999 in World Editor  \nper level · data column A (`.A`)\n\nData of `AHbz`, `ACbz`. `AIbz` has the data of `AHbz`."
     );
     assert_eq!(at(5, 0).unwrap(), "**Hero Ability** `aher`\n\n`bool`: a whole number · 0 or 1");
-    let strings = hover("[w3a]\nversion=2\n[A000]\nanam=\"x\"\n", Position::new(3, 0), &Metadata::from_tables("C;X1;Y1;K\"ID\"\nC;X2;K\"type\"\nC;X3;K\"field\"\nC;X1;Y2;K\"anam\"\nC;X2;K\"string\"\nC;X3;K\"Name\"\n", &[]));
+    let strings = hover_with("[w3a]\nversion=2\n[A000]\nanam=\"x\"\n", Position::new(3, 0), &Metadata::from_tables("C;X1;Y1;K\"ID\"\nC;X2;K\"type\"\nC;X3;K\"field\"\nC;X1;Y2;K\"anam\"\nC;X2;K\"string\"\nC;X3;K\"Name\"\n", &[]));
     assert_eq!(strings.unwrap(), "**Name** `anam`\n\n`string`");
     assert_eq!(at(6, 1).unwrap(), "`zzzz`\n\nNot a field of abilities in this game's metadata.");
     // Off a key: on a value, on `[A000]`.
     assert_eq!(at(4, 11), None);
     assert_eq!(at(2, 1), None);
     // No game.
-    assert!(hover(text, Position::new(4, 0), &Metadata::default()).unwrap().contains("isn't in a project with `game=`"));
+    assert!(hover_with(text, Position::new(4, 0), &Metadata::default()).unwrap().contains("isn't in a project with `game=`"));
 }

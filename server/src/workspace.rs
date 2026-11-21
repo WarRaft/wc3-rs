@@ -46,7 +46,8 @@ use crate::map;
 use crate::names::Names;
 use crate::project::{self, Project, Projects};
 use crate::protocol::ServerMsg;
-use w3abdhqtu_rs::{Kind, Metadata};
+use w3abdhqtu_rs::Kind;
+use crate::objects::Meta as Metadata;
 
 struct Entry {
     doc: Document,
@@ -604,9 +605,13 @@ impl Workspace {
     /// from its project's game folders (`game_folders`): empty outside a
     /// project. `None` when `path` isn't object data.
     pub fn object_metadata(&mut self, path: &Path) -> Option<Arc<Metadata>> {
-        let kind = Kind::from_path(&path.to_string_lossy())?;
+        let kinds: Vec<Kind> = if crate::objects::is_collection_file(path) {
+            w3o_rs::KINDS.to_vec()
+        } else {
+            vec![Kind::from_path(&path.to_string_lossy())?]
+        };
         let lookup = self.lookup(path);
-        Some(self.objects.get(&lookup, kind))
+        Some(Arc::new(Metadata(kinds.into_iter().map(|k| (k, self.objects.get(&lookup, k))).collect())))
     }
 
     /// The names (`names::Names`) the ids in the text form at `path` show

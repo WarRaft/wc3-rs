@@ -898,6 +898,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "w3o-rs"
+version = "0.1.0"
+dependencies = [
+ "bni-rs",
+ "parser-rs",
+ "w3abdhqtu-rs",
+]
+
+[[package]]
 name = "w3r-rs"
 version = "0.1.0"
 dependencies = [
@@ -951,6 +960,7 @@ dependencies = [
  "w3c-rs",
  "w3e-rs",
  "w3i-rs",
+ "w3o-rs",
  "w3r-rs",
  "w3s-rs",
  "wct-rs",

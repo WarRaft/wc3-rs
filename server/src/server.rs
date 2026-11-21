@@ -195,7 +195,11 @@ impl<W: Write> Server<W> {
                     crate::customtext::convert(op, &name, &data)
                 } else {
                     let meta = ws.object_metadata(Path::new(&name)).unwrap_or_default();
-                    crate::objects::convert(op, &name, &data, &meta)
+                    if crate::objects::is_collection_file(Path::new(&name)) {
+                        crate::objects::convert_collection(op, &name, &data, &meta)
+                    } else {
+                        crate::objects::convert(op, &name, &data, meta.single())
+                    }
                 };
                 let (error, data) = match converted {
                     Ok(data) => (String::new(), data),

@@ -241,3 +241,12 @@ fn string_table_errors_lint_and_tokens() {
     );
     assert!(!semantic_tokens(&doc(Language::Wts, text, None), None).is_empty());
 }
+
+#[test]
+fn text_forms_repeat_sections_without_a_warning() {
+    let text = "[wtg]\nversion=7\n\n[variable]\nname=\"a\"\ntype=\"string\"\n\n[variable]\nname=\"b\"\ntype=\"string\"\n";
+    let wtg = diagnostics(&doc(Language::Bni, text, Some(Path::new("/m/war3map.wtg"))), None);
+    assert!(wtg.is_empty(), "{wtg:?}");
+    let ini = diagnostics(&doc(Language::Bni, "[a]\n[a]\n", Some(Path::new("/m/x.txt"))), None);
+    assert!(ini.iter().any(|d| d.message.contains("duplicate section")), "{ini:?}");
+}
