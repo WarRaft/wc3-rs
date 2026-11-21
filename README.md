@@ -310,8 +310,9 @@ of 50,000 cells scrolls like a small one.
 
 `.mcp.json` registers [`wc3-mcp`](../wc3-mcp/README.md) with Claude Code in
 this repository: an MCP server that reads, queries and edits the game's
-SLK tables, from disk or from inside an MPQ archive or a map, on the same
-`slk-rs` as the editor. Build it first (`cargo build --release` in
+SLK tables, from disk or from inside an MPQ archive or a map, and looks
+into and changes MPQ archives and maps (list, read, extract, verify, add,
+remove, rename), on the same `slk-rs` and `storm-rs` as the editor. Build it first (`cargo build --release` in
 `../wc3-mcp`); Claude Code asks once whether to use it.
 
 ## Lint
