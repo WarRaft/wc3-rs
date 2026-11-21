@@ -75,6 +75,11 @@ pub fn diagnostics_with(doc: &Document, project: Option<&Project>, objects: Opti
         Language::Bni => return bni(doc, project, objects, &out),
         Language::Slk => return slk(project, &out),
         Language::Wts => return wts(project, &out),
+        Language::Txt2 => {
+            let mut diags: Vec<Diagnostic> = txt2_rs::parse(text).errors.iter().map(|e| out.error(e)).collect();
+            diags.sort_by_key(|d| d.range.start.line);
+            return diags;
+        }
     };
     let mut diags: Vec<Diagnostic> = match result {
         Err(err) => vec![out.error(&err)],
@@ -256,6 +261,7 @@ pub fn semantic_tokens(doc: &Document, project: Option<&Project>) -> Vec<u32> {
         Language::Bni => bni_rs::encoded_semantic_tokens(text),
         Language::Slk => slk_rs::encoded_semantic_tokens(text),
         Language::Wts => wts_rs::encoded_semantic_tokens(text),
+        Language::Txt2 => txt2_rs::semantic::encoded_semantic_tokens(text),
     }
 }
 

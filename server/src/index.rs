@@ -62,6 +62,9 @@ pub enum QueryKind {
     /// In the text form of regions: their colors, for the color picker, as
     /// JSON in the text (`regions::colors`).
     Colors,
+    /// In a txt2 text: its preview, the stylesheet and the HTML (each
+    /// block with the `data-line` it starts at) in the text.
+    Txt2Html,
 }
 
 /// Path completion and links in a manifest; nothing for any other file.
@@ -170,6 +173,16 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
                     None => "[]".into(),
                 },
                 (None, None) => "[]".into(),
+            };
+            return Answer { locations: Vec::new(), text };
+        }
+        QueryKind::Txt2Html => {
+            let text = match ws.file(id).filter(|(d, _)| d.language == crate::document::Language::Txt2) {
+                Some((doc, _)) => {
+                    let parsed = txt2_rs::parse(&doc.text);
+                    format!("<style>{}</style>\n{}", txt2_rs::html::STYLE, txt2_rs::html::render(&parsed))
+                }
+                None => String::new(),
             };
             return Answer { locations: Vec::new(), text };
         }

@@ -33,6 +33,7 @@ icons = {
     'wct': badge('#FFB300', '  <path fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M13 8c-2.5 0-3.5 1-3.5 3.5v2c0 1.2-.8 2.2-2 2.5 1.2.3 2 1.3 2 2.5v2c0 2.5 1 3.5 3.5 3.5M19 8c2.5 0 3.5 1 3.5 3.5v2c0 1.2.8 2.2 2 2.5-1.2.3-2 1.3-2 2.5v2c0 2.5-1 3.5-3.5 3.5"/>'),
     # Text data: a sheet with a folded corner and what it holds.
     'bni': doc('#78909C', '  <path fill="#fff" d="M10 13h3.5v2H12v8h1.5v2H10zM22 13h-3.5v2H20v8h-1.5v2H22z"/>\n  <rect x="14.5" y="18" width="3" height="2" rx="1" fill="#fff"/>'),
+    'txt2': doc('#5C6BC0', '  <path fill="#fff" d="M9.5 12h9v2.4h-3.3V24h-2.4v-9.6H9.5z"/>\n  <path fill="#fff" opacity=".8" d="M20 17.5h3.5v2H20zM20 21.5h3.5v2H20z"/>'),
     'slk': doc('#43A047', '  <path fill="none" stroke="#fff" stroke-width="1.8" d="M10 13.5h12v12H10zM10 17.5h12M10 21.5h12M14 13.5v12M18 13.5v12"/>'),
     'wts': doc('#FDD835', '  <path fill="#fff" d="M10 16.5a3 3 0 1 1 5 2.2c-.3 2.2-1.4 3.8-3.4 4.8l-.8-1.3c1.1-.7 1.8-1.6 2-2.8a3 3 0 0 1-2.8-2.9zM17 16.5a3 3 0 1 1 5 2.2c-.3 2.2-1.4 3.8-3.4 4.8l-.8-1.3c1.1-.7 1.8-1.6 2-2.8a3 3 0 0 1-2.8-2.9z"/>'),
     'fdf': doc('#00ACC1', '  <rect x="9.5" y="13" width="13" height="12" rx="1.5" fill="none" stroke="#fff" stroke-width="1.8"/>\n  <rect x="9.5" y="13" width="13" height="3.2" rx="1" fill="#fff"/>\n  <rect x="12.5" y="19.5" width="7" height="2.6" rx="1" fill="#fff"/>'),

@@ -78,6 +78,7 @@ const QUERY = {
     SLK_SET_CELL: 11,
     INLAY_HINTS: 12,
     COLORS: 13,
+    TXT2_HTML: 14,
 }
 
 /** Symbol kinds, in wire order (`parser_rs::SymbolKind`). */

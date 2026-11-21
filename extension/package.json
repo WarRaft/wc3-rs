@@ -55,6 +55,18 @@
         "title": "Open as Text",
         "category": "WC3",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "wc3.txt2.preview",
+        "title": "Open Preview",
+        "category": "txt2",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "wc3.txt2.previewSide",
+        "title": "Open Preview to the Side",
+        "category": "txt2",
+        "icon": "$(open-preview)"
       }
     ],
     "customEditors": [
@@ -263,6 +275,14 @@
         {
           "command": "wc3.slk.openText",
           "when": "activeCustomEditorId == wc3.slkTable"
+        },
+        {
+          "command": "wc3.txt2.preview",
+          "when": "editorLangId == txt2"
+        },
+        {
+          "command": "wc3.txt2.previewSide",
+          "when": "editorLangId == txt2"
         }
       ],
       "view/title": [
@@ -293,6 +313,11 @@
           "command": "wc3.slk.openTable",
           "when": "resourceExtname =~ /^\\.slk$/i",
           "group": "navigation"
+        },
+        {
+          "command": "wc3.txt2.preview",
+          "when": "resourceExtname == .txt2",
+          "group": "navigation"
         }
       ],
       "editor/title": [
@@ -304,6 +329,11 @@
         {
           "command": "wc3.slk.openText",
           "when": "activeCustomEditorId == wc3.slkTable",
+          "group": "navigation"
+        },
+        {
+          "command": "wc3.txt2.previewSide",
+          "when": "editorLangId == txt2",
           "group": "navigation"
         }
       ]
@@ -990,6 +1020,21 @@
           "light": "./icons/wpm.svg",
           "dark": "./icons/wpm.svg"
         }
+      },
+      {
+        "id": "txt2",
+        "aliases": [
+          "txt2",
+          "XGM txt2"
+        ],
+        "extensions": [
+          ".txt2"
+        ],
+        "icon": {
+          "light": "./icons/txt2.svg",
+          "dark": "./icons/txt2.svg"
+        },
+        "configuration": "./syntaxes/txt2.language-configuration.json"
       }
     ],
     "grammars": [
@@ -1820,6 +1865,71 @@
             "entity.name.type.parameter"
           ]
         }
+      },
+      {
+        "language": "txt2",
+        "scopes": {
+          "operator": [
+            "punctuation.definition.markup"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "namespace": [
+            "entity.name.section"
+          ],
+          "class": [
+            "markup.heading"
+          ],
+          "type": [
+            "markup.bold"
+          ],
+          "parameter": [
+            "markup.italic"
+          ],
+          "enumMember": [
+            "markup.strikethrough"
+          ],
+          "event": [
+            "markup.deleted"
+          ],
+          "method": [
+            "markup.inserted"
+          ],
+          "macro": [
+            "markup.changed"
+          ],
+          "comment": [
+            "comment"
+          ],
+          "decorator": [
+            "entity.name.tag"
+          ],
+          "string": [
+            "markup.inline.raw"
+          ],
+          "function": [
+            "markup.underline.link"
+          ],
+          "regexp": [
+            "markup.underline.link"
+          ],
+          "property": [
+            "variable.other.constant"
+          ],
+          "enum": [
+            "support.type"
+          ],
+          "interface": [
+            "markup.quote"
+          ],
+          "number": [
+            "punctuation.definition.list.begin.markdown"
+          ],
+          "typeParameter": [
+            "constant.numeric"
+          ]
+        }
       }
     ],
     "configurationDefaults": {
@@ -1838,6 +1948,20 @@
       "[bni]": {
         "editor.semanticHighlighting.enabled": true
       }
-    }
+    },
+    "keybindings": [
+      {
+        "command": "wc3.txt2.preview",
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v",
+        "when": "editorLangId == txt2"
+      },
+      {
+        "command": "wc3.txt2.previewSide",
+        "key": "ctrl+k v",
+        "mac": "cmd+k v",
+        "when": "editorLangId == txt2"
+      }
+    ]
   }
 }

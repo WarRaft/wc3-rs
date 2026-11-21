@@ -853,6 +853,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "txt2-rs"
+version = "0.1.0"
+dependencies = [
+ "parser-rs",
+]
+
+[[package]]
 name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -956,6 +963,7 @@ dependencies = [
  "shd-rs",
  "slk-rs",
  "storm-rs",
+ "txt2-rs",
  "w3abdhqtu-rs",
  "w3c-rs",
  "w3e-rs",

@@ -669,6 +669,30 @@ function takes isn't in the file but in World Editor's
 a modded editor's in a root replaces the game's. Opening needs it, and
 saving checks every function's name and parameter count against it.
 
+## txt2
+
+XGM's markup (`.txt2`, articles like `w3-file-format.txt2`) is
+highlighted by the server with [`txt2-rs`](../txt2-rs/README.md): bold
+as bold, accents in their colors, headings, links, code, block tags.
+Unclosed blocks (`((кат` without `))`, `>>` without `<<`) are errors.
+**Open Preview to the Side** (the button in the editor's title,
+`Cmd+K V`; `Cmd+Shift+V` in place) shows the page as the site would,
+updated as you type; the preview and the text follow each other's
+scrolling, a double click in the preview puts the cursor on that line,
+and links open in the browser.
+
+## txt2
+
+XGM's markup (`.txt2`, articles like `w3-file-format.txt2`) is
+highlighted by the server with [`txt2-rs`](../txt2-rs/README.md): bold
+as bold, accents in their colors, headings, links, code, block tags.
+Unclosed blocks (`((кат` without `))`, `>>` without `<<`) are errors.
+**Open Preview to the Side** (the button in the editor's title,
+`Cmd+K V`; `Cmd+Shift+V` in place) shows the page as the site would,
+updated as you type; the preview and the text follow each other's
+scrolling, a double click in the preview puts the cursor on that line,
+and links open in the browser.
+
 ## SLK tables
 
 A `.slk` (the game's data tables: `Units\UnitBalance.slk`, the

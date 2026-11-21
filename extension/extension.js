@@ -67,6 +67,10 @@
  * (`w3e-rs`, `server/src/terrain.rs`). Saving puts the header onto the
  * file as it is, its points kept, and fails when they don't allow it.
  *
+ * txt2 (`.txt2`, XGM's markup) is highlighted by the server
+ * (`txt2-rs`) and has a preview beside it, as Markdown does
+ * (`registerTxt2Preview`).
+ *
  * Map info (`.w3i`) too: a `[w3i]` section, then a section per player,
  * force, upgrade, tech and random table (`w3i-rs`, `server/src/mapinfo.rs`).
  * Imported files (`.imp`, `imp-rs`) and minimap icons (`.mmp`, `mmp-rs`,
@@ -124,6 +128,10 @@ const {
     Color,
     ColorInformation,
     ColorPresentation,
+    ViewColumn,
+    Selection,
+    TextEditorRevealType,
+    env,
 } = require('vscode')
 const {encode, decode, FrameReader, QUERY, FS_OP, FS_FLAG, OBJECTS_OP} = require('./protocol.js')
 
@@ -145,7 +153,7 @@ const OBJECTS_SCHEME = 'wc3obj'
 const OBJECT_LANGUAGES = new Set(['w3a', 'w3b', 'w3d', 'w3h', 'w3q', 'w3t', 'w3u', 'w3c', 'w3e', 'w3i', 'w3r', 'w3s', 'wct', 'imp', 'mmp', 'doo', 'wc3-units', 'wtg', 'w3o'])
 
 /** Language ids the server analyzes (its `Language::from_id`). */
-const LANGUAGES = new Set(['jass', 'vjass', 'zinc', 'lua', 'angelscript', 'bni', 'slk', 'wts', ...OBJECT_LANGUAGES])
+const LANGUAGES = new Set(['jass', 'vjass', 'zinc', 'lua', 'angelscript', 'bni', 'slk', 'wts', 'txt2', ...OBJECT_LANGUAGES])
 
 /** How long highlighting waits for the server to analyze a new version. */
 const TOKENS_WAIT_MS = 1000
@@ -1306,6 +1314,105 @@ function registerSlk(context) {
     )
 }
 
+/**
+ * The txt2 preview, beside the text as Markdown's (`wc3.txt2.preview`,
+ * `wc3.txt2.previewSide`): a page per document showing the server's HTML
+ * for it (`QUERY.TXT2_HTML`), updated as the text changes. The page and
+ * the editor follow each other's scrolling by the lines blocks start at;
+ * a double click in the page moves the cursor there; links open in the
+ * browser.
+ *
+ * @param {import('vscode').ExtensionContext} context
+ */
+function registerTxt2Preview(context) {
+    const media = Uri.joinPath(context.extensionUri, 'webview')
+    /** @type {Map<string, {panel: import('vscode').WebviewPanel, doc: import('vscode').TextDocument, timer?: NodeJS.Timeout, revealing: number}>} */
+    const previews = new Map()
+
+    const page = webview => {
+        const nonce = [...Array(32)].map(() => Math.floor(Math.random() * 36).toString(36)).join('')
+        // FontAwesome 6 for `/иконка/...`: its classes, and its fonts,
+        // which its stylesheet leaves to the page.
+        const fa = name => webview.asWebviewUri(Uri.joinPath(media, 'fontawesome', name))
+        return `<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; img-src https: http: data: ${webview.cspSource}; media-src https: http:; script-src 'nonce-${nonce}'">
+<link rel="stylesheet" href="${fa('fontawesome.min.css')}">
+<style>
+@font-face { font-family: "Font Awesome 6 Free"; font-style: normal; font-weight: 900; font-display: block; src: url("${fa('fa-solid-900.woff2')}") format("woff2"); }
+@font-face { font-family: "Font Awesome 6 Free"; font-style: normal; font-weight: 400; font-display: block; src: url("${fa('fa-regular-400.woff2')}") format("woff2"); }
+</style>
+</head><body class="t2"><div id="content"></div>
+<script nonce="${nonce}" src="${webview.asWebviewUri(Uri.joinPath(media, 'txt2.js'))}"></script>
+</body></html>`
+    }
+
+    const editorOf = doc => window.visibleTextEditors.find(e => e.document === doc)
+
+    const render = async (key, line) => {
+        const p = previews.get(key)
+        if (!p) return
+        const answer = await query(QUERY.TXT2_HTML, idOf(p.doc), {line: 0, character: 0})
+        if (answer) p.panel.webview.postMessage({type: 'html', html: answer.text, line})
+    }
+
+    const open = (uri, column) => {
+        const editor = window.activeTextEditor
+        const doc = uri ? workspace.textDocuments.find(d => d.uri.toString() === uri.toString()) : editor?.document
+        if (!doc || doc.languageId !== 'txt2') return
+        const key = doc.uri.toString()
+        const existing = previews.get(key)
+        if (existing) return existing.panel.reveal(column, true)
+        const panel = window.createWebviewPanel('wc3.txt2Preview', `Preview ${path.basename(doc.uri.path)}`,
+            {viewColumn: column, preserveFocus: true},
+            {enableScripts: true, localResourceRoots: [media], retainContextWhenHidden: true})
+        panel.iconPath = Uri.joinPath(context.extensionUri, 'icons', 'txt2.svg')
+        panel.webview.html = page(panel.webview)
+        const entry = {panel, doc, revealing: 0}
+        previews.set(key, entry)
+        panel.onDidDispose(() => previews.delete(key))
+        panel.webview.onDidReceiveMessage(async msg => {
+            const ed = editorOf(doc)
+            if (msg.type === 'ready') {
+                render(key, ed ? ed.visibleRanges[0]?.start.line + 1 : undefined)
+            } else if (msg.type === 'reveal' && ed) {
+                entry.revealing = Date.now()
+                const at = new Position(Math.max(0, msg.line - 1), 0)
+                ed.revealRange(new Range(at, at), TextEditorRevealType.AtTop)
+            } else if (msg.type === 'select') {
+                const at = new Position(Math.max(0, msg.line - 1), 0)
+                const target = ed ?? await window.showTextDocument(doc, {viewColumn: ViewColumn.One})
+                target.selection = new Selection(at, at)
+                target.revealRange(new Range(at, at), TextEditorRevealType.InCenterIfOutsideViewport)
+                window.showTextDocument(target.document, target.viewColumn)
+            } else if (msg.type === 'open' && msg.href) {
+                try {
+                    env.openExternal(Uri.parse(msg.href))
+                } catch { /* not a link */ }
+            }
+        })
+    }
+
+    context.subscriptions.push(
+        commands.registerCommand('wc3.txt2.preview', uri => open(uri instanceof Uri ? uri : undefined, ViewColumn.Active)),
+        commands.registerCommand('wc3.txt2.previewSide', uri => open(uri instanceof Uri ? uri : undefined, ViewColumn.Beside)),
+        // After the server has the change: the text is sent as it changes,
+        // and this waits.
+        workspace.onDidChangeTextDocument(e => {
+            const key = e.document.uri.toString()
+            const p = previews.get(key)
+            if (!p) return
+            clearTimeout(p.timer)
+            p.timer = setTimeout(() => render(key), 120)
+        }),
+        window.onDidChangeTextEditorVisibleRanges(e => {
+            const p = previews.get(e.textEditor.document.uri.toString())
+            if (!p || Date.now() - p.revealing < 400) return
+            const first = e.visibleRanges[0]
+            if (first) p.panel.webview.postMessage({type: 'scroll', line: first.start.line + 1})
+        }),
+    )
+}
+
 module.exports = {
     /** @param {import('vscode').ExtensionContext} context */
     activate(context) {
@@ -1322,6 +1429,7 @@ module.exports = {
         registerTextures(context)
         registerObjects(context)
         registerSlk(context)
+        registerTxt2Preview(context)
 
         sendRoots()
         context.subscriptions.push(

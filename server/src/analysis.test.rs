@@ -250,3 +250,13 @@ fn text_forms_repeat_sections_without_a_warning() {
     let ini = diagnostics(&doc(Language::Bni, "[a]\n[a]\n", Some(Path::new("/m/x.txt"))), None);
     assert!(ini.iter().any(|d| d.message.contains("duplicate section")), "{ini:?}");
 }
+
+#[test]
+fn txt2_is_highlighted_and_checked() {
+    let d = diags(Language::Txt2, "**bold**\n((кат open\n");
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert_eq!(d[0].range.start.line, 1);
+    assert!(d[0].message.contains("has no `))`"));
+    assert!(!tokens(Language::Txt2, "**bold** ++green++\n").is_empty());
+    assert_eq!(Language::from_path(Path::new("/a/w3.txt2")), Some(Language::Txt2));
+}

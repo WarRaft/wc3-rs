@@ -45,6 +45,8 @@ pub enum Language {
     Slk,
     /// Map string tables (`war3map.wts`), via `wts-rs`.
     Wts,
+    /// txt2, XGM's markup (`.txt2`), via `txt2-rs`.
+    Txt2,
 }
 
 impl Language {
@@ -58,6 +60,7 @@ impl Language {
             "bni" => Language::Bni,
             "slk" => Language::Slk,
             "wts" => Language::Wts,
+            "txt2" => Language::Txt2,
             // Object data, which the editor shows in its BNI text form
             // (see `objects`).
             "w3a" | "w3b" | "w3d" | "w3h" | "w3q" | "w3t" | "w3u" => Language::Bni,
@@ -80,6 +83,7 @@ impl Language {
             Language::Bni => "bni",
             Language::Slk => "slk",
             Language::Wts => "wts",
+            Language::Txt2 => "txt2",
         }
     }
 
@@ -104,6 +108,7 @@ impl Language {
             "bni" => Language::Bni,
             "slk" => Language::Slk,
             "wts" => Language::Wts,
+            "txt2" => Language::Txt2,
             // Not object data (`.w3a` ...): the files are binary. Only
             // their text form, which the editor opens under its own
             // scheme with the file's language id, is BNI (`from_id`).
