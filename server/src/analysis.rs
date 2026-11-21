@@ -57,7 +57,7 @@ pub fn diagnostics(doc: &Document, project: Option<&Project>) -> Vec<Diagnostic>
     diagnostics_with(doc, project, None)
 }
 
-/// [`diagnostics`], with `objects`, the game's metadata when `doc` is the
+/// `diagnostics`, with `objects`, the game's metadata when `doc` is the
 /// text form of object data, to check its fields against.
 pub fn diagnostics_with(doc: &Document, project: Option<&Project>, objects: Option<&Metadata>) -> Vec<Diagnostic> {
     let text = doc.text.as_str();

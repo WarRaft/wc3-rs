@@ -96,7 +96,8 @@ Warcraft III language support for VS Code.
 All language logic lives in Rust; the extension is a thin shell with no
 dependencies besides the VS Code API.
 
-- `../server`: the `wc3-server` binary. It wraps `jass-rs`, `zinc-rs`,
+- `../server`: the `wc3-server` binary, over a library (`wc3_server`) that
+  other tools such as `wc3-mcp` use too. It wraps `jass-rs`, `zinc-rs`,
   `lua-rs`, `as-rs` and `bni-rs`, all built on the shared
   [`parser-rs`](https://github.com/WarRaft/parser-rs), so one code path
   turns their errors and lint into diagnostics.

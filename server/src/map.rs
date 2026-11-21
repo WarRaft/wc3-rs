@@ -149,7 +149,7 @@ pub fn names(map: &Path) -> Vec<String> {
     MpqArchive::open(map).map(|a| names_in(&a)).unwrap_or_default()
 }
 
-/// [`names`] of an archive already open.
+/// `names` of an archive already open.
 pub fn names_in(archive: &MpqArchive) -> Vec<String> {
     // The first spelling wins: the map's own `(listfile)` comes first.
     let mut seen = HashSet::new();

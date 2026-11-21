@@ -332,9 +332,10 @@ remove objects; `TRIGSTR_<n>` names as their text) and string tables
 
 Planned for it: checking JASS (syntax, names, order as the game reads a
 map's `war3map.j`), lint, listing natives with their comments, and
-renaming symbols across the project. For that the server becomes a
-library as well, and `wc3-mcp` uses its project model in-process: see the
-[`wc3-mcp` README](../wc3-mcp/README.md#planned-jass).
+renaming symbols across the project. For that the server is a library as
+well as the binary (`wc3_server`, `server/src/lib.rs`: the workspace,
+`index::answer`, analysis, the game's files), which `wc3-mcp` uses
+in-process: see the [`wc3-mcp` README](../wc3-mcp/README.md#planned-jass).
 
 ## String tables
 

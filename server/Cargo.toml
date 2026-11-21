@@ -2,8 +2,13 @@
 name = "wc3-server"
 version = "0.1.0"
 edition = "2024"
-description = "Language backend of the WC3 VS Code extension (binary protocol over stdio) — parses, lints and highlights JASS/vJASS, Zinc, Lua, AngelScript and BNI via jass-rs / zinc-rs / lua-rs / as-rs / bni-rs, reads wc3.bni projects, and decodes BLP textures for the viewer."
+description = "Language backend of the WC3 VS Code extension (binary protocol over stdio) — parses, lints and highlights JASS/vJASS, Zinc, Lua, AngelScript and BNI via jass-rs / zinc-rs / lua-rs / as-rs / bni-rs, reads wc3.bni projects, and decodes BLP textures for the viewer. Also a library: the project model wc3-mcp uses in-process."
 license = "CC0-1.0"
+
+# The project model, for other tools (wc3-mcp) as well as the binary.
+[lib]
+name = "wc3_server"
+path = "src/lib.rs"
 
 [[bin]]
 name = "wc3-server"
