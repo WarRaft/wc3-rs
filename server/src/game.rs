@@ -16,6 +16,13 @@
 //! alike, so a folder with only `Scripts/common.j` in it replaces just
 //! that file of the game below it. Archives a folder doesn't have are
 //! skipped; names match whatever their case on disk (`war3.mpq`).
+//!
+//! Over all of them go the map's roots (`[map] root=`, [`Lookup`]): each
+//! a folder or a map, each over the ones before, the way the game loads a
+//! map's files over its own. Every file the server looks up for a project
+//! (`UI\WorldEditStrings.txt`, `TerrainArt\Weather.slk`, the metadata
+//! tables) goes through the same layers, and the last one that has it
+//! wins: any of them can replace (shadow) any file below it.
 
 use std::path::{Path, PathBuf};
 
@@ -66,12 +73,20 @@ impl Script {
     }
 }
 
-/// The game's scripts ([`SCRIPTS`]) from the game folders `folders`, each
-/// at the path it's found at: on disk, or inside an archive
-/// (`War3Patch.mpq/Scripts/Blizzard.j`, see `map`). Text is read as
-/// UTF-8, invalid bytes replaced.
-pub fn scripts(folders: &[PathBuf]) -> Vec<(PathBuf, crate::document::Document)> {
-    let (game, errors) = Game::open(folders);
+/// The game's scripts ([`SCRIPTS`]) looked up through `lookup` like any
+/// other file (the game folders, then the map's roots; the last that has
+/// one wins), each at the path it's found at: on disk, or inside an
+/// archive (`War3Patch.mpq/Scripts/Blizzard.j`, see `map`). Text is read
+/// as UTF-8, invalid bytes replaced.
+///
+/// The game loads `common.j` and `Blizzard.j` under every map script,
+/// `common.j` and `common.ai` under every AI script. Nothing about them
+/// needs a lookup of its own: a map script that wants a `common.ai`
+/// function declares it as a `native` in its own code, and a root that
+/// replaces one of them replaces it as it would any file. What such a
+/// replacement breaks is for the build to find.
+pub fn scripts(lookup: &Lookup) -> Vec<(PathBuf, crate::document::Document)> {
+    let (game, errors) = lookup.open();
     for e in errors {
         eprintln!("wc3-server: {e}");
     }
@@ -113,6 +128,57 @@ pub fn is_archive_name(path: &Path) -> bool {
     path.file_name()
         .and_then(|n| n.to_str())
         .is_some_and(|n| ARCHIVES.iter().any(|a| n.eq_ignore_ascii_case(a)))
+}
+
+/// Where a project looks its files up: its game folders, then its map's
+/// roots, lowest first (see the module docs).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct Lookup {
+    pub game: Vec<PathBuf>,
+    pub roots: Vec<PathBuf>,
+}
+
+impl Lookup {
+    /// A project's: its `game=` folders and its `[map] root=`s.
+    pub fn of(project: &crate::project::Project) -> Lookup {
+        Lookup {
+            game: project.game.clone(),
+            roots: project.roots.clone(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.game.is_empty() && self.roots.is_empty()
+    }
+
+    /// Opens every layer. Never fails: a game archive or a root that can't
+    /// be opened is left out and reported (`path: error`), and the rest
+    /// still apply; a game folder or root that doesn't exist adds nothing.
+    pub fn open(&self) -> (Game, Vec<String>) {
+        let (mut game, mut errors) = Game::open(&self.game);
+        for root in self.roots.iter().filter(|r| r.exists()) {
+            if let Err(e) = game.0.push(root) {
+                errors.push(e);
+            }
+        }
+        (game, errors)
+    }
+
+    /// Does a change to `path` change the game's scripts ([`scripts`]):
+    /// an archive or a script of a game folder ([`affects`]), a root map
+    /// itself, or a script in a root folder?
+    pub fn scripts_affected_by(&self, path: &Path) -> bool {
+        self.game.iter().any(|folder| affects(folder, path))
+            || self.roots.iter().any(|root| path == root || affects(root, path))
+    }
+
+    /// Does a change to `path` change what these layers give of the files
+    /// the caller reads: in a game folder, what `in_game` says (a change to
+    /// one of its archives, or to one of those files in it); in a root,
+    /// anything (the root map itself, or a file under a root folder).
+    pub fn affected_by(&self, path: &Path, in_game: impl Fn(&Path, &Path) -> bool) -> bool {
+        self.game.iter().any(|folder| in_game(folder, path)) || self.roots.iter().any(|root| path.starts_with(root))
+    }
 }
 
 /// The game's archives, in the order it opens them: each one over the

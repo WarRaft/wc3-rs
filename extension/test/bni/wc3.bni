@@ -1,6 +1,6 @@
 // The project manifest: this folder and everything below it is one project.
 
-[project]
+[code]
 sources=src
 
 [jass]

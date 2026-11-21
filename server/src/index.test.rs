@@ -5,7 +5,7 @@ use crate::project::tests::TempDir;
 /// A workspace with `files` (name, text) in one project, all on disk.
 fn workspace(name: &str, files: &[(&str, &str)]) -> (TempDir, Workspace) {
     let tmp = TempDir::new(name);
-    std::fs::write(tmp.0.join("wc3.bni"), "[project]\nsources=.\n").unwrap();
+    std::fs::write(tmp.0.join("wc3.bni"), "[code]\nsources=.\n").unwrap();
     for (file, text) in files {
         std::fs::write(tmp.0.join(file), text).unwrap();
     }

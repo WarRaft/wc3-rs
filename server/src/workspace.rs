@@ -43,6 +43,7 @@ use parser_rs::Occurrence;
 use crate::analysis;
 use crate::document::{Document, Language};
 use crate::map;
+use crate::names::Names;
 use crate::project::{self, Project, Projects};
 use crate::protocol::ServerMsg;
 use w3abdhqtu_rs::{Kind, Metadata};
@@ -60,11 +61,14 @@ struct Entry {
     /// For the text form of object data, the game's metadata it was last
     /// checked with (empty outside a project with a game).
     objects: Option<Arc<Metadata>>,
+    /// For the text form of regions, terrain or map info, the names its
+    /// ids show as (`names`), from its project's layers.
+    names: Option<Arc<Names>>,
 }
 
 impl Entry {
     fn new(doc: Document, open: bool) -> Entry {
-        Entry { doc, open, symbols: Vec::new(), project: None, game: false, objects: None }
+        Entry { doc, open, symbols: Vec::new(), project: None, game: false, objects: None, names: None }
     }
 
     fn game(doc: Document, open: bool) -> Entry {
@@ -89,8 +93,12 @@ pub struct Workspace {
     /// those the project excludes too: a manifest change re-checks them
     /// without reading the map again.
     maps: HashMap<PathBuf, Vec<String>>,
+    /// The maps among `maps` that are a `[map] root=` of their project:
+    /// their files go through the project's whole lookup. Any other map
+    /// stands alone over the game (see `lookup`).
+    root_maps: HashSet<PathBuf>,
     /// The game files of each set of `game=` folders, in their order.
-    games: HashMap<Vec<PathBuf>, Vec<String>>,
+    games: HashMap<crate::game::Lookup, Vec<String>>,
     /// The game files each project (by root) sees.
     project_games: HashMap<PathBuf, Vec<String>>,
     /// The game files of the project the last name query came from: a
@@ -101,6 +109,9 @@ pub struct Workspace {
     context: std::sync::Mutex<Option<Vec<String>>>,
     /// The game's metadata for the text forms of object data.
     objects: crate::objects::Cache,
+    /// The names ids show as, for the text forms of regions, terrain and
+    /// map info.
+    names: crate::names::Cache,
     /// Files to analyze and report.
     dirty: HashSet<String>,
     /// Files the editor should forget: they left the model.
@@ -190,6 +201,12 @@ impl Workspace {
     /// the editor's text.
     pub fn disk_changed(&mut self, paths: &[PathBuf]) {
         // The game's metadata changed: check the object-data texts again.
+        // The names changed: show the texts' hints again.
+        if self.names.disk_changed(paths) {
+            let texts = self.files.iter().filter(|(_, e)| e.names.is_some());
+            let ids: Vec<String> = texts.map(|(id, _)| id.clone()).collect();
+            self.dirty.extend(ids);
+        }
         if self.objects.disk_changed(paths) {
             let texts = self.files.iter().filter(|(_, e)| {
                 e.doc.language == Language::Bni
@@ -207,12 +224,8 @@ impl Workspace {
         // every set of folders with it in are read again.
         let mut game_changed = false;
         for path in paths {
-            let stale: Vec<Vec<PathBuf>> = self
-                .games
-                .keys()
-                .filter(|stack| stack.iter().any(|folder| crate::game::affects(folder, path)))
-                .cloned()
-                .collect();
+            let stale: Vec<crate::game::Lookup> =
+                self.games.keys().filter(|lookup| lookup.scripts_affected_by(path)).cloned().collect();
             for stack in stale {
                 self.games.remove(&stack);
                 game_changed = true;
@@ -271,8 +284,12 @@ impl Workspace {
                 let Some(path) = self.files.get(id).and_then(|e| e.doc.path.clone()) else {
                     return (None, None);
                 };
-                let objects = self.files[id].doc.language == Language::Bni;
-                let objects = objects.then(|| self.object_metadata(&path)).flatten();
+                let bni = self.files[id].doc.language == Language::Bni;
+                let objects = bni.then(|| self.object_metadata(&path)).flatten();
+                if bni && crate::hints::has_names(&path) {
+                    let names = self.names(&path);
+                    self.files.get_mut(id).expect("listed").names = Some(names);
+                }
                 (self.settings_for(&path), objects)
             })
             .collect();
@@ -286,7 +303,7 @@ impl Workspace {
             let a = analysis::analyze(&entry.doc, project.as_deref(), entry.open, objects.as_deref());
             ((*id).clone(), entry.doc.version, a)
         });
-        let quiet: HashSet<String> = ids.iter().filter(|id| self.is_map_blizzard(id)).cloned().collect();
+        let quiet: HashSet<String> = ids.iter().filter(|id| self.is_map_script(id)).cloned().collect();
         let roots: HashMap<String, Option<PathBuf>> =
             jobs.iter().map(|(id, _, p, _)| ((*id).clone(), p.as_ref().map(|p| p.root.clone()))).collect();
         let mut objects: HashMap<String, Option<Arc<Metadata>>> =
@@ -308,7 +325,7 @@ impl Workspace {
     /// The set of game files read together with the game file `id` (or,
     /// for `None`, with a file outside every project): the last name
     /// query's project's, if it has `id`; else the first set (by `game=`
-    /// folders) that has it. Each game path appears once in a set, so a
+    /// folders and map roots) that has it. Each game path appears once in a set, so a
     /// name never resolves to two of the game's files.
     fn game_set(&self, id: Option<&str>) -> Option<&Vec<String>> {
         let has = |ids: &Vec<String>| id.is_none_or(|id| ids.iter().any(|g| g == id));
@@ -316,8 +333,9 @@ impl Workspace {
         if let Some(ctx) = context.filter(|c| has(c)) {
             return self.games.values().find(|ids| **ids == ctx);
         }
-        let mut sets: Vec<(&Vec<PathBuf>, &Vec<String>)> = self.games.iter().filter(|(_, ids)| has(ids)).collect();
-        sets.sort();
+        let mut sets: Vec<(&crate::game::Lookup, &Vec<String>)> =
+            self.games.iter().filter(|(_, ids)| has(ids)).collect();
+        sets.sort_by(|a, b| (&a.0.game, &a.0.roots, a.1).cmp(&(&b.0.game, &b.0.roots, b.1)));
         sets.first().map(|(_, ids)| *ids)
     }
 
@@ -376,9 +394,10 @@ impl Workspace {
         } else {
             HashSet::new()
         };
-        // A map's own Blizzard.j replaces the game's for that map's files,
-        // and no other file sees it.
-        let my_blizzard = self.map_of(id).and_then(|m| self.map_blizzard(m));
+        // A map that isn't a root: its own copies of the game's scripts
+        // replace the game's for its files, and no other file sees them.
+        let mine: Vec<&str> = self.map_of(id).map(|m| self.map_scripts(m)).unwrap_or_default();
+        let mine_kinds: Vec<Script> = mine.iter().filter_map(|f| Script::of(Path::new(f))).collect();
         let project = me.and_then(|e| e.project.clone()).filter(|_| game.is_none());
         let project_games: HashSet<&str> = project
             .as_ref()
@@ -391,12 +410,10 @@ impl Workspace {
             let visible = match (&game, &project) {
                 (Some(stack), _) => stack.contains(fid.as_str()) && sees(fid),
                 (None, Some(root)) => {
-                    let replaced = my_blizzard.is_some() && Script::of(Path::new(fid)) == Some(Script::Blizzard);
+                    let replaced = Script::of(Path::new(fid)).is_some_and(|s| mine_kinds.contains(&s));
                     (project_games.contains(fid.as_str()) && sees(fid) && !replaced)
-                        || (!e.game
-                            && e.project.as_ref() == Some(root)
-                            && shares(fid)
-                            && (my_blizzard == Some(fid.as_str()) || !self.is_map_blizzard(fid)))
+                        || (mine.contains(&fid.as_str()) && sees(fid))
+                        || (!e.game && e.project.as_ref() == Some(root) && shares(fid) && !self.is_map_script(fid))
                 }
                 (None, None) => {
                     if e.game {
@@ -415,19 +432,25 @@ impl Workspace {
         self.maps.keys().find(|m| Path::new(id).starts_with(m)).map(PathBuf::as_path)
     }
 
-    /// The map's own `Scripts\Blizzard.j`, if it has one in the model.
-    fn map_blizzard(&self, map: &Path) -> Option<&str> {
-        self.maps
-            .get(map)?
-            .iter()
-            .find(|id| is_blizzard_in(map, id) && self.files.contains_key(*id))
+    /// The own copies of the game's scripts (`Scripts\common.j`,
+    /// `Scripts\Blizzard.j`, `Scripts\common.ai`) of a map that isn't a
+    /// root, in the model. A root map's are found by the project's lookup
+    /// like any of its files.
+    fn map_scripts(&self, map: &Path) -> Vec<&str> {
+        if self.root_maps.contains(map) {
+            return Vec::new();
+        }
+        self.maps.get(map).into_iter().flatten()
+            .filter(|id| is_script_in(map, id) && self.files.contains_key(*id))
             .map(String::as_str)
+            .collect()
     }
 
-    /// Is `id` a map's own `Scripts\Blizzard.j`? Maps often carry an
-    /// optimized one, which the game loads instead of its own.
-    pub fn is_map_blizzard(&self, id: &str) -> bool {
-        self.map_of(id).is_some_and(|m| is_blizzard_in(m, id))
+    /// Is `id` the own copy of one of the game's scripts of a map that
+    /// isn't a root? Maps often carry an optimized `Blizzard.j`, which the
+    /// game loads instead of its own.
+    pub fn is_map_script(&self, id: &str) -> bool {
+        self.map_of(id).is_some_and(|m| !self.root_maps.contains(m) && is_script_in(m, id))
     }
 
     /// One file's text and symbols.
@@ -533,8 +556,42 @@ impl Workspace {
     /// project. `None` when `path` isn't object data.
     pub fn object_metadata(&mut self, path: &Path) -> Option<Arc<Metadata>> {
         let kind = Kind::from_path(&path.to_string_lossy())?;
-        let game = self.game_folders(path);
-        Some(self.objects.get(&game, kind))
+        let lookup = self.lookup(path);
+        Some(self.objects.get(&lookup, kind))
+    }
+
+    /// The names (`names::Names`) the ids in the text form at `path` show
+    /// as, from its project's layers.
+    pub fn names(&mut self, path: &Path) -> Arc<Names> {
+        let lookup = self.lookup(path);
+        self.names.get(&lookup)
+    }
+
+    /// The text of file `id` and the names its ids show as, when it's the
+    /// text form of regions, terrain or map info.
+    pub fn names_text(&self, id: &str) -> Option<(&Document, &Names)> {
+        let entry = self.files.get(id)?;
+        Some((&entry.doc, entry.names.as_deref()?))
+    }
+
+    /// Where the files `path` is read with are looked up: its project's
+    /// game folders and map roots (`game::Lookup`); nothing outside a
+    /// project.
+    ///
+    /// A file inside a map that isn't one of the project's roots (a map
+    /// kept in the repository to take things from) is read with that map
+    /// alone over the game: the game folders, then the map.
+    pub fn lookup(&mut self, path: &Path) -> crate::game::Lookup {
+        let Some(project) = self.settings_for(path) else {
+            return crate::game::Lookup::default();
+        };
+        // By the path, so it holds for a map that isn't in the model too
+        // (one only opened, not named by the project at all).
+        let map = path.ancestors().skip(1).find(|a| map::is_map_name(a));
+        match map.filter(|m| !project.roots.iter().any(|r| r == m)) {
+            Some(map) => crate::game::Lookup { game: project.game.clone(), roots: vec![map.to_path_buf()] },
+            None => crate::game::Lookup::of(&project),
+        }
     }
 
     /// Every folder whose changes matter: the workspace folders, and the
@@ -608,6 +665,7 @@ impl Workspace {
         // and the ones the project (still) wants are loaded below if they
         // aren't yet. A new map is read once.
         let mut found_maps = HashMap::new();
+        self.root_maps = maps.iter().filter(|(m, p)| p.roots.contains(m)).map(|(m, _)| m.clone()).collect();
         for (path, project) in maps {
             let ids = match self.maps.remove(&path) {
                 Some(ids) => ids,
@@ -641,12 +699,13 @@ impl Workspace {
             let Some(project) = self.projects.for_file(manifest) else {
                 continue;
             };
-            if project.game.is_empty() {
+            let lookup = crate::game::Lookup::of(&project);
+            if lookup.is_empty() {
                 continue;
             }
-            let ids: Vec<String> = match games.get(&project.game).or_else(|| self.games.get(&project.game)) {
+            let ids: Vec<String> = match games.get(&lookup).or_else(|| self.games.get(&lookup)) {
                 Some(ids) => ids.clone(),
-                None => crate::game::scripts(&project.game)
+                None => crate::game::scripts(&lookup)
                     .into_iter()
                     .map(|(path, doc)| {
                         let id = path_id(&path);
@@ -661,7 +720,7 @@ impl Workspace {
             for id in &ids {
                 wanted.insert(id.clone(), PathBuf::from(id));
             }
-            games.insert(project.game.clone(), ids.clone());
+            games.insert(lookup, ids.clone());
             project_games.insert(project.root.clone(), ids);
         }
         self.games = games;
@@ -699,10 +758,14 @@ impl Workspace {
 }
 
 /// Is `id` the file `Scripts\Blizzard.j` (any case) inside `map`?
-fn is_blizzard_in(map: &Path, id: &str) -> bool {
+/// Is `id` one of the game's scripts (`game::SCRIPTS`) at its place in
+/// `map`, in any case?
+fn is_script_in(map: &Path, id: &str) -> bool {
     Path::new(id).strip_prefix(map).is_ok_and(|rel| {
-        let parts: Vec<String> = rel.iter().map(|p| p.to_string_lossy().to_lowercase()).collect();
-        parts == ["scripts", "blizzard.j"]
+        let rel: Vec<String> = rel.iter().map(|p| p.to_string_lossy().to_lowercase()).collect();
+        crate::game::SCRIPTS
+            .iter()
+            .any(|s| s.to_lowercase().split('\\').map(String::from).collect::<Vec<_>>() == rel)
     })
 }
 

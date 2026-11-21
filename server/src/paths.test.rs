@@ -33,7 +33,7 @@ fn pairs(v: &[(&str, &str)]) -> Vec<(String, String)> {
 #[test]
 fn every_folder_along_a_path_is_a_link() {
     let tmp = tree("paths-links");
-    let src = "[project]\ngame=Games/Warcraft III/Maps\ngame=\"./Games\\Other\" // quoted, backslash\nsources=src,missing/x\n[jass]\ngame=Games\n";
+    let src = "[project]\ngame=Games/Warcraft III/Maps\ngame=\"./Games\\Other\" // quoted, backslash\n[code]\nsources=src,missing/x\n[jass]\ngame=Games\n";
     assert_eq!(
         linked(&tmp.0, src),
         pairs(&[
@@ -63,7 +63,12 @@ fn absolute_paths_link_from_the_top() {
 fn complete_at(root: &Path, line: &str) -> Option<(String, Vec<(String, bool)>)> {
     let col = line.chars().position(|c| c == '|').unwrap() + 1;
     let text = line.replace('|', "");
-    let src = format!("[project]\n{text}\n");
+    let section = match text.split('=').next().unwrap_or("") {
+        "sources" | "exclude" => "code",
+        "root" => "map",
+        _ => "project",
+    };
+    let src = format!("[{section}]\n{text}\n");
     let c = complete(root, &src, 2, col)?;
     let replaced: String = text.chars().skip(c.col - 1).take(c.end_col - c.col).collect();
     Some((replaced, c.entries.into_iter().map(|e| (e.name, e.is_dir)).collect()))
@@ -150,7 +155,7 @@ fn queries_answer_in_the_open_manifest() {
 #[test]
 fn exclude_and_masks_link_and_complete_their_literal_part() {
     let tmp = tree("paths-masks");
-    let src = "[project]\nsources=Games/*/Maps,src/**/*.j\nexclude=src/a.j\n";
+    let src = "[code]\nsources=Games/*/Maps,src/**/*.j\nexclude=src/a.j\n";
     assert_eq!(linked(&tmp.0, src), pairs(&[("Games", "Games"), ("src", "src"), ("src", "src")]));
     assert_eq!(
         complete_at(&tmp.0, "exclude=src/|"),

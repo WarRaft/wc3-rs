@@ -36,6 +36,8 @@ pub mod analysis;
 pub mod cameras;
 pub mod terrain;
 pub mod mapinfo;
+pub mod names;
+pub mod hints;
 pub mod regions;
 pub mod document;
 pub mod game;

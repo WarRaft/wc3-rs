@@ -27,7 +27,7 @@ impl Drop for TempDir {
 fn reads_dialect_and_sources() {
     let tmp = TempDir::new("reads");
     std::fs::create_dir(tmp.0.join("src")).unwrap();
-    let src = "[project]\nsources=src\n\n[jass]\ndialect=vJASS // case-insensitive\n";
+    let src = "[code]\nsources=src\n[jass]\ndialect=vJASS // case-insensitive\n";
     let (project, issues) = load(&tmp.0, src);
     assert!(issues.is_empty(), "{issues:?}");
     assert_eq!(project.root, tmp.0);
@@ -80,8 +80,8 @@ fn unknown_sections_and_keys_are_warnings() {
     assert_eq!(
         messages,
         vec![
-            (1, "unknown section [jas] (expected [project], [jass] or [lint])"),
-            (4, "unknown setting 'source' in [project] (expected 'sources', 'exclude' or 'game')"),
+            (1, "unknown section [jas] (expected [project], [code], [map], [build], [jass] or [lint])"),
+            (4, "unknown setting 'source' in [project] (expected 'game')"),
             (5, "setting without a name"),
         ]
     );
@@ -91,7 +91,7 @@ fn unknown_sections_and_keys_are_warnings() {
 #[test]
 fn missing_and_empty_source_paths_are_warnings() {
     let tmp = TempDir::new("missing");
-    let (project, issues) = load(&tmp.0, "[project]\nsources=nope,,\"with space\"\n");
+    let (project, issues) = load(&tmp.0, "[code]\nsources=nope,,\"with space\"\n");
     assert_eq!(project.sources.len(), 2);
     let messages: Vec<_> = issues.iter().map(|i| i.message.as_str()).collect();
     assert_eq!(
@@ -140,20 +140,20 @@ fn projects_reload_a_changed_manifest() {
 
 #[test]
 fn source_paths_are_normalized() {
-    let (project, _) = load(Path::new("/p"), "[project]\nsources=./src,a/../lib\n");
+    let (project, _) = load(Path::new("/p"), "[code]\nsources=./src,a/../lib\n");
     assert_eq!(project.scopes(), vec![PathBuf::from("/p/src"), PathBuf::from("/p/lib")]);
 }
 
 #[test]
 fn a_project_contains_its_scopes_and_manifest_but_not_hidden_folders() {
-    let (whole, _) = load(Path::new("/p"), "[project]\nsources=.\n");
+    let (whole, _) = load(Path::new("/p"), "[code]\nsources=.\n");
     assert!(whole.contains(Path::new("/p/a.j")));
     assert!(whole.contains(Path::new("/p/deep/er/a.j")));
     assert!(whole.contains(Path::new("/p/m/Map.w3x/war3map.j")), "a map is a folder like any other");
     assert!(!whole.contains(Path::new("/p/.git/a.j")));
     assert!(!whole.contains(Path::new("/q/a.j")));
 
-    let (src, _) = load(Path::new("/p"), "[project]\nsources=src\n");
+    let (src, _) = load(Path::new("/p"), "[code]\nsources=src\n");
     assert!(src.contains(Path::new("/p/src/a.j")));
     assert!(src.contains(Path::new("/p/wc3.bni")));
     assert!(!src.contains(Path::new("/p/other/a.j")));
@@ -280,7 +280,7 @@ fn game_checks() {
 fn backslashes_separate_path_parts() {
     let tmp = TempDir::new("backslash");
     std::fs::create_dir_all(tmp.0.join("a/b")).unwrap();
-    let (project, issues) = load(&tmp.0, "[project]\nsources=a\\b\ngame=.\\a\n");
+    let (project, issues) = load(&tmp.0, "[project]\ngame=.\\a\n[code]\nsources=a\\b\n");
     assert!(issues.is_empty(), "{issues:?}");
     assert_eq!(project.scopes(), vec![tmp.0.join("a/b")]);
     assert_eq!(project.game, vec![tmp.0.join("a")]);
@@ -295,7 +295,7 @@ fn source_masks_and_excludes() {
     for f in ["src/a.j", "src/old/b.j", "maps/A.w3x", "test.j", "c.j"] {
         std::fs::write(tmp.0.join(f), "").unwrap();
     }
-    let src = "[project]\nsources=src,maps/*.w3x,nope/*.j,test.j\nexclude=**/OLD/**,test.j\nexclude=\n";
+    let src = "[code]\nsources=src,maps/*.w3x,nope/*.j,test.j\nexclude=**/OLD/**,test.j\nexclude=\n";
     let (project, issues) = load(&tmp.0, src);
     let got: Vec<_> = issues.iter().map(|i| (i.line, i.message.as_str())).collect();
     assert_eq!(got, vec![(2, "source mask 'nope/*.j' matches nothing"), (4, "empty exclude mask")]);
@@ -315,7 +315,7 @@ fn source_masks_and_excludes() {
 
 #[test]
 fn without_sources_a_project_has_only_its_manifest() {
-    let (project, issues) = load(Path::new("/p"), "[project]\nexclude=test.j\n");
+    let (project, issues) = load(Path::new("/p"), "[code]\nexclude=test.j\n");
     assert!(issues.is_empty(), "{issues:?}");
     assert!(project.contains(Path::new("/p/wc3.bni")));
     assert!(!project.contains(Path::new("/p/a.j")));
@@ -326,11 +326,86 @@ fn without_sources_a_project_has_only_its_manifest() {
 #[test]
 fn every_source_is_a_mask_and_covers_what_is_inside_what_it_matches() {
     for sources in ["sources=.", "sources=m", "sources=M/map.W3X", "sources=**/*.w3x", "sources=m/*"] {
-        let (project, _) = load(Path::new("/p"), &format!("[project]\n{sources}\n"));
+        let (project, _) = load(Path::new("/p"), &format!("[code]\n{sources}\n"));
         assert!(project.contains(Path::new("/p/m/Map.w3x/war3map.j")), "{sources}");
     }
-    let (project, _) = load(Path::new("/p"), "[project]\nsources=**/*.j\nexclude=**/*.w3x\n");
+    let (project, _) = load(Path::new("/p"), "[code]\nsources=**/*.j\nexclude=**/*.w3x\n");
     assert!(project.contains(Path::new("/p/a/b.j")));
     assert!(!project.contains(Path::new("/p/m/Map.w3x/war3map.j")));
 }
 
+
+#[test]
+fn reads_the_map_roots_in_order_and_they_are_sources() {
+    let tmp = TempDir::new("roots");
+    std::fs::create_dir_all(tmp.0.join("map/Units")).unwrap();
+    std::fs::create_dir_all(tmp.0.join("icons")).unwrap();
+    std::fs::write(tmp.0.join("base.W3X"), "").unwrap();
+    std::fs::write(tmp.0.join("notes.txt"), "").unwrap();
+    let src = "[map]\nroot=base.W3X\nroot=./icons\nroot=map\nroot=nope\nroot=notes.txt\nroot=map\nroot=\nroot=a,b\nsize=1\n[map]\n";
+    let (project, issues) = load(&tmp.0, src);
+    assert_eq!(
+        project.roots,
+        ["base.W3X", "icons", "map", "nope", "notes.txt"].map(|r| tmp.0.join(r)).to_vec()
+    );
+    let got: Vec<(usize, Level, &str)> = issues.iter().map(|i| (i.line, i.level, i.message.as_str())).collect();
+    assert_eq!(
+        got,
+        vec![
+            (5, Level::Warning, "root 'nope' does not exist"),
+            (6, Level::Warning, "root 'notes.txt' is a file but not a map: a root is a folder or a map (.w3x, .w3m)"),
+            (7, Level::Warning, "root 'map' is already a root above"),
+            (8, Level::Error, "'root' needs a value: a folder or a map (.w3x, .w3m)"),
+            (9, Level::Error, "'root' takes a single path (quote a path that contains a comma; add another 'root=' line for another root)"),
+            (10, Level::Warning, "unknown setting 'size' in [map] (expected 'root')"),
+            (11, Level::Warning, "[map] is already at line 1: a project is one map, so these roots are added to it"),
+        ]
+    );
+    // What's in a root is the project's.
+    assert!(project.contains(&tmp.0.join("map/Units/UnitFunc.txt")));
+    assert!(project.contains(&tmp.0.join("base.W3X/war3map.j")));
+    assert!(!project.contains(&tmp.0.join("other.j")));
+}
+
+#[test]
+fn builds_have_unique_names() {
+    let src = "[build]\nname=debug\n[build]\nname=release\nname=x\n[build]\nname=debug\n[build]\nfast=1\n";
+    let (project, issues) = load(Path::new("/p"), src);
+    assert_eq!(project.builds, ["debug", "release"]);
+    let got: Vec<(usize, &str)> = issues.iter().map(|i| (i.line, i.message.as_str())).collect();
+    assert_eq!(
+        got,
+        vec![
+            (5, "a build has one 'name'"),
+            (7, "there's already a build named 'debug'"),
+            (9, "unknown setting 'fast' in [build] (expected 'name')"),
+            (8, "a [build] needs a 'name'"),
+        ]
+    );
+}
+
+#[test]
+fn code_settings_belong_in_code() {
+    let tmp = TempDir::new("code-section");
+    std::fs::create_dir_all(tmp.0.join("src")).unwrap();
+    let (project, issues) = load(&tmp.0, "[project]\nsources=src\nexclude=x\n[code]\nsources=src\nexclude=old\ngame=x\n");
+    let got: Vec<(usize, Level, &str)> = issues.iter().map(|i| (i.line, i.level, i.message.as_str())).collect();
+    assert_eq!(
+        got,
+        vec![
+            (2, Level::Error, "'sources' is code's: it goes in [code] (the map's files are its [map] root= lines)"),
+            (3, Level::Error, "'exclude' is code's: it goes in [code] (the map's files are its [map] root= lines)"),
+            (7, Level::Warning, "unknown setting 'game' in [code] (expected 'sources' or 'exclude')"),
+        ]
+    );
+    assert_eq!(project.sources.len(), 1);
+    assert_eq!(project.exclude.len(), 1);
+}
+
+#[test]
+fn exclude_is_for_code_and_leaves_the_roots_alone() {
+    let (project, _) = load(Path::new("/p"), "[code]\nsources=src\nexclude=**/old/**\n[map]\nroot=map\n");
+    assert!(!project.contains(Path::new("/p/src/old/a.j")));
+    assert!(project.contains(Path::new("/p/map/old/a.j")));
+    assert!(!project.contains(Path::new("/p/maps/Kept.w3x/war3map.j")), "a map neither code nor root isn't the project's");
+}

@@ -49,6 +49,26 @@ pub fn diagnostics(path: Option<&Path>, doc: &bni_rs::Document) -> Vec<parser_rs
     errors
 }
 
+/// The colors of a region file's text form, for the editor's color
+/// picker: JSON `[[line, character, end line, end character, red, green,
+/// blue, alpha], ...]`, the range being the value's, in editor
+/// coordinates.
+pub fn colors(text: &str) -> String {
+    let doc = bni_rs::parse(text);
+    let lines = crate::document::LineIndex::new(text);
+    let items: Vec<String> = w3r_rs::text::colors(&doc)
+        .iter()
+        .map(|(span, [r, g, b, a])| {
+            let range = lines.span(text, *span);
+            format!(
+                "[{},{},{},{},{r},{g},{b},{a}]",
+                range.start.line, range.start.character, range.end.line, range.end.character
+            )
+        })
+        .collect();
+    format!("[{}]", items.join(","))
+}
+
 #[cfg(test)]
 #[path = "regions.test.rs"]
 mod tests;

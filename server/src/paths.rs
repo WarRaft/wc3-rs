@@ -48,22 +48,23 @@ pub struct Entry {
     pub is_dir: bool,
 }
 
-/// The keys whose values are paths, and whether files count too.
-fn path_key(item: &Item) -> Option<bool> {
-    match item.key.as_ref()?.text.as_str() {
-        "game" => Some(false),
-        "sources" | "exclude" => Some(true),
+/// The keys of section `section` whose values are paths, and whether
+/// files count too: `[project] game`, `[code] sources`, `exclude`, `[map] root`
+/// (a folder or a map).
+fn path_key(section: &str, item: &Item) -> Option<bool> {
+    match (section, item.key.as_ref()?.text.as_str()) {
+        ("project", "game") => Some(false),
+        ("code", "sources" | "exclude") | ("map", "root") => Some(true),
         _ => None,
     }
 }
 
-/// The `[project]` items whose values are paths, and whether files count.
+/// The items whose values are paths, and whether files count.
 fn path_items(doc: &bni_rs::ast::Document) -> impl Iterator<Item = (&Item, bool)> {
     doc.sections
         .iter()
-        .filter(|s| s.name.text == "project")
-        .flat_map(|s| s.items.iter())
-        .filter_map(|i| path_key(i).map(|files| (i, files)))
+        .flat_map(|s| s.items.iter().map(move |i| (s.name.text.as_str(), i)))
+        .filter_map(|(s, i)| path_key(s, i).map(|files| (i, files)))
 }
 
 /// A field's characters with their columns, outer whitespace dropped.

@@ -3,7 +3,7 @@ use crate::project::tests::TempDir;
 
 fn workspace(name: &str, files: &[(&str, &str)]) -> (TempDir, Workspace) {
     let tmp = TempDir::new(name);
-    std::fs::write(tmp.0.join("wc3.bni"), "[project]\nsources=.\n").unwrap();
+    std::fs::write(tmp.0.join("wc3.bni"), "[code]\nsources=.\n").unwrap();
     for (file, text) in files {
         std::fs::write(tmp.0.join(file), text).unwrap();
     }
@@ -176,7 +176,7 @@ fn angelscript_rename_conflicts_only_within_the_namespace() {
 #[test]
 fn renames_in_maps_too_but_not_in_the_games_archives() {
     let (tmp, mut ws) = workspace("ren-map", &[("lib.j", LIB)]);
-    std::fs::write(tmp.0.join("wc3.bni"), "[project]\nsources=.\n").unwrap();
+    std::fs::write(tmp.0.join("wc3.bni"), "[code]\nsources=.\n").unwrap();
     ws.disk_changed(&[tmp.0.join("wc3.bni")]);
     crate::map::tests::make_map(&tmp.0.join("Test.w3x"), &[("war3map.j", USER)]);
     ws.disk_changed(&[tmp.0.join("Test.w3x")]);

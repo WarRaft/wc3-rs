@@ -5,10 +5,20 @@
 //!
 //! ```ini
 //! [project]
-//! sources=src,lib,maps/*.w3x
-//! exclude=**/old/**,test.j
 //! game=C:/Games/Warcraft III
 //! game=../my-common-j
+//!
+//! [code]
+//! sources=src,lib
+//! exclude=**/old/**,test.j
+//!
+//! [map]
+//! root=base.w3x
+//! root=../shared/map
+//! root=map
+//!
+//! [build]
+//! name=debug
 //!
 //! [jass]
 //! dialect=vjass
@@ -42,19 +52,31 @@ pub struct Project {
     /// `[jass] dialect=`: the dialect of `.j` files whose header declares
     /// none. A header always wins.
     pub jass_dialect: Option<jass_rs::Dialect>,
-    /// `[project] sources=`: what makes up the project, as masks
-    /// resolved against `root`, in the order written. A plain path is a
-    /// mask without wildcards. A file is the project's when a mask
-    /// matches it or a folder (or map) it's in; see `glob`. Without
-    /// `sources` the project has no files but its manifest.
+    /// `[code] sources=`: the project's code, as masks resolved against
+    /// `root`, in the order written. A plain path is a mask without
+    /// wildcards. A file is code when a mask matches it or a folder (or
+    /// map) it's in; see `glob`. The map's files are the project's by its
+    /// `roots`, not by these.
     pub sources: Vec<Glob>,
-    /// `[project] exclude=`: masks of what isn't part of the project, even
-    /// inside its sources.
+    /// `[code] exclude=`: masks of what isn't code, even inside its
+    /// sources. It doesn't touch the roots.
     pub exclude: Vec<Glob>,
+    /// The roots as masks: everything in each is the project's.
+    root_masks: Vec<Glob>,
     /// `[project] game=`: the game folders, resolved against `root` (an
     /// absolute path stays as written), in the order written. A file in a
     /// later folder overrides the same file in an earlier one; see `game`.
     pub game: Vec<PathBuf>,
+    /// `[map] root=`: the map's roots, resolved against `root` (an
+    /// absolute path stays as written), in the order written. Each is a
+    /// folder or a map whose top is the map's top (`war3map.w3i`,
+    /// `Units\UnitFunc.txt`), each over the ones before, and all over the
+    /// game's folders: see `game::Lookup`. A project is one map.
+    /// Everything in a root is the project's, as code is.
+    pub roots: Vec<PathBuf>,
+    /// `[build] name=`: the names of the build scenarios, in order. What
+    /// a build does comes with the builder.
+    pub builds: Vec<String>,
     /// `[lint] <rule>=off|warning|error`: rules switched or re-levelled
     /// from their defaults (`parser_rs::RULES`), by rule id.
     pub lint: HashMap<String, LintSetting>,
@@ -128,10 +150,11 @@ impl Project {
         self.root.join(MANIFEST)
     }
 
-    /// Where the project's files are: the folders its `sources` look in.
+    /// Where the project's files are: the folders its `sources` look in,
+    /// and its roots.
     pub fn scopes(&self) -> Vec<PathBuf> {
         let mut scopes: Vec<PathBuf> = Vec::new();
-        for mask in &self.sources {
+        for mask in self.sources.iter().chain(&self.root_masks) {
             if !scopes.contains(&mask.base) {
                 scopes.push(mask.base.clone());
             }
@@ -154,8 +177,9 @@ impl Project {
             let parts: Vec<_> = path.components().skip(base.components().count()).collect();
             !parts.split_last().is_some_and(|(_, dirs)| dirs.iter().any(|c| is_hidden(c.as_os_str())))
         };
-        self.sources.iter().any(|m| m.matches(path) && visible(&m.base))
-            && !self.exclude.iter().any(|m| m.matches(path))
+        let code = self.sources.iter().any(|m| m.matches(path) && visible(&m.base))
+            && !self.exclude.iter().any(|m| m.matches(path));
+        code || self.root_masks.iter().any(|m| m.matches(path) && visible(&m.base))
     }
 }
 
@@ -210,6 +234,7 @@ pub fn load(root: &Path, src: &str) -> (Project, Vec<Issue>) {
     };
     let mut issues = Vec::new();
     let mut dialect_line: Option<usize> = None;
+    let mut map_line: Option<usize> = None;
 
     for section in &doc.sections {
         let items = &section.items;
@@ -217,14 +242,45 @@ pub fn load(root: &Path, src: &str) -> (Project, Vec<Issue>) {
             "project" => {
                 for item in items {
                     match key_of(item, &mut issues) {
-                        Some("sources") => read_sources(root, item, &mut project, &mut issues),
-                        Some("exclude") => read_exclude(root, item, &mut project, &mut issues),
                         Some("game") => read_game(root, item, &mut project, &mut issues),
+                        Some(key @ ("sources" | "exclude")) => issues.push(at_name(
+                            item.key.as_ref().expect("key_of returned a key"),
+                            Level::Error,
+                            format!("'{key}' is code's: it goes in [code] (the map's files are its [map] root= lines)"),
+                        )),
                         Some(_) => unknown_key(item, "project", &mut issues),
                         None => {}
                     }
                 }
             }
+            "code" => {
+                for item in items {
+                    match key_of(item, &mut issues) {
+                        Some("sources") => read_sources(root, item, &mut project, &mut issues),
+                        Some("exclude") => read_exclude(root, item, &mut project, &mut issues),
+                        Some(_) => unknown_key(item, "code", &mut issues),
+                        None => {}
+                    }
+                }
+            }
+            "map" => {
+                if let Some(first) = map_line {
+                    issues.push(at_name(
+                        &section.name,
+                        Level::Warning,
+                        format!("[map] is already at line {first}: a project is one map, so these roots are added to it"),
+                    ));
+                }
+                map_line.get_or_insert(section.line);
+                for item in items {
+                    match key_of(item, &mut issues) {
+                        Some("root") => read_root(root, item, &mut project, &mut issues),
+                        Some(_) => unknown_key(item, "map", &mut issues),
+                        None => {}
+                    }
+                }
+            }
+            "build" => read_build(section, &mut project, &mut issues),
             "jass" => {
                 for item in items {
                     match key_of(item, &mut issues) {
@@ -257,7 +313,7 @@ pub fn load(root: &Path, src: &str) -> (Project, Vec<Issue>) {
             other => issues.push(at_name(
                 &section.name,
                 Level::Warning,
-                format!("unknown section [{other}] (expected [project], [jass] or [lint])"),
+                format!("unknown section [{other}] (expected [project], [code], [map], [build], [jass] or [lint])"),
             )),
         }
     }
@@ -284,7 +340,10 @@ fn key_of<'a>(item: &'a Item, issues: &mut Vec<Issue>) -> Option<&'a str> {
 fn unknown_key(item: &Item, section: &str, issues: &mut Vec<Issue>) {
     let key = item.key.as_ref().expect("key_of returned a key");
     let expected = match section {
-        "project" => "sources', 'exclude' or 'game",
+        "project" => "game",
+        "code" => "sources' or 'exclude",
+        "map" => "root",
+        "build" => "name",
         _ => "dialect",
     };
     issues.push(at_name(
@@ -376,6 +435,80 @@ fn read_game(root: &Path, item: &Item, project: &mut Project, issues: &mut Vec<I
         issues.push(at_field(field, Level::Warning, format!("game path '{text}' is not a folder")));
     }
     project.game.push(path);
+}
+
+/// `root=<folder or map>`: one path, absolute or relative to the project
+/// root; each `root=` line goes on top of the earlier ones. Everything
+/// in it is the project's. One that doesn't exist is only a warning, like
+/// a game folder.
+fn read_root(root: &Path, item: &Item, project: &mut Project, issues: &mut Vec<Issue>) {
+    let key = item.key.as_ref().expect("key_of returned a key");
+    let [field] = item.fields.as_slice() else {
+        let message = if item.fields.is_empty() {
+            "'root' needs a value: a folder or a map (.w3x, .w3m)"
+        } else {
+            "'root' takes a single path (quote a path that contains a comma; add another 'root=' line for another root)"
+        };
+        issues.push(at_name(key, Level::Error, message.into()));
+        return;
+    };
+    let text = field.text();
+    let text = text.trim();
+    if text.is_empty() {
+        issues.push(at_field(field, Level::Error, "'root' needs a value: a folder or a map (.w3x, .w3m)".into()));
+        return;
+    }
+    let path = resolve(root, text);
+    if project.roots.contains(&path) {
+        issues.push(at_field(field, Level::Warning, format!("root '{text}' is already a root above")));
+        return;
+    }
+    if !path.exists() {
+        issues.push(at_field(field, Level::Warning, format!("root '{text}' does not exist")));
+    } else if path.is_file() && !crate::map::is_archive(&path) {
+        issues.push(at_field(
+            field,
+            Level::Warning,
+            format!("root '{text}' is a file but not a map: a root is a folder or a map (.w3x, .w3m)"),
+        ));
+    }
+    project.root_masks.push(Glob::new(root, text));
+    project.roots.push(path);
+}
+
+/// `[build]`: one build scenario, named by `name=`, unique.
+fn read_build(section: &bni_rs::ast::Section, project: &mut Project, issues: &mut Vec<Issue>) {
+    let mut name: Option<String> = None;
+    for item in &section.items {
+        match key_of(item, issues) {
+            Some("name") => {
+                let key = item.key.as_ref().expect("key_of returned a key");
+                if name.is_some() {
+                    issues.push(at_name(key, Level::Error, "a build has one 'name'".into()));
+                    continue;
+                }
+                let [field] = item.fields.as_slice() else {
+                    issues.push(at_name(key, Level::Error, "'name' needs a single value".into()));
+                    continue;
+                };
+                let text = field.text().trim().to_string();
+                if text.is_empty() {
+                    issues.push(at_field(field, Level::Error, "'name' needs a value".into()));
+                } else if project.builds.contains(&text) {
+                    issues.push(at_field(field, Level::Error, format!("there's already a build named '{text}'")));
+                    name = Some(text);
+                } else {
+                    project.builds.push(text.clone());
+                    name = Some(text);
+                }
+            }
+            Some(_) => unknown_key(item, "build", issues),
+            None => {}
+        }
+    }
+    if name.is_none() {
+        issues.push(at_name(&section.name, Level::Error, "a [build] needs a 'name'".into()));
+    }
 }
 
 fn read_sources(root: &Path, item: &Item, project: &mut Project, issues: &mut Vec<Issue>) {

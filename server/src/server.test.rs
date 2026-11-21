@@ -136,7 +136,7 @@ fn unknown_languages_and_documents_are_ignored() {
 #[test]
 fn init_reports_every_project_file_without_opening_it() {
     let tmp = TempDir::new("server-init");
-    std::fs::write(tmp.0.join(project::MANIFEST), "[project]\nsources=.\n[jass]\ndialect=vjass\n").unwrap();
+    std::fs::write(tmp.0.join(project::MANIFEST), "[code]\nsources=.\n[jass]\ndialect=vjass\n").unwrap();
     std::fs::write(tmp.0.join("bad.j"), "globals\n    integer library = 1\nendglobals").unwrap();
     let bad = tmp.0.join("bad.j").to_str().unwrap().to_string();
 
@@ -207,7 +207,7 @@ fn queries_are_answered_after_the_edits_before_them() {
 fn fs_messages_change_maps_and_the_model_follows() {
     use crate::protocol::{fs_flags, FsOp};
     let tmp = TempDir::new("server-fs");
-    std::fs::write(tmp.0.join(project::MANIFEST), "[project]\nsources=.\n").unwrap();
+    std::fs::write(tmp.0.join(project::MANIFEST), "[code]\nsources=.\n").unwrap();
     let map = tmp.0.join("Map.w3x");
     crate::map::tests::make_map(&map, &[("war3map.j", "function main takes nothing returns nothing\nendfunction\n")]);
     let script = map.join("war3map.j").to_string_lossy().into_owned();

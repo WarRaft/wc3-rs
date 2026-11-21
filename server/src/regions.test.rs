@@ -26,3 +26,9 @@ fn diagnostics_only_for_region_text() {
     assert!(diagnostics(Some(Path::new("x.ini")), &doc).is_empty());
     assert!(diagnostics(Some(Path::new("war3map.w3r")), &bni_rs::parse("[a]\n")).is_empty());
 }
+
+#[test]
+fn colors_for_the_picker() {
+    let text = "[w3r]\n[A]\nweather=RAhr\ncolor=0,255,0,255\n";
+    assert_eq!(colors(text), "[[3,6,3,17,0,255,0,255]]");
+}

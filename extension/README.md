@@ -35,9 +35,9 @@ Warcraft III language support for VS Code.
   such as the default JASS dialect. Every file of the project is analyzed,
   open or not, so its problems are listed right away (see the repository
   README).
-- `wc3.bni` paths: `game=`, `sources=` and `exclude=` complete from the disk as you
+- `wc3.bni` paths: `game=`, `sources=`, `exclude=` and `root=` complete from the disk as you
   type, and each folder along a path is a link that reveals it.
-- Maps: the scripts inside `.w3x` / `.w3m` maps a project's `sources=` matches are project
+- Maps: the scripts inside a `.w3x` / `.w3m` that's a project's `[map] root=` (or that its `[code] sources=` matches) are project
   files too (`war3map.j`, `war3map.lua`, ...), analyzed and searchable
   like any other.
 - Maps as folders: **Open Map as Folder** (in the Explorer's context

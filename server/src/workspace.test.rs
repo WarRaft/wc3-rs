@@ -55,7 +55,7 @@ fn without_sources_only_the_manifest_is_loaded() {
 #[test]
 fn sources_dot_is_the_whole_folder() {
     let tmp = project("ws-whole", &[
-        ("wc3.bni", "[project]\nsources=.\n"),
+        ("wc3.bni", "[code]\nsources=.\n"),
         ("a.j", OK),
         ("deep/b.zn", "library L {}"),
         ("notes.txt", "not code"),
@@ -70,7 +70,7 @@ fn sources_dot_is_the_whole_folder() {
 #[test]
 fn sources_limit_the_files_and_the_manifest_is_always_one() {
     let tmp = project("ws-sources", &[
-        ("wc3.bni", "[project]\nsources=src\n"),
+        ("wc3.bni", "[code]\nsources=src\n"),
         ("src/a.j", OK),
         ("src/.cache/x.j", BAD),
         ("tools/b.j", BAD),
@@ -82,9 +82,9 @@ fn sources_limit_the_files_and_the_manifest_is_always_one() {
 #[test]
 fn a_nested_project_owns_its_files() {
     let tmp = project("ws-nested", &[
-        ("wc3.bni", "[project]\nsources=.\n"),
+        ("wc3.bni", "[code]\nsources=.\n"),
         ("a.j", OK),
-        ("inner/wc3.bni", "[project]\nsources=.\n[jass]\ndialect=vjass\n"),
+        ("inner/wc3.bni", "[code]\nsources=.\n[jass]\ndialect=vjass\n"),
         ("inner/b.j", "globals\n    integer library = 1\nendglobals"),
     ]);
     let mut ws = init(&tmp.0);
@@ -103,7 +103,7 @@ fn files_without_a_project_are_not_loaded() {
 
 #[test]
 fn opening_a_file_from_an_unknown_project_loads_that_project() {
-    let tmp = project("ws-open", &[("wc3.bni", "[project]\nsources=.\n"), ("a.j", OK), ("b.j", BAD)]);
+    let tmp = project("ws-open", &[("wc3.bni", "[code]\nsources=.\n"), ("a.j", OK), ("b.j", BAD)]);
     let mut ws = Workspace::default(); // no workspace folders at all
     let a = tmp.0.join("a.j");
     ws.open(path_id(&a), Some(a.clone()), Language::Jass, 3, OK.into());
@@ -116,7 +116,7 @@ fn opening_a_file_from_an_unknown_project_loads_that_project() {
 
 #[test]
 fn closing_a_project_file_reverts_it_to_disk() {
-    let tmp = project("ws-close", &[("wc3.bni", "[project]\nsources=.\n"), ("a.j", OK)]);
+    let tmp = project("ws-close", &[("wc3.bni", "[code]\nsources=.\n"), ("a.j", OK)]);
     let mut ws = init(&tmp.0);
     reports(&mut ws);
     let a = tmp.0.join("a.j");
@@ -139,7 +139,7 @@ fn closing_anything_else_clears_it() {
 
 #[test]
 fn disk_changes_update_add_and_drop_files() {
-    let tmp = project("ws-disk", &[("wc3.bni", "[project]\nsources=.\n"), ("a.j", OK)]);
+    let tmp = project("ws-disk", &[("wc3.bni", "[code]\nsources=.\n"), ("a.j", OK)]);
     let mut ws = init(&tmp.0);
     reports(&mut ws);
     let (a, b) = (tmp.0.join("a.j"), tmp.0.join("b.j"));
@@ -157,7 +157,7 @@ fn disk_changes_update_add_and_drop_files() {
 
 #[test]
 fn the_editor_text_wins_over_the_disk_while_open() {
-    let tmp = project("ws-open-wins", &[("wc3.bni", "[project]\nsources=.\n"), ("a.j", OK)]);
+    let tmp = project("ws-open-wins", &[("wc3.bni", "[code]\nsources=.\n"), ("a.j", OK)]);
     let mut ws = init(&tmp.0);
     let a = tmp.0.join("a.j");
     ws.open(path_id(&a), Some(a.clone()), Language::Jass, 5, OK.into());
@@ -170,7 +170,7 @@ fn the_editor_text_wins_over_the_disk_while_open() {
 #[test]
 fn a_manifest_change_reloads_projects_and_re_analyzes_everything() {
     let tmp = project("ws-manifest", &[
-        ("wc3.bni", "[project]\nsources=.\n"),
+        ("wc3.bni", "[code]\nsources=.\n"),
         ("src/a.j", "globals\n    integer library = 1\nendglobals"),
         ("tools/b.j", OK),
     ]);
@@ -181,7 +181,7 @@ fn a_manifest_change_reloads_projects_and_re_analyzes_everything() {
 
     // Narrow the sources and switch to vJASS.
     let manifest = tmp.0.join("wc3.bni");
-    std::fs::write(&manifest, "[project]\nsources=src\n[jass]\ndialect=vjass\n").unwrap();
+    std::fs::write(&manifest, "[code]\nsources=src\n[jass]\ndialect=vjass\n").unwrap();
     ws.disk_changed(&[manifest]);
     let r = reports(&mut ws);
     // tools/b.j left (cleared, reported first); src/a.j is now an error.
@@ -192,7 +192,7 @@ fn a_manifest_change_reloads_projects_and_re_analyzes_everything() {
 #[test]
 fn sources_outside_the_root_are_loaded_and_watched() {
     let tmp = project("ws-outside", &[
-        ("game/wc3.bni", "[project]\nsources=src,../shared\n"),
+        ("game/wc3.bni", "[code]\nsources=src,../shared\n"),
         ("game/src/a.j", OK),
         ("shared/lib.j", OK),
     ]);
@@ -210,7 +210,7 @@ fn sources_outside_the_root_are_loaded_and_watched() {
 
 #[test]
 fn legacy_encodings_are_read_lossily() {
-    let tmp = project("ws-latin1", &[("wc3.bni", "[project]\nsources=.\n")]);
+    let tmp = project("ws-latin1", &[("wc3.bni", "[code]\nsources=.\n")]);
     std::fs::write(tmp.0.join("a.j"), b"// caf\xe9\nfunction F takes nothing returns nothing\nendfunction").unwrap();
     let mut ws = init(&tmp.0);
     let r = reports(&mut ws);
@@ -222,7 +222,7 @@ fn legacy_encodings_are_read_lossily() {
 fn many_files_are_analyzed_in_parallel_in_a_stable_order() {
     let files: Vec<(String, &str)> = (0..40).map(|i| (format!("f{i:02}.j"), if i % 2 == 0 { OK } else { BAD })).collect();
     let refs: Vec<(&str, &str)> = files.iter().map(|(n, t)| (n.as_str(), *t)).collect();
-    let mut all = vec![("wc3.bni", "[project]\nsources=.\n")];
+    let mut all = vec![("wc3.bni", "[code]\nsources=.\n")];
     all.extend(refs);
     let tmp = project("ws-many", &all);
     let mut ws = init(&tmp.0);
@@ -236,7 +236,7 @@ fn many_files_are_analyzed_in_parallel_in_a_stable_order() {
 
 #[test]
 fn scripts_inside_maps_are_project_files() {
-    let tmp = project("ws-maps", &[("wc3.bni", "[project]\nsources=.\n"), ("a.j", OK), (".hidden/x.j", BAD)]);
+    let tmp = project("ws-maps", &[("wc3.bni", "[code]\nsources=.\n"), ("a.j", OK), (".hidden/x.j", BAD)]);
     let map = tmp.0.join("Test.w3x");
     crate::map::tests::make_map(&map, &[("war3map.j", BAD), ("Scripts\\lib.j", OK), ("war3map.w3i", "x")]);
     std::fs::write(tmp.0.join(".hidden/Hidden.w3x"), "").unwrap();
@@ -265,7 +265,7 @@ fn scripts_inside_maps_are_project_files() {
     assert!(ws.file(&path_id(&map.join("Scripts/lib.j"))).is_none());
 
     // A manifest change keeps the map's files without reading it again.
-    std::fs::write(tmp.0.join("wc3.bni"), "[project]\nsources=.\n[jass]\ndialect=vjass\n").unwrap();
+    std::fs::write(tmp.0.join("wc3.bni"), "[code]\nsources=.\n[jass]\ndialect=vjass\n").unwrap();
     ws.disk_changed(&[tmp.0.join("wc3.bni")]);
     assert_eq!(
         names(&tmp.0, &reports(&mut ws)),
@@ -281,7 +281,7 @@ fn scripts_inside_maps_are_project_files() {
 
 #[test]
 fn sources_can_name_a_map() {
-    let tmp = project("ws-map-sources", &[("wc3.bni", "[project]\nsources=Main.w3m\n"), ("a.j", OK)]);
+    let tmp = project("ws-map-sources", &[("wc3.bni", "[code]\nsources=Main.w3m\n"), ("a.j", OK)]);
     crate::map::tests::make_map(&tmp.0.join("Main.w3m"), &[("war3map.j", OK)]);
     crate::map::tests::make_map(&tmp.0.join("Other.w3x"), &[("war3map.j", OK)]);
     let mut ws = init(&tmp.0);
@@ -291,7 +291,7 @@ fn sources_can_name_a_map() {
 #[test]
 fn excluded_files_and_map_scripts_leave_the_model() {
     let tmp = project("ws-exclude", &[
-        ("wc3.bni", "[project]\nsources=.\nexclude=test.j,**/old/**\n"),
+        ("wc3.bni", "[code]\nsources=.\nexclude=test.j,**/old/**\n"),
         ("a.j", OK),
         ("test.j", BAD),
         ("lib/old/b.j", BAD),
@@ -304,14 +304,14 @@ fn excluded_files_and_map_scripts_leave_the_model() {
     );
 
     // Excluding a map's script drops just that file.
-    std::fs::write(tmp.0.join("wc3.bni"), "[project]\nsources=.\nexclude=test.j,**/old/**,**/war3map.lua\n").unwrap();
+    std::fs::write(tmp.0.join("wc3.bni"), "[code]\nsources=.\nexclude=test.j,**/old/**,**/war3map.lua\n").unwrap();
     ws.disk_changed(&[tmp.0.join("wc3.bni")]);
     let r = reports(&mut ws);
     assert_eq!(r[0], (path_id(&tmp.0.join("Map.w3x/war3map.lua")), 0, 0, 0), "cleared first: {r:?}");
     assert!(ws.file(&path_id(&tmp.0.join("Map.w3x/war3map.lua"))).is_none());
 
     // Source masks: only the matching maps.
-    std::fs::write(tmp.0.join("wc3.bni"), "[project]\nsources=*.w3x\n").unwrap();
+    std::fs::write(tmp.0.join("wc3.bni"), "[code]\nsources=*.w3x\n").unwrap();
     ws.disk_changed(&[tmp.0.join("wc3.bni")]);
     reports(&mut ws);
     let mut ids: Vec<_> = ws.all_files().map(|(id, _, _)| id.to_string()).collect();
@@ -333,9 +333,9 @@ fn game_scripts_are_seen_by_their_projects_only() {
     let tmp = project("ws-game", &[
         ("game/wc3/README", ""),
         ("game/ujapi/Scripts/common.j", "native CreateTimer takes nothing returns timer\nnative UjapiOnly takes nothing returns nothing\n"),
-        ("a/wc3.bni", "[project]\ngame=../game/wc3\nsources=.\n"),
+        ("a/wc3.bni", "[project]\ngame=../game/wc3\n[code]\nsources=.\n"),
         ("a/main.j", USE),
-        ("b/wc3.bni", "[project]\ngame=../game/wc3\ngame=../game/ujapi\nsources=.\n"),
+        ("b/wc3.bni", "[project]\ngame=../game/wc3\ngame=../game/ujapi\n[code]\nsources=.\n"),
         ("b/main.j", USE),
     ]);
     let patch = tmp.0.join("game/wc3/War3Patch.mpq");
@@ -407,7 +407,7 @@ fn ai_scripts_see_common_ai_and_map_scripts_blizzard_j() {
 
     let tmp = project("ws-game-ai", &[
         ("game/README", ""),
-        ("p/wc3.bni", "[project]\ngame=../game\nsources=.\n"),
+        ("p/wc3.bni", "[project]\ngame=../game\n[code]\nsources=.\n"),
         ("p/main.j", CALLS),
         ("p/ai/elf.ai", CALLS),
     ]);
@@ -446,7 +446,7 @@ fn an_ai_script_runs_on_its_own() {
     use crate::document::Position;
     use crate::index::{answer, QueryKind};
     let tmp = project("ws-ai-alone", &[
-        ("wc3.bni", "[project]\nsources=.\n"),
+        ("wc3.bni", "[code]\nsources=.\n"),
         ("main.j", "function MapOnly takes nothing returns nothing\n    call Shared()\n    call AiOnly()\nendfunction\n"),
         ("lib.j", "function Shared takes nothing returns nothing\nendfunction\n"),
         ("elf.ai", "function AiOnly takes nothing returns nothing\nendfunction\nfunction main takes nothing returns nothing\n    call AiOnly()\n    call MapOnly()\n    call OtherAi()\nendfunction\n"),
@@ -480,7 +480,7 @@ fn game_folders_are_watched_and_reread() {
     let tmp = project("ws-game-watch", &[
         ("game/Maps/README", ""),
         ("over/README", ""),
-        ("p/wc3.bni", "[project]\ngame=../game\ngame=../over\nsources=.\n"),
+        ("p/wc3.bni", "[project]\ngame=../game\ngame=../over\n[code]\nsources=.\n"),
         ("p/main.j", OK),
     ]);
     let patch = tmp.0.join("game/War3Patch.mpq");
@@ -534,11 +534,11 @@ fn one_file_per_game_path_whichever_project_led_there() {
         ("game/Scripts/Blizzard.j", "function BJ takes nothing returns integer\n    return STATE\nendfunction\n"),
         ("ujapi/Scripts/COMMON.J", "constant integer STATE = 2\n"),
         ("noblizz/Scripts/blizzard.j", ""),
-        ("a/wc3.bni", "[project]\ngame=../game\nsources=.\n"),
+        ("a/wc3.bni", "[project]\ngame=../game\n[code]\nsources=.\n"),
         ("a/main.j", "function F takes nothing returns nothing\n    call BJ()\nendfunction\n"),
-        ("b/wc3.bni", "[project]\ngame=../game\ngame=../ujapi\nsources=.\n"),
+        ("b/wc3.bni", "[project]\ngame=../game\ngame=../ujapi\n[code]\nsources=.\n"),
         ("b/main.j", "function F takes nothing returns nothing\n    call BJ()\nendfunction\n"),
-        ("c/wc3.bni", "[project]\ngame=../game\ngame=../noblizz\nsources=.\n"),
+        ("c/wc3.bni", "[project]\ngame=../game\ngame=../noblizz\n[code]\nsources=.\n"),
         ("c/main.j", "function F takes nothing returns nothing\n    call BJ()\nendfunction\n"),
     ]);
     let mut ws = init(&tmp.0);
@@ -573,7 +573,7 @@ fn a_maps_own_blizzard_j_replaces_the_games_for_that_map() {
     let tmp = project("ws-map-blizzard", &[
         ("game/Scripts/common.j", "native N takes nothing returns nothing\n"),
         ("game/Scripts/Blizzard.j", "function Stock takes nothing returns nothing\nendfunction\n"),
-        ("p/wc3.bni", "[project]\ngame=../game\nsources=.\n"),
+        ("p/wc3.bni", "[project]\ngame=../game\n[code]\nsources=.\n"),
         ("p/main.j", CALLS),
     ]);
     let a = tmp.0.join("p/A.w3x");
@@ -587,7 +587,7 @@ fn a_maps_own_blizzard_j_replaces_the_games_for_that_map() {
     let own = path_id(&a.join("scripts/BLIZZARD.J"));
     let quiet = raw.iter().any(|m| matches!(m, ServerMsg::File { id, diagnostics, .. } if *id == own && diagnostics.is_empty()));
     assert!(quiet, "the map's Blizzard.j is reported without diagnostics");
-    assert!(ws.is_map_blizzard(&own));
+    assert!(ws.is_map_script(&own));
 
     let definition = |file: &Path, line: u32| -> Vec<String> {
         answer(&ws, QueryKind::Definition, &path_id(file), Position::new(line, 10), "")
@@ -615,7 +615,7 @@ fn a_maps_own_blizzard_j_replaces_the_games_for_that_map() {
 fn game_folders_of_a_file() {
     let tmp = project(
         "ws-game-folders",
-        &[("p/wc3.bni", "[project]\ngame=wc3\ngame=ujapi\nsources=maps/*.w3x,src\n"), ("p/wc3/x", "")],
+        &[("p/wc3.bni", "[project]\ngame=wc3\ngame=ujapi\n[code]\nsources=maps/*.w3x,src\n"), ("p/wc3/x", "")],
     );
     let mut ws = Workspace::default();
     let p = tmp.0.join("p");
@@ -635,7 +635,7 @@ fn game_folders_of_a_file() {
 fn object_data_files_are_not_analyzed() {
     // Binary object data in the project's sources isn't text: nothing to
     // report for it.
-    let tmp = project("ws-objects", &[("wc3.bni", "[project]\nsources=.\n"), ("war3map.w3a", "\u{3}\0\0\0garbage"), ("a.j", OK)]);
+    let tmp = project("ws-objects", &[("wc3.bni", "[code]\nsources=.\n"), ("war3map.w3a", "\u{3}\0\0\0garbage"), ("a.j", OK)]);
     let mut ws = init(&tmp.0);
     assert_eq!(names(&tmp.0, &reports(&mut ws)), vec!["a.j", "wc3.bni"]);
 }
@@ -646,7 +646,7 @@ fn object_text_is_checked_with_its_projects_game() {
     let tmp = project(
         "ws-object-text",
         &[
-            ("p/wc3.bni", "[project]\ngame=wc3\nsources=src\n[lint]\nobject-value-range=off\n"),
+            ("p/wc3.bni", "[project]\ngame=wc3\n[code]\nsources=src\n[lint]\nobject-value-range=off\n"),
             ("p/wc3/Units/UnitMetaData.slk", meta),
         ],
     );
@@ -682,10 +682,119 @@ fn object_text_is_checked_with_its_projects_game() {
 #[test]
 fn hover_on_an_object_field() {
     let meta = "C;X1;Y1;K\"ID\"\nC;X2;K\"type\"\nC;X3;K\"field\"\nC;X1;Y2;K\"umvs\"\nC;X2;K\"int\"\nC;X3;K\"Speed\"\n";
-    let tmp = project("ws-object-hover", &[("p/wc3.bni", "[project]\ngame=wc3\nsources=src\n"), ("p/wc3/Units/UnitMetaData.slk", meta)]);
+    let tmp = project("ws-object-hover", &[("p/wc3.bni", "[project]\ngame=wc3\n[code]\nsources=src\n"), ("p/wc3/Units/UnitMetaData.slk", meta)]);
     let mut ws = init(&tmp.0);
     ws.open("wc3obj:/x".into(), Some(tmp.0.join("p/src/war3map.w3u")), Language::Bni, 1, "[w3u]\nversion=2\n[hfoo]\numvs=1\n".into());
     ws.take_reports();
     let answer = crate::index::answer(&ws, crate::index::QueryKind::Hover, "wc3obj:/x", crate::document::Position::new(3, 1), "");
     assert_eq!(answer.text, "**Speed** `umvs`\n\n`int`: a whole number");
+}
+
+#[test]
+fn a_root_replaces_the_games_scripts_like_any_file() {
+    use crate::document::Position;
+    use crate::index::{answer, QueryKind};
+    const CALLS: &str = "function F takes nothing returns nothing\n    call Stock()\n    call Ours()\n    call N()\nendfunction\n";
+    let tmp = project("ws-root-scripts", &[
+        ("game/Scripts/common.j", "native N takes nothing returns nothing\n"),
+        ("game/Scripts/Blizzard.j", "function Stock takes nothing returns nothing\nendfunction\n"),
+        ("p/wc3.bni", "[project]\ngame=../game\n[code]\nsources=src\n[map]\nroot=map\n"),
+        ("p/map/scripts/BLIZZARD.J", "function Ours takes nothing returns nothing\nendfunction\n"),
+        ("p/src/main.j", CALLS),
+    ]);
+    let mut ws = init(&tmp.0.join("p"));
+    reports(&mut ws);
+    let ours = path_id(&tmp.0.join("p/map/scripts/BLIZZARD.J"));
+    let common = path_id(&tmp.0.join("game/Scripts/common.j"));
+    assert!(ws.is_game(&ours), "the root's Blizzard.j is the project's game script");
+    assert!(!ws.is_game(&path_id(&tmp.0.join("game/Scripts/Blizzard.j"))));
+    let main = path_id(&tmp.0.join("p/src/main.j"));
+    let definition = |ws: &Workspace, line: u32| -> Vec<String> {
+        answer(ws, QueryKind::Definition, &main, Position::new(line, 10), "")
+            .locations
+            .into_iter()
+            .map(|l| l.id)
+            .collect()
+    };
+    assert!(definition(&ws, 1).is_empty(), "the game's Blizzard.j is shadowed");
+    assert_eq!(definition(&ws, 2), vec![ours.clone()]);
+    assert_eq!(definition(&ws, 3), vec![common]);
+
+    // Deleted from the root: the game's comes back.
+    std::fs::remove_file(tmp.0.join("p/map/scripts/BLIZZARD.J")).unwrap();
+    ws.disk_changed(&[tmp.0.join("p/map/scripts/BLIZZARD.J")]);
+    reports(&mut ws);
+    assert!(ws.is_game(&path_id(&tmp.0.join("game/Scripts/Blizzard.j"))));
+    assert_eq!(definition(&ws, 1), vec![path_id(&tmp.0.join("game/Scripts/Blizzard.j"))]);
+}
+
+#[test]
+fn a_map_in_the_roots_goes_through_the_whole_chain_any_other_stands_alone() {
+    use crate::document::Position;
+    use crate::index::{answer, QueryKind};
+    const CALLS: &str = "function F takes nothing returns nothing\n    call Stock()\n    call Base()\n    call Kept()\n    call N()\n    call M()\nendfunction\n";
+    let tmp = project("ws-root-map", &[
+        ("game/Scripts/common.j", "native N takes nothing returns nothing\n"),
+        ("game/Scripts/Blizzard.j", "function Stock takes nothing returns nothing\nendfunction\n"),
+        ("p/wc3.bni", "[project]\ngame=../game\n[code]\nsources=src,kept\n[map]\nroot=base.w3x\nroot=map\n"),
+        ("p/map/README", ""),
+        ("p/src/main.j", CALLS),
+    ]);
+    let base = tmp.0.join("p/base.w3x");
+    crate::map::tests::make_map(&base, &[
+        ("war3map.j", CALLS),
+        ("Scripts\\Blizzard.j", "function Base takes nothing returns nothing\nendfunction\n"),
+    ]);
+    std::fs::create_dir_all(tmp.0.join("p/kept")).unwrap();
+    let kept = tmp.0.join("p/kept/Old.w3x");
+    crate::map::tests::make_map(&kept, &[
+        ("war3map.j", CALLS),
+        ("Scripts\\Blizzard.j", "function Kept takes nothing returns nothing\nendfunction\n"),
+        ("Scripts\\common.j", "native M takes nothing returns nothing\n"),
+    ]);
+    let mut ws = init(&tmp.0.join("p"));
+    reports(&mut ws);
+    let base_blizzard = path_id(&base.join("Scripts/Blizzard.j"));
+    let kept_blizzard = path_id(&kept.join("Scripts/Blizzard.j"));
+    let kept_common = path_id(&kept.join("Scripts/common.j"));
+    let definition = |ws: &Workspace, file: &Path, line: u32| -> Vec<String> {
+        answer(ws, QueryKind::Definition, &path_id(file), Position::new(line, 10), "")
+            .locations
+            .into_iter()
+            .map(|l| l.id)
+            .collect()
+    };
+    // The root map's Blizzard.j is the project's: every file sees it,
+    // the code in src and the root map's own script alike.
+    assert!(ws.is_game(&base_blizzard));
+    assert!(!ws.is_map_script(&base_blizzard));
+    for file in [tmp.0.join("p/src/main.j"), base.join("war3map.j")] {
+        assert!(definition(&ws, &file, 1).is_empty(), "{}", file.display());
+        assert_eq!(definition(&ws, &file, 2), vec![base_blizzard.clone()], "{}", file.display());
+        assert!(definition(&ws, &file, 3).is_empty(), "{}", file.display());
+    }
+    // A map that isn't a root: the game, then the map itself. Its own
+    // Blizzard.j and common.j replace the game's for its scripts only.
+    assert!(ws.is_map_script(&kept_blizzard) && ws.is_map_script(&kept_common));
+    let old = kept.join("war3map.j");
+    assert!(definition(&ws, &old, 1).is_empty());
+    assert!(definition(&ws, &old, 2).is_empty(), "the root map isn't in its chain");
+    assert_eq!(definition(&ws, &old, 3), vec![kept_blizzard]);
+    assert!(definition(&ws, &old, 4).is_empty(), "its common.j replaces the game's");
+    assert_eq!(definition(&ws, &old, 5), vec![kept_common]);
+    assert!(definition(&ws, &tmp.0.join("p/src/main.j"), 5).is_empty());
+
+    // Lookups for other files follow the same two rules.
+    let game = vec![tmp.0.join("game")];
+    let lookup = ws.lookup(&kept.join("war3map.w3r"));
+    assert_eq!((lookup.game, lookup.roots), (game.clone(), vec![kept.clone()]));
+    let full = vec![base.clone(), tmp.0.join("p/map")];
+    let lookup = ws.lookup(&base.join("war3map.w3r"));
+    assert_eq!((lookup.game.clone(), lookup.roots.clone()), (game.clone(), full.clone()));
+    let lookup = ws.lookup(&tmp.0.join("p/map/war3map.w3r"));
+    assert_eq!((lookup.game.clone(), lookup.roots.clone()), (game.clone(), full));
+    // A map the project doesn't name at all, only opened: the short chain.
+    let other = tmp.0.join("p/other/Other.W3M");
+    let lookup = ws.lookup(&other.join("war3map.w3r"));
+    assert_eq!((lookup.game, lookup.roots), (game, vec![other]));
 }

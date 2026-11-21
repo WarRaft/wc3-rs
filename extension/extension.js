@@ -45,7 +45,8 @@
  * Which fields a camera has depends on the game (1.31 added a local
  * rotation), which the server reads from the map's `war3map.w3i`.
  * Regions (`.w3r`) too: a section per region (`w3r-rs`,
- * `server/src/regions.rs`).
+ * `server/src/regions.rs`), a weather's name as an inlay hint after its
+ * id, and `color=` as a color the picker changes.
  *
  * Terrain (`.w3e`) too, but only its header: tilesets, size, position
  * (`w3e-rs`, `server/src/terrain.rs`). Saving puts the header onto the
@@ -54,8 +55,8 @@
  * Map info (`.w3i`) too: a `[w3i]` section, then a section per player,
  * force, upgrade, tech and random table (`w3i-rs`, `server/src/mapinfo.rs`).
  *
- * In `wc3.bni`, the paths of `game=` and `sources=` complete from the disk
- * and every folder along them is a link that reveals that folder (in the
+ * In `wc3.bni`, the paths of `game=`, `sources=`, `exclude=` and `root=`
+ * complete from the disk and every folder along them is a link that reveals that folder (in the
  * Explorer when it's in the workspace, in the system's file manager
  * otherwise). The server finds both (`server/src/paths.rs`).
  */
@@ -97,6 +98,9 @@ const {
     CodeActionKind,
     InlayHint,
     Position,
+    Color,
+    ColorInformation,
+    ColorPresentation,
 } = require('vscode')
 const {encode, decode, FrameReader, QUERY, FS_OP, FS_FLAG, OBJECTS_OP} = require('./protocol.js')
 
@@ -1062,9 +1066,30 @@ h2 { font-size: 1.2em; font-weight: 600; } p { color: var(--vscode-errorForegrou
     }
     const selector = [...OBJECT_LANGUAGES].map(language => ({language, scheme: OBJECTS_SCHEME}))
 
+    // A region's `color=red,green,blue,alpha` as a color: a swatch before
+    // it that opens the color picker. The server finds the values; a
+    // picked color is written back as four numbers from 0 to 255.
+    const byte = v => Math.round(Math.min(Math.max(v, 0), 1) * 255)
+    const colors = {
+        async provideDocumentColors(doc) {
+            const answer = await query(QUERY.COLORS, idOf(doc), {line: 0, character: 0})
+            if (!answer || !answer.text) return []
+            return JSON.parse(answer.text).map(([line, character, endLine, endCharacter, r, g, b, a]) =>
+                new ColorInformation(
+                    new Range(line, character, endLine, endCharacter),
+                    new Color(r / 255, g / 255, b / 255, a / 255),
+                ))
+        },
+        provideColorPresentations(color) {
+            const label = [color.red, color.green, color.blue, color.alpha].map(byte).join(',')
+            return [new ColorPresentation(label)]
+        },
+    }
+
     context.subscriptions.push(
         changed,
         languages.registerInlayHintsProvider(selector, hints),
+        languages.registerColorProvider({language: 'w3r', scheme: OBJECTS_SCHEME}, colors),
         workspace.registerFileSystemProvider(OBJECTS_SCHEME, provider, {isCaseSensitive: process.platform === 'linux'}),
         window.registerCustomEditorProvider('wc3.objects', editor, {supportsMultipleEditorsPerDocument: true}),
     )

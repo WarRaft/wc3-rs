@@ -16,15 +16,33 @@ belongs to the project and is read with its settings.
   BNI file. Section and key names are case-sensitive.
 - **Every setting is optional.** An empty `wc3.bni` is a valid project
   that only marks its root: its settings apply below it, but it has no
-  files until `sources` names them.
+  files until `[code]` or `[map]` names them.
+- **Three sections, three things.** `[project]` is the game the project
+  is for (`game=`), `[code]` its code (`sources=`, `exclude=`), `[map]`
+  its map (`root=`). Code is found by masks and relative paths; the map
+  by its roots, whose top is the map's top.
 
 ```ini
 // wc3.bni
 [project]
-sources=src,lib,maps/*.w3x
-exclude=**/old/**,test.j
 game="C:/Games/Warcraft III"
 game=../ujapi
+
+[code]
+sources=src,lib
+exclude=**/old/**,test.j
+
+[map]
+root=base.w3x
+root=../../multi_project_source
+root=icons
+root=scripts
+
+[build]
+name=debug
+
+[build]
+name=release
 
 [jass]
 dialect=vjass
@@ -32,9 +50,11 @@ dialect=vjass
 
 | section     | key       | value                                    | meaning                                                                 |
 |-------------|-----------|------------------------------------------|-------------------------------------------------------------------------|
-| `[project]` | `sources` | masks (a plain path too), comma-separated, relative to the project root | everything in the project; none: only `wc3.bni` |
-| `[project]` | `exclude` | masks, comma-separated, relative to the project root | what isn't part of the project, even inside `sources` |
 | `[project]` | `game`    | one path per line, absolute or relative to the project root | a game folder; repeat for more, each over the ones before |
+| `[code]`    | `sources` | masks (a plain path too), comma-separated, relative to the project root | the project's code |
+| `[code]`    | `exclude` | masks, comma-separated, relative to the project root | what isn't code, even inside `sources`; the roots aren't touched |
+| `[map]`     | `root`    | one path per line, absolute or relative to the project root: a folder or a map (`.w3x`, `.w3m`) | a layer of the map: its top is the map's top; repeat for more, each over the ones before |
+| `[build]`   | `name`    | a name, unique in the project            | a build scenario (debug, release ...); what it does comes with the builder |
 | `[jass]`    | `dialect` | `jass` or `vjass` (case-insensitive)     | the dialect of `.j` files that don't declare one in a `// @dialect` header |
 | `[lint]`    | a rule or group id | `off`, `warning` or `error`     | turn a lint rule (or every rule of a group) off or on, at that level (see [Lint](#lint)) |
 
@@ -42,25 +62,44 @@ dialect=vjass
   project can still mix dialects. Without either, a file is plain JASS.
   A `.vj` file is vJASS unless its header says otherwise. The order is
   header, then `.vj`, then project, then plain JASS.
-- **`sources`** is what makes up the project (see the project model
-  below), and nothing else does: every value is a **mask**, and a file
-  is in the project when a mask matches it or a folder or map it's in.
-  A plain path is a mask without wildcards: `src` is everything in
-  `src`, `Main.w3x` every script in that map, `.` the whole project
-  folder, maps included; `maps/*.w3x` is every map in `maps`,
+- **`[code]` and `[map]`: code and the map.** The two say different
+  things, and it's worth keeping them apart:
+  - **`root`** is the map: everything the map is made of (models,
+    textures, icons, `war3map.w3i`, the object data, the tables, the
+    scripts that go into it as they are). Anything that has to know where
+    the map's top is (an asset at `war3mapImported\icon.blp`, a table at
+    `Units\UnitFunc.txt`) is in a root, and is found through the
+    project's lookup (see "Finding a file" below).
+  - **`[code] sources`** is code: the scripts the build compiles into
+    the map's script, in any folders, at any paths (relative paths are
+    all code needs).
+  - The roots are part of the project as well as the code: what's in
+    them is analyzed, checked and shown with hints. So `sources` names
+    only what's outside the map.
+  - Maps a developer keeps in the repository to take things from are
+    neither: they aren't the project's map, and needn't be named
+    anywhere. A file opened from one is read with the project's settings
+    and that map alone over the game (see "Inside a map: two cases"
+    below).
+  - `sources`, `exclude` in `[project]` (where they used to be) are an
+    error that says to move them to `[code]`.
+- **`sources`** is the project's code (see the project model below):
+  every value is a **mask**, and a file is code when a mask matches it
+  or a folder or map it's in. A plain path is a mask without wildcards:
+  `src` is everything in `src`, `.` the whole project folder,
   `**/*.j` every `.j` outside maps. Without `sources` the project has no
-  files but `wc3.bni` (its settings still apply to files opened from
-  under it). `./src` and `a/../src` mean `src`. Quote a path that
-  contains a comma: `sources="my, folder"`.
+  code (its roots are still its, and its settings still apply to files
+  opened from under it). `./src` and `a/../src` mean `src`. Quote a path
+  that contains a comma: `sources="my, folder"`.
 - **Masks** (`server/src/glob.rs`): `*` is any part of a name, `?` one
   character, `**` any number of folders (none included). They're
   relative to the project folder unless absolute, case doesn't matter,
   and `/` and `\` both separate folders. A mask matching a folder or a
   map covers everything in it: `**/old` and `**/old/**` both drop every
   `old` folder, and `**/war3map.lua` a file inside every map.
-- **`exclude`** drops what its masks match from the project, whether it's
-  matched by `sources`: `exclude=test.j,**/old/**`.
-  It wins over `sources`. Repeat the line to add more. An excluded file
+- **`exclude`** drops what its masks match from the code:
+  `exclude=test.j,**/old/**`. It wins over `sources`, and leaves the
+  roots alone: everything in a root is the map's. Repeat the line to add more. An excluded file
   that's opened is still read with the project's settings.
 - **`game`** is the folder Warcraft III is installed in, and each further
   `game=` line adds a folder on top of it, to replace some of the game's
@@ -76,15 +115,41 @@ dialect=vjass
   resolve: go to definition, hover and references reach them. Each value
   is one path, so quote it if it contains a comma. A folder that doesn't exist is only a warning and the
   setting is kept, so a manifest shared between machines still loads.
+- **One project, one map.** `[map]` lists the map's **roots**: folders
+  and maps whose top is the map's top (`war3map.w3i`,
+  `Units\UnitFunc.txt`, `war3mapImported\icon.blp`). Folders are the
+  way to work: the aim is a map kept as files in folders, with no `.w3x`
+  while it's made; a `.w3x` root is there for a base map, or a protected
+  one that only gets scripts written in. A map can be put together from
+  several: a base map, a folder shared by projects, the project's own
+  icons and scripts. Each `root=` goes over the ones
+  before. What's in a root is part of the project, so `[code] sources`
+  is needed only for files outside the map (scripts the build compiles). A build will put the roots' files together into
+  the map in a place of its own; how is each `[build]`'s to say (a
+  release built from the files, a test that copies a map and writes the
+  scripts in). Campaigns, several maps at once, will be a project above
+  projects.
+- **Finding a file.** Every file the server reads for a project
+  (`UI\WorldEditStrings.txt`, `TerrainArt\Weather.slk`, the metadata
+  tables) is looked up the same way (`server/src/game.rs`, `Lookup`):
+  through the `game=` folders, then the `[map]` roots, in order, and the
+  **last** one that has it wins, the way the game loads a map's files
+  over its own. So any layer can replace (shadow) any file below it: a
+  root with its own `UI\WorldEditStrings.txt` renames what the editor
+  shows. Names are matched in any case, `/` or `\`. Nothing the game's
+  files say is built into the server: the names shown for weather
+  effects and tilesets come from them (`server/src/names.rs`). The one
+  exception is a file inside a map that isn't a root: the game's folders
+  and that map alone (see "Inside a map: two cases").
 - **Settings apply below the manifest.** A file under the project folder
   but outside `sources` isn't loaded as part of the project, but when it's
   opened it's still read with the project's settings.
 
-**Paths in the editor.** In `game=`, `sources=` and `exclude=` values, every folder
+**Paths in the editor.** In `game=`, `sources=`, `exclude=` and `root=` values, every folder
 along the path is a link (Cmd/Ctrl+click) that reveals that folder: in
 the Explorer when it's in the workspace, in the system's file manager
 otherwise. Typing a path completes it from the disk: folders for `game`,
-folders and files for `sources` and `exclude`, starting from the project
+folders and files for `sources`, `exclude` and `root`, starting from the project
 folder for a relative path; picking a folder goes straight on to its
 entries. In a mask, the part before the first wildcard links and
 completes the same way. Both
@@ -104,6 +169,11 @@ plus checks of its settings, at the exact name or value:
   yet);
 - `game` with no value or several on one line (an error), a `game` path
   that doesn't exist or isn't a folder (a warning);
+- `root` with no value or several on one line (an error), a root that
+  doesn't exist, is a file but not a map, or is listed twice (a
+  warning), a second `[map]` (a warning: its roots are added);
+- a `[build]` without a `name`, with two, or with a name another build
+  has (an error);
 - an unknown lint rule or group (a warning), or a setting that isn't `off`,
   `warning` or `error` (an error). A rule set twice takes the last value.
 
@@ -114,8 +184,8 @@ Problems panel shows the whole project's errors without opening anything.
 - **Which projects.** Every `wc3.bni` under the workspace folders, and
   the project of any file opened from elsewhere (even a `wc3.bni` above
   the workspace folders).
-- **Which files.** What the project's `sources` match, less what
-  `exclude` matches, plus
+- **Which files.** What the project's `[code] sources` match, less what
+  `exclude` matches, everything in its `[map]` roots, plus
   `wc3.bni` itself. Only known extensions count (`.j`, `.vj`, `.pld`,
   `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`, `.slk`, `.wts`), and the `.txt`
   files that are BNI: a map's `war3map*.txt` (`war3mapSkin.txt`,
@@ -128,12 +198,24 @@ Problems panel shows the whole project's errors without opening anything.
   (`.git`, `.idea`, ...) are skipped; a nested project owns its own files.
   `sources` may point outside the project folder (`sources=src,../shared`).
 - **Game files.** The game's `Scripts\common.j`, `Scripts\Blizzard.j` and
-  `Scripts\common.ai`, looked up through the project's `game=` folders, at the path they're
-  found at: on disk (`../ujapi/Scripts/common.j`) or inside an archive
+  `Scripts\common.ai`, looked up like any other file (see "Finding a
+  file": the `game=` folders, then the `[map]` roots, the last one wins),
+  at the path they're found at: on disk (`../ujapi/Scripts/common.j`) or inside an archive
   (`War3Patch.mpq/Scripts/Blizzard.j`, opened read-only: the game's
   archives are never written). They get no diagnostics, being the game's, and a rename that
   would change them is refused. Projects with the same `game=` folders
-  share them.
+  and roots share them.
+- **The game's scripts follow the same lookup, on purpose.** The game
+  loads `common.j` and `Blizzard.j` under every map script, and `common.j`
+  and `common.ai` under every AI script, by themselves. A map script
+  that wants a `common.ai` function declares it as a `native` in its own
+  code, so nothing about these three needs a lookup of their own: a root
+  with its own `Scripts\Blizzard.j` (an optimized one, say) replaces the
+  game's for the whole project, as any file in it would replace the
+  game's. If a map maker breaks something that way (a `common.j` missing
+  natives the code uses, a `Blizzard.j` without functions it calls), the
+  build is where it's caught, not the lookup. Settled: don't add special
+  cases here.
 - **One file per game path.** Game paths ignore case, and a file in a
   later `game=` folder replaces the file at the same path below it, so a
   project sees exactly one `common.j`, one `Blizzard.j` and one
@@ -152,8 +234,8 @@ Problems panel shows the whole project's errors without opening anything.
   and two projects with different `game=` folders (one with a custom
   `common.j`) don't see each other's declarations. A file outside every
   project sees all files, AI scripts kept apart the same way.
-- **Maps.** A map (`.w3x`, `.w3m`) that `sources` matches, or that's in
-  a folder it matches (`sources=Main.w3x`, `sources=.`), is
+- **Maps.** A map (`.w3x`, `.w3m`) that's a root (`root=Main.w3x`), or
+  in a folder that's a root, or one `[code] sources` matches, is
   read like a folder: its scripts are project files at paths inside the
   map's, `Main.w3x/war3map.j`. Those are every file the map's
   `(listfile)` names with a known extension, plus the map script under
@@ -164,13 +246,33 @@ Problems panel shows the whole project's errors without opening anything.
   game's full file list (`server/src/war3.listfile.txt`). The tree of
   maps also finds the files the editor keeps at the top of a map
   (`war3map.w3i`, `war3mapMisc.txt`, ...) the same way. Maps
-  are MPQ archives, read with [`storm-rs`](../storm-rs). A map's own
-  `Scripts\Blizzard.j` (maps often carry an optimized one, which the game
-  loads instead of its own) replaces the game's `Blizzard.j` for that
-  map's scripts; it gets no diagnostics, and no other file sees it. A
-  `common.j` in a map isn't treated this way: it's an ordinary file of
-  the map. A rename may change them (see Rename below). A map saved
+  are MPQ archives, read with [`storm-rs`](../storm-rs). A map saved
   again is re-read; a map that can't be read adds nothing.
+- **Inside a map: two cases.** A project is one map, so a `.w3x` or
+  `.w3m` in it is one of two things, and a file inside it is read
+  accordingly (`Workspace::lookup`, `Workspace::scope`):
+  1. **The map is a `[map] root`.** It's part of the project's map, and
+     its files go through the **whole chain**: the `game=` folders, then
+     every root in order, the last one that has a file wins. Its
+     `Scripts\Blizzard.j` (or `common.j`, `common.ai`) is the project's
+     own, for every file of the project, code in `src` included, unless
+     a later root replaces it in turn; the names its hints show come
+     from the files the whole chain gives.
+  2. **The map isn't a root** (a map kept in the repository to take
+     things from, named nowhere or matched by `[code] sources`; known by
+     its path, a file inside a `.w3x` or `.w3m`). It isn't the project's
+     map, so
+     its files see a **short chain**: the `game=` folders, then that map
+     alone; the roots don't apply to it, and it doesn't apply to anything
+     else. Its own `Scripts\Blizzard.j`, `Scripts\common.j` and
+     `Scripts\common.ai` (maps often carry an optimized `Blizzard.j`, which
+     the game loads instead of its own) replace the game's for that
+     map's scripts only; they get no diagnostics, and no other file sees
+     them. Hints and checks of its other files (its regions' weather, its
+     object data's fields) read the game's files with the map's own
+     over them the same way.
+
+  A rename may change a map's files either way (see Rename below).
 - **Maps as folders** (`server/src/mapfs.rs`). The editor shows a map as
   a folder under the `wc3map:` scheme, every file in it (found as
   above), and the server carries out what's done there: read, write,
@@ -335,11 +437,16 @@ right=4608
 top=4992
 weather=WNcw
 sound="gg_snd_N06Furion30"
-color=255,255,255,255 // red, green, blue, alpha
+color=255,255,255,255
 ```
 
-`weather` is an effect's id, `0x00000000` for none; `sound` a sound
-variable, quoted. A field left out takes its default (no weather, no
+`weather` is an effect's id, `0x00000000` for none; its name (`Wind
+(Heavy)`, `none`) shows after it as an inlay hint, from the game's files
+through the project's layers (`TerrainArt\Weather.slk` and
+`UI\WorldEditStrings.txt`; see "Finding a file"). `color` is red, green,
+blue, alpha: a swatch before it opens the color picker, and a picked
+color is written back as the four numbers. `sound` is a sound variable,
+quoted. A field left out takes its default (no weather, no
 sound, white, the next index); a value that isn't one, an unknown or
 repeated field are errors while the text is edited, and saving refuses
 them.
@@ -351,12 +458,12 @@ version, tileset, the ground and cliff textures, the grid's size, its
 position ([`w3e-rs`](../w3e-rs/README.md), `server/src/terrain.rs`). The
 points (heights, textures, cliffs, water) aren't text; comments say what
 they make of the header: how many points use each texture, where the map
-ends.
+ends. The tileset's name shows after its letter as an inlay hint, from
+the game's files (`UI\WorldEditData.txt` `[TileSets]`).
 
 ```ini
 [w3e]
 version=11
-// Lordaeron Summer
 tileset=L
 custom_tilesets=0
 // Ground textures (TerrainArt\Terrain.slk); points using each:
@@ -389,7 +496,7 @@ table and random item table, in file order.
 version=25 // The Frozen Throne
 name="TRIGSTR_001"
 flags=0x0001DC68 // ..., use custom forces, ...
-tileset=C // Felwood
+tileset=C
 
 [player]
 number=0 // Player 1
@@ -403,7 +510,9 @@ players=0x000001FF // 1, 2, 3, 4, 5, 6, 7, 8, 9
 name="TRIGSTR_004"
 ```
 
-The comment after a value says what it means and isn't read. The version
+The comment after a value says what it means and isn't read. The
+tilesets' names (`tileset`, `light_tileset`) show as inlay hints, from
+the game's files. The version
 (18 Reign of Chaos, 25 The Frozen Throne, 28 1.31, 31 1.32) decides which
 fields there are: one it doesn't have is an error while the text is
 edited, and saving refuses it. A field left out takes its default. A

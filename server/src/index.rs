@@ -56,8 +56,18 @@ pub enum QueryKind {
     SlkSetCell,
     /// In the text form of object data: the inlay hints (fields' names and
     /// types) of lines `line` to `character` (0-based), as JSON in the
-    /// text (`objects::hints`).
+    /// text (`objects::hints`); in those of regions, terrain and map info,
+    /// the names of weathers and tilesets (`hints::hints`).
     InlayHints,
+    /// In the text form of regions: their colors, for the color picker, as
+    /// JSON in the text (`regions::colors`).
+    Colors,
+}
+
+/// The text of file `id` when it's a region file's text form.
+fn region_text<'a>(ws: &'a Workspace, id: &str) -> Option<&'a str> {
+    let (doc, _) = ws.file(id)?;
+    doc.path.as_deref().filter(|p| crate::regions::is_region_file(p)).map(|_| doc.text.as_str())
 }
 
 /// Path completion and links in a manifest; nothing for any other file.
@@ -155,10 +165,18 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             return Answer { locations: Vec::new(), text };
         }
         QueryKind::InlayHints => {
-            let text = match ws.object_text(id) {
-                Some((doc, meta)) => crate::objects::hints(&doc.text, pos.line, pos.character, meta),
-                None => "[]".into(),
+            let text = match (ws.object_text(id), ws.names_text(id)) {
+                (Some((doc, meta)), _) => crate::objects::hints(&doc.text, pos.line, pos.character, meta),
+                (None, Some((doc, names))) => match doc.path.as_deref() {
+                    Some(path) => crate::hints::hints(&doc.text, path, names, pos.line, pos.character),
+                    None => "[]".into(),
+                },
+                (None, None) => "[]".into(),
             };
+            return Answer { locations: Vec::new(), text };
+        }
+        QueryKind::Colors => {
+            let text = region_text(ws, id).map_or("[]".into(), crate::regions::colors);
             return Answer { locations: Vec::new(), text };
         }
         QueryKind::Hover if ws.object_text(id).is_some() => {

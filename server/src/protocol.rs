@@ -208,7 +208,7 @@ fn kind_code(kind: Kind) -> u8 {
     }
 }
 
-const QUERY_KINDS: [QueryKind; 13] = [
+const QUERY_KINDS: [QueryKind; 14] = [
     QueryKind::Definition,
     QueryKind::References,
     QueryKind::Hover,
@@ -222,6 +222,7 @@ const QUERY_KINDS: [QueryKind; 13] = [
     QueryKind::SlkTable,
     QueryKind::SlkSetCell,
     QueryKind::InlayHints,
+    QueryKind::Colors,
 ];
 
 const SYMBOL_KINDS: [SymbolKind; 17] = [

@@ -12,6 +12,8 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+use crate::game::Lookup;
 use std::sync::Arc;
 
 use w3abdhqtu_rs::{Kind, Metadata, STRINGS_FILES, from_text, parse};
@@ -80,14 +82,14 @@ pub fn affects(folder: &Path, path: &Path) -> bool {
         || game_files().iter().any(|f| rel == f.replace('\\', "/").to_lowercase())
 }
 
-/// The metadata of `kind` from the game folders `game` (see
-/// `crate::game`): its table, its objects' codes and the editor's
-/// strings. Empty without them.
-pub fn metadata(game: &[PathBuf], kind: Kind) -> Metadata {
-    if game.is_empty() {
+/// The metadata of `kind` looked up through `lookup` (the game folders,
+/// then the map's roots: see `crate::game`): its table, its objects'
+/// codes and the editor's strings. Empty without them.
+pub fn metadata(lookup: &Lookup, kind: Kind) -> Metadata {
+    if lookup.is_empty() {
         return Metadata::default();
     }
-    let (game, _) = crate::game::Game::open(game);
+    let (game, _) = lookup.open();
     Metadata::load(kind, |name| game.read(name).map(|(bytes, _)| String::from_utf8_lossy(&bytes).into_owned()))
 }
 
@@ -96,21 +98,21 @@ pub fn metadata(game: &[PathBuf], kind: Kind) -> Metadata {
 /// A change on disk that [`affects`] a folder drops what came from it.
 #[derive(Default)]
 pub struct Cache {
-    read: HashMap<(Vec<PathBuf>, Kind), Arc<Metadata>>,
+    read: HashMap<(Lookup, Kind), Arc<Metadata>>,
 }
 
 impl Cache {
-    pub fn get(&mut self, game: &[PathBuf], kind: Kind) -> Arc<Metadata> {
+    pub fn get(&mut self, lookup: &Lookup, kind: Kind) -> Arc<Metadata> {
         self.read
-            .entry((game.to_vec(), kind))
-            .or_insert_with(|| Arc::new(metadata(game, kind)))
+            .entry((lookup.clone(), kind))
+            .or_insert_with(|| Arc::new(metadata(lookup, kind)))
             .clone()
     }
 
     /// Drops what changes with `paths`; whether anything was dropped.
     pub fn disk_changed(&mut self, paths: &[PathBuf]) -> bool {
         let before = self.read.len();
-        self.read.retain(|(game, _), _| !game.iter().any(|folder| paths.iter().any(|p| affects(folder, p))));
+        self.read.retain(|(lookup, _), _| !paths.iter().any(|p| lookup.affected_by(p, affects)));
         self.read.len() != before
     }
 }
@@ -227,7 +229,7 @@ pub fn hints(text: &str, first: u32, last: u32, meta: &Metadata) -> String {
         .iter()
         .map(|h| {
             let at = lines.range(text, h.line, h.col, h.col).start;
-            let label = serde_label(&h.label);
+            let label = json_string(&h.label);
             format!("[{},{},{label}]", at.line, at.character)
         })
         .collect();
@@ -235,7 +237,7 @@ pub fn hints(text: &str, first: u32, last: u32, meta: &Metadata) -> String {
 }
 
 /// A JSON string literal.
-fn serde_label(s: &str) -> String {
+pub(crate) fn json_string(s: &str) -> String {
     let mut out = String::from("\"");
     for c in s.chars() {
         match c {

@@ -90,10 +90,10 @@ fn names_from_the_game() {
     std::fs::create_dir_all(wc3.join("UI")).unwrap();
     std::fs::write(wc3.join("UI/WorldEditGameStrings.txt"), "WESTRING_UEVAL_UHPM=Hit Points Maximum\n").unwrap();
 
-    let units = metadata(std::slice::from_ref(&wc3), Kind::Unit);
+    let units = metadata(&Lookup { game: vec![wc3.clone()], roots: vec![] }, Kind::Unit);
     assert_eq!(units.name(w3abdhqtu_rs::Rawcode(*b"uhpm")), Some("Hit Points Maximum"));
     // Abilities' table isn't there.
-    assert!(metadata(std::slice::from_ref(&wc3), Kind::Ability).is_empty());
+    assert!(metadata(&Lookup { game: vec![wc3.clone()], roots: vec![] }, Kind::Ability).is_empty());
 
     let text = convert(TO_TEXT, "war3map.w3u", UNITS, &units).unwrap();
     let text = String::from_utf8(text).unwrap();
@@ -124,7 +124,7 @@ fn the_cache_drops_what_changed() {
     std::fs::create_dir_all(wc3.join("Units")).unwrap();
     let table = |name: &str| format!("C;X1;Y1;K\"ID\"\nC;X2;K\"field\"\nC;X1;Y2;K\"uhpm\"\nC;X2;K\"{name}\"\n");
     std::fs::write(wc3.join("Units/UnitMetaData.slk"), table("HP")).unwrap();
-    let game = vec![wc3.clone()];
+    let game = Lookup { game: vec![wc3.clone()], roots: vec![] };
     let mut cache = Cache::default();
     assert_eq!(cache.get(&game, Kind::Unit).name(w3abdhqtu_rs::Rawcode(*b"uhpm")), Some("HP"));
 
@@ -134,6 +134,15 @@ fn the_cache_drops_what_changed() {
     assert!(!cache.disk_changed(&[tmp.0.join("elsewhere.slk")]));
     assert!(cache.disk_changed(&[wc3.join("Units/UnitMetaData.slk")]));
     assert_eq!(cache.get(&game, Kind::Unit).name(w3abdhqtu_rs::Rawcode(*b"uhpm")), Some("Life"));
+
+    // A map root over the game replaces the table; any change in it drops
+    // what came through it.
+    let root = tmp.0.join("map");
+    std::fs::create_dir_all(root.join("units")).unwrap();
+    std::fs::write(root.join("units/unitmetadata.slk"), table("Hit Points")).unwrap();
+    let both = Lookup { game: vec![wc3.clone()], roots: vec![root.clone()] };
+    assert_eq!(cache.get(&both, Kind::Unit).name(w3abdhqtu_rs::Rawcode(*b"uhpm")), Some("Hit Points"));
+    assert!(cache.disk_changed(&[root.join("units/unitmetadata.slk")]));
 }
 
 #[test]
