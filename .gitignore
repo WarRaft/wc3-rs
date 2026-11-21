@@ -5,5 +5,6 @@ node_modules/
 /extension/.idea/
 
 # OS / IDE
-.DS_Store
 .idea/
+# macOS Finder files, in any case (.DS_Store, .ds_store)
+.[Dd][Ss]_[Ss][Tt][Oo][Rr][Ee]
