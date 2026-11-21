@@ -844,3 +844,56 @@ fn terrain_text_counts_its_files_points_until_the_file_changes() {
     ws.take_reports();
     assert_eq!(usage(&ws).ground, [1, 3]);
 }
+
+#[test]
+fn a_roots_custom_script_is_code_of_the_project() {
+    use crate::document::Position;
+    use crate::index::{answer, QueryKind};
+    let tmp = project("ws-wct", &[
+        ("p/wc3.bni", "[code]\nsources=src\n[map]\nroot=map\nroot=base.w3x\n"),
+        ("p/map/README", ""),
+        ("p/src/main.j", "function F takes nothing returns nothing\n    call Helper()\n    call FromBase()\nendfunction\n"),
+    ]);
+    let wct = |name: &str| {
+        wct_rs::CustomText {
+            version: 1,
+            header: wct_rs::Code::new(format!("function {name} takes nothing returns nothing\r\nendfunction\r\n").as_bytes()),
+            ..wct_rs::CustomText::default()
+        }
+        .to_bytes()
+        .unwrap()
+    };
+    let disk = tmp.0.join("p/map/war3map.wct");
+    std::fs::write(&disk, wct("Helper")).unwrap();
+    let base = tmp.0.join("p/base.w3x");
+    crate::map::tests::make_map_bytes(&base, &[("war3map.wct", wct("FromBase"))]);
+    let mut ws = init(&tmp.0);
+    reports(&mut ws);
+    let main = path_id(&tmp.0.join("p/src/main.j"));
+    let definition = |ws: &Workspace, line: u32| -> Vec<String> {
+        answer(ws, QueryKind::Definition, &main, Position::new(line, 10), "")
+            .locations
+            .into_iter()
+            .map(|l| l.id)
+            .collect()
+    };
+    // Both custom scripts are in the model, as JASS.
+    assert_eq!(definition(&ws, 1), vec![path_id(&disk)]);
+    assert_eq!(definition(&ws, 2), vec![path_id(&base.join("war3map.wct"))]);
+    assert!(ws.file(&path_id(&disk)).unwrap().0.text.starts_with("// @wct version=1\n"));
+
+    // Opened as text: the text stands for the file, once.
+    let text = ws.file(&path_id(&disk)).unwrap().0.text.clone().replace("Helper", "Helper2");
+    ws.open("wc3obj:/w".into(), Some(disk.clone()), Language::Jass, 1, text);
+    reports(&mut ws);
+    assert!(ws.file(&path_id(&disk)).is_none());
+    assert!(definition(&ws, 1).is_empty(), "the open text renamed it");
+    ws.disk_changed(std::slice::from_ref(&disk));
+    reports(&mut ws);
+    assert!(ws.file(&path_id(&disk)).is_none(), "the disk doesn't bring it back while open");
+    // Closed: back to the file.
+    ws.close("wc3obj:/w");
+    reports(&mut ws);
+    assert_eq!(definition(&ws, 1), vec![path_id(&disk)]);
+    assert!(ws.file("wc3obj:/w").is_none());
+}

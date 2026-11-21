@@ -191,6 +191,9 @@ pub fn load(path: &Path) -> Option<Document> {
 fn read(archive: &MpqArchive, name: &str, path: &Path) -> Option<Document> {
     let language = Language::from_path(path)?;
     let bytes = archive.read_file(name).ok()?;
+    if crate::customtext::is_custom_text_file(path) {
+        return crate::customtext::document(path, &bytes);
+    }
     let text = crate::document::decode(bytes);
     Some(Document { language, version: 0, text, path: Some(path.to_path_buf()) })
 }

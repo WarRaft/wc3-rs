@@ -117,6 +117,11 @@ pub struct Workspace {
     names: crate::names::Cache,
     /// What terrain files' points say, by path (`terrain_usage`).
     usage: HashMap<PathBuf, Option<Arc<w3e_rs::text::Usage>>>,
+    /// Files of the model that a text open in the editor stands for, by
+    /// that text's id: a custom script (`war3map.wct`) opened as text
+    /// under its own id, whose disk version leaves the model while it's
+    /// open, so its code is there once.
+    shadowed: HashMap<String, String>,
     /// Files to analyze and report.
     dirty: HashSet<String>,
     /// Files the editor should forget: they left the model.
@@ -142,6 +147,20 @@ impl Workspace {
             .as_deref()
             .and_then(project::find_manifest)
             .is_some_and(|m| !self.manifests.contains(&m));
+        // A custom script's text is JASS, or Lua in a Lua map.
+        let language = match path.as_deref() {
+            Some(p) if crate::customtext::is_custom_text_file(p) => crate::customtext::language(p),
+            _ => language,
+        };
+        // The text stands for a file of the model with the same path (a
+        // custom script opened as text, under the editor's own id): that
+        // one leaves until the text is closed.
+        if let Some(disk) = path.as_deref().map(path_id).filter(|d| *d != id)
+            && self.files.get(&disk).is_some_and(|e| !e.open)
+        {
+            self.remove(&disk);
+            self.shadowed.insert(id.clone(), disk);
+        }
         let doc = Document { language, version, text, path };
         let entry = if self.is_game(&id) { Entry::game(doc, true) } else { Entry::new(doc, true) };
         self.files.insert(id.clone(), entry);
@@ -178,6 +197,15 @@ impl Workspace {
     /// The editor closed a document. A project file goes back to its text
     /// on disk and stays in the model; anything else leaves it.
     pub fn close(&mut self, id: &str) {
+        // A text that stood for a file of the model: the file comes back.
+        if let Some(disk) = self.shadowed.remove(id) {
+            self.remove(id);
+            if let Some(doc) = load(Path::new(&disk)) {
+                self.files.insert(disk.clone(), Entry::new(doc, false));
+                self.dirty.insert(disk);
+            }
+            return;
+        }
         let Some(entry) = self.files.get(id) else {
             return;
         };
@@ -256,7 +284,7 @@ impl Workspace {
                 continue;
             }
             let id = path_id(path);
-            if self.files.get(&id).is_some_and(|e| e.open) {
+            if self.files.get(&id).is_some_and(|e| e.open) || self.is_shadowed(&id) {
                 continue;
             }
             match self.member(path).and_then(|_| load(path)) {
@@ -502,7 +530,7 @@ impl Workspace {
                     continue;
                 }
                 kept.push(id.clone());
-                if self.files.get(&id).is_some_and(|e| e.open) {
+                if self.files.get(&id).is_some_and(|e| e.open) || self.is_shadowed(&id) {
                     continue;
                 }
                 self.files.insert(id.clone(), Entry::new(doc, false));
@@ -517,6 +545,11 @@ impl Workspace {
         if !all.is_empty() {
             self.maps.insert(path.to_path_buf(), all);
         }
+    }
+
+    /// Does a text open in the editor stand for the file `id`?
+    fn is_shadowed(&self, id: &str) -> bool {
+        self.shadowed.values().any(|d| d == id)
     }
 
     fn remove(&mut self, id: &str) {
@@ -703,7 +736,7 @@ impl Workspace {
                     let mut ids = Vec::new();
                     for (inner, doc) in map::files(&path) {
                         let id = path_id(&inner);
-                        if project.contains(&inner) && !self.files.contains_key(&id) {
+                        if project.contains(&inner) && !self.files.contains_key(&id) && !self.is_shadowed(&id) {
                             self.files.insert(id.clone(), Entry::new(doc, false));
                             self.dirty.insert(id.clone());
                         }
@@ -766,7 +799,7 @@ impl Workspace {
         }
 
         for (id, path) in &wanted {
-            if self.files.contains_key(id) {
+            if self.files.contains_key(id) || self.is_shadowed(id) {
                 continue;
             }
             if let Some(doc) = load(path) {
@@ -807,6 +840,9 @@ fn load(path: &Path) -> Option<Document> {
     }
     let language = Language::from_path(path)?;
     let bytes = std::fs::read(path).ok()?;
+    if crate::customtext::is_custom_text_file(path) {
+        return crate::customtext::document(path, &bytes);
+    }
     let text = crate::document::decode(bytes);
     Some(Document { language, version: 0, text, path: Some(path.to_path_buf()) })
 }

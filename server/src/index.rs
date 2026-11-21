@@ -164,6 +164,10 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             };
             return Answer { locations: Vec::new(), text };
         }
+        QueryKind::InlayHints if ws.file(id).and_then(|(d, _)| d.path.as_deref()).is_some_and(crate::customtext::is_custom_text_file) => {
+            let (doc, _) = ws.file(id).expect("just checked");
+            return Answer { locations: Vec::new(), text: crate::customtext::hints(&doc.text, pos.line, pos.character) };
+        }
         QueryKind::InlayHints => {
             let text = match (ws.object_text(id), ws.names_text(id)) {
                 (Some((doc, meta)), _) => crate::objects::hints(&doc.text, pos.line, pos.character, meta),

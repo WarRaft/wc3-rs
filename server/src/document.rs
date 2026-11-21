@@ -63,6 +63,9 @@ impl Language {
             "w3a" | "w3b" | "w3d" | "w3h" | "w3q" | "w3t" | "w3u" => Language::Bni,
             // Cameras, in their BNI text form too (see `cameras`).
             "w3c" | "w3e" | "w3i" | "w3r" | "w3s" => Language::Bni,
+            // A map's custom script: code (see `customtext`), Lua in a Lua
+            // map, which `Workspace::open` sees to.
+            "wct" => Language::Jass,
             _ => return None,
         })
     }
@@ -92,6 +95,9 @@ impl Language {
         let ext = path.extension()?.to_str()?.to_ascii_lowercase();
         Some(match ext.as_str() {
             "j" | "vj" | "pld" | "ai" => Language::Jass,
+            // A map's custom script, in its text form (see `customtext`):
+            // Lua in a Lua map, which `customtext::document` sees to.
+            "wct" => Language::Jass,
             "zn" => Language::Zinc,
             "lua" => Language::Lua,
             "as" | "angelscript" => Language::AngelScript,

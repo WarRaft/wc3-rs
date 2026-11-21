@@ -521,6 +521,42 @@ retextures its points, removing one some point uses is refused with how
 many use it. A new version (11 ↔ 12) moves every point's flags. A field
 left out keeps the file's value.
 
+## Custom script
+
+A map's custom script, `war3map.wct` (the trigger editor's custom
+script, and the triggers converted to custom text), is code, and it's
+treated as code ([`wct-rs`](../wct-rs/README.md),
+`server/src/customtext.rs`). Its text form is the code, one piece after
+another, each after a marker line (a comment, so the text is a valid
+script):
+
+```jass
+// @wct version=1
+// @wct comment ""
+// @wct header
+function Helper takes nothing returns nothing
+endfunction
+// @wct trigger
+function Trig_Init_Actions takes nothing returns nothing
+    call Helper()
+endfunction
+// @wct trigger none
+```
+
+- **In the model.** A `war3map.wct` the project has (in a `[map]` root,
+  folder or map, or matched by `[code] sources`) is a document of the
+  model in that text form: JASS, or Lua when the map's `war3map.w3i`
+  says the map is Lua. It's analyzed, indexed and seen like any other
+  script, so the project's code finds the map's custom script's
+  functions, and go to definition leads into it.
+- **In the editor.** It opens as that text (`wc3obj:`), checked as JASS
+  (with the project's dialect) and highlighted, each `trigger` marker
+  with its number as an inlay hint. While it's open, the text stands for
+  the file in the model: its code is there once, as edited. Saving turns
+  it back into the file's bytes (`\r\n` line breaks, as World Editor
+  writes them); a wrong marker is an error while editing, and saving
+  refuses it.
+
 ## Map info
 
 A map's info, `war3map.w3i` (the Scenario menu: name, description,

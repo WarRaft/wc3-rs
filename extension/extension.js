@@ -48,7 +48,11 @@
  * `server/src/regions.rs`), a weather's name as an inlay hint after its
  * id, and `color=` as a color the picker changes. Sounds (`.w3s`) too
  * (`w3s-rs`, `server/src/sounds.rs`), with the names of their EAX
- * setting, channel and flags as inlay hints.
+ * setting, channel and flags as inlay hints. The custom script (`.wct`)
+ * too (`wct-rs`, `server/src/customtext.rs`): its text is the code, one
+ * piece after another after `// @wct` marker lines, and it's code of the
+ * project in the server's model; while open, the text stands for the
+ * file there.
  *
  * Terrain (`.w3e`) too, but only its header: tilesets, size, position
  * (`w3e-rs`, `server/src/terrain.rs`). Saving puts the header onto the
@@ -118,9 +122,10 @@ const OBJECTS_SCHEME = 'wc3obj'
 
 /** The languages of object-data files (`package.json`), one per type, of
  * camera files (`w3c`), terrain (`w3e`), map info (`w3i`), regions
- * (`w3r`) and sounds (`w3s`). As `wc3obj:` text they're BNI; a file opened as is is binary,
+ * (`w3r`), sounds (`w3s`) and the custom script (`wct`, whose text is
+ * code: JASS, or Lua in a Lua map). As `wc3obj:` text they're BNI; a file opened as is is binary,
  * not text. */
-const OBJECT_LANGUAGES = new Set(['w3a', 'w3b', 'w3d', 'w3h', 'w3q', 'w3t', 'w3u', 'w3c', 'w3e', 'w3i', 'w3r', 'w3s'])
+const OBJECT_LANGUAGES = new Set(['w3a', 'w3b', 'w3d', 'w3h', 'w3q', 'w3t', 'w3u', 'w3c', 'w3e', 'w3i', 'w3r', 'w3s', 'wct'])
 
 /** Language ids the server analyzes (its `Language::from_id`). */
 const LANGUAGES = new Set(['jass', 'vjass', 'zinc', 'lua', 'angelscript', 'bni', 'slk', 'wts', ...OBJECT_LANGUAGES])

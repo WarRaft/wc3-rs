@@ -917,8 +917,17 @@ dependencies = [
  "w3i-rs",
  "w3r-rs",
  "w3s-rs",
+ "wct-rs",
  "wts-rs",
  "zinc-rs",
+]
+
+[[package]]
+name = "wct-rs"
+version = "0.1.0"
+dependencies = [
+ "bni-rs",
+ "parser-rs",
 ]
 
 [[package]]

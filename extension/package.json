@@ -1,7 +1,7 @@
 {
   "name": "wc3",
   "displayName": "WC3",
-  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects; maps as folders and a BLP texture viewer; object data (.w3a .w3u ...), cameras (.w3c), regions (.w3r), sounds (.w3s), the terrain's header (.w3e) and map info (.w3i) as editable text.",
+  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects; maps as folders and a BLP texture viewer; object data (.w3a .w3u ...), cameras (.w3c), regions (.w3r), sounds (.w3s), the terrain's header (.w3e), map info (.w3i) and the custom script (.wct) as editable text.",
   "version": "0.0.3",
   "publisher": "WarRaft",
   "icon": "images/logo.png",
@@ -92,7 +92,7 @@
       },
       {
         "viewType": "wc3.objects",
-        "displayName": "Object Data, Cameras, Regions, Sounds, Terrain and Map Info as Text",
+        "displayName": "Object Data, Cameras, Regions, Sounds, Terrain, Map Info and Custom Script as Text",
         "selector": [
           {
             "filenamePattern": "*.w3a"
@@ -165,6 +165,12 @@
           },
           {
             "filenamePattern": "*.W3S"
+          },
+          {
+            "filenamePattern": "*.wct"
+          },
+          {
+            "filenamePattern": "*.WCT"
           }
         ],
         "priority": "default"
@@ -650,6 +656,20 @@
         "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
+        "id": "wct",
+        "aliases": [
+          "Custom Script"
+        ],
+        "extensions": [
+          ".wct"
+        ],
+        "icon": {
+          "light": "./icons/jass.svg",
+          "dark": "./icons/jass.svg"
+        },
+        "configuration": "./syntaxes/jass.language-configuration.json"
+      },
+      {
         "id": "w3t",
         "aliases": [
           "Items"
@@ -718,7 +738,6 @@
           ".mmp",
           ".imp",
           ".wtg",
-          ".wct",
           ".w3o"
         ],
         "icon": {
@@ -758,6 +777,38 @@
     "semanticTokenScopes": [
       {
         "language": "jass",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "wct",
         "scopes": {
           "comment": [
             "comment"

@@ -4,9 +4,14 @@ use storm_rs::archive::MpqArchiveBuilder;
 
 /// A map with `files` in it, at `path`.
 pub(crate) fn make_map(path: &Path, files: &[(&str, &str)]) {
+    let files: Vec<(&str, Vec<u8>)> = files.iter().map(|(n, t)| (*n, t.as_bytes().to_vec())).collect();
+    make_map_bytes(path, &files);
+}
+
+pub(crate) fn make_map_bytes(path: &Path, files: &[(&str, Vec<u8>)]) {
     let mut b = MpqArchiveBuilder::new(path);
-    for (name, text) in files {
-        b = b.add_file(*name, text.as_bytes().to_vec());
+    for (name, bytes) in files {
+        b = b.add_file(*name, bytes.clone());
     }
     b.build().unwrap();
 }

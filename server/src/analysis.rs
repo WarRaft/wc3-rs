@@ -76,10 +76,15 @@ pub fn diagnostics_with(doc: &Document, project: Option<&Project>, objects: Opti
         Language::Slk => return slk(project, &out),
         Language::Wts => return wts(project, &out),
     };
-    match result {
+    let mut diags: Vec<Diagnostic> = match result {
         Err(err) => vec![out.error(&err)],
         Ok(lint) => project::apply_lint(lint, project).into_iter().map(|d| out.lint(d)).collect(),
-    }
+    };
+    // A map's custom script (`.wct`) in its text form: markers that
+    // wouldn't save.
+    let markers = crate::customtext::diagnostics(doc.path.as_deref(), text);
+    diags.extend(markers.iter().map(|e| out.error(e)));
+    diags
 }
 
 /// BNI never fails as a whole: every malformed line is its own error, and
