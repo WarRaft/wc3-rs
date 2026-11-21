@@ -1,7 +1,7 @@
 {
   "name": "wc3",
   "displayName": "WC3",
-  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects; maps as folders and a BLP texture viewer; object data (.w3a .w3u ...), cameras (.w3c) and the terrain's header (.w3e) as editable text.",
+  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects; maps as folders and a BLP texture viewer; object data (.w3a .w3u ...), cameras (.w3c), the terrain's header (.w3e) and map info (.w3i) as editable text.",
   "version": "0.0.3",
   "publisher": "WarRaft",
   "icon": "images/logo.png",
@@ -92,7 +92,7 @@
       },
       {
         "viewType": "wc3.objects",
-        "displayName": "Object Data, Cameras and Terrain as Text",
+        "displayName": "Object Data, Cameras, Terrain and Map Info as Text",
         "selector": [
           {
             "filenamePattern": "*.w3a"
@@ -147,6 +147,12 @@
           },
           {
             "filenamePattern": "*.W3E"
+          },
+          {
+            "filenamePattern": "*.w3i"
+          },
+          {
+            "filenamePattern": "*.W3I"
           }
         ],
         "priority": "default"
@@ -573,7 +579,8 @@
         "icon": {
           "light": "./icons/w3i.svg",
           "dark": "./icons/w3i.svg"
-        }
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
         "id": "w3n",
@@ -1173,6 +1180,38 @@
       },
       {
         "language": "w3e",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "w3i",
         "scopes": {
           "comment": [
             "comment"

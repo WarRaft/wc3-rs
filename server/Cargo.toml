@@ -26,6 +26,7 @@ wts-rs = { path = "../../wts-rs" }
 w3abdhqtu-rs = { path = "../../w3abdhqtu-rs" }
 w3c-rs = { path = "../../w3c-rs" }
 w3e-rs = { path = "../../w3e-rs" }
+w3i-rs = { path = "../../w3i-rs" }
 storm-rs = { path = "../../storm-rs" }
 # Decoding only: no libjpeg-turbo (a C build), so cross-compiling stays
 # pure Rust.

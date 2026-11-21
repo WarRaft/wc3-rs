@@ -348,6 +348,40 @@ retextures its points, removing one some point uses is refused with how
 many use it. A new version (11 ↔ 12) moves every point's flags. A field
 left out keeps the file's value.
 
+## Map info
+
+A map's info, `war3map.w3i` (the Scenario menu: name, description,
+players, forces, tech tree, random tables ...), opens as text too
+([`w3i-rs`](../w3i-rs/README.md), `server/src/mapinfo.rs`): a `[w3i]`
+section, then a section per player, force, upgrade, tech, random unit
+table and random item table, in file order.
+
+```ini
+[w3i]
+version=25 // The Frozen Throne
+name="TRIGSTR_001"
+flags=0x0001DC68 // ..., use custom forces, ...
+tileset=C // Felwood
+
+[player]
+number=0 // Player 1
+type=1 // human
+race=1 // human
+name="TRIGSTR_005"
+
+[force]
+flags=0x0000000B // allied, allied victory, shared vision
+players=0x000001FF // 1, 2, 3, 4, 5, 6, 7, 8, 9
+name="TRIGSTR_004"
+```
+
+The comment after a value says what it means and isn't read. The version
+(18 Reign of Chaos, 25 The Frozen Throne, 28 1.31, 31 1.32) decides which
+fields there are: one it doesn't have is an error while the text is
+edited, and saving refuses it. A field left out takes its default. A
+file a map optimizer cut short says so (`cut=forces`) and saves back the
+same.
+
 ## SLK tables
 
 A `.slk` (the game's data tables: `Units\UnitBalance.slk`, the

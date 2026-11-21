@@ -28,13 +28,14 @@
 //! - [`analysis`]: one file's diagnostics and tokens, with its project's
 //!   settings ([`project`]);
 //! - [`game`]: the game's files from a project's `game=` folders;
-//! - [`objects`], [`cameras`], [`terrain`], [`sheet`], [`trigstr`]:
-//!   object data, cameras, the terrain's header, SLK tables and string
-//!   tables for the editor.
+//! - [`objects`], [`cameras`], [`terrain`], [`mapinfo`], [`sheet`],
+//!   [`trigstr`]: object data, cameras, the terrain's header, map info,
+//!   SLK tables and string tables for the editor.
 
 pub mod analysis;
 pub mod cameras;
 pub mod terrain;
+pub mod mapinfo;
 pub mod document;
 pub mod game;
 pub mod glob;
