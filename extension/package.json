@@ -79,7 +79,7 @@
       },
       {
         "viewType": "wc3.blp",
-        "displayName": "BLP and TGA Image, Pathing Map",
+        "displayName": "BLP and TGA Image, Pathing and Shadow Map",
         "selector": [
           {
             "filenamePattern": "*.blp"
@@ -98,6 +98,12 @@
           },
           {
             "filenamePattern": "*.WPM"
+          },
+          {
+            "filenamePattern": "*.shd"
+          },
+          {
+            "filenamePattern": "*.SHD"
           }
         ],
         "priority": "default"
@@ -183,6 +189,30 @@
           },
           {
             "filenamePattern": "*.WCT"
+          },
+          {
+            "filenamePattern": "*.imp"
+          },
+          {
+            "filenamePattern": "*.IMP"
+          },
+          {
+            "filenamePattern": "*.mmp"
+          },
+          {
+            "filenamePattern": "*.MMP"
+          },
+          {
+            "filenamePattern": "*.doo"
+          },
+          {
+            "filenamePattern": "*.DOO"
+          },
+          {
+            "filenamePattern": "*.wtg"
+          },
+          {
+            "filenamePattern": "*.WTG"
           }
         ],
         "priority": "default"
@@ -526,7 +556,8 @@
         "icon": {
           "light": "./icons/doo.svg",
           "dark": "./icons/doo.svg"
-        }
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
         "id": "w3a",
@@ -789,7 +820,8 @@
         "icon": {
           "light": "./icons/wtg.svg",
           "dark": "./icons/wtg.svg"
-        }
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
         "id": "shd",
@@ -815,7 +847,8 @@
         "icon": {
           "light": "./icons/mmp.svg",
           "dark": "./icons/mmp.svg"
-        }
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
         "id": "imp",
@@ -828,7 +861,8 @@
         "icon": {
           "light": "./icons/imp.svg",
           "dark": "./icons/imp.svg"
-        }
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
         "id": "w3o",
@@ -934,7 +968,8 @@
         "icon": {
           "light": "./icons/units.svg",
           "dark": "./icons/units.svg"
-        }
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
         "id": "wpm",
@@ -1557,6 +1592,166 @@
       },
       {
         "language": "w3s",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "imp",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "mmp",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "doo",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "wc3-units",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "wtg",
         "scopes": {
           "comment": [
             "comment"

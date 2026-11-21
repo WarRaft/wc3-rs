@@ -62,7 +62,7 @@ impl Language {
             // (see `objects`).
             "w3a" | "w3b" | "w3d" | "w3h" | "w3q" | "w3t" | "w3u" => Language::Bni,
             // Cameras, in their BNI text form too (see `cameras`).
-            "w3c" | "w3e" | "w3i" | "w3r" | "w3s" => Language::Bni,
+            "w3c" | "w3e" | "w3i" | "w3r" | "w3s" | "imp" | "mmp" | "doo" | "wc3-units" | "wtg" => Language::Bni,
             // A map's custom script: code (see `customtext`), Lua in a Lua
             // map, which `Workspace::open` sees to.
             "wct" => Language::Jass,

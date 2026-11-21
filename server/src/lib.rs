@@ -30,7 +30,7 @@
 //! - [`game`]: the game's files from a project's `game=` folders;
 //! - [`objects`], [`cameras`], [`regions`], [`sounds`], [`terrain`],
 //!   [`mapinfo`], [`sheet`], [`trigstr`]: object data, cameras, regions,
-//!   sounds, the terrain's header, map info, SLK tables and string tables
+//!   sounds, imports ([`imports`]), minimap icons ([`minimap`]), placed doodads and units ([`placement`]), triggers ([`triggers`]), the terrain's header, map info, SLK tables and string tables
 //!   for the editor;
 //! - [`customtext`]: a map's custom script (`war3map.wct`), code in the
 //!   project's model.
@@ -43,6 +43,10 @@ pub mod names;
 pub mod hints;
 pub mod regions;
 pub mod sounds;
+pub mod imports;
+pub mod minimap;
+pub mod placement;
+pub mod triggers;
 pub mod customtext;
 pub mod document;
 pub mod game;

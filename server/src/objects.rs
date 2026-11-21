@@ -56,6 +56,7 @@ pub fn game_files() -> Vec<&'static str> {
         .flat_map(|k| [Some(k.metadata_file()), k.objects_file()])
         .flatten()
         .chain(STRINGS_FILES)
+        .chain(crate::names::FILES)
         .collect();
     files.sort();
     files.dedup();

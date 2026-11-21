@@ -42,7 +42,7 @@ fn client_messages_round_trip() {
             flags: fs_flags::OVERWRITE,
             data: vec![0, 1, 255],
         },
-        ClientMsg::Texture { request: 4, data: b"BLP1".to_vec() },
+        ClientMsg::Texture { request: 4, name: "x/war3map.shd".into(), data: b"BLP1".to_vec() },
         ClientMsg::Objects { request: 5, op: 1, name: "/m/war3map.w3u".into(), data: b"[w3u]".to_vec() },
     ];
     for msg in messages {

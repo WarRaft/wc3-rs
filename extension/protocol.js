@@ -255,11 +255,14 @@ const encode = {
 
     /**
      * @param {number} request  echoed in the answer
-     * @param {Uint8Array} data  the texture file's bytes
+     * @param {string} name  the file's path: what it is, and where what it
+     *   needs is (a shadow map's terrain)
+     * @param {Uint8Array} data  the file's bytes
      */
-    texture(request, data) {
+    texture(request, name, data) {
         const w = new Writer()
         w.u32(request)
+        w.string(name)
         w.bytes(data)
         return w.frame(KIND.TEXTURE)
     },

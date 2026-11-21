@@ -106,3 +106,25 @@ fn real_tgas() {
     println!("{} files", files.len());
     assert!(bad.is_empty(), "{}", bad.join("\n"));
 }
+
+#[test]
+fn a_shadow_map_takes_its_terrains_size() {
+    let tmp = crate::project::tests::TempDir::new("shadows");
+    let t = w3e_rs::Terrain {
+        version: 11, tileset: b'L', custom_tilesets: 0, ground: vec![], cliffs: vec![],
+        width: 2, height: 2, offset_x: 0.0, offset_y: 0.0,
+        points: vec![w3e_rs::Point::default(); 4],
+    };
+    std::fs::write(tmp.0.join("war3map.w3e"), t.to_bytes().unwrap()).unwrap();
+    let mut cells = vec![0u8; 16];
+    cells[12] = 255; // the top row's first cell
+    let name = tmp.0.join("war3map.shd").to_string_lossy().into_owned();
+    let s = decode_file(&name, &cells);
+    assert_eq!(s.error, "");
+    assert_eq!((s.width, s.height, s.encoding.as_str()), (4, 4, "Shadows"));
+    // North up: the shadowed cell is the picture's first.
+    assert_eq!(s.cells[0], 1);
+    assert_eq!(&s.mips[0].rgba[..4], &[40, 40, 40, 255]);
+    assert!(decode_file(&name, &[0; 15]).error.contains("15 bytes for a 4x4 grid"));
+    assert!(decode_file("/nowhere/war3map.shd", &cells).error.contains("can't be read"));
+}

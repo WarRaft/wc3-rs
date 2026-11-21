@@ -211,6 +211,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "doo-rs"
+version = "0.1.0"
+dependencies = [
+ "bni-rs",
+ "parser-rs",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -297,6 +305,14 @@ dependencies = [
  "png",
  "zune-core",
  "zune-jpeg",
+]
+
+[[package]]
+name = "imp-rs"
+version = "0.1.0"
+dependencies = [
+ "bni-rs",
+ "parser-rs",
 ]
 
 [[package]]
@@ -443,6 +459,14 @@ dependencies = [
  "log",
  "wasi",
  "windows-sys",
+]
+
+[[package]]
+name = "mmp-rs"
+version = "0.1.0"
+dependencies = [
+ "bni-rs",
+ "parser-rs",
 ]
 
 [[package]]
@@ -722,6 +746,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "shd-rs"
+version = "0.1.0"
+dependencies = [
+ "parser-rs",
+]
+
+[[package]]
 name = "signature"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -905,11 +936,15 @@ dependencies = [
  "as-rs",
  "blp",
  "bni-rs",
+ "doo-rs",
  "image",
+ "imp-rs",
  "jass-rs",
  "lua-rs",
+ "mmp-rs",
  "notify",
  "parser-rs",
+ "shd-rs",
  "slk-rs",
  "storm-rs",
  "w3abdhqtu-rs",
@@ -920,6 +955,7 @@ dependencies = [
  "w3s-rs",
  "wct-rs",
  "wpm-rs",
+ "wtg-rs",
  "wts-rs",
  "zinc-rs",
 ]
@@ -975,6 +1011,14 @@ dependencies = [
 name = "wpm-rs"
 version = "0.1.0"
 dependencies = [
+ "parser-rs",
+]
+
+[[package]]
+name = "wtg-rs"
+version = "0.1.0"
+dependencies = [
+ "bni-rs",
  "parser-rs",
 ]
 

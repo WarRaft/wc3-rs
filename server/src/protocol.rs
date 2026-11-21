@@ -109,9 +109,11 @@ pub enum ClientMsg {
         flags: u8,
         data: Vec<u8>,
     },
-    /// Kind 8. A texture file's bytes (`u32` length, then the bytes), to
-    /// decode for the viewer; answered at once by `Texture`.
-    Texture { request: u32, data: Vec<u8> },
+    /// Kind 8. A picture file's path (a string: what it is, and where
+    /// what it needs is, a shadow map its terrain) and bytes (`u32`
+    /// length, then the bytes), to decode for the viewer; answered at once
+    /// by `Texture`.
+    Texture { request: u32, name: String, data: Vec<u8> },
     /// Kind 9. Object data to convert: `u8` op (0: the file's bytes to
     /// its text form; 1: a text form, as UTF-8, to the file's bytes), the
     /// file's name (its extension says what it holds), `data`. Answered at
@@ -339,7 +341,7 @@ impl ClientMsg {
                 flags: r.u8()?,
                 data: r.bytes()?,
             },
-            kind::TEXTURE => ClientMsg::Texture { request: r.u32()?, data: r.bytes()? },
+            kind::TEXTURE => ClientMsg::Texture { request: r.u32()?, name: r.string()?, data: r.bytes()? },
             kind::OBJECTS => ClientMsg::Objects { request: r.u32()?, op: r.u8()?, name: r.string()?, data: r.bytes()? },
             _ => return Ok(None),
         };
@@ -399,8 +401,9 @@ impl ClientMsg {
                 w.bytes(data);
                 kind::FS
             }
-            ClientMsg::Texture { request, data } => {
+            ClientMsg::Texture { request, name, data } => {
                 w.u32(*request);
+                w.string(name);
                 w.bytes(data);
                 kind::TEXTURE
             }

@@ -34,7 +34,7 @@ use std::sync::Arc;
 use crate::game::{Game, Lookup};
 
 /// The files names come from, for [`Cache::disk_changed`].
-pub const FILES: [&str; 7] = [
+pub const FILES: [&str; 8] = [
     "TerrainArt\\Weather.slk",
     "TerrainArt\\Terrain.slk",
     "TerrainArt\\CliffTypes.slk",
@@ -42,6 +42,7 @@ pub const FILES: [&str; 7] = [
     "UI\\WorldEditData.txt",
     "UI\\WorldEditStrings.txt",
     "UI\\WorldEditGameStrings.txt",
+    "UI\\TriggerData.txt",
 ];
 
 /// The names a project's layers give.
@@ -61,6 +62,9 @@ pub struct Names {
     pub channels: HashMap<i32, String>,
     /// The editor's strings, by key (`WESTRING_RACE_HUMAN`), as written.
     pub strings: HashMap<String, String>,
+    /// How many parameters the trigger editor's functions take
+    /// (`UI\TriggerData.txt`), to read `war3map.wtg` with.
+    pub triggers: wtg_rs::TriggerData,
 }
 
 impl Names {
@@ -124,7 +128,8 @@ impl Names {
                 }
             }
         }
-        Names { weather, tilesets, eax, ground, cliffs, channels, ..names }
+        let triggers = read("UI\\TriggerData.txt").map(|t| wtg_rs::TriggerData::parse(&t)).unwrap_or_default();
+        Names { weather, tilesets, eax, ground, cliffs, channels, triggers, ..names }
     }
 
     /// `text` with a key in it replaced by the string it names, and so on

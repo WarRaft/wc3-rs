@@ -168,8 +168,8 @@ impl<W: Write> Server<W> {
                     data: answer.data,
                 });
             }
-            ClientMsg::Texture { request, data } => {
-                self.answers.push(ServerMsg::Texture { request, texture: crate::texture::decode(&data) });
+            ClientMsg::Texture { request, name, data } => {
+                self.answers.push(ServerMsg::Texture { request, texture: crate::texture::decode_file(&name, &data) });
             }
             ClientMsg::Objects { request, op, name, data } => {
                 let converted = if crate::cameras::is_camera_file(Path::new(&name)) {
@@ -182,6 +182,15 @@ impl<W: Write> Server<W> {
                     crate::regions::convert(op, &name, &data)
                 } else if crate::sounds::is_sound_file(Path::new(&name)) {
                     crate::sounds::convert(op, &name, &data)
+                } else if crate::imports::is_import_file(Path::new(&name)) {
+                    crate::imports::convert(op, &name, &data)
+                } else if crate::minimap::is_minimap_file(Path::new(&name)) {
+                    crate::minimap::convert(op, &name, &data)
+                } else if crate::placement::is_placement_file(Path::new(&name)) {
+                    crate::placement::convert(op, &name, &data)
+                } else if crate::triggers::is_trigger_file(Path::new(&name)) {
+                    let names = ws.names(Path::new(&name));
+                    crate::triggers::convert(op, &name, &data, &names.triggers)
                 } else if crate::customtext::is_custom_text_file(Path::new(&name)) {
                     crate::customtext::convert(op, &name, &data)
                 } else {

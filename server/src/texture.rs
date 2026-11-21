@@ -42,6 +42,48 @@ pub struct Mip {
     pub rgba: Vec<u8>,
 }
 
+/// Decodes the picture file `name` with bytes `bytes`: a shadow map by
+/// its name (`.shd`, which has no header: its size is its terrain's, the
+/// `war3map.w3e` beside it, on disk or in the same map), else as
+/// [`decode`] does.
+pub fn decode_file(name: &str, bytes: &[u8]) -> Texture {
+    let path = std::path::Path::new(name);
+    if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("shd")) {
+        return shadows(path, bytes);
+    }
+    decode(bytes)
+}
+
+/// A shadow map: dark where there's shadow, its cells for the page (one
+/// flag, `shadow`).
+fn shadows(path: &std::path::Path, bytes: &[u8]) -> Texture {
+    let failed = |error: String| Texture { error, ..Default::default() };
+    let Some(w3e) = path.parent().map(|p| p.join("war3map.w3e")) else {
+        return failed("A shadow map's size is its terrain's, and there's no war3map.w3e beside it.".into());
+    };
+    let terrain = if w3e.is_file() { std::fs::read(&w3e).ok() } else { crate::map::bytes(&w3e) };
+    let Some(terrain) = terrain.and_then(|b| w3e_rs::parse(&b).ok()) else {
+        return failed("A shadow map's size is its terrain's: war3map.w3e beside it can't be read.".into());
+    };
+    let (width, height) = shd_rs::size_for_terrain(terrain.width, terrain.height);
+    let map = match shd_rs::parse(bytes, width, height) {
+        Ok(map) => map,
+        Err(err) => return failed(format!("Can't read this shadow map: {err}")),
+    };
+    let row = width.max(1) as usize;
+    Texture {
+        error: String::new(),
+        version: "Shadows".into(),
+        encoding: "Shadows".into(),
+        alpha_bits: 0,
+        width,
+        height,
+        mips: vec![Mip { width, height, error: String::new(), rgba: map.to_rgba() }],
+        cells: map.cells.chunks(row).rev().flatten().map(|&c| u8::from(c != 0)).collect(),
+        flags: vec![(0x01, "shadow".into())],
+    }
+}
+
 /// Decodes a BLP file's bytes, or a pathing map's (by its `MP3W`).
 pub fn decode(bytes: &[u8]) -> Texture {
     let failed = |error: String| Texture { error, ..Default::default() };

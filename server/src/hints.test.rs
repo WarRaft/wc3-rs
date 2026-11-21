@@ -91,3 +91,20 @@ fn the_games_words_where_it_has_them() {
     let region = "[w3r]\n[A]\nweather=0x00000000\n";
     assert_eq!(hints(region, Path::new("war3map.w3r"), &n, None, 0, 9), r#"[[2,18,"Нет"]]"#);
 }
+
+#[test]
+fn imports_say_where_the_file_is() {
+    let text = "[imp]\nversion=1\nfile=8,\"Icon.blp\"\nfile=13,\"Armor\\Crab.mdx\"\n";
+    assert_eq!(
+        hints(text, Path::new("war3map.imp"), &names(), None, 0, 9),
+        r#"[[2,17,"war3mapImported\\Icon.blp (unknown 0x08)"],[3,24,"Armor\\Crab.mdx (custom path, unknown 0x04, unknown 0x08)"]]"#
+    );
+}
+
+#[test]
+fn minimap_kinds_and_colors() {
+    let text = "[mmp]\nversion=0\n[icon]\nkind=2\ncolor=255,3,3,255\n";
+    assert_eq!(hints(text, Path::new("war3map.mmp"), &names(), None, 0, 9), r#"[[3,6,"start location"]]"#);
+    assert_eq!(colors(text, Path::new("x/war3map.MMP")), "[[4,6,4,17,255,3,3,255]]");
+    assert!(has_colors(Path::new("war3map.w3r")) && !has_colors(Path::new("war3map.w3s")));
+}

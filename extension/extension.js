@@ -32,7 +32,9 @@
  * with `blp-rs` (`server/src/texture.rs`), and the page draws its mips. A
  * `.tga` (map previews, loading screens) opens there too, decoded with the
  * `image` crate.
- * A pathing map (`.wpm`), which has no text, opens there too: the server
+ * A shadow map (`.shd`) too, its size its terrain's (the `war3map.w3e`
+ * beside it, which the server reads). A pathing map (`.wpm`), which has
+ * no text, opens there too: the server
  * draws it as the game's pathing textures draw pathing (red: no walking,
  * green: no flying, blue: no building) and sends each cell's flags, and
  * the page shows one flag at a time and names a cell's flags under the
@@ -67,6 +69,13 @@
  *
  * Map info (`.w3i`) too: a `[w3i]` section, then a section per player,
  * force, upgrade, tech and random table (`w3i-rs`, `server/src/mapinfo.rs`).
+ * Imported files (`.imp`, `imp-rs`) and minimap icons (`.mmp`, `mmp-rs`,
+ * colors in the picker) too. What a map places (`.doo`: `war3map.doo`
+ * doodads, `war3mapUnits.doo` units, its own language) too (`doo-rs`,
+ * `server/src/placement.rs`), the layout from the `war3map.w3i` beside it.
+ * Triggers (`.wtg`) too (`wtg-rs`, `server/src/triggers.rs`): their
+ * events, conditions and actions as lines of calls; the server reads them
+ * with the project's `UI\TriggerData.txt`.
  *
  * In `wc3.bni`, the paths of `game=`, `sources=`, `exclude=` and `root=`
  * complete from the disk and every folder along them is a link that reveals that folder (in the
@@ -132,7 +141,7 @@ const OBJECTS_SCHEME = 'wc3obj'
  * (`w3r`), sounds (`w3s`) and the custom script (`wct`, whose text is
  * code: JASS, or Lua in a Lua map). As `wc3obj:` text they're BNI; a file opened as is is binary,
  * not text. */
-const OBJECT_LANGUAGES = new Set(['w3a', 'w3b', 'w3d', 'w3h', 'w3q', 'w3t', 'w3u', 'w3c', 'w3e', 'w3i', 'w3r', 'w3s', 'wct'])
+const OBJECT_LANGUAGES = new Set(['w3a', 'w3b', 'w3d', 'w3h', 'w3q', 'w3t', 'w3u', 'w3c', 'w3e', 'w3i', 'w3r', 'w3s', 'wct', 'imp', 'mmp', 'doo', 'wc3-units', 'wtg'])
 
 /** Language ids the server analyzes (its `Language::from_id`). */
 const LANGUAGES = new Set(['jass', 'vjass', 'zinc', 'lua', 'angelscript', 'bni', 'slk', 'wts', ...OBJECT_LANGUAGES])
@@ -826,10 +835,11 @@ document.getElementById('open').onclick = () => vscode.postMessage('open')
  * Asks the server to decode a texture file's bytes; resolves with the
  * decoded texture (whose `error` says why when it isn't one).
  *
+ * @param {string} name  the file's path
  * @param {Uint8Array} data
  * @returns {Promise<import('./protocol.js').Texture>}
  */
-function textureRequest(data) {
+function textureRequest(name, data) {
     if (!server) return Promise.reject(new Error('The WC3 server isn\'t running.'))
     const request = nextRequest = (nextRequest + 1) >>> 0
     return new Promise((resolve, reject) => {
@@ -841,7 +851,7 @@ function textureRequest(data) {
             clearTimeout(timer)
             resolve(answer.texture)
         })
-        send(encode.texture(request, data))
+        send(encode.texture(request, name, data))
     })
 }
 
@@ -916,14 +926,14 @@ function registerTextures(context) {
             const {uri} = document
             const {webview} = panel
             webview.options = {enableScripts: true, localResourceRoots: [media]}
-            const kind = /\.(wpm|tga)$/i.exec(uri.path)?.[1].toLowerCase() ?? 'blp'
+            const kind = /\.(wpm|tga|shd)$/i.exec(uri.path)?.[1].toLowerCase() ?? 'blp'
             panel.iconPath = Uri.joinPath(context.extensionUri, 'icons', `${kind}.svg`)
             webview.html = html(webview)
 
             const load = async () => {
                 try {
                     const data = await workspace.fs.readFile(uri)
-                    webview.postMessage({type: 'texture', size: data.length, texture: await textureRequest(data)})
+                    webview.postMessage({type: 'texture', size: data.length, texture: await textureRequest(uri.fsPath, data)})
                 } catch (e) {
                     webview.postMessage({type: 'error', message: e instanceof Error ? e.message : String(e)})
                 }
@@ -1081,7 +1091,8 @@ h2 { font-size: 1.2em; font-weight: 600; } p { color: var(--vscode-errorForegrou
     }
     const selector = [...OBJECT_LANGUAGES].map(language => ({language, scheme: OBJECTS_SCHEME}))
 
-    // A region's `color=red,green,blue,alpha` as a color: a swatch before
+    // A region's or a minimap icon's `color=red,green,blue,alpha` as a
+    // color: a swatch before
     // it that opens the color picker. The server finds the values; a
     // picked color is written back as four numbers from 0 to 255.
     const byte = v => Math.round(Math.min(Math.max(v, 0), 1) * 255)
@@ -1104,7 +1115,7 @@ h2 { font-size: 1.2em; font-weight: 600; } p { color: var(--vscode-errorForegrou
     context.subscriptions.push(
         changed,
         languages.registerInlayHintsProvider(selector, hints),
-        languages.registerColorProvider({language: 'w3r', scheme: OBJECTS_SCHEME}, colors),
+        languages.registerColorProvider(['w3r', 'mmp'].map(language => ({language, scheme: OBJECTS_SCHEME})), colors),
         workspace.registerFileSystemProvider(OBJECTS_SCHEME, provider, {isCaseSensitive: process.platform === 'linux'}),
         window.registerCustomEditorProvider('wc3.objects', editor, {supportsMultipleEditorsPerDocument: true}),
     )

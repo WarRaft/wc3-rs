@@ -321,6 +321,11 @@ no building, blight, no water, boundary, the two unused bits), white
 where it's set; under the cursor, the cell (from the bottom left, as the
 file counts) and its flags by name. Save PNG saves the picture.
 
+A map's shadow map, `war3map.shd`, opens there too ([`shd-rs`](../shd-rs/README.md)):
+the file has no header, so its size comes from the terrain beside it
+(`war3map.w3e`, on disk or in the same map; 16 pixels to a terrain
+cell). Dark where trees and buildings cast shadow.
+
 ## Object data
 
 Object data (`.w3a` abilities, `.w3b` destructables, `.w3d` doodads,
@@ -607,6 +612,57 @@ fields there are: one it doesn't have is an error while the text is
 edited, and saving refuses it. A field left out takes its default. A
 file a map optimizer cut short says so (`cut=forces`) and saves back the
 same.
+
+## Imports and minimap icons
+
+A map's list of imported files, `war3map.imp`, opens as text
+([`imp-rs`](../imp-rs/README.md), `server/src/imports.rs`): `[imp]
+version=1`, then a `file=<flags>,"path"` line per file. Where the file
+is in the map (`war3mapImported\` and its name, unless the flags say a
+custom path) and the flags' names show as inlay hints.
+
+Its minimap icons, `war3map.mmp`, too ([`mmp-rs`](../mmp-rs/README.md),
+`server/src/minimap.rs`): an `[icon]` per icon with `kind`, `x`, `y`
+and `color=r,g,b,a`; the kind's name is a hint, the color has a swatch
+and the color picker.
+
+## Doodads and units
+
+What a map places, `war3map.doo` (doodads, destructables, the doodads
+cliffs place) and `war3mapUnits.doo` (units, buildings, items, start
+locations), opens as text ([`doo-rs`](../doo-rs/README.md),
+`server/src/placement.rs`): a header section, then a `[doodad]`,
+`[special]` or `[unit]` per thing placed, in file order, with its type,
+position, angle, scale, owner, hit points, items, abilities, item drops
+and how it's random. Since 1.32 everything placed has a skin: the
+`war3map.w3i` beside the file says which layout it is (without one, the
+layout the file reads in).
+
+## Triggers
+
+A map's GUI triggers, `war3map.wtg`, open as text ([`wtg-rs`](../wtg-rs/README.md),
+`server/src/triggers.rs`): `[wtg]`, then a section per category,
+variable and trigger, and a trigger's events, conditions and actions as
+lines of calls:
+
+```ini
+[trigger]
+name="Hint Draenei"
+description=""
+category=1
+event=MapInitializationEvent()
+action=IfThenElseMultiple()
+>condition:0=OperatorCompareBoolean($DraeneiUsed, OperatorEqualENE, "false")
+>action:1=TriggerSleepAction("30.00")
+>!action:2=DoNothing()
+```
+
+`!` marks one disabled; `>` and `:block` one inside another (an
+if/then/else's condition 0, then 1, else 2). How many parameters each
+function takes isn't in the file but in World Editor's
+`UI\TriggerData.txt`, found like every game file (see "Finding a file"):
+a modded editor's in a root replaces the game's. Opening needs it, and
+saving checks every function's name and parameter count against it.
 
 ## SLK tables
 

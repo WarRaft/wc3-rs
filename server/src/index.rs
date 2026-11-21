@@ -64,12 +64,6 @@ pub enum QueryKind {
     Colors,
 }
 
-/// The text of file `id` when it's a region file's text form.
-fn region_text<'a>(ws: &'a Workspace, id: &str) -> Option<&'a str> {
-    let (doc, _) = ws.file(id)?;
-    doc.path.as_deref().filter(|p| crate::regions::is_region_file(p)).map(|_| doc.text.as_str())
-}
-
 /// Path completion and links in a manifest; nothing for any other file.
 fn manifest_paths(ws: &Workspace, kind: QueryKind, id: &str, pos: Position) -> Answer {
     let Some((doc, _)) = ws.file(id) else {
@@ -180,7 +174,13 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             return Answer { locations: Vec::new(), text };
         }
         QueryKind::Colors => {
-            let text = region_text(ws, id).map_or("[]".into(), crate::regions::colors);
+            let text = match ws.file(id) {
+                Some((doc, _)) => match doc.path.as_deref().filter(|p| crate::hints::has_colors(p)) {
+                    Some(path) => crate::hints::colors(&doc.text, path),
+                    None => "[]".into(),
+                },
+                None => "[]".into(),
+            };
             return Answer { locations: Vec::new(), text };
         }
         QueryKind::Hover if ws.object_text(id).is_some() => {

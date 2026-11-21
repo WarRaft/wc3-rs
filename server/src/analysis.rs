@@ -113,6 +113,17 @@ fn bni(doc: &Document, project: Option<&Project>, objects: Option<&Metadata>, ou
     // Sounds (`.w3s`): what they can't save.
     let sounds = crate::sounds::diagnostics(doc.path.as_deref(), &parsed);
     diags.extend(sounds.iter().map(|e| out.error(e)));
+    // Imports (`.imp`): what they can't save.
+    let imports = crate::imports::diagnostics(doc.path.as_deref(), &parsed);
+    diags.extend(imports.iter().map(|e| out.error(e)));
+    // Minimap icons (`.mmp`): what they can't save.
+    let icons = crate::minimap::diagnostics(doc.path.as_deref(), &parsed);
+    diags.extend(icons.iter().map(|e| out.error(e)));
+    // Placed doodads and units (`.doo`): what they can't save.
+    let triggers = crate::triggers::diagnostics(doc.path.as_deref(), &parsed, out.text);
+    diags.extend(triggers.iter().map(|e| out.error(e)));
+    let placed = crate::placement::diagnostics(doc.path.as_deref(), &parsed, out.text);
+    diags.extend(placed.iter().map(|e| out.error(e)));
     lint.extend(bni_rs::lint(&parsed));
     let lint = project::apply_lint(lint, project);
     diags.extend(lint.into_iter().map(|d| out.lint(d)));

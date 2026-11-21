@@ -1,5 +1,6 @@
 //! Inlay hints for the text forms of regions (`.w3r`), sounds (`.w3s`),
-//! terrain (`.w3e`) and map info (`.w3i`): what a value means, after it.
+//! imports (`.imp`), terrain (`.w3e`) and map info (`.w3i`): what a value
+//! means, after it.
 //! The texts carry none of it, only the values.
 //!
 //! Every word shown is the game's where the game has one, in its
@@ -14,8 +15,12 @@
 //!   World Editor's string for it (`Names::string`), and their English
 //!   name when the game's files don't have it.
 //!
+//! Also what only a crate knows: an import's place in the map and its
+//! flags (`imp_rs`), a minimap icon's kind (`mmp_rs::KINDS`).
+//!
 //! What only the format says (the order of a list's numbers, which
-//! players a mask has) is in English. Without the game's files the
+//! players a mask has, where an imported file is in the map) is in
+//! English. Without the game's files the
 //! built-in English names show, and nothing for an id only the files
 //! name.
 
@@ -27,7 +32,41 @@ use crate::document::LineIndex;
 use crate::names::Names;
 
 /// The file types whose text forms have hints, by extension.
-const TYPES: [&str; 4] = ["w3r", "w3s", "w3e", "w3i"];
+const TYPES: [&str; 6] = ["w3r", "w3s", "w3e", "w3i", "imp", "mmp"];
+
+/// The file types whose text forms have colors for a picker, by
+/// extension: regions' and minimap icons' `color=`.
+const COLORED: [&str; 2] = ["w3r", "mmp"];
+
+/// Does the text form of the file at `path` have colors to pick?
+pub fn has_colors(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| COLORED.iter().any(|t| e.eq_ignore_ascii_case(t)))
+}
+
+/// The colors of the text form `text` of the file at `path`, for the
+/// editor's color picker: JSON `[[line, character, end line, end
+/// character, red, green, blue, alpha], ...]`, the range being the
+/// value's, in editor coordinates.
+pub fn colors(text: &str, path: &Path) -> String {
+    let doc = bni_rs::parse(text);
+    let lines = LineIndex::new(text);
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let found = match ext.as_str() {
+        "w3r" => w3r_rs::text::colors(&doc),
+        "mmp" => mmp_rs::text::colors(&doc),
+        _ => Vec::new(),
+    };
+    let items: Vec<String> = found
+        .iter()
+        .map(|(span, [r, g, b, a])| {
+            let range = lines.span(text, *span);
+            format!("[{},{},{},{},{r},{g},{b},{a}]", range.start.line, range.start.character, range.end.line, range.end.character)
+        })
+        .collect();
+    format!("[{}]", items.join(","))
+}
 
 /// Does the text form of the file at `path` have hints?
 pub fn has_names(path: &Path) -> bool {
@@ -146,6 +185,19 @@ fn tileset(value: &str, names: &Names, own: Option<&str>) -> Option<String> {
     }
 }
 
+/// What an import list's `file=` line shows: where the file is in the
+/// map, and its flags by name.
+fn import(item: &Item) -> Option<String> {
+    let (flags, path) = match item.fields.as_slice() {
+        [flags, path] => (flags.text().trim().parse::<u8>().ok()?, bni_rs::string::unquote(path).ok()?),
+        [path] => (0, bni_rs::string::unquote(path).ok()?),
+        _ => return None,
+    };
+    let at = imp_rs::Import { flags, path }.path_in_map();
+    let names: Vec<&str> = imp_rs::FLAGS.iter().filter(|(b, _)| flags & b != 0).map(|(_, n)| *n).collect();
+    Some(if names.is_empty() { at } else { format!("{at} ({})", names.join(", ")) })
+}
+
 /// What an item of a map info file's section `section` shows.
 fn map_info(section: &str, key: &str, v: &str, names: &Names) -> Option<String> {
     use w3i_rs::{AVAILABILITY, COLUMNS, FLAGS, FOG_STYLES, FORCE_FLAGS, MODES, PLAYER_TYPES, RACES, SCRIPTS};
@@ -209,6 +261,8 @@ pub fn hints(
                     "flags" => bits(&w3s_rs::FLAGS, &v, names),
                     _ => None,
                 },
+                ("imp", 0) if key == "file" => import(item),
+                ("mmp", 1..) if key == "kind" => v.parse().ok().and_then(mmp_rs::kind_name).map(String::from),
                 ("w3e", 0) => match key {
                     "tileset" => tileset(&v, names, None),
                     _ => {

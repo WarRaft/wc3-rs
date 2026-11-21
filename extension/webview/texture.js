@@ -182,7 +182,9 @@ function show(/** @type {Texture} */ t, /** @type {number} */ size) {
     if (t.alphaBits === 0 && state.channels !== 'rgba') state.channels = 'rgba'
     $('channels').hidden = t.alphaBits === 0 && !isPathing()
 
-    const kind = isPathing() ? 'red no walking, green no flying, blue no building' : (t.alphaBits ? `alpha ${t.alphaBits} bit` : 'no alpha')
+    const kind = !isPathing()
+        ? (t.alphaBits ? `alpha ${t.alphaBits} bit` : 'no alpha')
+        : t.encoding === 'Shadows' ? 'dark: shadow' : 'red no walking, green no flying, blue no building'
     $('info').textContent = [t.version, t.encoding, `${t.width}×${t.height}`, kind, bytes(size)].join(' · ')
     $('info').title = `${t.mips.length} mip${t.mips.length === 1 ? '' : 's'}`
 
@@ -203,7 +205,7 @@ function show(/** @type {Texture} */ t, /** @type {number} */ size) {
         // The picture, or one flag at a time.
         $('channels-label').textContent = 'Show'
         if (!t.flags.some(f => f.bit === state.flag)) state.flag = 0
-        const items = /** @type {[string, string, string?][]} */ ([['0', 'Pathing', 'Red: no walking, green: no flying, blue: no building']])
+        const items = /** @type {[string, string, string?][]} */ ([['0', t.encoding, t.encoding === 'Shadows' ? 'Dark: shadow' : 'Red: no walking, green: no flying, blue: no building']])
         for (const f of t.flags) items.push([String(f.bit), `0x${f.bit.toString(16).padStart(2, '0')}`, f.name])
         toggles($('channels'), items, String(state.flag), v => {
             state.flag = Number(v)
