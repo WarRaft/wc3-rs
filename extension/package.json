@@ -1,7 +1,7 @@
 {
   "name": "wc3",
   "displayName": "WC3",
-  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects; maps as folders and a BLP texture viewer; object data (.w3a .w3u ...), cameras (.w3c), regions (.w3r), the terrain's header (.w3e) and map info (.w3i) as editable text.",
+  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects; maps as folders and a BLP texture viewer; object data (.w3a .w3u ...), cameras (.w3c), regions (.w3r), sounds (.w3s), the terrain's header (.w3e) and map info (.w3i) as editable text.",
   "version": "0.0.3",
   "publisher": "WarRaft",
   "icon": "images/logo.png",
@@ -92,7 +92,7 @@
       },
       {
         "viewType": "wc3.objects",
-        "displayName": "Object Data, Cameras, Regions, Terrain and Map Info as Text",
+        "displayName": "Object Data, Cameras, Regions, Sounds, Terrain and Map Info as Text",
         "selector": [
           {
             "filenamePattern": "*.w3a"
@@ -159,6 +159,12 @@
           },
           {
             "filenamePattern": "*.W3R"
+          },
+          {
+            "filenamePattern": "*.w3s"
+          },
+          {
+            "filenamePattern": "*.W3S"
           }
         ],
         "priority": "default"
@@ -630,6 +636,20 @@
         "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
+        "id": "w3s",
+        "aliases": [
+          "Sounds"
+        ],
+        "extensions": [
+          ".w3s"
+        ],
+        "icon": {
+          "light": "./icons/w3s.svg",
+          "dark": "./icons/w3s.svg"
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
+      },
+      {
         "id": "w3t",
         "aliases": [
           "Items"
@@ -697,7 +717,6 @@
           ".wpm",
           ".mmp",
           ".imp",
-          ".w3s",
           ".wtg",
           ".wct",
           ".w3o"
@@ -1251,6 +1270,38 @@
       },
       {
         "language": "w3r",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "w3s",
         "scopes": {
           "comment": [
             "comment"

@@ -64,11 +64,14 @@ struct Entry {
     /// For the text form of regions, terrain or map info, the names its
     /// ids show as (`names`), from its project's layers.
     names: Option<Arc<Names>>,
+    /// For the text form of terrain, what its file's points say (how many
+    /// use each texture), read from the file as it is on disk.
+    usage: Option<Arc<w3e_rs::text::Usage>>,
 }
 
 impl Entry {
     fn new(doc: Document, open: bool) -> Entry {
-        Entry { doc, open, symbols: Vec::new(), project: None, game: false, objects: None, names: None }
+        Entry { doc, open, symbols: Vec::new(), project: None, game: false, objects: None, names: None, usage: None }
     }
 
     fn game(doc: Document, open: bool) -> Entry {
@@ -112,6 +115,8 @@ pub struct Workspace {
     /// The names ids show as, for the text forms of regions, terrain and
     /// map info.
     names: crate::names::Cache,
+    /// What terrain files' points say, by path (`terrain_usage`).
+    usage: HashMap<PathBuf, Option<Arc<w3e_rs::text::Usage>>>,
     /// Files to analyze and report.
     dirty: HashSet<String>,
     /// Files the editor should forget: they left the model.
@@ -201,6 +206,14 @@ impl Workspace {
     /// the editor's text.
     pub fn disk_changed(&mut self, paths: &[PathBuf]) {
         // The game's metadata changed: check the object-data texts again.
+        // A terrain file (or its map) changed: count its points again.
+        let before = self.usage.len();
+        self.usage.retain(|file, _| !paths.iter().any(|p| file == p || file.starts_with(p)));
+        if self.usage.len() != before {
+            let texts = self.files.iter().filter(|(_, e)| e.usage.is_some());
+            let ids: Vec<String> = texts.map(|(id, _)| id.clone()).collect();
+            self.dirty.extend(ids);
+        }
         // The names changed: show the texts' hints again.
         if self.names.disk_changed(paths) {
             let texts = self.files.iter().filter(|(_, e)| e.names.is_some());
@@ -288,7 +301,10 @@ impl Workspace {
                 let objects = bni.then(|| self.object_metadata(&path)).flatten();
                 if bni && crate::hints::has_names(&path) {
                     let names = self.names(&path);
-                    self.files.get_mut(id).expect("listed").names = Some(names);
+                    let usage = crate::terrain::is_terrain_file(&path).then(|| self.terrain_usage(&path)).flatten();
+                    let entry = self.files.get_mut(id).expect("listed");
+                    entry.names = Some(names);
+                    entry.usage = usage;
                 }
                 (self.settings_for(&path), objects)
             })
@@ -567,11 +583,25 @@ impl Workspace {
         self.names.get(&lookup)
     }
 
-    /// The text of file `id` and the names its ids show as, when it's the
-    /// text form of regions, terrain or map info.
-    pub fn names_text(&self, id: &str) -> Option<(&Document, &Names)> {
+    /// The text of file `id`, the names its ids show as, and for terrain
+    /// what its points say, when it's the text form of regions, sounds,
+    /// terrain or map info.
+    pub fn names_text(&self, id: &str) -> Option<(&Document, &Names, Option<&w3e_rs::text::Usage>)> {
         let entry = self.files.get(id)?;
-        Some((&entry.doc, entry.names.as_deref()?))
+        Some((&entry.doc, entry.names.as_deref()?, entry.usage.as_deref()))
+    }
+
+    /// What the points of the terrain file at `path` say, read once from
+    /// the file (on disk or in its map) until it changes on disk.
+    fn terrain_usage(&mut self, path: &Path) -> Option<Arc<w3e_rs::text::Usage>> {
+        self.usage
+            .entry(path.to_path_buf())
+            .or_insert_with(|| {
+                let bytes = if path.is_file() { std::fs::read(path).ok() } else { map::bytes(path) }?;
+                let terrain = w3e_rs::parse(&bytes).ok()?;
+                Some(Arc::new(w3e_rs::text::Usage::of(&terrain)))
+            })
+            .clone()
     }
 
     /// Where the files `path` is read with are looked up: its project's

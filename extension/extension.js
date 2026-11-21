@@ -46,7 +46,9 @@
  * rotation), which the server reads from the map's `war3map.w3i`.
  * Regions (`.w3r`) too: a section per region (`w3r-rs`,
  * `server/src/regions.rs`), a weather's name as an inlay hint after its
- * id, and `color=` as a color the picker changes.
+ * id, and `color=` as a color the picker changes. Sounds (`.w3s`) too
+ * (`w3s-rs`, `server/src/sounds.rs`), with the names of their EAX
+ * setting, channel and flags as inlay hints.
  *
  * Terrain (`.w3e`) too, but only its header: tilesets, size, position
  * (`w3e-rs`, `server/src/terrain.rs`). Saving puts the header onto the
@@ -115,10 +117,10 @@ const MAP_NAME = /\.(w3[xm]|mpq)$/i
 const OBJECTS_SCHEME = 'wc3obj'
 
 /** The languages of object-data files (`package.json`), one per type, of
- * camera files (`w3c`), terrain (`w3e`), map info (`w3i`) and regions
- * (`w3r`). As `wc3obj:` text they're BNI; a file opened as is is binary,
+ * camera files (`w3c`), terrain (`w3e`), map info (`w3i`), regions
+ * (`w3r`) and sounds (`w3s`). As `wc3obj:` text they're BNI; a file opened as is is binary,
  * not text. */
-const OBJECT_LANGUAGES = new Set(['w3a', 'w3b', 'w3d', 'w3h', 'w3q', 'w3t', 'w3u', 'w3c', 'w3e', 'w3i', 'w3r'])
+const OBJECT_LANGUAGES = new Set(['w3a', 'w3b', 'w3d', 'w3h', 'w3q', 'w3t', 'w3u', 'w3c', 'w3e', 'w3i', 'w3r', 'w3s'])
 
 /** Language ids the server analyzes (its `Language::from_id`). */
 const LANGUAGES = new Set(['jass', 'vjass', 'zinc', 'lua', 'angelscript', 'bni', 'slk', 'wts', ...OBJECT_LANGUAGES])

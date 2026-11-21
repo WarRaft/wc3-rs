@@ -451,23 +451,61 @@ sound, white, the next index); a value that isn't one, an unknown or
 repeated field are errors while the text is edited, and saving refuses
 them.
 
+## Sounds
+
+A map's sounds, `war3map.w3s`, open as text the same way
+([`w3s-rs`](../w3s-rs/README.md), `server/src/sounds.rs`): a `[w3s]`
+section, then a section per sound named after its variable
+(`gg_snd_<name>`).
+
+```ini
+[w3s]
+version=1
+
+[gg_snd_ArthasSummon]
+file="Abilities\Spells\Undead\DarkSummoning\DarkSummoningTarget1.wav"
+eax="SpellsEAX"
+flags=0x00000006
+fade_in=10
+fade_out=10
+volume=default
+pitch=default
+channel=default
+...
+```
+
+`default` is World Editor's "use default" (the game's own value). As
+inlay hints: the EAX setting's name (`Spells`, from
+`UI\SoundInfo\EAXDefs.slk`; an empty one is the default setting's), the
+channel's (`Combat`, from `UI\WorldEditData.txt` `[SoundChannels]`) and
+the flags' (`3D sound, stop when out of range, imported`, World Editor's
+strings for them), all from the game's files through the project's
+layers (see "Finding a file"), so in the game's language. Channels and
+flags are built into the game, so `w3s-rs` has them too
+(`w3s_rs::CHANNELS`, `w3s_rs::FLAGS`), with English names that show
+without the game's files. A field left out takes World Editor's value for a
+new sound; a value that isn't one, an unknown or repeated field are
+errors while the text is edited, and saving refuses them.
+
 ## Terrain
 
 A map's terrain, `war3map.w3e`, opens as text too, but only its header:
 version, tileset, the ground and cliff textures, the grid's size, its
 position ([`w3e-rs`](../w3e-rs/README.md), `server/src/terrain.rs`). The
-points (heights, textures, cliffs, water) aren't text; comments say what
-they make of the header: how many points use each texture, where the map
-ends. The tileset's name shows after its letter as an inlay hint, from
-the game's files (`UI\WorldEditData.txt` `[TileSets]`).
+points (heights, textures, cliffs, water) aren't text. What the values
+mean shows after them as inlay hints: the tileset's name, each ground
+and cliff texture's name with how many points use it (the server reads
+the file's points once, on disk or in the map, and again when it
+changes), the map's size in cells, where it spans in world coordinates,
+which games write the version. Names come from the game's files
+(`UI\WorldEditData.txt` `[TileSets]`, `TerrainArt\Terrain.slk`,
+`TerrainArt\CliffTypes.slk`).
 
 ```ini
 [w3e]
 version=11
 tileset=L
 custom_tilesets=0
-// Ground textures (TerrainArt\Terrain.slk); points using each:
-// Ldrt 3418, Ldro 1203, Lgrs 4788
 ground=Ldrt,Ldro,Lgrs
 cliffs=CLdi
 width=97
@@ -493,26 +531,30 @@ table and random item table, in file order.
 
 ```ini
 [w3i]
-version=25 // The Frozen Throne
+version=25
 name="TRIGSTR_001"
-flags=0x0001DC68 // ..., use custom forces, ...
+flags=0x0001DC68
 tileset=C
 
 [player]
-number=0 // Player 1
-type=1 // human
-race=1 // human
+number=0
+type=1
+race=1
 name="TRIGSTR_005"
 
 [force]
-flags=0x0000000B // allied, allied victory, shared vision
-players=0x000001FF // 1, 2, 3, 4, 5, 6, 7, 8, 9
+flags=0x0000000B
+players=0x000001FF
 name="TRIGSTR_004"
 ```
 
-The comment after a value says what it means and isn't read. The
-tilesets' names (`tileset`, `light_tileset`) show as inlay hints, from
-the game's files. The version
+What a value means shows after it as an inlay hint, not in the text:
+the tilesets' names, the flags set, a player's number, type and race,
+the players of a mask, a force's flags, an upgrade's availability, a
+random table's columns, the fog style, what a list's numbers are. The
+words are the game's where it has them (World Editor's strings, through
+the project's layers, so in the game's language; the keys are in
+`w3i-rs`'s tables), English otherwise. The version
 (18 Reign of Chaos, 25 The Frozen Throne, 28 1.31, 31 1.32) decides which
 fields there are: one it doesn't have is an error while the text is
 edited, and saving refuses it. A field left out takes its default. A

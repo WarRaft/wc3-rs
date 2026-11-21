@@ -11,7 +11,7 @@ fn file() -> Vec<u8> {
 fn text_and_back() {
     let name = "/maps/x/war3map.w3i";
     let text = String::from_utf8(convert(TO_TEXT, name, &file()).unwrap()).unwrap();
-    assert!(text.contains("[w3i]\nversion=25 // The Frozen Throne\n"), "{text}");
+    assert!(text.starts_with("[w3i]\nversion=25\n"), "{text}");
     assert!(text.contains("name=\"My map\"\n"), "{text}");
     assert_eq!(convert(TO_BYTES, name, text.as_bytes()).unwrap(), file());
     let err = convert(TO_BYTES, name, b"[w3i]\nversion=25\nscript=1\n").unwrap_err();

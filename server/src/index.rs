@@ -167,8 +167,8 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
         QueryKind::InlayHints => {
             let text = match (ws.object_text(id), ws.names_text(id)) {
                 (Some((doc, meta)), _) => crate::objects::hints(&doc.text, pos.line, pos.character, meta),
-                (None, Some((doc, names))) => match doc.path.as_deref() {
-                    Some(path) => crate::hints::hints(&doc.text, path, names, pos.line, pos.character),
+                (None, Some((doc, names, usage))) => match doc.path.as_deref() {
+                    Some(path) => crate::hints::hints(&doc.text, path, names, usage, pos.line, pos.character),
                     None => "[]".into(),
                 },
                 (None, None) => "[]".into(),

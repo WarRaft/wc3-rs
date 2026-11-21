@@ -798,3 +798,49 @@ fn a_map_in_the_roots_goes_through_the_whole_chain_any_other_stands_alone() {
     let lookup = ws.lookup(&other.join("war3map.w3r"));
     assert_eq!((lookup.game, lookup.roots), (game, vec![other]));
 }
+
+#[test]
+fn terrain_text_counts_its_files_points_until_the_file_changes() {
+    use w3e_rs::{Point, Rawcode, Terrain, Version, ZERO_HEIGHT};
+    let tmp = project("ws-terrain-usage", &[("p/wc3.bni", "[map]\nroot=map\n"), ("p/map/README", "")]);
+    let path = tmp.0.join("p/map/war3map.w3e");
+    let file = |grass: usize| {
+        let v = Version::of(11);
+        let points = (0..4)
+            .map(|i| {
+                let mut p = Point { height: ZERO_HEIGHT, layer: 0xF0, ..Point::default() };
+                p.set_texture(v, u16::from(i < grass));
+                p
+            })
+            .collect();
+        let t = Terrain {
+            version: 11,
+            tileset: b'L',
+            custom_tilesets: 0,
+            ground: vec![Rawcode(*b"Ldrt"), Rawcode(*b"Lgrs")],
+            cliffs: vec![],
+            width: 2,
+            height: 2,
+            offset_x: 0.0,
+            offset_y: 0.0,
+            points,
+        };
+        t.to_bytes().unwrap()
+    };
+    std::fs::write(&path, file(1)).unwrap();
+    let mut ws = init(&tmp.0);
+    reports(&mut ws);
+    let text = String::from_utf8(crate::terrain::convert(crate::objects::TO_TEXT, &path.to_string_lossy(), &file(1)).unwrap()).unwrap();
+    ws.open("wc3obj:/t".into(), Some(path.clone()), Language::Bni, 1, text);
+    ws.take_reports();
+    let usage = |ws: &Workspace| ws.names_text("wc3obj:/t").and_then(|(_, _, u)| u.cloned()).unwrap();
+    assert_eq!(usage(&ws).ground, [3, 1]);
+
+    // Saved again with more grass: counted again once the disk says so.
+    std::fs::write(&path, file(3)).unwrap();
+    ws.take_reports();
+    assert_eq!(usage(&ws).ground, [3, 1], "the cache answers until the change is reported");
+    ws.disk_changed(std::slice::from_ref(&path));
+    ws.take_reports();
+    assert_eq!(usage(&ws).ground, [1, 3]);
+}
