@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "wc3": {
+      "command": "../wc3-mcp/target/release/wc3-mcp",
+      "args": []
+    }
+  }
+}

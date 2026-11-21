@@ -302,6 +302,14 @@ In the table:
 It's drawn on a canvas, only what's in view (`webview/slk.js`), so a table
 of 50,000 cells scrolls like a small one.
 
+## MCP
+
+`.mcp.json` registers [`wc3-mcp`](../wc3-mcp/README.md) with Claude Code in
+this repository: an MCP server that reads, queries and edits the game's
+SLK tables, from disk or from inside an MPQ archive or a map, on the same
+`slk-rs` as the editor. Build it first (`cargo build --release` in
+`../wc3-mcp`); Claude Code asks once whether to use it.
+
 ## Lint
 
 Every lint diagnostic names its **rule**, shown as the diagnostic's code
