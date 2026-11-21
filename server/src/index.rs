@@ -126,6 +126,12 @@ const MAX_SEARCH: usize = 1000;
 const MAX_HOVER: usize = 5;
 
 pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &str) -> Answer {
+    // A `TRIGSTR_<n>`, in any file: its text from the map's string table.
+    if kind == QueryKind::Hover
+        && let Some(text) = crate::trigstr::hover(ws, id, pos)
+    {
+        return Answer { locations: Vec::new(), text };
+    }
     let mut out = Out::default();
     match kind {
         QueryKind::PrepareRename => return crate::rename::prepare(ws, id, pos),

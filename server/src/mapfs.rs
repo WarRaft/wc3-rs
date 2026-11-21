@@ -534,12 +534,11 @@ fn write_copy(archive: &Path, temp: &Path, changes: &[Change], kept: &[String]) 
         }
     }
     for change in changes {
-        if let Change::Put(name, _) = change {
-            if let Some(data) = put.get(&lower(name)) {
-                if after.read_file(name).ok().as_deref() != Some(*data) {
-                    return Err(FsError::Other(format!("{name} didn't read back as written; nothing was changed")));
-                }
-            }
+        if let Change::Put(name, _) = change
+            && let Some(data) = put.get(&lower(name))
+            && after.read_file(name).ok().as_deref() != Some(*data)
+        {
+            return Err(FsError::Other(format!("{name} didn't read back as written; nothing was changed")));
         }
     }
     if let Some(name) = removed.iter().find(|n| after.has_file(n)) {

@@ -86,10 +86,10 @@ fn plan<'a>(ws: &'a Workspace, id: &'a str, pos: Position) -> Result<Vec<Found<'
         return Err("There's no symbol here to rename.".into());
     };
     // A constructor or destructor stands for its class.
-    if target.scope == Scope::Member {
-        if let Some(class) = declarations(ws, id, |o| o.kind == SymbolKind::Class && o.name == target.name).next() {
-            target = class.2;
-        }
+    if target.scope == Scope::Member
+        && let Some(class) = declarations(ws, id, |o| o.kind == SymbolKind::Class && o.name == target.name).next()
+    {
+        target = class.2;
     }
     if target.kind == SymbolKind::Native {
         return Err(format!("`{}` is a native, part of the game's API: it can't be renamed.", target.name));

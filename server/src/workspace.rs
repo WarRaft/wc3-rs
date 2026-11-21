@@ -166,12 +166,12 @@ impl Workspace {
             return;
         };
         let path = entry.doc.path.clone();
-        if self.is_game(id) {
-            if let Some(doc) = path.as_deref().and_then(load) {
-                self.files.insert(id.to_string(), Entry::game(doc, false));
-                self.dirty.insert(id.to_string());
-                return;
-            }
+        if self.is_game(id)
+            && let Some(doc) = path.as_deref().and_then(load)
+        {
+            self.files.insert(id.to_string(), Entry::game(doc, false));
+            self.dirty.insert(id.to_string());
+            return;
         }
         let member = path.filter(|p| self.member(p).is_some());
         match member.and_then(|p| load(&p)) {
@@ -453,21 +453,21 @@ impl Workspace {
         let old = self.maps.remove(path).unwrap_or_default();
         let mut all = Vec::new();
         let mut kept = Vec::new();
-        if map::is_map(path) {
-            if let Some(project) = self.member(path) {
-                for (inner, doc) in map::files(path) {
-                    let id = path_id(&inner);
-                    all.push(id.clone());
-                    if !project.contains(&inner) {
-                        continue;
-                    }
-                    kept.push(id.clone());
-                    if self.files.get(&id).is_some_and(|e| e.open) {
-                        continue;
-                    }
-                    self.files.insert(id.clone(), Entry::new(doc, false));
-                    self.dirty.insert(id);
+        if map::is_map(path)
+            && let Some(project) = self.member(path)
+        {
+            for (inner, doc) in map::files(path) {
+                let id = path_id(&inner);
+                all.push(id.clone());
+                if !project.contains(&inner) {
+                    continue;
                 }
+                kept.push(id.clone());
+                if self.files.get(&id).is_some_and(|e| e.open) {
+                    continue;
+                }
+                self.files.insert(id.clone(), Entry::new(doc, false));
+                self.dirty.insert(id);
             }
         }
         for id in old {
@@ -500,10 +500,10 @@ impl Workspace {
     /// it is: its nearest project, or a loaded project that lists it from
     /// outside its own root. A file in a map belongs where the map does.
     fn owner(&mut self, path: &Path) -> Option<Arc<Project>> {
-        if let Some(project) = self.projects.for_file(path) {
-            if project.contains(path) {
-                return Some(project);
-            }
+        if let Some(project) = self.projects.for_file(path)
+            && project.contains(path)
+        {
+            return Some(project);
         }
         let manifests: Vec<PathBuf> = self.manifests.iter().cloned().collect();
         manifests.iter().find_map(|m| {

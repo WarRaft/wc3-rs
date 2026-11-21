@@ -496,10 +496,10 @@ impl Projects {
             modified: meta.modified().ok(),
             len: meta.len(),
         };
-        if let Some((cached, project)) = self.cache.get(&manifest) {
-            if *cached == stamp {
-                return Some(project.clone());
-            }
+        if let Some((cached, project)) = self.cache.get(&manifest)
+            && *cached == stamp
+        {
+            return Some(project.clone());
         }
         let src = std::fs::read_to_string(&manifest).ok()?;
         let root = manifest.parent()?.to_path_buf();
