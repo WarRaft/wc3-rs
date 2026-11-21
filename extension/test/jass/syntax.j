@@ -1,9 +1,7 @@
 // @dialect vjass
 
 
-local real e = 33
 integer a = 22
-
 
 globals 
     integer b = 333
