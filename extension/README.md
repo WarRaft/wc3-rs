@@ -60,7 +60,8 @@ Warcraft III language support for VS Code.
 - Object data: a `.w3a`, `.w3b`, `.w3d`, `.w3h`, `.w3q`, `.w3t` or
   `.w3u` (on disk or inside a map) opens as text, in BNI, with
   highlighting and live errors, and saving writes the file back. Every
-  file goes to text and back to the same bytes. With the project's
+  file goes to text and back to the same data (but the `end` ids, which
+  the game doesn't read and saving writes as 0). With the project's
   `game=` folders, each field gets its World Editor name and type as a
   comment, and the fields are checked against the game's metadata as you
   type (types, limits, unknown fields, levels, whose field it is), with

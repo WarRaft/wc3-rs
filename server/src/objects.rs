@@ -38,7 +38,7 @@ pub fn convert(op: u8, name: &str, data: &[u8], meta: &Metadata) -> Result<Vec<u
         }
         TO_BYTES => {
             let text = std::str::from_utf8(data).map_err(|_| "the text isn't UTF-8".to_string())?;
-            to_bytes(kind, text).map_err(|err| format!("Can't save {file}: {err}"))
+            to_bytes(kind, text, meta).map_err(|err| format!("Can't save {file}: {err}"))
         }
         _ => Err(format!("unknown op {op}")),
     }
@@ -124,8 +124,10 @@ impl Cache {
     }
 }
 
-fn to_bytes(kind: Kind, text: &str) -> Result<Vec<u8>, String> {
-    let parsed = from_text(text);
+/// The bytes of a text form; a plain number takes its field's type from
+/// `meta`, the same metadata the text was written with.
+fn to_bytes(kind: Kind, text: &str, meta: &Metadata) -> Result<Vec<u8>, String> {
+    let parsed = from_text(text, meta);
     let Some(data) = parsed.data else {
         let n = parsed.errors.len();
         let first = &parsed.errors[0];
@@ -232,7 +234,8 @@ pub fn diagnostics(
     if !w3abdhqtu_rs::is_object_text(doc) {
         return (Vec::new(), Vec::new());
     }
-    let mut parsed = w3abdhqtu_rs::from_bni(doc);
+    let empty = Metadata::default();
+    let mut parsed = w3abdhqtu_rs::from_bni(doc, meta.unwrap_or(&empty));
     let lint = meta.map_or(Vec::new(), |meta| w3abdhqtu_rs::check(&parsed, meta));
     parsed.errors.drain(..doc.errors.len());
     (parsed.errors, lint)

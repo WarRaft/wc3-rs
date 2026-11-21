@@ -8,6 +8,13 @@ const UNITS: &[u8] = &[
     0, 0, 0, 0, // no customs
 ];
 
+/// [`UNITS`] as saved from its text: `uhpm` ends with 0, not `hfoo`, since
+/// the text leaves the `end` id out (the game doesn't read it).
+const UNITS_SAVED: &[u8] = &[
+    2, 0, 0, 0, 1, 0, 0, 0, b'h', b'f', b'o', b'o', 0, 0, 0, 0, 1, 0, 0, 0, b'u', b'h', b'p', b'm', 0, 0, 0, 0, 0xF4, 1,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
 #[test]
 fn to_text_and_back() {
     let text = convert(TO_TEXT, "/maps/x.w3x/war3map.w3u", UNITS, &Metadata::default()).unwrap();
@@ -18,7 +25,7 @@ fn to_text_and_back() {
     );
     assert_eq!(
         convert(TO_BYTES, "war3map.w3u", text.as_bytes(), &Metadata::default()).unwrap(),
-        UNITS
+        UNITS_SAVED
     );
 }
 
@@ -40,7 +47,7 @@ fn errors_are_messages() {
             &Metadata::default()
         )
         .unwrap_err(),
-        "Can't save war3map.w3u: line 4: expected a value: a number, `unreal` and a number, or a \"string\" (and 1 more)"
+        "Can't save war3map.w3u: line 4: expected a value: a number, or a \"string\" (`int`, `real` or `unreal` before a number gives its type) (and 1 more)"
     );
     assert_eq!(
         convert(TO_BYTES, "war3map.w3a", b"[w3u]\nversion=2\n", &Metadata::default()).unwrap_err(),
@@ -91,7 +98,7 @@ fn names_from_the_game() {
     let text = convert(TO_TEXT, "war3map.w3u", UNITS, &units).unwrap();
     let text = String::from_utf8(text).unwrap();
     assert!(text.contains("\nuhpm=500 // Hit Points Maximum\n"), "{text}");
-    assert_eq!(convert(TO_BYTES, "war3map.w3u", text.as_bytes(), &Metadata::default()).unwrap(), UNITS);
+    assert_eq!(convert(TO_BYTES, "war3map.w3u", text.as_bytes(), &units).unwrap(), UNITS_SAVED);
 }
 
 #[test]

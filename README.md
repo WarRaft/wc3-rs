@@ -227,16 +227,20 @@ arlv=6 // Required Level
 _parent=AHbz
 anam="Blizzard" // Name
 aub1[2]="Line one"\n"Line two" // Tooltip - Normal - Extended
-Hbz1[3].B=unreal 0.25 // Number of Waves
+Hbz1[3].A=12 // Number of Waves: int
+Hbz2[3].B=0.25 // Damage: unreal
 ```
 
 `[ACwe]` is a changed standard object, `[A000]` a custom one with the
 object it's based on.
 
 Every field is its four-character id, then `[level]` and `.column`
-(`Data A` is `.A`) for abilities, upgrades and doodads. Every file goes
-to text and back to the same bytes; the format and its rarer parts
-(sets, `end` ids) are in the `w3abdhqtu-rs` README.
+(`Data A` is `.A`) for abilities, upgrades and doodads. A number takes
+its field's type (integer, real, unreal) from the game's metadata, shown
+in the comment and the hover; only a value of another type, or an unreal
+without metadata, says it (`unreal 0.25`). The `end` id after each field,
+which the game doesn't read, is left out, and saving writes 0. The
+format and its rarer parts (sets) are in the `w3abdhqtu-rs` README.
 
 The comment after a field is the name World Editor gives it and its type, from the
 game's metadata tables (`Units\AbilityMetaData.slk` ...) and its strings
@@ -362,7 +366,7 @@ aren't lint: they can't be turned off. The rules are defined in
 | `implicit-signature`             | JASS                         | **off** | a `function` or `native` without `takes` or `returns`, which the game requires (group `pure`) |
 | `declaration-after-function`     | JASS                         | **off** | a global, `globals` block, `native` or `type` after a function; the game reads them only before the first one (group `pure`) |
 | `global-outside-globals`         | JASS                         | **off** | a variable at the top level outside `globals ... endglobals`, where the game doesn't read it (group `pure`) |
-| `object-value-type`              | Object data                  | on      | a value stored as another type than the game's metadata gives the field (`1` for a real, a number for a string); an error, the game misreads it. Quick fix: the right type |
+| `object-value-type`              | Object data                  | on      | a value stored as another type than the game's metadata gives the field (a number for a string, a type written out that isn't the field's: `int 6` for an unreal); an error, the game misreads it. Quick fix: the right type |
 | `object-value-range`             | Object data                  | on      | a number outside World Editor's limits for the field, or a flag other than 0 or 1 |
 | `object-unknown-field`           | Object data                  | on      | a field the game's metadata doesn't have, like one of a newer game version |
 | `object-field-level`             | Object data                  | on      | a level on a field without levels, none on one with, another data column than its own. Quick fix: the right key |
