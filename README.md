@@ -240,9 +240,10 @@ the lines in view, and as many again above and below for scrolling: a
 whole file's hints at once would slow it down.
 
 A field's key is its name in the game's data tables (`Cool`, `DataA`,
-`HP`: the metadata's `field` column), or its four-character id where the
-name isn't one field's only (`abpx`, `abpy`: both `Buttonpos`) or there's
-no metadata; then `[level]` for abilities, upgrades and doodads, and, after
+`HP`: the metadata's `field` column; a shared one with its `index` as a
+letter, `ButtonposA` and `ButtonposB` for `abpx` and `abpy`), or its
+four-character id where nothing tells the field apart or there's no
+metadata; then `[level]` for abilities, upgrades and doodads, and, after
 an id, `.column` (`Data A` is `.A`). Both forms read; the hover shows the
 id. A number takes
 its field's type (integer, real, unreal) from the game's metadata, shown
