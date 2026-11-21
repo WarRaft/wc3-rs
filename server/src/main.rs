@@ -25,6 +25,7 @@ mod project;
 mod protocol;
 mod rename;
 mod server;
+mod sheet;
 mod texture;
 mod workspace;
 

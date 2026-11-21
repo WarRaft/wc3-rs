@@ -43,6 +43,18 @@
         "title": "Open Map as Folder",
         "category": "WC3",
         "icon": "$(folder-opened)"
+      },
+      {
+        "command": "wc3.slk.openTable",
+        "title": "Open as Table",
+        "category": "WC3",
+        "icon": "$(table)"
+      },
+      {
+        "command": "wc3.slk.openText",
+        "title": "Open as Text",
+        "category": "WC3",
+        "icon": "$(go-to-file)"
       }
     ],
     "customEditors": [
@@ -126,6 +138,19 @@
           }
         ],
         "priority": "default"
+      },
+      {
+        "viewType": "wc3.slkTable",
+        "displayName": "SLK Table",
+        "selector": [
+          {
+            "filenamePattern": "*.slk"
+          },
+          {
+            "filenamePattern": "*.SLK"
+          }
+        ],
+        "priority": "option"
       }
     ],
     "views": {
@@ -146,6 +171,14 @@
         {
           "command": "wc3.maps.reveal",
           "when": "false"
+        },
+        {
+          "command": "wc3.slk.openTable",
+          "when": "editorLangId == slk || activeCustomEditorId == wc3.slkTable"
+        },
+        {
+          "command": "wc3.slk.openText",
+          "when": "activeCustomEditorId == wc3.slkTable"
         }
       ],
       "view/title": [
@@ -170,6 +203,23 @@
         {
           "command": "wc3.openMapAsFolder",
           "when": "resourceScheme == file && resourceExtname =~ /^\\.(w3x|w3m)$/i",
+          "group": "navigation"
+        },
+        {
+          "command": "wc3.slk.openTable",
+          "when": "resourceExtname =~ /^\\.slk$/i",
+          "group": "navigation"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "wc3.slk.openTable",
+          "when": "editorLangId == slk && !activeCustomEditorId",
+          "group": "navigation"
+        },
+        {
+          "command": "wc3.slk.openText",
+          "when": "activeCustomEditorId == wc3.slkTable",
           "group": "navigation"
         }
       ]

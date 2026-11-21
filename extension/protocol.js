@@ -74,6 +74,8 @@ const QUERY = {
     CONTENT: 7,
     PATH_COMPLETION: 8,
     PATH_LINKS: 9,
+    SLK_TABLE: 10,
+    SLK_SET_CELL: 11,
 }
 
 /** Symbol kinds, in wire order (`parser_rs::SymbolKind`). */

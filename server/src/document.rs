@@ -41,6 +41,8 @@ pub enum Language {
     Lua,
     AngelScript,
     Bni,
+    /// SYLK tables (`.slk`), via `slk-rs`.
+    Slk,
 }
 
 impl Language {
@@ -52,6 +54,7 @@ impl Language {
             "lua" => Language::Lua,
             "angelscript" => Language::AngelScript,
             "bni" => Language::Bni,
+            "slk" => Language::Slk,
             // Object data, which the editor shows in its BNI text form
             // (see `objects`).
             "w3a" | "w3b" | "w3d" | "w3h" | "w3q" | "w3t" | "w3u" => Language::Bni,
@@ -67,6 +70,7 @@ impl Language {
             Language::Lua => "lua",
             Language::AngelScript => "angelscript",
             Language::Bni => "bni",
+            Language::Slk => "slk",
         }
     }
 
@@ -86,6 +90,7 @@ impl Language {
             "lua" => Language::Lua,
             "as" | "angelscript" => Language::AngelScript,
             "bni" => Language::Bni,
+            "slk" => Language::Slk,
             // Not object data (`.w3a` ...): the files are binary. Only
             // their text form, which the editor opens under its own
             // scheme with the file's language id, is BNI (`from_id`).

@@ -205,7 +205,7 @@ fn spec(language: Language) -> Option<&'static LexSpec> {
         Language::Zinc => Some(&zinc_rs::lexer::SPEC),
         Language::Lua => Some(&lua_rs::lexer::SPEC),
         Language::AngelScript => Some(&as_rs::lexer::SPEC),
-        Language::Bni => None,
+        Language::Bni | Language::Slk => None,
     }
 }
 
@@ -216,6 +216,7 @@ fn label(language: Language) -> &'static str {
         Language::Lua => "Lua",
         Language::AngelScript => "AngelScript",
         Language::Bni => "BNI",
+        Language::Slk => "SLK",
     }
 }
 

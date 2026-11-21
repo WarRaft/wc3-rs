@@ -66,6 +66,10 @@ Warcraft III language support for VS Code.
   type (types, limits, unknown fields, levels, whose field it is), with
   quick fixes. Hovering over a field shows its name, type, limits, levels,
   data column and whose field it is.
+- SLK tables (`.slk`): highlighted text with live errors, or, with **Open
+  as Table** (title bar, Explorer context menu), a table to edit: frozen
+  header row and column A, find, keyboard editing, copy and paste. **Open
+  as Text** goes back. Both are the same document.
 - Symbol navigation across the whole project, in every language: go to
   definition, find references, hover with the declaration, outline, go
   to symbol in workspace, and rename (F2), which refuses with a reason
@@ -120,6 +124,12 @@ dependencies besides the VS Code API.
   writes the file. The text's language is the file's (`w3a` ...), which
   the server reads as BNI; the text is opened with the file's path, so
   the server reads it with the file's project and its game.
+- **SLK tables.** The table is a custom *text* editor (`wc3.slkTable`,
+  priority `option`, so the text opens by default): the document stays the
+  text. The page (`webview/slk.js`) draws the grid on a canvas, only what's
+  in view; the sheet comes from the server (`QUERY.SLK_TABLE`), and a
+  written cell goes back as text edits (`QUERY.SLK_SET_CELL`) applied as a
+  workspace edit, after which the page gets the new sheet.
 - **Restored tabs.** `wc3obj:` and `wc3map:` exist only while the
   extension runs, so it activates on them (`onFileSystem:wc3obj`,
   `onFileSystem:wc3map`): a tab of either that VS Code restores after a

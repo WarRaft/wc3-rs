@@ -16,6 +16,7 @@ zinc-rs = { path = "../../zinc-rs" }
 lua-rs = { path = "../../lua-rs" }
 as-rs = { path = "../../as-rs" }
 bni-rs = { path = "../../bni-rs" }
+slk-rs = { path = "../../slk-rs" }
 w3abdhqtu-rs = { path = "../../w3abdhqtu-rs" }
 storm-rs = { path = "../../storm-rs" }
 # Decoding only: no libjpeg-turbo (a C build), so cross-compiling stays

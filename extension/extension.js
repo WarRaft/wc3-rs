@@ -99,7 +99,7 @@ const OBJECTS_SCHEME = 'wc3obj'
 const OBJECT_LANGUAGES = new Set(['w3a', 'w3b', 'w3d', 'w3h', 'w3q', 'w3t', 'w3u'])
 
 /** Language ids the server analyzes (its `Language::from_id`). */
-const LANGUAGES = new Set(['jass', 'vjass', 'zinc', 'lua', 'angelscript', 'bni', ...OBJECT_LANGUAGES])
+const LANGUAGES = new Set(['jass', 'vjass', 'zinc', 'lua', 'angelscript', 'bni', 'slk', ...OBJECT_LANGUAGES])
 
 /** How long highlighting waits for the server to analyze a new version. */
 const TOKENS_WAIT_MS = 1000
@@ -1104,6 +1104,113 @@ function startServer(command, context) {
     })
 }
 
+/**
+ * SLK tables: the text with highlighting, or a table to edit, switchable
+ * (`wc3.slk.openTable` / `wc3.slk.openText`, or Reopen Editor With).
+ * The table is a custom text editor: the text stays the document, so undo,
+ * save and dirty state are the text's. The server reads the sheet from the
+ * text (`QUERY.SLK_TABLE`) and turns a written cell into text edits
+ * (`QUERY.SLK_SET_CELL`), which are applied here as a workspace edit.
+ *
+ * @param {import('vscode').ExtensionContext} context
+ */
+function registerSlk(context) {
+    const media = Uri.joinPath(context.extensionUri, 'webview')
+    const html = webview => {
+        const nonce = [...Array(32)].map(() => Math.floor(Math.random() * 36).toString(36)).join('')
+        const asset = name => webview.asWebviewUri(Uri.joinPath(media, name))
+        return `<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'">
+<link rel="stylesheet" href="${asset('slk.css')}">
+</head><body>
+<div class="bar">
+  <input id="search" type="search" placeholder="Find rows" title="Show only the rows with this text">
+  <label class="check" title="Show row 1, the field names, as the header"><input id="header" type="checkbox">Row 1 as header</label>
+  <label class="check" title="Keep column A in view"><input id="freeze" type="checkbox">Freeze column A</label>
+  <div class="spacer"></div>
+  <span id="problems" class="problems" hidden></span>
+  <span id="info" class="info"></span>
+  <button id="open-text" title="Open the text of this file">Open as Text</button>
+</div>
+<div id="area" class="area">
+  <canvas id="canvas"></canvas>
+  <div id="scroll" class="scroll" tabindex="0"><div id="sizer"></div></div>
+  <input id="editor" hidden>
+  <div id="tooltip" class="tooltip" hidden></div>
+  <div id="loading" class="message">Reading the table…</div>
+</div>
+<script nonce="${nonce}" src="${asset('slk.js')}"></script>
+</body></html>`
+    }
+
+    const editor = {
+        resolveCustomTextEditor(document, panel) {
+            const {webview} = panel
+            webview.options = {enableScripts: true, localResourceRoots: [media]}
+            webview.html = html(webview)
+            const id = idOf(document)
+
+            const post = async () => {
+                const answer = await query(QUERY.SLK_TABLE, id, {line: 0, character: 0})
+                if (answer && answer.text) webview.postMessage({type: 'table', table: JSON.parse(answer.text)})
+            }
+            let timer
+            const refresh = () => {
+                clearTimeout(timer)
+                timer = setTimeout(post, 50)
+            }
+            const setCell = async (row, col, text) => {
+                const answer = await query(QUERY.SLK_SET_CELL, id, {line: row, character: col}, text)
+                if (!answer || !answer.text) {
+                    window.showErrorMessage('WC3: the language server did not answer; the cell is unchanged.')
+                    return refresh()
+                }
+                const changes = JSON.parse(answer.text)
+                if (!changes.length) return refresh()
+                const edit = new WorkspaceEdit()
+                for (const [l, c, el, ec, t] of changes) edit.replace(document.uri, new Range(l, c, el, ec), t)
+                if (!(await workspace.applyEdit(edit))) refresh()
+            }
+            const subscriptions = [
+                workspace.onDidChangeTextDocument(e => {
+                    if (e.document.uri.toString() === document.uri.toString()) refresh()
+                }),
+                webview.onDidReceiveMessage(msg => {
+                    if (msg.type === 'ready') post()
+                    else if (msg.type === 'set') setCell(msg.row, msg.col, msg.text).catch(e => window.showErrorMessage(`WC3: ${e.message}`))
+                    else if (msg.type === 'openText') commands.executeCommand('vscode.openWith', document.uri, 'default', panel.viewColumn)
+                }),
+            ]
+            panel.onDidDispose(() => {
+                clearTimeout(timer)
+                subscriptions.forEach(d => d.dispose())
+            })
+        },
+    }
+
+    /** The `.slk` a command is about: the one it was run on, or the active one. */
+    const target = uri => {
+        if (uri instanceof Uri) return uri
+        const tab = window.tabGroups.activeTabGroup.activeTab
+        const input = tab && tab.input
+        return input && input.uri instanceof Uri ? input.uri : window.activeTextEditor?.document.uri
+    }
+    context.subscriptions.push(
+        window.registerCustomEditorProvider('wc3.slkTable', editor, {
+            supportsMultipleEditorsPerDocument: true,
+            webviewOptions: {retainContextWhenHidden: true},
+        }),
+        commands.registerCommand('wc3.slk.openTable', uri => {
+            const file = target(uri)
+            if (file) commands.executeCommand('vscode.openWith', file, 'wc3.slkTable')
+        }),
+        commands.registerCommand('wc3.slk.openText', uri => {
+            const file = target(uri)
+            if (file) commands.executeCommand('vscode.openWith', file, 'default')
+        }),
+    )
+}
+
 module.exports = {
     /** @param {import('vscode').ExtensionContext} context */
     activate(context) {
@@ -1119,6 +1226,7 @@ module.exports = {
         registerMaps(context)
         registerTextures(context)
         registerObjects(context)
+        registerSlk(context)
 
         sendRoots()
         context.subscriptions.push(

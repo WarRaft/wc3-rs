@@ -1,0 +1,145 @@
+/* The SLK table editor (slk.js). Colors come from the VS Code theme. */
+
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    color: var(--vscode-foreground);
+    background: var(--vscode-editor-background);
+}
+
+/* Toolbar */
+
+.bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--vscode-panel-border, transparent);
+    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+}
+
+.spacer {
+    flex: 1;
+}
+
+.info {
+    color: var(--vscode-descriptionForeground);
+    white-space: nowrap;
+}
+
+.problems {
+    color: var(--vscode-errorForeground);
+    white-space: nowrap;
+}
+
+input[type="search"] {
+    width: 220px;
+    padding: 3px 6px;
+    color: var(--vscode-input-foreground);
+    background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-input-border, transparent);
+    border-radius: 2px;
+    font: inherit;
+}
+
+input[type="search"]:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+label.check {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    user-select: none;
+}
+
+button {
+    padding: 3px 10px;
+    color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+    background: var(--vscode-button-secondaryBackground, transparent);
+    border: 1px solid var(--vscode-button-border, transparent);
+    border-radius: 2px;
+    font: inherit;
+    cursor: pointer;
+}
+
+button:hover {
+    background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground));
+}
+
+/* The grid: a canvas under a transparent scroller (slk.js). */
+
+.area {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+}
+
+.scroll {
+    position: absolute;
+    inset: 0;
+    overflow: auto;
+    outline: none;
+}
+
+#sizer {
+    pointer-events: none;
+}
+
+/* The cell being edited */
+
+#editor {
+    position: absolute;
+    z-index: 10;
+    margin: 0;
+    padding: 0 5px;
+    color: var(--vscode-input-foreground);
+    background: var(--vscode-input-background);
+    border: 2px solid var(--vscode-focusBorder);
+    font-family: var(--vscode-editor-font-family);
+    font-size: var(--vscode-editor-font-size);
+    outline: none;
+}
+
+.tooltip {
+    position: absolute;
+    z-index: 20;
+    max-width: 480px;
+    padding: 4px 8px;
+    white-space: pre-wrap;
+    pointer-events: none;
+    color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground));
+    background: var(--vscode-editorHoverWidget-background, var(--vscode-editorWidget-background));
+    border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-widget-border, transparent));
+}
+
+.message {
+    position: absolute;
+    inset: 0;
+    padding: 2em;
+    color: var(--vscode-descriptionForeground);
+    background: var(--vscode-editor-background);
+}

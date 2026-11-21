@@ -117,7 +117,7 @@ Problems panel shows the whole project's errors without opening anything.
 - **Which files.** What the project's `sources` match, less what
   `exclude` matches, plus
   `wc3.bni` itself. Only known extensions count (`.j`, `.vj`, `.pld`,
-  `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`), and the `.txt`
+  `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`, `.slk`), and the `.txt`
   files that are BNI: a map's `war3map*.txt` (`war3mapSkin.txt`,
   `war3mapMisc.txt`, `war3mapExtra.txt`) and the game's own by name
   (`Units\HumanUnitFunc.txt`, `UI\WorldEditStrings.txt`, ...; the list
@@ -267,6 +267,41 @@ field). Saving such text fails with the reason, and the file stays as it
 was. Comments and spacing aren't kept: the file has no room for them, so
 the next time it's opened the text is as the server writes it.
 
+## SLK tables
+
+A `.slk` (the game's data tables: `Units\UnitBalance.slk`, the
+`*MetaData.slk`, ...) opens as text, highlighted and checked by
+[`slk-rs`](../slk-rs/README.md): records, cell values, formulas, comments;
+parse errors and lint as you type. **Open as Table** (the editor's title
+bar, the Explorer's context menu, or Reopen Editor With) shows it as a
+table to edit, and **Open as Text** goes back.
+
+The table is the same document: the text stays what's saved, so undo,
+save and the dirty mark are the text's. The server reads the sheet from
+the text and turns a written cell into the fewest text edits
+(`server/src/sheet.rs`, `slk_rs::set_cell`): the cell's `K` changes, a new
+cell gets a record in reading order, a cleared one loses its record, and
+the records around keep their place (`X` and `Y` carry over from record to
+record). Typed input becomes a number, `TRUE` / `FALSE`, an error like
+`#VALUE!`, or text; a text cell stays text, and `"quoted"` input is always
+text.
+
+In the table:
+
+- the column letters, row 1 (the field names; **Row 1 as header**), the
+  row numbers and column A (**Freeze column A**) stay in view;
+- **Find rows** keeps the rows with a match and marks it;
+- arrows, Page Up / Down, Home / End (with Ctrl / Cmd: the edges) move;
+  Enter, F2, a double click or typing edits; Enter / Tab write and move,
+  Escape cancels; Delete clears;
+- copy and paste a cell, or a tab-separated block from a spreadsheet;
+- numbers are right-aligned, `TRUE` / `FALSE` and errors colored, a cell
+  with a formula italic, one with a comment marked; hovering shows a cell's
+  whole text, formula and comment.
+
+It's drawn on a canvas, only what's in view (`webview/slk.js`), so a table
+of 50,000 cells scrolls like a small one.
+
 ## Lint
 
 Every lint diagnostic names its **rule**, shown as the diagnostic's code
@@ -324,6 +359,8 @@ aren't lint: they can't be turned off. The rules are defined in
 | `object-unknown-field`           | Object data                  | on      | a field the game's metadata doesn't have, like one of a newer game version |
 | `object-field-level`             | Object data                  | on      | a level on a field without levels, none on one with, another data column than its own. Quick fix: the right key |
 | `object-field-owner`             | Object data                  | on      | a field of other objects: an ability's data of another ability (by its code), a units-only field of an item |
+| `duplicate-cell`                 | SLK                          | on      | a cell whose value or formula two records set; the later one wins |
+| `cell-outside-bounds`            | SLK                          | on      | a cell past the size the `B` record gives, which readers that trust `B` lose |
 
 **Why `infinite-loop` is off.** A thread that loops forever and sleeps is
 normal Warcraft III code: the game's own AI scripts are full of them (161

@@ -48,6 +48,12 @@ pub enum QueryKind {
     /// In a `wc3.bni`: every folder along every path, a location whose
     /// `range` is the path part and `id` the folder.
     PathLinks,
+    /// In a `.slk`: its sheet, as JSON in the text (`sheet::table`).
+    SlkTable,
+    /// In a `.slk`: the edits that write the query text into the cell at
+    /// row `line`, column `character` (both from 1), as JSON in the text
+    /// (`sheet::set_cell`).
+    SlkSetCell,
 }
 
 /// Path completion and links in a manifest; nothing for any other file.
@@ -128,6 +134,16 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             return Answer { locations: Vec::new(), text };
         }
         QueryKind::PathCompletion | QueryKind::PathLinks => return manifest_paths(ws, kind, id, pos),
+        QueryKind::SlkTable | QueryKind::SlkSetCell => {
+            let Some((doc, _)) = ws.file(id).filter(|(d, _)| d.language == crate::document::Language::Slk) else {
+                return Answer::default();
+            };
+            let text = match kind {
+                QueryKind::SlkTable => crate::sheet::table(&doc.text),
+                _ => crate::sheet::set_cell(&doc.text, pos.line, pos.character, query),
+            };
+            return Answer { locations: Vec::new(), text };
+        }
         QueryKind::Hover if ws.object_text(id).is_some() => {
             let (doc, meta) = ws.object_text(id).expect("just checked");
             let text = crate::objects::hover(&doc.text, pos, meta).unwrap_or_default();

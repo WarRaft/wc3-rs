@@ -73,6 +73,7 @@ pub fn diagnostics_with(doc: &Document, project: Option<&Project>, objects: Opti
         Language::Lua => lua_rs::parse(text).map(|c| lua_rs::lint(&c)),
         Language::AngelScript => as_rs::parse(text).map(|s| as_rs::lint(&s)),
         Language::Bni => return bni(doc, project, objects, &out),
+        Language::Slk => return slk(project, &out),
     };
     match result {
         Err(err) => vec![out.error(&err)],
@@ -101,6 +102,16 @@ fn bni(doc: &Document, project: Option<&Project>, objects: Option<&Metadata>, ou
             out.make(out.lines.range(out.text, i.line, i.col, i.end_col), i.level, i.message, "")
         }));
     }
+    diags.sort_by_key(|d| d.range.start.line);
+    diags
+}
+
+/// SYLK never fails as a whole either: its parse errors, then its lint.
+fn slk(project: Option<&Project>, out: &Out) -> Vec<Diagnostic> {
+    let parsed = slk_rs::parse(out.text);
+    let mut diags: Vec<Diagnostic> = parsed.errors.iter().map(|e| out.error(e)).collect();
+    let lint = project::apply_lint(slk_rs::lint(&parsed), project);
+    diags.extend(lint.into_iter().map(|d| out.lint(d)));
     diags.sort_by_key(|d| d.range.start.line);
     diags
 }
@@ -194,6 +205,7 @@ pub fn semantic_tokens(doc: &Document, project: Option<&Project>) -> Vec<u32> {
         Language::Lua => lua_rs::encoded_semantic_tokens(text),
         Language::AngelScript => as_rs::encoded_semantic_tokens(text),
         Language::Bni => bni_rs::encoded_semantic_tokens(text),
+        Language::Slk => slk_rs::encoded_semantic_tokens(text),
     }
 }
 
