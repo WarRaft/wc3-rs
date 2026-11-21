@@ -283,6 +283,39 @@ field). Saving such text fails with the reason, and the file stays as it
 was. Comments and spacing aren't kept: the file has no room for them, so
 the next time it's opened the text is as the server writes it.
 
+## Cameras
+
+A map's cameras, `war3map.w3c`, open as text the same way, from disk or
+from inside a map, and save back into the file. The text is BNI, written
+and read by [`w3c-rs`](../w3c-rs/README.md) (`server/src/cameras.rs`): a
+`[w3c]` section, then a section per camera named after it (the script's
+`gg_cam_<name>`), its fields in file order.
+
+```ini
+[w3c]
+version=0
+
+[Close Arthas]
+target_x=-2728.98
+target_y=1922.12
+z_offset=0
+rotation=83.74
+angle_of_attack=330.62
+distance=830.11
+roll=0
+field_of_view=90
+far_z=2500
+near_z=100
+```
+
+The file doesn't say its layout: since 1.31 a camera also has
+`local_pitch`, `local_yaw` and `local_roll`. The map's `war3map.w3i` next
+to the file says which game it's for (its first four bytes, the format
+version: 28 and later is 1.31 and later); without one, it's 1.27a's. A
+field left out takes World Editor's default; a field the layout doesn't
+have, a value that isn't a number, an unknown or repeated field are
+errors while the text is edited, and saving refuses them.
+
 ## SLK tables
 
 A `.slk` (the game's data tables: `Units\UnitBalance.slk`, the

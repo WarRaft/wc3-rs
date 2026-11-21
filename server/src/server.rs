@@ -172,8 +172,13 @@ impl<W: Write> Server<W> {
                 self.answers.push(ServerMsg::Texture { request, texture: crate::texture::decode(&data) });
             }
             ClientMsg::Objects { request, op, name, data } => {
-                let meta = ws.object_metadata(Path::new(&name)).unwrap_or_default();
-                let (error, data) = match crate::objects::convert(op, &name, &data, &meta) {
+                let converted = if crate::cameras::is_camera_file(Path::new(&name)) {
+                    crate::cameras::convert(op, &name, &data)
+                } else {
+                    let meta = ws.object_metadata(Path::new(&name)).unwrap_or_default();
+                    crate::objects::convert(op, &name, &data, &meta)
+                };
+                let (error, data) = match converted {
                     Ok(data) => (String::new(), data),
                     Err(error) => (error, Vec::new()),
                 };

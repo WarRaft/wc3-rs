@@ -40,6 +40,11 @@
  * any other (highlighting, diagnostics), under the language of its file
  * (`w3a` ...), which the server reads as BNI.
  *
+ * Cameras (`.w3c`) open the same way, through the same scheme: their text
+ * form is BNI too, a section per camera (`w3c-rs`, `server/src/cameras.rs`).
+ * Which fields a camera has depends on the game (1.31 added a local
+ * rotation), which the server reads from the map's `war3map.w3i`.
+ *
  * In `wc3.bni`, the paths of `game=` and `sources=` complete from the disk
  * and every folder along them is a link that reveals that folder (in the
  * Explorer when it's in the workspace, in the system's file manager
@@ -96,9 +101,10 @@ const MAP_NAME = /\.(w3[xm]|mpq)$/i
 /** The scheme of object data shown as text. */
 const OBJECTS_SCHEME = 'wc3obj'
 
-/** The languages of object-data files (`package.json`), one per type. As
- * `wc3obj:` text they're BNI; a file opened as is is binary, not text. */
-const OBJECT_LANGUAGES = new Set(['w3a', 'w3b', 'w3d', 'w3h', 'w3q', 'w3t', 'w3u'])
+/** The languages of object-data files (`package.json`), one per type, and of
+ * camera files (`w3c`). As `wc3obj:` text they're BNI; a file opened as is
+ * is binary, not text. */
+const OBJECT_LANGUAGES = new Set(['w3a', 'w3b', 'w3d', 'w3h', 'w3q', 'w3t', 'w3u', 'w3c'])
 
 /** Language ids the server analyzes (its `Language::from_id`). */
 const LANGUAGES = new Set(['jass', 'vjass', 'zinc', 'lua', 'angelscript', 'bni', 'slk', 'wts', ...OBJECT_LANGUAGES])

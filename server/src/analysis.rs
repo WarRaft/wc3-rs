@@ -83,8 +83,8 @@ pub fn diagnostics_with(doc: &Document, project: Option<&Project>, objects: Opti
 }
 
 /// BNI never fails as a whole: every malformed line is its own error, and
-/// lint still runs. The text form of object data also gets the errors
-/// that would stop it from saving. A project manifest (`wc3.bni`) also gets its settings
+/// lint still runs. The text form of object data or cameras also gets the
+/// errors that would stop it from saving. A project manifest (`wc3.bni`) also gets its settings
 /// checked, against the text being edited rather than the saved file.
 fn bni(doc: &Document, project: Option<&Project>, objects: Option<&Metadata>, out: &Out) -> Vec<Diagnostic> {
     let parsed = bni_rs::parse(out.text);
@@ -93,6 +93,9 @@ fn bni(doc: &Document, project: Option<&Project>, objects: Option<&Metadata>, ou
     // what the game's metadata says is wrong with its fields.
     let (errors, mut lint) = crate::objects::diagnostics(&parsed, objects);
     diags.extend(errors.iter().map(|e| out.error(e)));
+    // The text form of cameras (`.w3c`): what it can't save.
+    let cameras = crate::cameras::diagnostics(doc.path.as_deref(), &parsed);
+    diags.extend(cameras.iter().map(|e| out.error(e)));
     lint.extend(bni_rs::lint(&parsed));
     let lint = project::apply_lint(lint, project);
     diags.extend(lint.into_iter().map(|d| out.lint(d)));

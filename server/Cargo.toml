@@ -24,6 +24,7 @@ bni-rs = { path = "../../bni-rs" }
 slk-rs = { path = "../../slk-rs" }
 wts-rs = { path = "../../wts-rs" }
 w3abdhqtu-rs = { path = "../../w3abdhqtu-rs" }
+w3c-rs = { path = "../../w3c-rs" }
 storm-rs = { path = "../../storm-rs" }
 # Decoding only: no libjpeg-turbo (a C build), so cross-compiling stays
 # pure Rust.

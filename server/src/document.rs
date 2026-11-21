@@ -61,6 +61,8 @@ impl Language {
             // Object data, which the editor shows in its BNI text form
             // (see `objects`).
             "w3a" | "w3b" | "w3d" | "w3h" | "w3q" | "w3t" | "w3u" => Language::Bni,
+            // Cameras, in their BNI text form too (see `cameras`).
+            "w3c" => Language::Bni,
             _ => return None,
         })
     }

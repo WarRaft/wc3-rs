@@ -1,7 +1,7 @@
 {
   "name": "wc3",
   "displayName": "WC3",
-  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects; maps as folders and a BLP texture viewer; object data (.w3a .w3u ...) as editable text.",
+  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects; maps as folders and a BLP texture viewer; object data (.w3a .w3u ...) and cameras (.w3c) as editable text.",
   "version": "0.0.3",
   "publisher": "WarRaft",
   "icon": "images/logo.png",
@@ -92,7 +92,7 @@
       },
       {
         "viewType": "wc3.objects",
-        "displayName": "Object Data as Text",
+        "displayName": "Object Data and Cameras as Text",
         "selector": [
           {
             "filenamePattern": "*.w3a"
@@ -135,6 +135,12 @@
           },
           {
             "filenamePattern": "*.W3U"
+          },
+          {
+            "filenamePattern": "*.w3c"
+          },
+          {
+            "filenamePattern": "*.W3C"
           }
         ],
         "priority": "default"
@@ -631,6 +637,20 @@
         "configuration": "./syntaxes/bni.language-configuration.json"
       },
       {
+        "id": "w3c",
+        "aliases": [
+          "Cameras"
+        ],
+        "extensions": [
+          ".w3c"
+        ],
+        "icon": {
+          "light": "./icons/w3c.svg",
+          "dark": "./icons/w3c.svg"
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
+      },
+      {
         "id": "wc3-preview",
         "aliases": [
           "Map Preview"
@@ -656,7 +676,6 @@
           ".wpm",
           ".mmp",
           ".imp",
-          ".w3c",
           ".w3s",
           ".wtg",
           ".wct",
@@ -1083,6 +1102,38 @@
       },
       {
         "language": "w3u",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "w3c",
         "scopes": {
           "comment": [
             "comment"

@@ -175,6 +175,12 @@ pub fn text(path: &Path) -> Option<String> {
     Some(String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
 }
 
+/// The bytes of any file inside an archive.
+pub fn bytes(path: &Path) -> Option<Vec<u8>> {
+    let (map, name) = split(path)?;
+    MpqArchive::open(map).ok()?.read_file(&name).ok()
+}
+
 /// The document at `path`, a path inside a map or a game `.mpq`.
 pub fn load(path: &Path) -> Option<Document> {
     let (map, name) = split(path)?;
