@@ -851,6 +851,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "w3e-rs"
+version = "0.1.0"
+dependencies = [
+ "bni-rs",
+ "parser-rs",
+]
+
+[[package]]
 name = "walkdir"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -881,6 +889,7 @@ dependencies = [
  "storm-rs",
  "w3abdhqtu-rs",
  "w3c-rs",
+ "w3e-rs",
  "wts-rs",
  "zinc-rs",
 ]

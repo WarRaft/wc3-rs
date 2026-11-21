@@ -316,6 +316,38 @@ field left out takes World Editor's default; a field the layout doesn't
 have, a value that isn't a number, an unknown or repeated field are
 errors while the text is edited, and saving refuses them.
 
+## Terrain
+
+A map's terrain, `war3map.w3e`, opens as text too, but only its header:
+version, tileset, the ground and cliff textures, the grid's size, its
+position ([`w3e-rs`](../w3e-rs/README.md), `server/src/terrain.rs`). The
+points (heights, textures, cliffs, water) aren't text; comments say what
+they make of the header: how many points use each texture, where the map
+ends.
+
+```ini
+[w3e]
+version=11
+// Lordaeron Summer
+tileset=L
+custom_tilesets=0
+// Ground textures (TerrainArt\Terrain.slk); points using each:
+// Ldrt 3418, Ldro 1203, Lgrs 4788
+ground=Ldrt,Ldro,Lgrs
+cliffs=CLdi
+width=97
+height=97
+offset_x=-6144
+offset_y=-6144
+```
+
+Saving puts the header onto the file as it is now, on disk or in the map,
+its points kept. So the size can't change, and a texture list only so
+that every point still finds its texture at its place: replacing a code
+retextures its points, removing one some point uses is refused with how
+many use it. A new version (11 ↔ 12) moves every point's flags. A field
+left out keeps the file's value.
+
 ## SLK tables
 
 A `.slk` (the game's data tables: `Units\UnitBalance.slk`, the

@@ -174,6 +174,8 @@ impl<W: Write> Server<W> {
             ClientMsg::Objects { request, op, name, data } => {
                 let converted = if crate::cameras::is_camera_file(Path::new(&name)) {
                     crate::cameras::convert(op, &name, &data)
+                } else if crate::terrain::is_terrain_file(Path::new(&name)) {
+                    crate::terrain::convert(op, &name, &data)
                 } else {
                     let meta = ws.object_metadata(Path::new(&name)).unwrap_or_default();
                     crate::objects::convert(op, &name, &data, &meta)
