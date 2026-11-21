@@ -34,7 +34,8 @@ pub fn convert(op: u8, name: &str, data: &[u8], meta: &Metadata) -> Result<Vec<u
     match op {
         TO_TEXT => {
             let data = parse(data, kind).map_err(|err| format!("Can't read {file}: {err}"))?;
-            Ok(data.to_text_named(meta).into_bytes())
+            // Names and types show as inlay hints (`hints`), not in the text.
+            Ok(data.to_text_with(meta, false).into_bytes())
         }
         TO_BYTES => {
             let text = std::str::from_utf8(data).map_err(|_| "the text isn't UTF-8".to_string())?;
@@ -143,7 +144,7 @@ fn to_bytes(kind: Kind, text: &str, meta: &Metadata) -> Result<Vec<u8>, String> 
 pub fn hover(text: &str, pos: crate::document::Position, meta: &Metadata) -> Option<String> {
     let lines = crate::document::LineIndex::new(text);
     let doc = bni_rs::parse(text);
-    let at = w3abdhqtu_rs::field_at(&doc, pos.line as usize + 1, lines.column(text, pos))?;
+    let at = w3abdhqtu_rs::field_at(&doc, pos.line as usize + 1, lines.column(text, pos), meta)?;
     let id = w3abdhqtu_rs::id_text(at.field);
     if meta.is_empty() {
         return Some(format!(
@@ -211,6 +212,40 @@ pub fn hover(text: &str, pos: crate::document::Position, meta: &Metadata) -> Opt
         out.push(whose.join(" "));
     }
     Some(out.into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n\n"))
+}
+
+/// The inlay hints of lines `first..=last` (0-based) of the text form
+/// `text`: each field's name and type from `meta`, after its value, as
+/// JSON `[[line, character, "label"], ...]` in editor coordinates (0-based
+/// lines, UTF-16 characters). Only those lines are worked out: the editor
+/// asks for what's in view.
+pub fn hints(text: &str, first: u32, last: u32, meta: &Metadata) -> String {
+    let doc = bni_rs::parse(text);
+    let lines = crate::document::LineIndex::new(text);
+    let found = w3abdhqtu_rs::field_hints(&doc, meta, first as usize + 1, last as usize + 1);
+    let items: Vec<String> = found
+        .iter()
+        .map(|h| {
+            let at = lines.range(text, h.line, h.col, h.col).start;
+            let label = serde_label(&h.label);
+            format!("[{},{},{label}]", at.line, at.character)
+        })
+        .collect();
+    format!("[{}]", items.join(","))
+}
+
+/// A JSON string literal.
+fn serde_label(s: &str) -> String {
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '"' => out += "\\\"",
+            '\\' => out += "\\\\",
+            c if (c as u32) < 0x20 => out += &format!("\\u{:04x}", c as u32),
+            c => out.push(c),
+        }
+    }
+    out + "\""
 }
 
 /// What's wrong with a BNI document that is an object-data text form,

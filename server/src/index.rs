@@ -54,6 +54,10 @@ pub enum QueryKind {
     /// row `line`, column `character` (both from 1), as JSON in the text
     /// (`sheet::set_cell`).
     SlkSetCell,
+    /// In the text form of object data: the inlay hints (fields' names and
+    /// types) of lines `line` to `character` (0-based), as JSON in the
+    /// text (`objects::hints`).
+    InlayHints,
 }
 
 /// Path completion and links in a manifest; nothing for any other file.
@@ -141,6 +145,13 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             let text = match kind {
                 QueryKind::SlkTable => crate::sheet::table(&doc.text),
                 _ => crate::sheet::set_cell(&doc.text, pos.line, pos.character, query),
+            };
+            return Answer { locations: Vec::new(), text };
+        }
+        QueryKind::InlayHints => {
+            let text = match ws.object_text(id) {
+                Some((doc, meta)) => crate::objects::hints(&doc.text, pos.line, pos.character, meta),
+                None => "[]".into(),
             };
             return Answer { locations: Vec::new(), text };
         }

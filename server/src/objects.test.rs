@@ -97,8 +97,12 @@ fn names_from_the_game() {
 
     let text = convert(TO_TEXT, "war3map.w3u", UNITS, &units).unwrap();
     let text = String::from_utf8(text).unwrap();
-    assert!(text.contains("\nuhpm=500 // Hit Points Maximum\n"), "{text}");
+    // The name isn't in the text: it's an inlay hint, after the value.
+    assert!(text.contains("\nuhpm=500\n"), "{text}");
     assert_eq!(convert(TO_BYTES, "war3map.w3u", text.as_bytes(), &units).unwrap(), UNITS_SAVED);
+    let line = text.lines().position(|l| l == "uhpm=500").unwrap() as u32;
+    assert_eq!(hints(&text, line, line, &units), format!("[[{line},8,\"Hit Points Maximum\"]]"));
+    assert_eq!(hints(&text, 0, 1, &units), "[]");
 }
 
 #[test]

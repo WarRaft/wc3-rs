@@ -623,10 +623,11 @@ fn game_folders_of_a_file() {
     // Every game folder, in order; in a map of the project too.
     assert_eq!(ws.game_folders(&p.join("maps/a.w3x/war3map.w3u")), both);
     assert_eq!(ws.game_folders(&p.join("src/war3map.w3a")), both);
-    // Below the manifest but not in `sources`, or outside every project:
-    // no game.
-    assert_eq!(ws.game_folders(&p.join("war3map.w3a")), Vec::<PathBuf>::new());
-    assert_eq!(ws.game_folders(&p.join("maps/war3map.w3a")), Vec::<PathBuf>::new());
+    // Below the manifest but not in `sources`: still the project's, as a
+    // map next to its `wc3.bni` is.
+    assert_eq!(ws.game_folders(&p.join("war3map.w3a")), both);
+    assert_eq!(ws.game_folders(&p.join("other.w3x/war3map.w3a")), both);
+    // No `wc3.bni` above: no game.
     assert_eq!(ws.game_folders(&tmp.0.join("war3map.w3u")), Vec::<PathBuf>::new());
 }
 
@@ -668,9 +669,13 @@ fn object_text_is_checked_with_its_projects_game() {
         .collect();
     assert_eq!(found, vec![("object-value-type", 3)]);
 
-    // Outside `sources`: no game, no checks.
+    // Below the manifest but outside `sources`: still the project's game.
     ws.open("wc3obj:/y".into(), Some(p.join("war3map.w3u")), Language::Bni, 1, text.into());
     let found = ws.take_reports().into_iter().any(|m| matches!(m, ServerMsg::File { id, diagnostics, .. } if id == "wc3obj:/y" && !diagnostics.is_empty()));
+    assert!(found);
+    // No `wc3.bni` above: no game, no checks.
+    ws.open("wc3obj:/z".into(), Some(tmp.0.join("war3map.w3u")), Language::Bni, 1, text.into());
+    let found = ws.take_reports().into_iter().any(|m| matches!(m, ServerMsg::File { id, diagnostics, .. } if id == "wc3obj:/z" && !diagnostics.is_empty()));
     assert!(!found);
 }
 

@@ -81,6 +81,8 @@ const {
     RelativePattern,
     CodeAction,
     CodeActionKind,
+    InlayHint,
+    Position,
 } = require('vscode')
 const {encode, decode, FrameReader, QUERY, FS_OP, FS_FLAG, OBJECTS_OP} = require('./protocol.js')
 
@@ -1020,8 +1022,29 @@ h2 { font-size: 1.2em; font-weight: 600; } p { color: var(--vscode-errorForegrou
         },
     }
 
+    // Each field's name and type after it: inlay hints, shown but not part
+    // of the text. Asked for the lines in view and as many again above and
+    // below (50 at least), so scrolling finds them ready; a whole file's
+    // would slow the editor down.
+    const hints = {
+        async provideInlayHints(doc, range) {
+            const margin = Math.max(range.end.line - range.start.line, 50)
+            const first = Math.max(0, range.start.line - margin)
+            const last = Math.min(doc.lineCount - 1, range.end.line + margin)
+            const answer = await query(QUERY.INLAY_HINTS, idOf(doc), {line: first, character: last})
+            if (!answer || !answer.text) return []
+            return JSON.parse(answer.text).map(([line, character, label]) => {
+                const hint = new InlayHint(new Position(line, character), label)
+                hint.paddingLeft = true
+                return hint
+            })
+        },
+    }
+    const selector = [...OBJECT_LANGUAGES].map(language => ({language, scheme: OBJECTS_SCHEME}))
+
     context.subscriptions.push(
         changed,
+        languages.registerInlayHintsProvider(selector, hints),
         workspace.registerFileSystemProvider(OBJECTS_SCHEME, provider, {isCaseSensitive: process.platform === 'linux'}),
         window.registerCustomEditorProvider('wc3.objects', editor, {supportsMultipleEditorsPerDocument: true}),
     )

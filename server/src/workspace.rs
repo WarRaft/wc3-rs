@@ -519,12 +519,13 @@ impl Workspace {
         self.member(path).or_else(|| self.projects.for_file(path))
     }
 
-    /// The `game=` folders of the project `path` is a file of (its
-    /// `sources` take it in, see `owner`), in their order. None for a file
-    /// outside every project, even one below a `wc3.bni`: which game a
-    /// file goes with is the project's to say.
+    /// The `game=` folders of the project `path` belongs to, in their
+    /// order: the one whose `sources` take it in, else the nearest
+    /// `wc3.bni` above it (a map next to its manifest belongs to that
+    /// project, `sources` or not; see `settings_for`). None for a file
+    /// with no `wc3.bni` above it.
     pub fn game_folders(&mut self, path: &Path) -> Vec<PathBuf> {
-        self.owner(path).map(|p| p.game.clone()).unwrap_or_default()
+        self.settings_for(path).map(|p| p.game.clone()).unwrap_or_default()
     }
 
     /// The game's metadata for the object-data file `path` (`.w3a` ...),

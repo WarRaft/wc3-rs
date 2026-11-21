@@ -221,35 +221,46 @@ BNI, written and read by [`w3abdhqtu-rs`](../w3abdhqtu-rs/README.md)
 version=2
 
 [ACwe]
-arlv=6 // Required Level
+reqLevel=6                          Required Level: int
 
 [A000]
 _parent=AHbz
-anam="Blizzard" // Name
-aub1[2]="Line one"\n"Line two" // Tooltip - Normal - Extended
-Hbz1[3].A=12 // Number of Waves: int
-Hbz2[3].B=0.25 // Damage: unreal
+Name="Blizzard"                     Name: string
+Ubertip[2]="Line one"\n"Line two"   Tooltip - Normal - Extended: string
+DataA[3]=12                         Number of Waves: int
+DataB[3]=0.25                       Damage: unreal
+Cool[3]=6.0                         Cooldown: unreal
 ```
 
 `[ACwe]` is a changed standard object, `[A000]` a custom one with the
-object it's based on.
+object it's based on. The names and types on the right aren't in the
+text: they're inlay hints, shown after each field but not part of what
+you edit (`QUERY.INLAY_HINTS`, `objects::hints`). The editor asks only for
+the lines in view, and as many again above and below for scrolling: a
+whole file's hints at once would slow it down.
 
-Every field is its four-character id, then `[level]` and `.column`
-(`Data A` is `.A`) for abilities, upgrades and doodads. A number takes
+A field's key is its name in the game's data tables (`Cool`, `DataA`,
+`HP`: the metadata's `field` column), or its four-character id where the
+name isn't one field's only (`abpx`, `abpy`: both `Buttonpos`) or there's
+no metadata; then `[level]` for abilities, upgrades and doodads, and, after
+an id, `.column` (`Data A` is `.A`). Both forms read; the hover shows the
+id. A number takes
 its field's type (integer, real, unreal) from the game's metadata, shown
-in the comment and the hover; only a value of another type, or an unreal
+in the inlay hint and the hover; only a value of another type, or an unreal
 without metadata, says it (`unreal 0.25`). The `end` id after each field,
 which the game doesn't read, is left out, and saving writes 0. The
 format and its rarer parts (sets) are in the `w3abdhqtu-rs` README.
 
-The comment after a field is the name World Editor gives it and its type, from the
+The hint after a field is the name World Editor gives it and its type, from the
 game's metadata tables (`Units\AbilityMetaData.slk` ...) and its strings
-(`UI\WorldEditStrings.txt`), found in the `game=` folders of the project
-whose `sources` take the file in (a map they match takes in its files),
-over each other in order, like the game's scripts. The game's version
-decides the fields, so there's no guessing: a file outside every
-project's `sources` (even one below a `wc3.bni`) or in a project without
-`game=` gets no names and no checks. They're read once per set of
+(`UI\WorldEditStrings.txt`), found in the `game=` folders of the file's
+project, over each other in order, like the game's scripts: the project
+whose `sources` take the file in, else the nearest `wc3.bni` above it (a
+map next to its `wc3.bni` is that project's, `sources` or not). They're
+looked up only in the game folders, never in the project or the map,
+which may legally replace them with their own. The game's version decides
+the fields, so there's no guessing: a file with no `wc3.bni` above it, or
+in a project without `game=`, gets no names and no checks. They're read once per set of
 `game=` folders and kind, and again when an archive or one of the tables
 changes on disk.
 

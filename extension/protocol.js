@@ -76,6 +76,7 @@ const QUERY = {
     PATH_LINKS: 9,
     SLK_TABLE: 10,
     SLK_SET_CELL: 11,
+    INLAY_HINTS: 12,
 }
 
 /** Symbol kinds, in wire order (`parser_rs::SymbolKind`). */

@@ -62,8 +62,9 @@ Warcraft III language support for VS Code.
   highlighting and live errors, and saving writes the file back. Every
   file goes to text and back to the same data (but the `end` ids, which
   the game doesn't read and saving writes as 0). With the project's
-  `game=` folders, each field gets its World Editor name and type as a
-  comment, and the fields are checked against the game's metadata as you
+  `game=` folders, each field gets its World Editor name and type as an
+  inlay hint (shown, not part of the text; asked for the lines in view
+  only), and the fields are checked against the game's metadata as you
   type (types, limits, unknown fields, levels, whose field it is), with
   quick fixes. Hovering over a field shows its name, type, limits, levels,
   data column and whose field it is.
