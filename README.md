@@ -401,8 +401,8 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    An unknown function, variable or type is an error, and so is a call
    with too many or too few arguments; then types, the `handle` tree
    from `common.j`. In the editor, the build and MCP (`code_check`; the
-   natives: see `wc3-mcp`'s README). Names and types: done, in the
-   editor and in `code_check`.
+   natives: see `wc3-mcp`'s README). Done: names and types in the
+   editor and in `code_check`, the natives in `jass_natives`.
 1. **This toolchain's JASS into the game's.** The output above, for
    the triggers and hand-written JASS: the first thing that runs.
 2. **The map's script out of the map's files** (the table above):
