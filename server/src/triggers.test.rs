@@ -22,3 +22,19 @@ fn diagnostics_only_for_trigger_text() {
     assert_eq!(errors.iter().map(|e| e.line).collect::<Vec<_>>(), [10]);
     assert!(diagnostics(Some(Path::new("war3map.ini")), &doc, &text).is_empty());
 }
+
+#[test]
+fn values_are_raw_and_highlighted_as_calls() {
+    let text = "[wtg]\n[trigger]\nname=\"a, \\\"b\\\"\"\naction=CustomScriptCode(\"call X(\\\"y\\\")\")\n";
+    let doc = crate::document::Document {
+        language: crate::document::Language::Bni,
+        version: 0,
+        text: text.into(),
+        path: Some(Path::new("/m/war3map.wtg").into()),
+    };
+    let d = crate::analysis::diagnostics(&doc, None);
+    assert!(d.is_empty(), "{d:?}");
+    let tokens = crate::analysis::semantic_tokens(&doc, None);
+    // [wtg] [trigger] name "…" action CustomScriptCode "…": seven tokens.
+    assert_eq!(tokens.len(), 7 * 5, "{tokens:?}");
+}

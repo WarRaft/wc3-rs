@@ -97,7 +97,10 @@ pub fn diagnostics_with(doc: &Document, project: Option<&Project>, objects: Opti
 /// errors that would stop it from saving. A project manifest (`wc3.bni`) also gets its settings
 /// checked, against the text being edited rather than the saved file.
 fn bni(doc: &Document, project: Option<&Project>, objects: Option<&Metadata>, out: &Out) -> Vec<Diagnostic> {
-    let parsed = bni_rs::parse(out.text);
+    // Triggers' text form: each value the rest of its line, calls with
+    // their own syntax (`wtg_rs::text::parse_bni`).
+    let triggers_text = doc.path.as_deref().is_some_and(crate::triggers::is_trigger_file);
+    let parsed = if triggers_text { wtg_rs::text::parse_bni(out.text) } else { bni_rs::parse(out.text) };
     let mut diags: Vec<Diagnostic> = parsed.errors.iter().map(|e| out.error(e)).collect();
     // The text form of object data (`.w3a` ...): what it can't save, and
     // what the game's metadata says is wrong with its fields.
@@ -258,6 +261,9 @@ pub fn semantic_tokens(doc: &Document, project: Option<&Project>) -> Vec<u32> {
         Language::Zinc => zinc_rs::encoded_semantic_tokens(text),
         Language::Lua => lua_rs::encoded_semantic_tokens(text),
         Language::AngelScript => as_rs::encoded_semantic_tokens(text),
+        Language::Bni if doc.path.as_deref().is_some_and(crate::triggers::is_trigger_file) => {
+            wtg_rs::text::encoded_semantic_tokens(text)
+        }
         Language::Bni => bni_rs::encoded_semantic_tokens(text),
         Language::Slk => slk_rs::encoded_semantic_tokens(text),
         Language::Wts => wts_rs::encoded_semantic_tokens(text),

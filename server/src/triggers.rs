@@ -7,7 +7,9 @@
 //! game folders, then its map's roots, the last found winning: a modded
 //! editor's data in a root replaces the game's). Opening needs it; saving
 //! checks every function against it. While typing, the text is checked
-//! without it (its syntax and fields).
+//! without it (its syntax and fields). A value is the rest of its line as
+//! it is (strings as JASS writes them), highlighted by what it is
+//! (`wtg_rs::text::semantic_tokens`).
 
 use std::path::Path;
 
