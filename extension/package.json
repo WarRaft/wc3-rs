@@ -2,7 +2,7 @@
   "name": "wc3",
   "displayName": "WC3",
   "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects; maps as folders and a BLP texture viewer; object data (.w3a .w3u ...), cameras (.w3c), regions (.w3r), sounds (.w3s), the terrain's header (.w3e), map info (.w3i) and the custom script (.wct) as editable text; pathing maps (.wpm) as a picture.",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "WarRaft",
   "icon": "images/logo.png",
   "license": "CC0-1.0",

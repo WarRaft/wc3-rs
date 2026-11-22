@@ -674,19 +674,9 @@ saving checks every function's name and parameter count against it.
 XGM's markup (`.txt2`, articles like `w3-file-format.txt2`) is
 highlighted by the server with [`txt2-rs`](../txt2-rs/README.md): bold
 as bold, accents in their colors, headings, links, code, block tags.
-Unclosed blocks (`((кат` without `))`, `>>` without `<<`) are errors.
-**Open Preview to the Side** (the button in the editor's title,
-`Cmd+K V`; `Cmd+Shift+V` in place) shows the page as the site would,
-updated as you type; the preview and the text follow each other's
-scrolling, a double click in the preview puts the cursor on that line,
-and links open in the browser.
-
-## txt2
-
-XGM's markup (`.txt2`, articles like `w3-file-format.txt2`) is
-highlighted by the server with [`txt2-rs`](../txt2-rs/README.md): bold
-as bold, accents in their colors, headings, links, code, block tags.
-Unclosed blocks (`((кат` without `))`, `>>` without `<<`) are errors.
+Unclosed blocks (`((cut` or `((кат` without `))`, `>>` without `<<`) are
+errors. The site's keywords are Russian; each has an English twin
+(`((code`, `((layout` …), read the same.
 **Open Preview to the Side** (the button in the editor's title,
 `Cmd+K V`; `Cmd+Shift+V` in place) shows the page as the site would,
 updated as you type; the preview and the text follow each other's
