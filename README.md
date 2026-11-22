@@ -354,7 +354,8 @@ each output is made from it:
   interfaces. Only the JASS output turns structs into arrays and an
   allocator; AngelScript gets classes. Lowered early, AngelScript
   couldn't be had.
-- **The map's data is code too, made into the IR, not into JASS text**:
+- **The map's data is code too, made into the IR's nodes, not into JASS
+  text** (so every output gets the same tree, and converts it):
   the players, forces, alliances and start locations of `war3map.w3i`,
   its fog, sky, weather and music; what `.doo` places (units, items and
   what they drop, the destructables code names); the regions of `.w3r`
@@ -410,10 +411,11 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    and custom script build into one script that lacks only the map's
    data.
 2. **The map's script out of the map's files** (the table above). Done
-   so far (`wc3-build`'s `map`): `config`, the players and forces, the
-   setting up in `main`, `InitGlobals` and the triggers of map
-   initialization, World Editor's call for call on two maps; regions,
-   cameras, sounds and what's placed next.
+   so far (`wc3-build`'s `map`, made as the IR's nodes): `config`, the
+   players and forces, the setting up in `main`, the sounds (how long
+   each plays worked out as World Editor does), regions, cameras,
+   `InitGlobals` and the triggers of map initialization, World Editor's
+   call for call on two maps; what's placed next, after shorter names.
    saving a `.w3x` makes its `war3map.j` again, and so does a build.
    Checked against the `war3map.j` of real maps by what each part does
    (its calls), not byte for byte; taking a file out of a map into a
@@ -424,7 +426,19 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    `requires`.
 5. **AngelScript and Lua** past their stubs.
 6. **The map**: `[build]` scenarios, the roots' layers, the `.w3x`
-   written (`storm-rs`); optimizations (dead code, shorter names) after.
+   written (`storm-rs`); optimizations (dead code) after.
+
+**Shorter names (uglify).** The finished tree knows every name and every
+reference to it, so a build can rename everything that isn't the game's
+(not a native, nor a function, global or type of `common.j`,
+`Blizzard.j` or `common.ai`) to the shortest names free: `a`, `b`, ...,
+`a1` ... A function's locals and parameters take the shortest names again
+in each function. A name the code gives as text is renamed with it where
+the text is a literal (`ExecuteFunc("Name")`, the variable of
+`TriggerRegisterVariableEvent`); where it isn't, what it may name keeps
+its name, and the build says why. Done (`wc3-build`'s `uglify`,
+`wc3-mcp`'s `jass_build` with `uglify`): three maps' scripts keep their
+problems rule by rule at 64% to 76% of their size.
 
 ## Textures
 
