@@ -691,8 +691,11 @@ action=ForLoopAMultiple("1", "10")
 A `.trg` may also declare the map's global variables, `[variable]`
 sections as above (before or after its `[trigger]`); a file of them
 alone holds the map's, `_variables.trg` at the top of the triggers'
-folder, and its view lists them (name, type, array size, initial
-value).
+folder. The view lists them (name, type, array size, initial value);
+**New variable** declares one in the file (name, type, array and size,
+initial value), after its last variable, and **Delete** on one removes
+it. The trigger always shows: an empty file (a new one) is fine, and a
+file without a `[trigger]` gets one with the first thing put in it.
 
 **Extract Triggers…** (the button in the title of a `war3map.wtg`'s
 text, or the Explorer's context menu of a `.wtg`) asks for a folder and

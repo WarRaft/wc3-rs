@@ -1351,6 +1351,7 @@ function registerTrigger(context) {
   <label class="check" title="Does the trigger start on? Off, something must turn it on"><input id="initially-on" type="checkbox">Initially On</label>
   <div class="tools">
     <button id="new" title="New event, condition or action (Ctrl+Shift+N)"><i class="fa-solid fa-plus"></i></button>
+    <button id="new-variable" title="New variable"><i class="fa-solid fa-cube"></i></button>
     <button id="toggle" title="Enable or disable (Ctrl+E)"><i class="fa-solid fa-power-off"></i></button>
     <button id="up" title="Move up (Alt+Up)"><i class="fa-solid fa-arrow-up"></i></button>
     <button id="down" title="Move down (Alt+Down)"><i class="fa-solid fa-arrow-down"></i></button>
@@ -1416,7 +1417,7 @@ function registerTrigger(context) {
                 }
                 return result
             }
-            const OP = {TOGGLE: 0, DELETE: 1, MOVE: 2, PASTE: 3, COPY: 4, FIELD: 5, SET_PARAM: 6, NEW: 7}
+            const OP = {TOGGLE: 0, DELETE: 1, MOVE: 2, PASTE: 3, COPY: 4, FIELD: 5, SET_PARAM: 6, NEW: 7, NEW_VARIABLE: 8}
             const reveal = async line => {
                 const at = new Position(Math.max(0, line - 1), 0)
                 const shown = window.visibleTextEditors.find(e => e.document === document)
@@ -1459,6 +1460,13 @@ function registerTrigger(context) {
                     return
                 }
                 case 'new': return run(OP.NEW, 0, `${msg.place}\n${msg.kind} ${msg.name}`)
+                case 'types': {
+                    const answer = await query(QUERY.TRIGGER_CATALOG, id, {line: 0, character: 3}, '')
+                    if (answer && answer.text) webview.postMessage({type: 'types', items: JSON.parse(answer.text)})
+                    return
+                }
+                case 'newVariable':
+                    return run(OP.NEW_VARIABLE, 0, [msg.name, msg.vtype, msg.array ? '1' : '0', msg.size, msg.initial].join('\n'))
                 case 'reveal': return reveal(msg.line)
                 case 'openText': return commands.executeCommand('vscode.openWith', document.uri, 'default', panel.viewColumn)
                 }

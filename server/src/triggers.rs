@@ -233,7 +233,8 @@ fn spans_json(spans: &[wtg_rs::ui::Span]) -> String {
 pub mod op {
     /// Turn the ECA at the line on or off (`!`).
     pub const TOGGLE: u32 = 0;
-    /// Delete the ECA at the line, and what's inside it.
+    /// Delete the ECA at the line, and what's inside it; or the variable
+    /// whose `[variable]` is at the line.
     pub const DELETE: u32 = 1;
     /// Move the ECA at the line, and what's inside it, to the place the
     /// argument says: `parent group index` (see [`super::edit`]).
@@ -259,6 +260,10 @@ pub mod op {
     /// its kind (0 event, 1 condition, 2 action) and function name; its
     /// parameters are the function's defaults.
     pub const NEW: u32 = 7;
+    /// A new global variable: the argument is its name, type, `1` for an
+    /// array, its size, and (if any) its initial value, a line each. It
+    /// goes after the file's last variable, or before its trigger.
+    pub const NEW_VARIABLE: u32 = 8;
 }
 
 const KINDS: [&str; 3] = ["event", "condition", "action"];
@@ -306,8 +311,11 @@ fn filler(line: &str) -> bool {
 struct Doc {
     lines: Vec<String>,
     eol: &'static str,
-    /// The lines of the `[trigger]` section, past its header.
+    /// The lines of the `[trigger]` section, past its header (empty at
+    /// the end when there's none).
     section: std::ops::Range<usize>,
+    /// Is there a `[trigger]`?
+    has_section: bool,
 }
 
 /// Where in a trigger: under `parent` (the line, from 1, of the ECA; 0 for
@@ -336,9 +344,43 @@ impl Doc {
         let lines: Vec<String> = text.split_inclusive('\n').map(String::from).collect();
         let eol = if text.contains("\r\n") { "\r\n" } else { "\n" };
         let header = |l: &String| l.trim_start().starts_with('[');
-        let start = lines.iter().position(|l| l.trim().strip_prefix('[').is_some_and(|r| r.starts_with("trigger]"))).map_or(lines.len(), |i| i + 1);
+        let found = lines.iter().position(|l| l.trim().strip_prefix('[').is_some_and(|r| r.starts_with("trigger]")));
+        let start = found.map_or(lines.len(), |i| i + 1);
         let end = lines[start..].iter().position(header).map_or(lines.len(), |i| start + i);
-        Doc { lines, eol, section: start..end }
+        Doc { lines, eol, section: start..end, has_section: found.is_some() }
+    }
+
+    /// Adds a `[trigger]` at the end when there's none: a file of
+    /// variables, or a new one, gets its trigger with the first thing put
+    /// in it.
+    fn ensure_trigger(&mut self) {
+        if self.has_section {
+            return;
+        }
+        if let Some(last) = self.lines.last_mut()
+            && !last.ends_with('\n')
+        {
+            last.push_str(self.eol);
+        }
+        if self.lines.last().is_some_and(|l| !filler(l)) {
+            self.lines.push(self.eol.to_string());
+        }
+        self.lines.push(format!("[{}]{}", wtg_rs::text::TRIGGER, self.eol));
+        let eol = self.eol;
+        *self = Doc::new(&self.lines.concat());
+        self.eol = eol;
+    }
+
+    /// The `[variable]` section whose header is at `line` (from 1): its
+    /// lines.
+    fn variable_at(&self, line: usize) -> Option<std::ops::Range<usize>> {
+        let i = line.checked_sub(1)?;
+        let is_var = |l: &str| l.trim().strip_prefix('[').is_some_and(|r| r.starts_with("variable]"));
+        if !self.lines.get(i).is_some_and(|l| is_var(l)) {
+            return None;
+        }
+        let end = self.lines[i + 1..].iter().position(|l| l.trim_start().starts_with('[')).map_or(self.lines.len(), |k| i + 1 + k);
+        Some(i..end)
     }
 
     fn eca(&self, i: usize) -> Option<(Key, &str)> {
@@ -546,9 +588,13 @@ fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Re
             shown = Some(i);
         }
         op::DELETE => {
-            let (i, _) = doc.at(line)?;
-            let end = doc.end(i);
-            doc.lines.drain(i..end);
+            if let Some(range) = doc.variable_at(line) {
+                doc.lines.drain(range);
+            } else {
+                let (i, _) = doc.at(line)?;
+                let end = doc.end(i);
+                doc.lines.drain(i..end);
+            }
         }
         op::COPY => {
             let (i, _) = doc.at(line)?;
@@ -577,6 +623,7 @@ fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Re
             shown = Some(at);
         }
         op::PASTE => {
+            doc.ensure_trigger();
             let (place, body) = arg.split_once('\n').unwrap_or((arg, ""));
             let kinds = pasted(body)?;
             let (at, depth, group, kind) = doc.place(Place::parse(place)?)?;
@@ -597,6 +644,9 @@ fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Re
                 _ => return Err(format!("no field `{key}`")),
             };
             let line = value.map(|v| format!("{key}={v}{}", doc.eol));
+            if line.is_some() {
+                doc.ensure_trigger();
+            }
             match (doc.field(key), line) {
                 (Some(i), Some(l)) => {
                     let keep_eol = doc.lines[i].ends_with('\n');
@@ -614,18 +664,13 @@ fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Re
                     } else {
                         fields.next_back().map_or(doc.section.start, |i| i + 1)
                     };
-                    if doc.section.start == doc.lines.len() && doc.section.start == 0 {
-                        doc.lines.push(format!("[trigger]{}", doc.eol));
-                        doc.lines.push(l);
-                    } else {
-                        if at == doc.lines.len()
-                            && let Some(last) = doc.lines.last_mut()
-                            && !last.ends_with('\n')
-                        {
-                            last.push_str(doc.eol);
-                        }
-                        doc.lines.insert(at, l);
+                    if at == doc.lines.len()
+                        && let Some(last) = doc.lines.last_mut()
+                        && !last.ends_with('\n')
+                    {
+                        last.push_str(doc.eol);
                     }
+                    doc.lines.insert(at, l);
                 }
                 (None, None) => {}
             }
@@ -652,6 +697,7 @@ fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Re
             shown = Some(i);
         }
         op::NEW => {
+            doc.ensure_trigger();
             let (place, what) = arg.split_once('\n').unwrap_or((arg, ""));
             let (kind, name) = what.split_once(' ').ok_or("a new line: its kind and function")?;
             let kind: u32 = kind.parse().map_err(|_| format!("no kind {kind:?}"))?;
@@ -661,6 +707,68 @@ fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Re
             let line = format!("{}={}", KINDS[kind as usize], ui.new_call(fk, name));
             doc.insert(at, &[line], depth, group);
             shown = Some(at);
+        }
+        op::NEW_VARIABLE => {
+            let parts: Vec<&str> = arg.split('\n').collect();
+            let [name, kind, array, size, ref rest @ ..] = parts[..] else {
+                return Err("a new variable: its name, type, array, size".into());
+            };
+            let name = name.trim();
+            let ident = name.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+            if !ident {
+                return Err(format!("{name:?} isn't a variable's name: a letter, then letters, digits and _"));
+            }
+            let declared = wtg_rs::text::trigger_from_text(text, None).variables;
+            if declared.iter().any(|v| v.name.eq_ignore_ascii_case(name)) {
+                return Err(format!("this file has a variable {name} already"));
+            }
+            if kind.trim().is_empty() {
+                return Err("a variable needs a type".into());
+            }
+            let is_array = array.trim() == "1";
+            let size: u32 = if is_array { size.trim().parse().map_err(|_| format!("an array's size is a number, not {size:?}"))? } else { 1 };
+            let initial = rest.first().filter(|v| !v.is_empty());
+            let v = wtg_rs::Variable {
+                name: name.into(),
+                kind: kind.trim().into(),
+                unknown: 1,
+                is_array: is_array as u32,
+                array_size: size,
+                has_initial: initial.is_some() as u32,
+                initial: initial.map_or(String::new(), |v| v.to_string()),
+            };
+            let eol = doc.eol;
+            let section: Vec<String> =
+                wtg_rs::text::variables_to_text(&[v])?.lines().map(|l| format!("{l}{eol}")).collect();
+            // After the last variable, else before the trigger, else at
+            // the end; a blank line between sections.
+            let headers: Vec<usize> = (0..doc.lines.len()).filter(|&i| doc.variable_at(i + 1).is_some()).collect();
+            let (at, before) = match headers.last() {
+                Some(&h) => {
+                    let end = doc.variable_at(h + 1).expect("a header").end;
+                    let at = (h..end).rev().find(|&i| !doc.lines[i].trim().is_empty()).map_or(end, |i| i + 1);
+                    (at, true)
+                }
+                None if doc.has_section => (doc.section.start - 1, false),
+                None => (doc.lines.len(), doc.lines.iter().any(|l| !filler(l))),
+            };
+            if at == doc.lines.len()
+                && let Some(last) = doc.lines.last_mut()
+                && !last.ends_with('\n')
+            {
+                last.push_str(eol);
+            }
+            let mut block = Vec::new();
+            if before {
+                block.push(eol.to_string());
+            }
+            block.extend(section);
+            if !before && at < doc.lines.len() {
+                block.push(eol.to_string());
+            }
+            shown = Some(at + before as usize);
+            doc.lines.splice(at..at, block);
         }
         _ => return Err(format!("unknown operation {op}")),
     }
@@ -774,9 +882,14 @@ fn choices_of(text: &str, line: usize, path: &str, ui: &wtg_rs::ui::Ui, variable
 /// can be, as World Editor lists them, as JSON: `[["CreateNUnitsAtLoc",
 /// "Create Units Facing Angle", "Unit", "hint", true], ...]`, by
 /// category's name, then title; the last is whether the editor shows the
-/// category's name before the title (not for `If/Then/Else` ...).
+/// category's name before the title (not for `If/Then/Else` ...). Kind
+/// 3: the types a global variable can be, `[["unit", "Unit"], ...]`.
 pub fn catalog(kind: u32, ui: &wtg_rs::ui::Ui) -> String {
     let js = crate::objects::json_string;
+    if kind == 3 {
+        let types: Vec<String> = ui.variable_types().iter().map(|(t, n)| format!("[{},{}]", js(t), js(n))).collect();
+        return format!("[{}]", types.join(","));
+    }
     let Some(fk) = wtg_rs::FunctionKind::of(kind).filter(|_| kind < 3) else { return "[]".into() };
     let mut items: Vec<(String, String, &str, &str, bool)> = ui
         .functions(fk)

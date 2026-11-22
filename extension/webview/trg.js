@@ -25,7 +25,8 @@
  * of the parameter's type (`triggers::choices`); what's picked is written
  * at once, and a call's own parameters are links in turn. **New** (+)
  * picks a function for a new event, condition or action
- * (`triggers::catalog`).
+ * (`triggers::catalog`). **New variable** declares a global in this
+ * file (`[variable]`): name, type, array and size, initial value.
  *
  * Messages in: `{type: 'view', view, select}` (select: a line to select,
  * 0 for none), `{type: 'select', line}`, `{type: 'choices', line, path,
@@ -103,7 +104,8 @@ function buildRows(v) {
             }))
         }
     }
-    if (!v.trigger) return out
+    // The trigger, always: a new file's or one of variables alone gets
+    // its [trigger] with the first thing put in it.
     const lists = [v.events, v.conditions, v.actions]
     lists.forEach((nodes, kind) => {
         const path = `h${kind}`
@@ -294,19 +296,23 @@ function updateTools() {
     const node = row && row.type === 'node' ? row : null
     const set = (/** @type {string} */ id, /** @type {boolean} */ on) => { /** @type {HTMLButtonElement} */ ($(id)).disabled = !on }
     set('toggle', !!node)
-    set('delete', !!node)
+    set('delete', !!node || (!!row && row.type === 'variable'))
     set('copy', !!node)
     set('cut', !!node)
     set('up', !!node && node.index > 0)
     set('down', !!node && node.index < node.count - 1)
-    set('paste', !!view && view.trigger)
-    set('new', !!view && view.trigger && !!row && row.kind >= 0)
+    set('paste', !!view)
+    set('new', !!view && !!row && row.kind >= 0)
+    set('new-variable', !!view)
 }
 
 /** @param {'toggle' | 'delete' | 'copy' | 'cut' | 'up' | 'down' | 'paste'} what */
 function act(what) {
     const row = selectedRow()
     if (what === 'paste') return vscode.postMessage({type: 'paste', place: pastePlace()})
+    if (what === 'delete' && row && row.type === 'variable' && row.variable) {
+        return vscode.postMessage({type: 'delete', line: row.variable.line})
+    }
     if (!row || row.type !== 'node' || !row.node) return
     const line = row.node.line
     if (what === 'up' || what === 'down') {
@@ -319,6 +325,7 @@ function act(what) {
 }
 
 $('new').addEventListener('click', () => newLine())
+$('new-variable').addEventListener('click', () => vscode.postMessage({type: 'types'}))
 
 for (const id of ['toggle', 'delete', 'copy', 'cut', 'up', 'down', 'paste']) {
     $(id).addEventListener('click', () => {
@@ -484,8 +491,6 @@ $('open-text').addEventListener('click', () => vscode.postMessage({type: 'openTe
 
 /** @param {View} v */
 function showFields(v) {
-    for (const id of ['name', 'description']) $(id).hidden = !v.trigger
-    for (const el of document.querySelectorAll('.check')) /** @type {HTMLElement} */ (el).hidden = !v.trigger
     // What's being typed stays.
     if (document.activeElement !== nameInput) nameInput.value = v.name
     if (document.activeElement !== description) description.value = v.description
@@ -650,7 +655,7 @@ function paramDialog(line, path, c) {
 /** New: asks the server for the functions of the selected row's kind. */
 function newLine() {
     const row = selectedRow()
-    if (!view || !view.trigger || !row || row.kind < 0) return
+    if (!view || !row || row.kind < 0) return
     vscode.postMessage({type: 'catalog', kind: row.kind, place: pastePlace()})
 }
 
@@ -690,6 +695,40 @@ function newDialog(kind, place, items) {
     picker.filter.focus()
 }
 
+/**
+ * The dialog of a new global variable: name, type, array and size,
+ * initial value.
+ * @param {[string, string][]} types
+ */
+function variableDialog(types) {
+    const name = /** @type {HTMLInputElement} */ (h('input', {type: 'text', class: 'wide', spellcheck: false, placeholder: 'name'}))
+    const type = /** @type {HTMLSelectElement} */ (h('select', {class: 'wide'}, types.map(([t, n]) => h('option', {value: t}, [n]))))
+    const integer = types.find(t => t[0] === 'integer')
+    if (integer) type.value = integer[0]
+    const array = /** @type {HTMLInputElement} */ (h('input', {type: 'checkbox'}))
+    const size = /** @type {HTMLInputElement} */ (h('input', {type: 'text', class: 'size', value: '1', disabled: true}))
+    array.addEventListener('change', () => { size.disabled = !array.checked })
+    const initial = /** @type {HTMLInputElement} */ (h('input', {type: 'text', class: 'wide', spellcheck: false, placeholder: 'none'}))
+    const row = (/** @type {string} */ label, /** @type {HTMLElement[]} */ controls) =>
+        h('div', {class: 'choice'}, [h('label', {class: 'choice-label'}, [label]), ...controls])
+    openDialog('New Variable', [
+        row('Name', [name]),
+        row('Type', [type]),
+        h('label', {class: 'check'}, [array, 'Array, of size ', size]),
+        row('Initial value', [initial]),
+    ], () => {
+        if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name.value.trim())) {
+            name.focus()
+            return false
+        }
+        vscode.postMessage({
+            type: 'newVariable', name: name.value.trim(), vtype: type.value, array: array.checked,
+            size: size.value.trim() || '1', initial: initial.value,
+        })
+    })
+    name.focus()
+}
+
 // ---------------------------------------------------------------- messages
 
 window.addEventListener('message', e => {
@@ -701,6 +740,8 @@ window.addEventListener('message', e => {
         draw()
     } else if (msg.type === 'choices') {
         paramDialog(msg.line, msg.path, msg.choices)
+    } else if (msg.type === 'types') {
+        variableDialog(msg.items)
     } else if (msg.type === 'catalog') {
         newDialog(msg.kind, msg.place, msg.items)
     } else if (msg.type === 'select') {

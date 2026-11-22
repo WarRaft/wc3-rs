@@ -260,3 +260,25 @@ fn trg_choices_and_catalog() {
     assert_eq!(catalog(2, &ui), "[[\"SetVariable\",\"SetVariable\",\"\",\"\",false],[\"CreateNUnitsAtLoc\",\"Create Units\",\"UNIT\",\"\",true]]");
     assert_eq!(catalog(5, &ui), "[]");
 }
+
+#[test]
+fn trg_without_a_trigger_and_new_variables() {
+    let ui = ui();
+    let ok = |t: &str, op: u32, line: usize, arg: &str| applied(t, op, line, arg).unwrap();
+    // A new file: a field, or a new line, brings its [trigger].
+    assert_eq!(ok("", op::FIELD, 0, "description\nx"), "[trigger]\ndescription=\"x\"\n");
+    let vars = "[variable]\nname=\"a\"\ntype=\"unit\"\nsize=1\n";
+    assert_eq!(ok(vars, op::PASTE, 0, "0 2 0\naction=DoNothing()\n"), format!("{vars}\n[trigger]\naction=DoNothing()\n"));
+    // New variables: after the last, before the trigger, or at the end.
+    let t = ok(vars, op::NEW_VARIABLE, 0, "b\nplayer\n1\n12\n");
+    assert_eq!(t, format!("{vars}\n[variable]\nname=\"b\"\ntype=\"player\"\narray=1\nsize=12\n"));
+    let t = ok("[trigger]\naction=DoNothing()\n", op::NEW_VARIABLE, 0, "n\ninteger\n0\n\n5");
+    assert_eq!(t, "[variable]\nname=\"n\"\ntype=\"integer\"\nsize=1\ninitial=\"5\"\n\n[trigger]\naction=DoNothing()\n");
+    assert_eq!(ok("", op::NEW_VARIABLE, 0, "n\ninteger\n0\n\n"), "[variable]\nname=\"n\"\ntype=\"integer\"\nsize=1\n");
+    assert!(edit(vars, op::NEW_VARIABLE, 0, "A\nunit\n0\n\n", &ui).contains("has a variable A already"));
+    assert!(edit(vars, op::NEW_VARIABLE, 0, "1x\nunit\n0\n\n", &ui).contains("isn't a variable's name"));
+    // Deleting a variable: its section.
+    let two = format!("{vars}\n[variable]\nname=\"b\"\ntype=\"unit\"\nsize=1\n");
+    assert_eq!(ok(&two, op::DELETE, 1, ""), "[variable]\nname=\"b\"\ntype=\"unit\"\nsize=1\n");
+    assert!(catalog(3, &ui).starts_with("[[\"player\",\"WESTRING_TRIGTYPE_player\"]"));
+}
