@@ -689,7 +689,13 @@ Editor's storage of its triggers. So:
   trigger editor;
 - the `.trg` format is free to grow: a new field, a new kind of line,
   more than `UI\TriggerData.txt` describes, with nothing to keep in
-  step with World Editor's binary layout.
+  step with World Editor's binary layout. **A new field is optional,
+  and its absence means what World Editor's trigger would be**: a
+  `[variable]` without `scope=` is a public global, as every one of
+  World Editor's is; so a file written before a field existed, or
+  extracted from a map, reads the same. A file holds one `[trigger]`:
+  a second is an error, not ignored, so nothing typed by hand is lost
+  without a word.
 
 `war3map.wtg` itself still opens as its text and saves back exactly
 (above): that's for maps kept as they are, not for `.trg` files.
