@@ -847,6 +847,9 @@ fn wtg_jass_files() {
         std::fs::write(out.join(format!("{nth:04}.j")), wtg_jass(&text, nth, &names)).unwrap();
     }
     let vars: Vec<Declared> = wtg_variables(&text, &wtg_rs::text::parse_bni(&text)).into_iter().map(|(_, d)| d).collect();
-    std::fs::write(out.join("0000_variables.j"), wtg_rs::jass::compile(None, "variables", &vars, &vars, &names.trigger_ui)).unwrap();
+    std::fs::write(out.join("0000_variables.j"), wtg_rs::jass::variables(&vars, &names.trigger_ui)).unwrap();
+    // The triggers run at map initialization, a name a line.
+    let file = wtg_rs::text::from_text(&text, None).file.expect("the text reads");
+    std::fs::write(out.join("initialization.txt"), wtg_rs::jass::initialization_triggers(&file.triggers).join("\n")).unwrap();
     println!("{} triggers, {} variables", map.triggers.len(), vars.len());
 }

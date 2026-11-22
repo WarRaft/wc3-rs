@@ -409,7 +409,11 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    scripts build as they were, and The Castle's 752 triggers, variables
    and custom script build into one script that lacks only the map's
    data.
-2. **The map's script out of the map's files** (the table above):
+2. **The map's script out of the map's files** (the table above). Done
+   so far (`wc3-build`'s `map`): `config`, the players and forces, the
+   setting up in `main`, `InitGlobals` and the triggers of map
+   initialization, World Editor's call for call on two maps; regions,
+   cameras, sounds and what's placed next.
    saving a `.w3x` makes its `war3map.j` again, and so does a build.
    Checked against the `war3map.j` of real maps by what each part does
    (its calls), not byte for byte; taking a file out of a map into a
