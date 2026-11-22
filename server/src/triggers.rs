@@ -2409,6 +2409,29 @@ fn wtg_tree(mut map: Map, op: u32, nth: usize, arg: &str) -> Result<Answer, Stri
     }
 }
 
+/// The JASS the `nth` trigger (from 1; 0: the first) of a `.wtg`'s text
+/// is built into, as [`jass`] gives a `.trg`'s: the map's variables are
+/// its globals.
+pub fn wtg_jass(text: &str, nth: usize, names: &crate::names::Names) -> String {
+    let map = Map::of(text);
+    let nth = map.pick(nth);
+    if nth == 0 {
+        return "// The map has no triggers.\n".into();
+    }
+    let slice = &map.triggers[nth - 1];
+    let visible: Vec<Declared> = wtg_variables(text, &wtg_rs::text::parse_bni(text)).into_iter().map(|(_, d)| d).collect();
+    let p = wtg_rs::text::trigger_from_text(&slice.text, None);
+    let mut out = String::new();
+    if !p.errors.is_empty() {
+        out += &format!("// The trigger has {} problem(s); what reads is built:\n", p.errors.len());
+        for e in p.errors.iter().take(5) {
+            out += &format!("//   line {}: {}\n", slice.line(e.line), e.message);
+        }
+        out += "\n";
+    }
+    out + &wtg_rs::jass::compile(p.trigger.as_ref(), &slice.name, &[], &visible, &names.trigger_ui)
+}
+
 /// What the parameter at `path` of the ECA at `line` of the picked
 /// trigger can be ([`choices`]): `arg` is which trigger it is (from 1), a
 /// line break, and the path.

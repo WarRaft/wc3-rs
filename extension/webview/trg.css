@@ -426,3 +426,34 @@ img.icon.art {
     white-space: pre;
     tab-size: 4;
 }
+
+/* A comment (comment=1): text between triggers, set apart from them. */
+
+body.comment-trigger .title-icon {
+    color: var(--vscode-descriptionForeground);
+}
+
+body.comment-trigger .name {
+    font-style: italic;
+}
+
+body.comment-trigger .check,
+body.comment-trigger .tools,
+body.comment-trigger #tree {
+    display: none;
+}
+
+body.comment-trigger .notice {
+    color: var(--vscode-descriptionForeground);
+    background: transparent;
+    border-bottom-color: var(--vscode-panel-border, transparent);
+}
+
+body.comment-trigger .description {
+    flex: 1;
+    resize: none;
+    padding: 12px;
+    border-left: 3px solid var(--vscode-textBlockQuote-border, var(--vscode-descriptionForeground));
+    background: var(--vscode-textBlockQuote-background, var(--vscode-editor-background));
+    font-style: italic;
+}

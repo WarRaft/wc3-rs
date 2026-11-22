@@ -362,7 +362,7 @@
         },
         {
           "command": "wc3.trg.showJass",
-          "when": "editorLangId == trg || activeCustomEditorId == wc3.trigger"
+          "when": "editorLangId == trg || activeCustomEditorId == wc3.trigger || activeCustomEditorId == wc3.wtgTriggers"
         }
       ],
       "view/title": [
@@ -453,7 +453,7 @@
         },
         {
           "command": "wc3.trg.showJass",
-          "when": "editorLangId == trg || activeCustomEditorId == wc3.trigger",
+          "when": "editorLangId == trg || activeCustomEditorId == wc3.trigger || activeCustomEditorId == wc3.wtgTriggers",
           "group": "navigation"
         }
       ]

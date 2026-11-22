@@ -90,7 +90,8 @@ pub enum QueryKind {
     /// the text (`triggers::icons`).
     TriggerIcons,
     /// In a trigger of its own: the JASS it's built into, as the text
-    /// (`triggers::jass`).
+    /// (`triggers::jass`); in a map's triggers (`.wtg`), the trigger whose
+    /// number (from 1) is the query text's (`triggers::wtg_jass`).
     TriggerJass,
 }
 
@@ -239,10 +240,14 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             return Answer { locations: Vec::new(), text };
         }
         QueryKind::TriggerJass => {
-            let Some((doc, names, _)) = ws.names_text(id).filter(|(d, _, _)| d.path.as_deref().is_some_and(crate::triggers::is_trg_file)) else {
+            let Some((doc, names, _)) = ws.names_text(id).filter(|(d, _, _)| d.path.as_deref().is_some_and(crate::triggers::has_call_values)) else {
                 return Answer::default();
             };
-            let text = crate::triggers::jass(&doc.text, id, names, &project_variables(ws, id));
+            let text = if doc.path.as_deref().is_some_and(crate::triggers::is_trigger_file) {
+                crate::triggers::wtg_jass(&doc.text, query.trim().parse().unwrap_or(0), names)
+            } else {
+                crate::triggers::jass(&doc.text, id, names, &project_variables(ws, id))
+            };
             return Answer { locations: Vec::new(), text };
         }
         QueryKind::TriggerIcons => {

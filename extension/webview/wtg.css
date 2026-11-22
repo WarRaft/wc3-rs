@@ -125,6 +125,7 @@ body.wtg.empty .main > :not(#loading) {
 }
 
 .map-row .map-icon.trigger { color: #FFA000; }
+.map-row .map-icon.comment { color: var(--vscode-descriptionForeground); }
 .map-row .map-icon.category { color: var(--vscode-symbolIcon-folderForeground, #C09553); }
 .map-row .map-icon.variable { color: var(--vscode-symbolIcon-variableForeground, #75BEFF); }
 
@@ -140,6 +141,11 @@ body.wtg.empty .main > :not(#loading) {
 
 .map-row.comment .map-label {
     font-style: italic;
+}
+
+/* A comment trigger: text between triggers, a line of its own. */
+.map-row.comment {
+    border-top: 1px dashed var(--vscode-panel-border, var(--vscode-descriptionForeground));
 }
 
 .map-row .map-detail {

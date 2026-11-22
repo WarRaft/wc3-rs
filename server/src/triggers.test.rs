@@ -372,13 +372,13 @@ fn private_and_local_variables_seen_where_they_are() {
 fn trg_jass() {
     let names = crate::names::Names::default();
     let j = jass("[trigger]\nname=\"T\"\naction=DoNothing()\n", "/m/b.trg", &names, &[]);
-    assert!(j.contains("function Trig_T_Actions takes nothing returns nothing\n    call DoNothing()\nendfunction"), "{j}");
+    assert!(j.contains("function Trig_T_Actions\n    DoNothing()\nendfunction"), "{j}");
     let j = jass("[trigger]\nwhat=1\naction=DoNothing()\n", "/m/b.trg", &names, &[]);
     assert!(j.starts_with("// The text has 1 problem(s); what reads is built:\n//   line 2:"), "{j}");
     // As World Editor names it: a byte each, a `u` at the end; a trigger
     // without a name, as its file.
     let j = jass("[trigger]\nname=\"Шляпа непонятная\"\n", "/m/b.trg", &names, &[]);
-    assert!(j.contains(&format!("function InitTrig_{}u takes", "_".repeat(31))), "{j}");
+    assert!(j.contains(&format!("trigger gg_trg_{}u = CreateTrigger()", "_".repeat(31))), "{j}");
     let j = jass("[trigger]\naction=DoNothing()\n", "/m/000_Spawn.trg", &names, &[]);
     assert!(j.contains("function Trig_000_Spawn_Actions"), "{j}");
 }
@@ -743,6 +743,21 @@ fn wtg_slices_of_a_real_map() {
         }
     }
     println!("{count} triggers, {toggled} toggled back");
+    // Each one's JASS reads as JASS (this toolchain's: no set, no call),
+    // with the editor's files of the game folders in `WC3_GAME` (a path
+    // list, as PATH), when given.
+    let names = match std::env::var_os("WC3_GAME") {
+        Some(g) => crate::names::names(&crate::game::Lookup { game: std::env::split_paths(&g).collect(), roots: vec![] }),
+        None => return,
+    };
+    let mut bad = Vec::new();
+    for nth in 1..=count {
+        let j = wtg_jass(&text, nth, &names);
+        if let Err(e) = jass_rs::parse(&j) {
+            bad.push(format!("trigger {nth}: line {}: {}\n{}", e.line, e.message, j.lines().nth(e.line.saturating_sub(1)).unwrap_or("")));
+        }
+    }
+    assert!(bad.is_empty(), "{} of {count} don't read:\n{}", bad.len(), bad.iter().take(5).cloned().collect::<Vec<_>>().join("\n"));
     // A variable's uses, over every trigger.
     if let Some((_, r)) = map.sections.iter().find(|(n, _)| n == wtg_rs::text::VARIABLE) {
         let t = std::time::Instant::now();
@@ -802,4 +817,15 @@ fn custom_script_is_one_line_in_a_map() {
     assert_eq!(a, format!("{{\"error\":{}}}", crate::objects::json_string(ONE_LINE)));
     let a = wtg_edit(MAP, op::PASTE, 0, "1\n0 2 0\naction=CustomScriptCode(\"call A()\")\n", &ui);
     assert!(a.starts_with("{\"edits\":"), "{a}");
+}
+
+#[test]
+fn wtg_jass_is_the_picked_triggers() {
+    let names = crate::names::Names::default();
+    let j = wtg_jass(MAP, 2, &names);
+    assert!(j.contains("// Trigger: B\n") && j.contains("trigger gg_trg_B = null"), "{j}");
+    let j = wtg_jass(MAP, 1, &names);
+    assert!(j.contains("trigger gg_trg_A = CreateTrigger()\n\nfunction main\n") && !j.contains("call ") && !j.contains("takes nothing"), "{j}");
+    jass_rs::parse(&j).unwrap_or_else(|e| panic!("line {}: {}\n{j}", e.line, e.message));
+    assert_eq!(wtg_jass("[wtg]\nversion=7\n", 0, &names), "// The map has no triggers.\n");
 }

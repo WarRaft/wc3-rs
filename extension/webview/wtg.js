@@ -168,8 +168,10 @@ function dropTarget(el, category, before) {
 /** @param {MapTrigger} t @param {number} depth */
 function triggerRow(t, depth) {
     const nth = (mapData ? mapData.triggers.indexOf(t) : -1) + 1
-    const art = t.enabled ? 'SEIcon_Trigger' : 'SEIcon_TriggerDisabled'
-    const el = rowEl({kind: 'trigger', key: nth}, depth, null, iconEl(art, t.comment ? 'fa-comment' : 'fa-bolt', 'trigger'), t.name || '(no name)', t.custom ? 'custom script' : '')
+    // A comment is set apart: its own icon, its text muted.
+    const art = t.comment ? '' : t.enabled ? 'SEIcon_Trigger' : 'SEIcon_TriggerDisabled'
+    const icon = iconEl(art, t.comment ? 'fa-comment' : 'fa-bolt', t.comment ? 'comment' : 'trigger')
+    const el = rowEl({kind: 'trigger', key: nth}, depth, null, icon, t.name || '(no name)', t.custom ? 'custom script' : '')
     el.draggable = true
     el.addEventListener('dragstart', e => {
         dragging = nth

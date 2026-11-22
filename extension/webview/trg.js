@@ -704,8 +704,14 @@ $('show-jass')?.addEventListener('click', () => vscode.postMessage({type: 'showJ
 
 /** @param {View} v */
 function showFields(v) {
+    // A comment is text between triggers, not a trigger: its text alone,
+    // set apart (no events, conditions or actions, no switches).
+    const comment = !!v.comment
+    document.body.classList.toggle('comment-trigger', comment)
+    description.placeholder = comment ? 'The comment' : 'Comment'
     const art = icons[v.enabled !== 0 ? 'SEIcon_Trigger' : 'SEIcon_TriggerDisabled']
-    $('title-icon').innerHTML = art ? `<img class="icon art" alt="" src="${art}">` : '<i class="fa-solid fa-bolt"></i>'
+    $('title-icon').innerHTML = comment ? '<i class="fa-solid fa-comment"></i>'
+        : art ? `<img class="icon art" alt="" src="${art}">` : '<i class="fa-solid fa-bolt"></i>'
 
     // What's being typed stays.
     if (document.activeElement !== nameInput) nameInput.value = v.name
@@ -720,7 +726,7 @@ function showFields(v) {
     const notes = []
     if (!v.data) notes.push('No UI\\TriggerData.txt in the project\'s game folders or map roots: functions show as calls, without their phrases.')
     if (v.custom_text) notes.push('Custom text: the trigger is its code (custom_text=1); what\'s below is what it was before.')
-    if (v.comment) notes.push('A comment (comment=1), not a trigger.')
+    if (v.comment) notes.push('A comment (comment=1): text between triggers, nothing of it is in the map\'s script.')
     const notice = $('notice')
     notice.hidden = !notes.length
     notice.textContent = notes.join(' ')

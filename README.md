@@ -728,8 +728,11 @@ text, so undo and save are the text's, and saving writes `war3map.wtg`
 as before (`triggers::wtg_view`, `triggers::wtg_edit`,
 `triggers::map_op`). A trigger is picked by its place among the
 triggers, not its line, so typing in the text above it doesn't pick
-another. There's no Show JASS, which needs the map's script made from
-its files (next).
+another. **Show JASS** shows the picked trigger's JASS, as a `.trg`'s
+(below), and follows the picking (`war3map.wtg.j`,
+`triggers::wtg_jass`): the map's variables are its globals. A comment
+(`comment=1`) is set apart, in the tree and in the view: its text
+alone, no events, conditions or actions.
 A trigger's `category=` shows its category's name as an inlay hint.
 
 ### A trigger of its own: `.trg`
@@ -973,10 +976,24 @@ dirty mark are the text's. In the view:
 context menu of a `.trg`) shows the JASS the trigger is built into,
 beside it and read-only, following the text as it changes, saved or
 not (the text is the one truth; the view is only another way to edit it)
-(`wtg_rs::jass`): World Editor's layout (`Trig_<name>_Conditions`,
-`Trig_<name>_Actions`, `InitTrig_<name>` registering the events; the
-`<name>` World Editor's until the trigger is renamed here, then one of
-its own: see above and `wtg_rs`'s README), the file's globals in a `globals` block (`udg_<name>`, a private one
+(`wtg_rs::jass`). It's this toolchain's JASS, which the build makes the
+game's of (`jass-rs`'s README): no `set` and `call`, no `takes nothing
+returns nothing`, globals at the top level. Functions are named as World
+Editor's (`Trig_<name>_Conditions`, `Trig_<name>_Actions`; the `<name>`
+World Editor's, see above and `wtg_rs`'s README); its `InitTrig_<name>`
+is a `main` of the trigger's own, which the build merges with every
+other, and the trigger is made where it's declared:
+
+```jass
+trigger gg_trg_Gate1 = CreateTrigger()
+
+function main
+    TriggerRegisterDeathEvent(gg_trg_Gate1, gg_dest_B000_0261)
+    TriggerAddAction(gg_trg_Gate1, function Trig_Gate1_Actions)
+endfunction
+```
+
+The file's globals are declared (`udg_<name>`, a private one
 `udg_<trigger>__<name>`) and its locals at the top of the actions; a
 preset as its code (`bj_UNIT_FACING`), a function by its script name
 (`_Name_ScriptName`), an object's id in single quotes (`'hfoo'`); the
@@ -1124,7 +1141,7 @@ one rule off.
 
 | group  | rules                | for |
 |--------|----------------------|-----|
-| `pure` | `implicit-signature`, `declaration-after-function`, `global-outside-globals` | pure JASS as the game reads it: reports what this toolchain accepts beyond the game's grammar. Off by default |
+| `pure` | `implicit-signature`, `implicit-keyword`, `merged-function`, `declaration-after-function`, `global-outside-globals` | pure JASS as the game reads it: reports what this toolchain accepts beyond the game's grammar. Off by default |
  Parse errors
 aren't lint: they can't be turned off. The rules are defined in
 `parser_rs::RULES` (`parser-rs/src/diagnostic.rs`); this table follows it.
@@ -1150,6 +1167,8 @@ aren't lint: they can't be turned off. The rules are defined in
 | `unclosed-section-header`        | BNI                          | on      | a section header missing its `]` |
 | `unterminated-string`            | BNI                          | on      | a quoted string with no closing `"` |
 | `implicit-signature`             | JASS                         | **off** | a `function` or `native` without `takes` or `returns`, which the game requires (group `pure`) |
+| `implicit-keyword`               | JASS                         | **off** | an assignment without `set` or a call without `call`, which the game requires (group `pure`) |
+| `merged-function`                | JASS                         | **off** | more than one `main` or `config`, which the build merges into one; the game reads one (group `pure`) |
 | `declaration-after-function`     | JASS                         | **off** | a global, `globals` block, `native` or `type` after a function; the game reads them only before the first one (group `pure`) |
 | `global-outside-globals`         | JASS                         | **off** | a variable at the top level outside `globals ... endglobals`, where the game doesn't read it (group `pure`) |
 | `object-value-type`              | Object data                  | on      | a value stored as another type than the game's metadata gives the field (a number for a string, a type written out that isn't the field's: `int 6` for an unreal); an error, the game misreads it. Quick fix: the right type |
