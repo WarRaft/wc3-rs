@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Cross-compiles wc3-server for macOS (universal), Linux, and Windows into
-# bin/ — the layout extension.js expects for a packaged (non-dev) install.
-# Ported from JASS-Tree-sitter-Rust/build.sh; PROJECT_NAME is derived from
-# Cargo.toml so nothing else here is project-specific.
+# Cross-compiles the binaries the extension ships, for macOS (universal),
+# Linux, and Windows, into extension/bin/ — the layout extension.js expects
+# for a packaged (non-dev) install:
+#   wc3-server  — the language backend (this crate);
+#   wc3-mcp     — the MCP server (../../wc3-mcp), which the extension
+#                 registers with VS Code.
+# Each lands as <name>-macos / <name>-linux / <name>-windows.exe.
+# Every cargo call runs from here, so .cargo/config.toml (the cross
+# linkers) applies to wc3-mcp too.
 
 # ---------------- helpers ----------------
 need() { command -v "$1" >/dev/null 2>&1 || { echo "❌ Missing: $1"; exit 1; }; }
@@ -16,7 +21,11 @@ need rustup
 need lipo
 need file
 
-PROJECT_NAME="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].name')"
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+# Manifests of the crates to build; each one's binary has the package's name.
+MANIFESTS=("Cargo.toml" "../../wc3-mcp/Cargo.toml")
+
 # Lands in extension/bin/ — vsce only packages files inside the folder that
 # holds package.json (extension/), so the binaries must live there, not here.
 DIST_DIR="../extension/bin"
@@ -91,39 +100,44 @@ maybe_upx() {
 export RUSTFLAGS="${RUSTFLAGS:-} -C strip=symbols"
 export AR="/usr/local/opt/llvm/bin/llvm-ar"
 
-# ---------------- macOS (universal) ----------------
-msg "📦 Building universal macOS binary…"
-rustup target add aarch64-apple-darwin x86_64-apple-darwin >/dev/null 2>&1 || true
-cargo build --release --target aarch64-apple-darwin
-cargo build --release --target x86_64-apple-darwin
+rustup target add aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-musl x86_64-pc-windows-gnu >/dev/null 2>&1 || true
 
-MAC_UNI="$DIST_DIR/$PROJECT_NAME-macos"
-lipo -create \
-  -output "$MAC_UNI" \
-  "target/aarch64-apple-darwin/release/$PROJECT_NAME" \
-  "target/x86_64-apple-darwin/release/$PROJECT_NAME"
+for MANIFEST in "${MANIFESTS[@]}"; do
+  [[ -f "$MANIFEST" ]] || { echo "❌ Missing: $MANIFEST"; exit 1; }
+  META="$(cargo metadata --no-deps --format-version 1 --manifest-path "$MANIFEST")"
+  NAME="$(jq -r '.packages[0].name' <<<"$META")"
+  TARGET_DIR="$(jq -r '.target_directory' <<<"$META")"
+  build() { cargo build --release --manifest-path "$MANIFEST" --target "$1"; }
 
-strip_safe "$MAC_UNI" macos
-file "$MAC_UNI"
+  # ---------------- macOS (universal) ----------------
+  msg "📦 $NAME: universal macOS binary…"
+  build aarch64-apple-darwin
+  build x86_64-apple-darwin
+  MAC_UNI="$DIST_DIR/$NAME-macos"
+  lipo -create \
+    -output "$MAC_UNI" \
+    "$TARGET_DIR/aarch64-apple-darwin/release/$NAME" \
+    "$TARGET_DIR/x86_64-apple-darwin/release/$NAME"
+  strip_safe "$MAC_UNI" macos
+  file "$MAC_UNI"
 
-# ---------------- Linux (x86_64-unknown-linux-musl) ----------------
-msg "🐧 Building for Linux (x86_64-unknown-linux-musl)…"
-rustup target add x86_64-unknown-linux-musl >/dev/null 2>&1 || true
-cargo build --release --target x86_64-unknown-linux-musl
-LIN_BIN="$DIST_DIR/$PROJECT_NAME-linux"
-cp "target/x86_64-unknown-linux-musl/release/$PROJECT_NAME" "$LIN_BIN"
-strip_safe "$LIN_BIN" linux
-file "$LIN_BIN"
+  # ---------------- Linux (x86_64-unknown-linux-musl) ----------------
+  msg "🐧 $NAME: Linux (x86_64-unknown-linux-musl)…"
+  build x86_64-unknown-linux-musl
+  LIN_BIN="$DIST_DIR/$NAME-linux"
+  cp "$TARGET_DIR/x86_64-unknown-linux-musl/release/$NAME" "$LIN_BIN"
+  strip_safe "$LIN_BIN" linux
+  file "$LIN_BIN"
 
-# ---------------- Windows (x86_64-pc-windows-gnu) ----------------
-msg "🪟 Building for Windows (x86_64-pc-windows-gnu)…"
-rustup target add x86_64-pc-windows-gnu >/dev/null 2>&1 || true
-cargo build --release --target x86_64-pc-windows-gnu
-WIN_EXE="$DIST_DIR/$PROJECT_NAME-windows.exe"
-cp "target/x86_64-pc-windows-gnu/release/$PROJECT_NAME.exe" "$WIN_EXE"
-strip_safe "$WIN_EXE" windows
-maybe_upx "$WIN_EXE"
-file "$WIN_EXE"
+  # ---------------- Windows (x86_64-pc-windows-gnu) ----------------
+  msg "🪟 $NAME: Windows (x86_64-pc-windows-gnu)…"
+  build x86_64-pc-windows-gnu
+  WIN_EXE="$DIST_DIR/$NAME-windows.exe"
+  cp "$TARGET_DIR/x86_64-pc-windows-gnu/release/$NAME.exe" "$WIN_EXE"
+  strip_safe "$WIN_EXE" windows
+  maybe_upx "$WIN_EXE"
+  file "$WIN_EXE"
+done
 
 # ---------------- summary ----------------
 msg "\n✅ Build complete:"

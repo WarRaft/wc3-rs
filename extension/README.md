@@ -4,6 +4,10 @@ Warcraft III language support for VS Code.
 
 ## Features
 
+- An MCP server for chat agents in VS Code ([`wc3-mcp`](https://github.com/WarRaft/wc3-mcp),
+  registered as **WC3**): tools that read and change SLK tables, MPQ
+  archives and maps, object data, string tables, triggers and the other
+  map files.
 - JASS syntax highlighting (`.j`, `.pld`, `.ai`; `.vj` is vJASS, with its
   own icon): comments, string/rawcode
   literals, bracket matching, indent-on-keyword rules for
@@ -192,6 +196,10 @@ cd ../server && cargo build
 3. `../server/target/debug/wc3-server` — the plain `cargo build` output;
    what you get from step 1 above.
 
+`wc3-mcp` is found the same way (`binaryPath()`): `./bin/wc3-mcp-*`, then
+`../../wc3-mcp/target/{release,debug}/wc3-mcp`. `registerMcp()` registers
+it with VS Code as the `wc3` MCP server definition provider.
+
 ### Producing a packaged binary
 
 One-time environment setup — installs the cross-compilation toolchain
@@ -205,10 +213,11 @@ Then, either:
 
 - `./build.sh` — ported from the older extension's own `build.sh`.
   Cross-compiles a universal macOS binary plus Linux (musl) and Windows
-  (gnu) builds into `extension/bin/`. See `server/.cargo/config.toml` for
+  (gnu) builds of `wc3-server` and of `wc3-mcp` (`../../wc3-mcp`, which
+  must be checked out next to this repository) into `extension/bin/`. See `server/.cargo/config.toml` for
   the linkers it expects.
-- `./build-mac.sh` — quick host-only debug build (current Mac target
-  only) into `extension/bin/`, for local iteration without the full
+- `./build-mac.sh` — quick host-only debug build of both (current Mac
+  target only) into `extension/bin/`, for local iteration without the full
   cross-compile.
 
 ```sh

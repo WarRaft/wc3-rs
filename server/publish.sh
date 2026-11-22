@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Release: cross-compiles wc3-server for all platforms (build.sh), then
+# Release: cross-compiles wc3-server and wc3-mcp for all platforms (build.sh), then
 # publishes the extension to the VS Code Marketplace with vsce.
 # Extra arguments go to `vsce publish` (e.g. `./publish.sh patch`).
 

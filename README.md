@@ -991,6 +991,14 @@ remove objects; `TRIGSTR_<n>` names as their text) and string tables
 `storm-rs`, `w3abdhqtu-rs` and `wts-rs` as the editor. Build it first (`cargo build --release` in
 `../wc3-mcp`); Claude Code asks once whether to use it.
 
+The extension ships it too: `server/build.sh` cross-compiles `wc3-mcp`
+next to `wc3-server` into `extension/bin/` (`wc3-mcp-{macos,linux,windows.exe}`),
+and the extension registers it with VS Code
+(`contributes.mcpServerDefinitionProviders`, id `wc3`, `registerMcp` in
+`extension.js`), so chat agents in VS Code get its tools with nothing to
+install. VS Code starts it in the first workspace folder; without a
+packaged binary it takes the dev build, `../wc3-mcp/target/{release,debug}/wc3-mcp`.
+
 Its tools read the game's files (names, `UI\TriggerData.txt`, metadata)
 the way the editor does for the same file: through `game` and `roots`
 when a call gives them, else through the settings of the project the file

@@ -135,6 +135,8 @@ const {
     Selection,
     TextEditorRevealType,
     env,
+    lm,
+    McpStdioServerDefinition,
 } = require('vscode')
 const {encode, decode, FrameReader, QUERY, FS_OP, FS_FLAG, OBJECTS_OP} = require('./protocol.js')
 
@@ -220,46 +222,85 @@ const SYMBOL_KIND = {
 }
 
 /**
- * Resolves the `wc3-server` binary to spawn.
+ * Resolves one of the binaries the extension ships: `wc3-server` (the
+ * language backend) or `wc3-mcp` (the MCP server).
  *
  * Prefers the packaged, cross-compiled binary under `./bin/` (produced by
- * `server/build.sh` / `server/build-mac.sh`: `wc3-server-macos` /
- * `wc3-server-linux` / `wc3-server-windows.exe`). It lives inside the
- * extension folder itself, not `../server/bin`, because `vsce` only
- * packages files under the folder that holds `package.json`. Falls back to
- * a local dev build (`../server/target/{release,debug}/wc3-server`) so
- * day-to-day development doesn't require the full cross-compile.
+ * `server/build.sh` / `server/build-mac.sh`: `<name>-macos` /
+ * `<name>-linux` / `<name>-windows.exe`). It lives inside the extension
+ * folder itself, because `vsce` only packages files under the folder that
+ * holds `package.json`. Falls back to a local dev build
+ * (`<crate>/target/{release,debug}/<name>`) so day-to-day development
+ * doesn't require the full cross-compile.
  *
  * @param {import('vscode').ExtensionContext} context
+ * @param {string} name the binary's name
+ * @param {string} crateDir the crate's folder, for the dev build
  * @returns {string | null} null if the platform isn't supported.
  */
-function serverBinaryPath(context) {
-    const serverDir = path.join(context.extensionPath, '..', 'server')
+function binaryPath(context, name, crateDir) {
+    const suffix = {win32: 'windows.exe', darwin: 'macos', linux: 'linux'}[process.platform]
+    if (!suffix) return null
 
-    let platformSuffix
-    switch (process.platform) {
-        case 'win32':
-            platformSuffix = 'windows.exe'
-            break
-        case 'darwin':
-            platformSuffix = 'macos'
-            break
-        case 'linux':
-            platformSuffix = 'linux'
-            break
-        default:
-            window.showErrorMessage(`WC3: unsupported platform: ${process.platform}`)
-            return null
-    }
-
-    const packaged = path.join(context.extensionPath, 'bin', `wc3-server-${platformSuffix}`)
+    const packaged = path.join(context.extensionPath, 'bin', `${name}-${suffix}`)
     if (fs.existsSync(packaged)) return packaged
 
-    const devName = process.platform === 'win32' ? 'wc3-server.exe' : 'wc3-server'
-    const release = path.join(serverDir, 'target', 'release', devName)
+    const devName = process.platform === 'win32' ? `${name}.exe` : name
+    const release = path.join(crateDir, 'target', 'release', devName)
     if (fs.existsSync(release)) return release
 
-    return path.join(serverDir, 'target', 'debug', devName)
+    return path.join(crateDir, 'target', 'debug', devName)
+}
+
+/**
+ * The `wc3-server` binary to spawn; its dev build is `../server`'s.
+ *
+ * @param {import('vscode').ExtensionContext} context
+ */
+function serverBinaryPath(context) {
+    const found = binaryPath(context, 'wc3-server', path.join(context.extensionPath, '..', 'server'))
+    if (!found) window.showErrorMessage(`WC3: unsupported platform: ${process.platform}`)
+    return found
+}
+
+/**
+ * Registers `wc3-mcp` with VS Code (`contributes.mcpServerDefinitionProviders`,
+ * id `wc3`): chat agents in VS Code get its tools for the game's files
+ * (SLK, MPQ, object data, triggers ...). VS Code starts it over stdio
+ * when a chat wants it, in the first workspace folder, so relative paths
+ * are the project's. Its dev build is the sibling repository's
+ * (`../../wc3-mcp`). Skipped where VS Code has no MCP API.
+ *
+ * @param {import('vscode').ExtensionContext} context
+ */
+function registerMcp(context) {
+    if (!lm?.registerMcpServerDefinitionProvider || !McpStdioServerDefinition) return
+    const command = binaryPath(context, 'wc3-mcp', path.join(context.extensionPath, '..', '..', 'wc3-mcp'))
+    if (!command) return
+
+    const changed = new EventEmitter()
+    context.subscriptions.push(
+        changed,
+        // The folder it starts in follows the workspace.
+        workspace.onDidChangeWorkspaceFolders(() => changed.fire()),
+        lm.registerMcpServerDefinitionProvider('wc3', {
+            onDidChangeMcpServerDefinitions: changed.event,
+            provideMcpServerDefinitions() {
+                if (!fs.existsSync(command)) return []
+                const server = new McpStdioServerDefinition(
+                    'WC3',
+                    command,
+                    [],
+                    {},
+                    // A new version of the extension restarts it.
+                    context.extension.packageJSON.version,
+                )
+                const folder = workspace.workspaceFolders?.[0]
+                if (folder) server.cwd = folder.uri
+                return [server]
+            },
+        }),
+    )
 }
 
 /**
@@ -1783,6 +1824,8 @@ module.exports = {
     activate(context) {
         diagnostics = languages.createDiagnosticCollection('wc3')
         context.subscriptions.push(diagnostics, tokensChanged)
+        // Before the language server: it doesn't need it.
+        registerMcp(context)
 
         const command = serverBinaryPath(context)
         if (!command) return

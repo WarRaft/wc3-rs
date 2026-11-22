@@ -19,7 +19,8 @@
   "main": "./extension.js",
   "activationEvents": [
     "onFileSystem:wc3obj",
-    "onFileSystem:wc3map"
+    "onFileSystem:wc3map",
+    "onMcpCollection:wc3"
   ],
   "contributes": {
     "commands": [
@@ -2158,6 +2159,12 @@
         "key": "ctrl+k v",
         "mac": "cmd+k v",
         "when": "editorLangId == txt2"
+      }
+    ],
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "wc3",
+        "label": "WC3"
       }
     ]
   }
