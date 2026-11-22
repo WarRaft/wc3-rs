@@ -1,8 +1,9 @@
 'use strict'
 
 /**
- * WC3 extension entry point: a thin shell around `wc3-server` (see
- * `../server`). All language logic is in Rust.
+ * WC3 extension entry point: a thin shell around the language backend,
+ * `wc3 server` (see `../server`; `../cli` is the one binary, `wc3`, whose
+ * `wc3 mcp` is the MCP server). All language logic is in Rust.
  *
  * The extension starts the server and talks to it over stdio in a small
  * binary protocol (`protocol.js`). It only reports what happens to
@@ -223,8 +224,8 @@ const SYMBOL_KIND = {
 }
 
 /**
- * Resolves one of the binaries the extension ships: `wc3-server` (the
- * language backend) or `wc3-mcp` (the MCP server).
+ * Resolves the binary the extension ships, `wc3` (`wc3 server`, the
+ * language backend; `wc3 mcp`, the MCP server).
  *
  * Prefers the packaged, cross-compiled binary under `./bin/` (produced by
  * `server/build.sh` / `server/build-mac.sh`: `<name>-macos` /
@@ -254,29 +255,31 @@ function binaryPath(context, name, crateDir) {
 }
 
 /**
- * The `wc3-server` binary to spawn; its dev build is `../server`'s.
+ * The one binary the extension ships, `wc3` (`wc3 server` is the language
+ * backend, `wc3 mcp` the MCP server); its dev build is `../cli`'s.
  *
  * @param {import('vscode').ExtensionContext} context
  */
 function serverBinaryPath(context) {
-    const found = binaryPath(context, 'wc3-server', path.join(context.extensionPath, '..', 'server'))
+    const found = binaryPath(context, 'wc3', path.join(context.extensionPath, '..', 'cli'))
     if (!found) window.showErrorMessage(`WC3: unsupported platform: ${process.platform}`)
     return found
 }
 
 /**
- * Registers `wc3-mcp` with VS Code (`contributes.mcpServerDefinitionProviders`,
- * id `wc3`): chat agents in VS Code get its tools for the game's files
- * (SLK, MPQ, object data, triggers ...). VS Code starts it over stdio
- * when a chat wants it, in the first workspace folder, so relative paths
- * are the project's. Its dev build is the sibling repository's
- * (`../../wc3-mcp`). Skipped where VS Code has no MCP API.
+ * Registers the MCP server (`wc3 mcp`) with VS Code
+ * (`contributes.mcpServerDefinitionProviders`, id `wc3`): chat agents in
+ * VS Code get its tools for the game's files (SLK, MPQ, object data,
+ * triggers, code ...). VS Code starts it over stdio when a chat wants it,
+ * in the first workspace folder, so relative paths are the project's. The
+ * same binary as the language backend (`serverBinaryPath`). Skipped where
+ * VS Code has no MCP API.
  *
  * @param {import('vscode').ExtensionContext} context
  */
 function registerMcp(context) {
     if (!lm?.registerMcpServerDefinitionProvider || !McpStdioServerDefinition) return
-    const command = binaryPath(context, 'wc3-mcp', path.join(context.extensionPath, '..', '..', 'wc3-mcp'))
+    const command = binaryPath(context, 'wc3', path.join(context.extensionPath, '..', 'cli'))
     if (!command) return
 
     const changed = new EventEmitter()
@@ -291,7 +294,7 @@ function registerMcp(context) {
                 const server = new McpStdioServerDefinition(
                     'WC3',
                     command,
-                    [],
+                    ['mcp'],
                     {},
                     // A new version of the extension restarts it.
                     context.extension.packageJSON.version,
@@ -1229,11 +1232,11 @@ function registerTokens(msg, context) {
  * @param {import('vscode').ExtensionContext} context
  */
 function startServer(command, context) {
-    server = spawn(command, [], {stdio: ['pipe', 'pipe', 'pipe']})
+    server = spawn(command, ['server'], {stdio: ['pipe', 'pipe', 'pipe']})
     server.on('error', e => {
         window.showErrorMessage(
             `WC3: failed to start the language server (${e.message}). ` +
-            'Run "cargo build" (or server/build.sh for a packaged binary) in the server/ crate first.',
+            'Run "cargo build" in cli/ (or server/build-mac.sh, server/build.sh for packaged binaries) first.',
         )
         server = null
     })
@@ -1241,7 +1244,7 @@ function startServer(command, context) {
         if (server) console.error(`[wc3] server exited with code ${code}`)
         server = null
     })
-    server.stderr.on('data', chunk => console.error(`[wc3-server] ${chunk.toString().trimEnd()}`))
+    server.stderr.on('data', chunk => console.error(`[wc3 server] ${chunk.toString().trimEnd()}`))
 
     const frames = new FrameReader()
     server.stdout.on('data', chunk => {

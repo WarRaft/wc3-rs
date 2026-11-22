@@ -30,6 +30,19 @@ pub enum Event {
 
 /// Turns the editor's input into events until it ends, then sends
 /// `Exit`. A malformed or unknown message is skipped, never fatal.
+/// Runs the server over this process's stdin and stdout until stdin
+/// closes, i.e. until the editor goes away: what `wc3 server` does.
+pub fn run_stdio() {
+    let (events, inbox) = std::sync::mpsc::channel();
+    let reader = events.clone();
+    std::thread::spawn(move || read_events(std::io::stdin().lock(), &reader));
+    let out = std::io::BufWriter::new(std::io::stdout().lock());
+    if let Err(err) = Server::new(out, Some(events)).run(inbox) {
+        // Most likely the editor stopped reading: nothing left to do.
+        eprintln!("wc3 server: {err}");
+    }
+}
+
 pub fn read_events(mut input: impl Read, events: &Sender<Event>) {
     loop {
         match read_frame(&mut input) {

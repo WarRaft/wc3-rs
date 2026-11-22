@@ -404,7 +404,11 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    natives: see `wc3-mcp`'s README). Done: names and types in the
    editor and in `code_check`, the natives in `jass_natives`.
 1. **This toolchain's JASS into the game's.** The output above, for
-   the triggers and hand-written JASS: the first thing that runs.
+   the triggers and hand-written JASS: the first thing that runs. Done
+   (`wc3-build`'s `jass`; `wc3-mcp`'s `jass_build`): the three maps'
+   scripts build as they were, and The Castle's 752 triggers, variables
+   and custom script build into one script that lacks only the map's
+   data.
 2. **The map's script out of the map's files** (the table above):
    saving a `.w3x` makes its `war3map.j` again, and so does a build.
    Checked against the `war3map.j` of real maps by what each part does
@@ -1158,20 +1162,23 @@ remove, rename), object data (list, read, text, check, set, add and
 remove objects; `TRIGSTR_<n>` names as their text) and string tables
 (`war3map.wts`: list, read, resolve, set), on the same `slk-rs`,
 `storm-rs`, `w3abdhqtu-rs` and `wts-rs` as the editor. It runs the
-binary the extension ships, `extension/bin/wc3-mcp-macos`, so it's the
+binary the extension ships, `extension/bin/wc3-macos mcp`, so it's the
 same as the editor's: build it first (`server/build-mac.sh`, or
 `server/build.sh` for every system; on Linux or Windows point `.mcp.json`
-at `wc3-mcp-linux` or `wc3-mcp-windows.exe`), and restart Claude Code
-after a build to have the new one. Claude Code asks once whether to use
-it.
+at `wc3-linux` or `wc3-windows.exe`), and restart Claude Code after a
+build to have the new one. Claude Code asks once whether to use it.
 
-The extension ships it too: `server/build.sh` cross-compiles `wc3-mcp`
-next to `wc3-server` into `extension/bin/` (`wc3-mcp-{macos,linux,windows.exe}`),
-and the extension registers it with VS Code
-(`contributes.mcpServerDefinitionProviders`, id `wc3`, `registerMcp` in
-`extension.js`), so chat agents in VS Code get its tools with nothing to
-install. VS Code starts it in the first workspace folder; without a
-packaged binary it takes the dev build, `../wc3-mcp/target/{release,debug}/wc3-mcp`.
+**One binary.** The extension ships one binary per system, `wc3`
+(`cli/`, over the server's library and `wc3-mcp`'s), a mode a run:
+`wc3 server` is the language backend the extension spawns, `wc3 mcp` the
+MCP server. `server/build.sh` cross-compiles it into `extension/bin/`
+(`wc3-{macos,linux,windows.exe}`), and the extension registers `wc3 mcp`
+with VS Code (`contributes.mcpServerDefinitionProviders`, id `wc3`,
+`registerMcp` in `extension.js`), so chat agents in VS Code get its tools
+with nothing to install. VS Code starts it in the first workspace folder;
+without a packaged binary it takes the dev build,
+`cli/target/{release,debug}/wc3`. `wc3-server` and `wc3-mcp` still build
+alone, for tools and tests.
 
 Its tools read the game's files (names, `UI\TriggerData.txt`, metadata)
 the way the editor does for the same file: through `game` and `roots`

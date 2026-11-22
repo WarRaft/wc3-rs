@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Быстрая сборка wc3-server и wc3-mcp только под текущий Mac (нативный
-# target, без universal-линковки и без Linux/Windows) — для локального
-# тестирования. Полная кросс-сборка — в build.sh.
+# Быстрая сборка wc3 (../cli: `wc3 server` и `wc3 mcp`) только под текущий
+# Mac (нативный target, без universal-линковки и без Linux/Windows) — для
+# локального тестирования. Полная кросс-сборка — в build.sh.
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "❌ Missing: $1"; exit 1; }; }
 msg()  { echo -e "$*"; }
@@ -13,7 +13,7 @@ need jq
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-MANIFESTS=("Cargo.toml" "../../wc3-mcp/Cargo.toml")
+MANIFESTS=("../cli/Cargo.toml")
 
 # Lands in extension/bin/ — vsce only packages files inside the folder that
 # holds package.json (extension/), so the binaries must live there, not here.

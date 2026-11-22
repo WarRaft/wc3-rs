@@ -224,19 +224,18 @@ cd ../server && cargo build
 #    (Run and Debug → "Extension Development Host")
 ```
 
-`serverBinaryPath()` in `extension.js` looks for the backend in this order:
-1. `./bin/wc3-server-{macos,linux,windows.exe}` — the packaged,
-   cross-compiled binary produced by `server/build.sh` / `server/build-mac.sh`
-   (same naming as the older `JASS-Tree-sitter-Rust` extension's own
-   `bin/`). It lives inside `extension/`, not `server/`, because `vsce`
-   only packages files under the folder that holds `package.json`.
-2. `../server/target/release/wc3-server`
-3. `../server/target/debug/wc3-server` — the plain `cargo build` output;
-   what you get from step 1 above.
-
-`wc3-mcp` is found the same way (`binaryPath()`): `./bin/wc3-mcp-*`, then
-`../../wc3-mcp/target/{release,debug}/wc3-mcp`. `registerMcp()` registers
-it with VS Code as the `wc3` MCP server definition provider.
+The extension ships one binary per system, `wc3` (`../cli`), with a mode
+a run: `wc3 server` is the language backend, which the extension spawns;
+`wc3 mcp` the MCP server, which `registerMcp()` registers with VS Code as
+the `wc3` MCP server definition provider. `serverBinaryPath()` in
+`extension.js` looks for it in this order:
+1. `./bin/wc3-{macos,linux,windows.exe}` — the packaged, cross-compiled
+   binary produced by `server/build.sh` / `server/build-mac.sh` (same
+   naming as the older `JASS-Tree-sitter-Rust` extension's own `bin/`).
+   It lives inside `extension/`, because `vsce` only packages files under
+   the folder that holds `package.json`.
+2. `../cli/target/release/wc3`
+3. `../cli/target/debug/wc3` — the plain `cargo build` output in `cli/`.
 
 ### Producing a packaged binary
 
@@ -251,10 +250,10 @@ Then, either:
 
 - `./build.sh` — ported from the older extension's own `build.sh`.
   Cross-compiles a universal macOS binary plus Linux (musl) and Windows
-  (gnu) builds of `wc3-server` and of `wc3-mcp` (`../../wc3-mcp`, which
+  (gnu) builds of `wc3` (`../cli`: the server, and `../../wc3-mcp`, which
   must be checked out next to this repository) into `extension/bin/`. See `server/.cargo/config.toml` for
   the linkers it expects.
-- `./build-mac.sh` — quick host-only debug build of both (current Mac
+- `./build-mac.sh` — quick host-only debug build of `wc3` (current Mac
   target only) into `extension/bin/`, for local iteration without the full
   cross-compile.
 

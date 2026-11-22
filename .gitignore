@@ -1,6 +1,7 @@
 node_modules/
 *.vsix
 /server/target/
+/cli/target/
 /extension/bin/
 /extension/.idea/
 

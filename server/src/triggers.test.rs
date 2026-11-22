@@ -829,3 +829,24 @@ fn wtg_jass_is_the_picked_triggers() {
     jass_rs::parse(&j).unwrap_or_else(|e| panic!("line {}: {}\n{j}", e.line, e.message));
     assert_eq!(wtg_jass("[wtg]\nversion=7\n", 0, &names), "// The map has no triggers.\n");
 }
+
+/// Every trigger of a real map's text (`WTG_TEXT`) as a JASS file of its
+/// own in the folder `WTG_OUT` (`0001.j` ...), and the map's variables in
+/// `0000_variables.j`, with the editor's files of `WC3_GAME`: for a build
+/// of them all to be tried (wc3-build's `real_folder`).
+#[test]
+#[ignore]
+fn wtg_jass_files() {
+    let text = std::fs::read_to_string(std::env::var("WTG_TEXT").expect("WTG_TEXT")).unwrap();
+    let out = std::path::PathBuf::from(std::env::var("WTG_OUT").expect("WTG_OUT"));
+    let names = crate::names::names(&crate::game::Lookup { game: std::env::split_paths(&std::env::var_os("WC3_GAME").expect("WC3_GAME")).collect(), roots: vec![] });
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out).unwrap();
+    let map = Map::of(&text);
+    for nth in 1..=map.triggers.len() {
+        std::fs::write(out.join(format!("{nth:04}.j")), wtg_jass(&text, nth, &names)).unwrap();
+    }
+    let vars: Vec<Declared> = wtg_variables(&text, &wtg_rs::text::parse_bni(&text)).into_iter().map(|(_, d)| d).collect();
+    std::fs::write(out.join("0000_variables.j"), wtg_rs::jass::compile(None, "variables", &vars, &vars, &names.trigger_ui)).unwrap();
+    println!("{} triggers, {} variables", map.triggers.len(), vars.len());
+}

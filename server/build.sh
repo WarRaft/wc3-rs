@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Cross-compiles the binaries the extension ships, for macOS (universal),
-# Linux, and Windows, into extension/bin/ — the layout extension.js expects
-# for a packaged (non-dev) install:
-#   wc3-server  — the language backend (this crate);
-#   wc3-mcp     — the MCP server (../../wc3-mcp), which the extension
-#                 registers with VS Code.
-# Each lands as <name>-macos / <name>-linux / <name>-windows.exe.
-# Every cargo call runs from here, so .cargo/config.toml (the cross
-# linkers) applies to wc3-mcp too.
+# Cross-compiles the one binary the extension ships, `wc3` (../cli), for
+# macOS (universal), Linux, and Windows, into extension/bin/ — the layout
+# extension.js expects for a packaged (non-dev) install: wc3-macos,
+# wc3-linux, wc3-windows.exe. It's the language backend (`wc3 server`,
+# this crate) and the MCP server (`wc3 mcp`, ../../wc3-mcp), which the
+# extension registers with VS Code. Every cargo call runs from here, so
+# .cargo/config.toml (the cross linkers) applies.
 
 # ---------------- helpers ----------------
 need() { command -v "$1" >/dev/null 2>&1 || { echo "❌ Missing: $1"; exit 1; }; }
@@ -24,7 +22,7 @@ need file
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 # Manifests of the crates to build; each one's binary has the package's name.
-MANIFESTS=("Cargo.toml" "../../wc3-mcp/Cargo.toml")
+MANIFESTS=("../cli/Cargo.toml")
 
 # Lands in extension/bin/ — vsce only packages files inside the folder that
 # holds package.json (extension/), so the binaries must live there, not here.

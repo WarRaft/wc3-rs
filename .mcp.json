@@ -1,8 +1,10 @@
 {
   "mcpServers": {
     "wc3": {
-      "command": "extension/bin/wc3-mcp-macos",
-      "args": []
+      "command": "extension/bin/wc3-macos",
+      "args": [
+        "mcp"
+      ]
     }
   }
 }

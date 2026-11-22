@@ -1,0 +1,14 @@
+[package]
+name = "wc3"
+version = "0.1.0"
+edition = "2024"
+description = "The one binary the WC3 extension ships for each system: `wc3 server` (the language backend) and `wc3 mcp` (the MCP server)"
+license = "CC0-1.0"
+
+[[bin]]
+name = "wc3"
+path = "src/main.rs"
+
+[dependencies]
+wc3-server = { path = "../server" }
+wc3-mcp = { path = "../../wc3-mcp" }
