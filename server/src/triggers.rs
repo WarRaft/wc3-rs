@@ -1526,6 +1526,7 @@ pub fn catalog(kind: u32, ui: &wtg_rs::ui::Ui) -> String {
 /// The project's triggers as the map's script names them
 /// (`gg_trg_<name>`, `$gg_trg_<name>` in a trigger file; World Editor's way,
 /// `wtg_rs::jass::ident`).
+#[derive(Debug, Clone)]
 pub struct Triggers {
     /// Each trigger file with a trigger, in the order they're built (by
     /// path): its id, its trigger's name, and the script's name of it
@@ -1551,7 +1552,9 @@ impl Triggers {
         let list: Vec<(String, String, String)> = files
             .iter()
             .filter_map(|&(id, t)| {
-                let trigger = wtg_rs::text::trigger_from_text(t, None).trigger?;
+                // A comment isn't a trigger: the script has nothing of it
+                // (a disabled one's gg_trg_ it declares).
+                let trigger = wtg_rs::text::trigger_from_text(t, None).trigger.filter(|t| t.is_comment == 0)?;
                 let name = if trigger.name.is_empty() { stem(id) } else { trigger.name };
                 let own = format!("gg_trg_{}", wtg_rs::jass::ident(&name));
                 Some((id.to_string(), name, own))
@@ -1559,6 +1562,15 @@ impl Triggers {
             .collect();
         let mine = wtg_rs::jass::ident(&list.iter().find(|(id, _, _)| id == me).map_or_else(|| stem(me), |(_, name, _)| name.clone()));
         Triggers { list, mine, me: me.to_string() }
+    }
+
+    /// These triggers looked at from the file `me` (one of them, or of
+    /// variables alone): what [`Triggers::of`] gives for it, without
+    /// reading the files again.
+    pub fn looking_at(&self, me: &str) -> Triggers {
+        let stem = Path::new(me).file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
+        let name = self.list.iter().find(|(id, _, _)| id == me).map_or(stem, |(_, name, _)| name.clone());
+        Triggers { list: self.list.clone(), mine: wtg_rs::jass::ident(&name), me: me.to_string() }
     }
 
     /// The triggers (their files) the reference `r` (`gg_trg_...`) means:

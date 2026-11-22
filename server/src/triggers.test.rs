@@ -584,3 +584,13 @@ fn renaming_a_trigger_retargets_references() {
     let quiet = Project { me: "/m/a.trg", others: vec![("/m/b.trg", "[trigger]\naction=SetVariable($gg_trg_X, $gg_trg_X)\n", &[])] };
     assert!(!edit_in(hat_text, op::RENAMED, 0, "Шляпа", &ui, &quiet).contains("files"));
 }
+
+#[test]
+fn comments_are_no_triggers() {
+    // Two comments named alike in the script: no trigger, no clash.
+    let names = crate::names::Names::default();
+    let others = [("/m/1.trg", "[trigger]\nname=\"Шляпа\"\ncomment=1\n")];
+    let text = "[trigger]\nname=\"Кепка\"\ncomment=1\naction=TriggerExecute($gg_trg___________u)\n";
+    let v = view(text, &names, &[], &Triggers::of("/m/2.trg", text, &others));
+    assert!(v.contains("\"errors\":[[4,\"no trigger of the project is named `gg_trg___________u`\"]]"), "{v}");
+}
