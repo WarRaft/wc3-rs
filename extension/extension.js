@@ -147,6 +147,8 @@ const MAP_NAME = /\.(w3[xm]|mpq)$/i
 
 /** The scheme of object data shown as text. */
 const OBJECTS_SCHEME = 'wc3obj'
+/** A trigger's JASS, read-only (`registerTriggerJass`). */
+const JASS_SCHEME = 'wc3jass'
 
 /** The languages of object-data files (`package.json`), one per type, of
  * camera files (`w3c`), terrain (`w3e`), map info (`w3i`), regions
@@ -329,7 +331,9 @@ function send(frame) {
 function supported(doc) {
     if (!LANGUAGES.has(doc.languageId)) return false
     if (OBJECT_LANGUAGES.has(doc.languageId)) return doc.uri.scheme === OBJECTS_SCHEME
-    return hasPath(doc.uri) || doc.uri.scheme === 'untitled'
+    // A trigger's JASS (Show JASS): analyzed as any JASS without a file,
+    // for its highlighting and diagnostics.
+    return hasPath(doc.uri) || doc.uri.scheme === 'untitled' || doc.uri.scheme === JASS_SCHEME
 }
 
 function sendRoots() {
@@ -1568,13 +1572,13 @@ function registerTriggerExtract(context) {
  * it, read-only, under the `wc3jass:` scheme (`<name>.j`, the trigger's
  * URI in the query). The server builds it from the text as it is
  * (`QUERY.TRIGGER_JASS`, `wtg_rs::jass`), and it follows the text as it
- * changes. It isn't a file of the project: it's highlighted as JASS, not
- * analyzed.
+ * changes. It isn't a file of the project, but the server analyzes it as
+ * JASS without a file: its highlighting, its diagnostics (lint).
  *
  * @param {import('vscode').ExtensionContext} context
  */
 function registerTriggerJass(context) {
-    const SCHEME = 'wc3jass'
+    const SCHEME = JASS_SCHEME
     const changed = new EventEmitter()
     /** @param {import('vscode').Uri} trg */
     const jassUri = trg => Uri.from({scheme: SCHEME, path: `${trg.path.replace(/\.trg$/i, '')}.j`, query: trg.toString()})

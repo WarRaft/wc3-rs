@@ -820,9 +820,13 @@ file's globals in a `globals` block (`udg_<name>`, a private one
 preset as its code (`bj_UNIT_FACING`), a function by its script name
 (`_Name_ScriptName`), an object's id in single quotes (`'hfoo'`); the
 loops of `ForGroupMultiple`, `ForForceMultiple` and `Enum...Multiple`
-inside the actions, *Picked unit* and the like the loop's. What's
-disabled isn't in it. It's highlighted as JASS but not a file of the
-project, so it isn't checked.
+inside the actions, *Picked unit* and the like the loop's (a
+`ForGroupMultiple`'s loop takes `FirstOfGroup` until it's `null`: the
+group's first unit that's still there, so a removed one doesn't end it
+early). What's disabled isn't in it. It isn't a file of the project,
+but the server analyzes it as JASS without a file: its highlighting
+and its diagnostics (lint: an unused local, say), in the Problems panel
+while it's open.
 
 While it's edited, the text gets its errors (a field that isn't there,
 a call that doesn't read), and the view counts them with what
