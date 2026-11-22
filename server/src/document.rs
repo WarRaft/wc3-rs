@@ -66,6 +66,8 @@ impl Language {
             "w3a" | "w3b" | "w3d" | "w3h" | "w3q" | "w3t" | "w3u" => Language::Bni,
             // Cameras, in their BNI text form too (see `cameras`).
             "w3c" | "w3e" | "w3i" | "w3r" | "w3s" | "imp" | "mmp" | "doo" | "wc3-units" | "wtg" | "w3o" => Language::Bni,
+            // A trigger of its own (see `triggers`).
+            "trg" => Language::Bni,
             // A map's custom script: code (see `customtext`), Lua in a Lua
             // map, which `Workspace::open` sees to.
             "wct" => Language::Jass,
@@ -109,6 +111,8 @@ impl Language {
             "slk" => Language::Slk,
             "wts" => Language::Wts,
             "txt2" => Language::Txt2,
+            // A trigger of its own, as text (see `triggers`).
+            "trg" => Language::Bni,
             // Not object data (`.w3a` ...): the files are binary. Only
             // their text form, which the editor opens under its own
             // scheme with the file's language id, is BNI (`from_id`).

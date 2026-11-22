@@ -187,7 +187,8 @@ Problems panel shows the whole project's errors without opening anything.
 - **Which files.** What the project's `[code] sources` match, less what
   `exclude` matches, everything in its `[map]` roots, plus
   `wc3.bni` itself. Only known extensions count (`.j`, `.vj`, `.pld`,
-  `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`, `.slk`, `.wts`), and the `.txt`
+  `.ai`, `.zn`, `.lua`, `.as`, `.angelscript`, `.bni`, `.slk`, `.wts`, `.trg`),
+  and the `.txt`
   files that are BNI: a map's `war3map*.txt` (`war3mapSkin.txt`,
   `war3mapMisc.txt`, `war3mapExtra.txt`) and the game's own by name
   (`Units\HumanUnitFunc.txt`, `UI\WorldEditStrings.txt`, ...; the list
@@ -669,6 +670,57 @@ function takes isn't in the file but in World Editor's
 a modded editor's in a root replaces the game's. Opening needs it, and
 saving checks every function's name and parameter count against it.
 A trigger's `category=` shows its category's name as an inlay hint.
+
+### A trigger of its own: `.trg`
+
+A `.trg` is one trigger, kept as a file: the map as files in folders has
+a file per trigger, and a folder per category. Its text is one
+`[trigger]` of the text above, without `category=` (the folder is the
+category), always of The Frozen Throne's version (lines inside others):
+
+```ini
+[trigger]
+name="Spawn"
+description="Creates footmen"
+event=MapInitializationEvent()
+action=CreateNUnitsAtLoc("1", "hfoo", Player00, GetRectCenter(GetPlayableMapRect()), RealUnitFacing)
+action=ForLoopAMultiple("1", "10")
+>action:0=DisplayTextToForce(GetPlayersAll(), "Hello")
+```
+
+It opens as World Editor shows it (**Open as Text** and **Open as
+Trigger** switch, as Reopen Editor With does): Events, Conditions and
+Actions, each line its phrase from the editor's files
+(`UI\TriggerData.txt`, `UI\TriggerStrings.txt` and its strings, found
+like every game file, so in the game's language, and a modded editor's
+in a root replaces them), parameters colored by what they are (a preset,
+a variable, a value, a call), what's inside an if/then/else or a loop in
+its blocks (If - Conditions, Then - Actions, Else - Actions, Loop -
+Actions), a disabled line dimmed. A function the files don't have shows
+as its call, marked.
+
+The view is the same document as the text, as the SLK table is: the text
+stays what's saved, and what's done in the view the server turns into
+edits of the text (`server/src/triggers.rs`), so undo, save and the
+dirty mark are the text's. In the view:
+
+- the name, the comment (`description`), **Enabled** and **Initially
+  On** edit the trigger's fields;
+- **Ctrl+E** turns a line on or off, **Delete** deletes it (with what's
+  inside), **Alt+Up** / **Alt+Down** move it in its block, and dragging
+  moves it before or after another line, or to the end of a heading or a
+  block; an action can't go where a condition goes;
+- **Ctrl+C**, **Ctrl+X** and **Ctrl+V** copy, cut and paste lines with
+  what's inside them, through the clipboard as lines of the text (so
+  they paste into a text editor too, and back): after the selected line,
+  or at the end of the selected heading or block;
+- arrows move and fold, a double click or **Enter** shows the line in
+  the text, and the problems count goes to the first one.
+
+While it's edited, the text gets its errors (a field that isn't there,
+a call that doesn't read), and the view counts them with what
+`UI\TriggerData.txt` says (a function it doesn't have, a parameter too
+many).
 
 ## txt2
 

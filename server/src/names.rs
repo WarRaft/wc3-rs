@@ -21,6 +21,10 @@
 //! - the editor's strings: `UI\WorldEditStrings.txt` and
 //!   `UI\WorldEditGameStrings.txt`, `WESTRING_...` keys. A name that is
 //!   a key is looked up there, and so is a value that is a key in turn.
+//! - the trigger editor's functions: `UI\TriggerData.txt` (how many
+//!   parameters each takes, its category, the presets) and
+//!   `UI\TriggerStrings.txt` (their phrases), for triggers' text and
+//!   view.
 //!
 //! What the formats say a value means (the sound channels' numbers, a
 //! flag's bit) is built into the crates, with English names; the hints
@@ -34,7 +38,7 @@ use std::sync::Arc;
 use crate::game::{Game, Lookup};
 
 /// The files names come from, for [`Cache::disk_changed`].
-pub const FILES: [&str; 8] = [
+pub const FILES: [&str; 9] = [
     "TerrainArt\\Weather.slk",
     "TerrainArt\\Terrain.slk",
     "TerrainArt\\CliffTypes.slk",
@@ -43,6 +47,7 @@ pub const FILES: [&str; 8] = [
     "UI\\WorldEditStrings.txt",
     "UI\\WorldEditGameStrings.txt",
     "UI\\TriggerData.txt",
+    "UI\\TriggerStrings.txt",
 ];
 
 /// The names a project's layers give.
@@ -65,6 +70,10 @@ pub struct Names {
     /// How many parameters the trigger editor's functions take
     /// (`UI\TriggerData.txt`), to read `war3map.wtg` with.
     pub triggers: wtg_rs::TriggerData,
+    /// What the trigger editor shows for a trigger: its categories,
+    /// presets and phrases (`UI\TriggerData.txt`, `UI\TriggerStrings.txt`,
+    /// with the editor's strings), for the view of a `.trg`.
+    pub trigger_ui: wtg_rs::ui::Ui,
 }
 
 impl Names {
@@ -128,8 +137,13 @@ impl Names {
                 }
             }
         }
-        let triggers = read("UI\\TriggerData.txt").map(|t| wtg_rs::TriggerData::parse(&t)).unwrap_or_default();
-        Names { weather, tilesets, eax, ground, cliffs, channels, triggers, ..names }
+        let data = read("UI\\TriggerData.txt");
+        let triggers = data.as_deref().map(wtg_rs::TriggerData::parse).unwrap_or_default();
+        let trigger_ui = match (&data, read("UI\\TriggerStrings.txt")) {
+            (Some(data), strings) => wtg_rs::ui::Ui::parse(data, strings.as_deref().unwrap_or(""), &|k| names.resolve(k)),
+            (None, _) => wtg_rs::ui::Ui::default(),
+        };
+        Names { weather, tilesets, eax, ground, cliffs, channels, triggers, trigger_ui, ..names }
     }
 
     /// `text` with a key in it replaced by the string it names, and so on

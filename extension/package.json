@@ -57,6 +57,18 @@
         "icon": "$(go-to-file)"
       },
       {
+        "command": "wc3.trg.openVisual",
+        "title": "Open as Trigger",
+        "category": "WC3",
+        "icon": "$(symbol-event)"
+      },
+      {
+        "command": "wc3.trg.openText",
+        "title": "Open as Text",
+        "category": "WC3",
+        "icon": "$(go-to-file)"
+      },
+      {
         "command": "wc3.txt2.preview",
         "title": "Open Preview",
         "category": "txt2",
@@ -247,6 +259,19 @@
           }
         ],
         "priority": "option"
+      },
+      {
+        "viewType": "wc3.trigger",
+        "displayName": "Warcraft III Trigger",
+        "selector": [
+          {
+            "filenamePattern": "*.trg"
+          },
+          {
+            "filenamePattern": "*.TRG"
+          }
+        ],
+        "priority": "default"
       }
     ],
     "views": {
@@ -283,6 +308,14 @@
         {
           "command": "wc3.txt2.previewSide",
           "when": "editorLangId == txt2"
+        },
+        {
+          "command": "wc3.trg.openVisual",
+          "when": "editorLangId == trg && !activeCustomEditorId"
+        },
+        {
+          "command": "wc3.trg.openText",
+          "when": "activeCustomEditorId == wc3.trigger"
         }
       ],
       "view/title": [
@@ -318,6 +351,11 @@
           "command": "wc3.txt2.preview",
           "when": "resourceExtname == .txt2",
           "group": "navigation"
+        },
+        {
+          "command": "wc3.trg.openVisual",
+          "when": "resourceExtname =~ /^\\.trg$/i",
+          "group": "navigation"
         }
       ],
       "editor/title": [
@@ -334,6 +372,16 @@
         {
           "command": "wc3.txt2.previewSide",
           "when": "editorLangId == txt2",
+          "group": "navigation"
+        },
+        {
+          "command": "wc3.trg.openVisual",
+          "when": "editorLangId == trg && !activeCustomEditorId",
+          "group": "navigation"
+        },
+        {
+          "command": "wc3.trg.openText",
+          "when": "activeCustomEditorId == wc3.trigger",
           "group": "navigation"
         }
       ]
@@ -856,6 +904,20 @@
         "icon": {
           "light": "./icons/wtg.svg",
           "dark": "./icons/wtg.svg"
+        },
+        "configuration": "./syntaxes/bni.language-configuration.json"
+      },
+      {
+        "id": "trg",
+        "aliases": [
+          "Trigger"
+        ],
+        "extensions": [
+          ".trg"
+        ],
+        "icon": {
+          "light": "./icons/trg.svg",
+          "dark": "./icons/trg.svg"
         },
         "configuration": "./syntaxes/bni.language-configuration.json"
       },
@@ -1804,6 +1866,38 @@
       },
       {
         "language": "wtg",
+        "scopes": {
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.decorator"
+          ],
+          "label": [
+            "entity.name.label"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ]
+        }
+      },
+      {
+        "language": "trg",
         "scopes": {
           "comment": [
             "comment"

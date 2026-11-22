@@ -10,7 +10,8 @@ palette), white or lighter parts for detail.
   `wct` (a map's custom script).
 - **Text data** is a sheet with a folded corner and what it holds: `bni`
   (`.bni`, the game's and a map's BNI `.txt`), `slk` (tables), `wts`
-  (strings), `fdf` (frame definitions), `toc` (their list).
+  (strings), `fdf` (frame definitions), `toc` (their list), `trg` (a
+  trigger of its own, `wtg`'s bolt).
 - **Object data**: `w3u` units (a helmet), `w3t` items (a potion), `w3a`
   abilities (a spark), `w3h` buffs (an aura), `w3q` upgrades (an arrow
   up), `w3b` destructables (a crate), `w3d` doodad types (a tree).

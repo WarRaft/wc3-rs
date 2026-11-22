@@ -32,7 +32,7 @@ use crate::document::LineIndex;
 use crate::names::Names;
 
 /// The file types whose text forms have hints, by extension.
-const TYPES: [&str; 7] = ["w3r", "w3s", "w3e", "w3i", "imp", "mmp", "wtg"];
+const TYPES: [&str; 8] = ["w3r", "w3s", "w3e", "w3i", "imp", "mmp", "wtg", "trg"];
 
 /// The file types whose text forms have colors for a picker, by
 /// extension: regions' and minimap icons' `color=`.

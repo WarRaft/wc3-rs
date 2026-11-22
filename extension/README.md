@@ -81,6 +81,13 @@ Warcraft III language support for VS Code.
   as Table** (title bar, Explorer context menu), a table to edit: frozen
   header row and column A, find, keyboard editing, copy and paste. **Open
   as Text** goes back. Both are the same document.
+- Triggers of their own (`.trg`, one trigger per file, its folder its
+  category) open as World Editor shows them: Events, Conditions and
+  Actions as the editor's phrases, blocks of if/then/else and loops, a
+  disabled line dimmed. Turn lines on or off, delete, move (Alt+Up/Down
+  or drag), copy, cut and paste them, and edit the name, comment,
+  Enabled and Initially On. **Open as Text** and **Open as Trigger**
+  switch; both are the same document.
 - Symbol navigation across the whole project, in every language: go to
   definition, find references, hover with the declaration, outline, go
   to symbol in workspace, and rename (F2), which refuses with a reason
@@ -142,6 +149,11 @@ dependencies besides the VS Code API.
   in view; the sheet comes from the server (`QUERY.SLK_TABLE`), and a
   written cell goes back as text edits (`QUERY.SLK_SET_CELL`) applied as a
   workspace edit, after which the page gets the new sheet.
+- **Triggers.** The view of a `.trg` is a custom text editor too
+  (`wc3.trigger`, priority `default`: the view opens first). The page
+  (`webview/trg.js`) draws the tree the server reads from the text
+  (`QUERY.TRIGGER_VIEW`), and every operation goes back as one edit of
+  whole lines (`QUERY.TRIGGER_EDIT`), with the line to select after it.
 - **Restored tabs.** `wc3obj:` and `wc3map:` exist only while the
   extension runs, so it activates on them (`onFileSystem:wc3obj`,
   `onFileSystem:wc3map`): a tab of either that VS Code restores after a

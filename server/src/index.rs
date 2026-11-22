@@ -65,6 +65,13 @@ pub enum QueryKind {
     /// In a txt2 text: its preview, the stylesheet and the HTML (each
     /// block with the `data-line` it starts at) in the text.
     Txt2Html,
+    /// In a trigger of its own (`.trg`): the view, as World Editor shows
+    /// it, as JSON in the text (`triggers::view`).
+    TriggerView,
+    /// In a trigger of its own: the edits that do operation `character`
+    /// on the ECA at line `line` (from 1) with the query text, as JSON in
+    /// the text (`triggers::edit`).
+    TriggerEdit,
 }
 
 /// Path completion and links in a manifest; nothing for any other file.
@@ -183,6 +190,16 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
                     format!("<style>{}</style>\n{}", txt2_rs::html::STYLE, txt2_rs::html::render(&parsed))
                 }
                 None => String::new(),
+            };
+            return Answer { locations: Vec::new(), text };
+        }
+        QueryKind::TriggerView | QueryKind::TriggerEdit => {
+            let Some((doc, names, _)) = ws.names_text(id).filter(|(d, _, _)| d.path.as_deref().is_some_and(crate::triggers::is_trg_file)) else {
+                return Answer::default();
+            };
+            let text = match kind {
+                QueryKind::TriggerView => crate::triggers::view(&doc.text, names),
+                _ => crate::triggers::edit(&doc.text, pos.character, pos.line as usize, query),
             };
             return Answer { locations: Vec::new(), text };
         }

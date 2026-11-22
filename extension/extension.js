@@ -79,7 +79,9 @@
  * `server/src/placement.rs`), the layout from the `war3map.w3i` beside it.
  * Triggers (`.wtg`) too (`wtg-rs`, `server/src/triggers.rs`): their
  * events, conditions and actions as lines of calls; the server reads them
- * with the project's `UI\TriggerData.txt`. A collection of object data
+ * with the project's `UI\TriggerData.txt`. A trigger of its own (`.trg`,
+ * one `[trigger]` of that text, its folder its category) opens as World
+ * Editor shows it (`registerTrigger`, `webview/trg.js`). A collection of object data
  * (`.w3o`, World Editor's export) too: `[w3o]`, then each kind's text form.
  *
  * In `wc3.bni`, the paths of `game=`, `sources=`, `exclude=` and `root=`
@@ -153,7 +155,7 @@ const OBJECTS_SCHEME = 'wc3obj'
 const OBJECT_LANGUAGES = new Set(['w3a', 'w3b', 'w3d', 'w3h', 'w3q', 'w3t', 'w3u', 'w3c', 'w3e', 'w3i', 'w3r', 'w3s', 'wct', 'imp', 'mmp', 'doo', 'wc3-units', 'wtg', 'w3o'])
 
 /** Language ids the server analyzes (its `Language::from_id`). */
-const LANGUAGES = new Set(['jass', 'vjass', 'zinc', 'lua', 'angelscript', 'bni', 'slk', 'wts', 'txt2', ...OBJECT_LANGUAGES])
+const LANGUAGES = new Set(['jass', 'vjass', 'zinc', 'lua', 'angelscript', 'bni', 'slk', 'wts', 'txt2', 'trg', ...OBJECT_LANGUAGES])
 
 /** How long highlighting waits for the server to analyze a new version. */
 const TOKENS_WAIT_MS = 1000
@@ -1315,6 +1317,173 @@ function registerSlk(context) {
 }
 
 /**
+ * A trigger of its own (`.trg`): the text, or the trigger as World Editor
+ * shows it (`wc3.trg.openVisual` / `wc3.trg.openText`, or Reopen Editor
+ * With). The view is a custom text editor, as the SLK table: the text
+ * stays the document, so undo, save and dirty state are the text's. The
+ * server reads the view from the text (`QUERY.TRIGGER_VIEW`: phrases from
+ * the project's `UI\TriggerData.txt` and `UI\TriggerStrings.txt`) and
+ * turns what's done in it into text edits (`QUERY.TRIGGER_EDIT`), applied
+ * here as a workspace edit. Copy and paste go through the clipboard as
+ * lines of the text, so they paste into a text editor too.
+ *
+ * @param {import('vscode').ExtensionContext} context
+ */
+function registerTrigger(context) {
+    const media = Uri.joinPath(context.extensionUri, 'webview')
+    const html = webview => {
+        const nonce = [...Array(32)].map(() => Math.floor(Math.random() * 36).toString(36)).join('')
+        const asset = name => webview.asWebviewUri(Uri.joinPath(media, name))
+        const fa = name => asset(`fontawesome/${name}`)
+        return `<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; script-src 'nonce-${nonce}'">
+<link rel="stylesheet" href="${fa('fontawesome.min.css')}">
+<link rel="stylesheet" href="${asset('trg.css')}">
+<style>
+@font-face { font-family: "Font Awesome 6 Free"; font-style: normal; font-weight: 900; font-display: block; src: url("${fa('fa-solid-900.woff2')}") format("woff2"); }
+.fa-solid { font-family: "Font Awesome 6 Free"; font-weight: 900; }
+</style>
+</head><body>
+<div class="bar">
+  <i class="fa-solid fa-bolt title-icon"></i>
+  <input id="name" class="name" spellcheck="false" title="The trigger's name">
+  <label class="check" title="Is the trigger on at all?"><input id="enabled" type="checkbox">Enabled</label>
+  <label class="check" title="Does the trigger start on? Off, something must turn it on"><input id="initially-on" type="checkbox">Initially On</label>
+  <div class="tools">
+    <button id="toggle" title="Enable or disable (Ctrl+E)"><i class="fa-solid fa-power-off"></i></button>
+    <button id="up" title="Move up (Alt+Up)"><i class="fa-solid fa-arrow-up"></i></button>
+    <button id="down" title="Move down (Alt+Down)"><i class="fa-solid fa-arrow-down"></i></button>
+    <button id="copy" title="Copy (Ctrl+C)"><i class="fa-solid fa-copy"></i></button>
+    <button id="cut" title="Cut (Ctrl+X)"><i class="fa-solid fa-scissors"></i></button>
+    <button id="paste" title="Paste (Ctrl+V)"><i class="fa-solid fa-paste"></i></button>
+    <button id="delete" title="Delete (Delete)"><i class="fa-solid fa-trash"></i></button>
+  </div>
+  <div class="spacer"></div>
+  <span id="problems" class="problems" hidden></span>
+  <button id="open-text" class="text-button" title="Open the text of this file">Open as Text</button>
+</div>
+<textarea id="description" class="description" rows="2" spellcheck="false" placeholder="Comment"></textarea>
+<div id="notice" class="notice" hidden></div>
+<div id="tree" class="tree" tabindex="0" role="tree"></div>
+<div id="loading" class="message">Reading the trigger…</div>
+<script nonce="${nonce}" src="${asset('trg.js')}"></script>
+</body></html>`
+    }
+
+    const editor = {
+        resolveCustomTextEditor(document, panel) {
+            const {webview} = panel
+            webview.options = {enableScripts: true, localResourceRoots: [media]}
+            webview.html = html(webview)
+            const id = idOf(document)
+
+            const post = async select => {
+                const answer = await query(QUERY.TRIGGER_VIEW, id, {line: 0, character: 0})
+                if (answer && answer.text) webview.postMessage({type: 'view', view: JSON.parse(answer.text), select})
+            }
+            let timer
+            let select = 0
+            const refresh = () => {
+                clearTimeout(timer)
+                timer = setTimeout(() => {
+                    post(select)
+                    select = 0
+                }, 50)
+            }
+            /** One operation of `triggers::op` on the ECA at `line`. */
+            const run = async (op, line, arg = '') => {
+                const answer = await query(QUERY.TRIGGER_EDIT, id, {line, character: op}, arg)
+                if (!answer || !answer.text) {
+                    window.showErrorMessage('WC3: the language server did not answer; the trigger is unchanged.')
+                    return null
+                }
+                const result = JSON.parse(answer.text)
+                if (result.error) {
+                    window.showWarningMessage(`WC3: ${result.error}`)
+                    return null
+                }
+                if (result.edits) {
+                    if (!result.edits.length) {
+                        if (result.line) webview.postMessage({type: 'select', line: result.line})
+                        return result
+                    }
+                    const edit = new WorkspaceEdit()
+                    for (const [l, c, el, ec, t] of result.edits) edit.replace(document.uri, new Range(l, c, el, ec), t)
+                    select = result.line || 0
+                    if (!(await workspace.applyEdit(edit))) refresh()
+                }
+                return result
+            }
+            const OP = {TOGGLE: 0, DELETE: 1, MOVE: 2, PASTE: 3, COPY: 4, FIELD: 5}
+            const reveal = async line => {
+                const at = new Position(Math.max(0, line - 1), 0)
+                const shown = window.visibleTextEditors.find(e => e.document === document)
+                const ed = shown ?? await window.showTextDocument(document, {viewColumn: ViewColumn.Beside, preserveFocus: false})
+                ed.selection = new Selection(at, at)
+                ed.revealRange(new Range(at, at), TextEditorRevealType.InCenterIfOutsideViewport)
+                if (shown) window.showTextDocument(document, shown.viewColumn)
+            }
+            const handle = async msg => {
+                switch (msg.type) {
+                case 'ready': return post(0)
+                case 'toggle': return run(OP.TOGGLE, msg.line)
+                case 'delete': return run(OP.DELETE, msg.line)
+                case 'move': return run(OP.MOVE, msg.line, msg.place)
+                case 'field': return run(OP.FIELD, 0, `${msg.key}\n${msg.value}`)
+                case 'copy':
+                case 'cut': {
+                    const copied = await run(OP.COPY, msg.line)
+                    if (!copied || copied.text === undefined) return
+                    await env.clipboard.writeText(copied.text)
+                    if (msg.type === 'cut') await run(OP.DELETE, msg.line)
+                    return
+                }
+                case 'paste': {
+                    const text = await env.clipboard.readText()
+                    if (!text.trim()) return window.showWarningMessage('WC3: the clipboard is empty.')
+                    return run(OP.PASTE, 0, `${msg.place}\n${text}`)
+                }
+                case 'reveal': return reveal(msg.line)
+                case 'openText': return commands.executeCommand('vscode.openWith', document.uri, 'default', panel.viewColumn)
+                }
+            }
+            const subscriptions = [
+                workspace.onDidChangeTextDocument(e => {
+                    if (e.document.uri.toString() === document.uri.toString()) refresh()
+                }),
+                webview.onDidReceiveMessage(msg => handle(msg).catch(e => window.showErrorMessage(`WC3: ${e.message}`))),
+            ]
+            panel.onDidDispose(() => {
+                clearTimeout(timer)
+                subscriptions.forEach(d => d.dispose())
+            })
+        },
+    }
+
+    /** The `.trg` a command is about: the one it was run on, or the active one. */
+    const target = uri => {
+        if (uri instanceof Uri) return uri
+        const tab = window.tabGroups.activeTabGroup.activeTab
+        const input = tab && tab.input
+        return input && input.uri instanceof Uri ? input.uri : window.activeTextEditor?.document.uri
+    }
+    context.subscriptions.push(
+        window.registerCustomEditorProvider('wc3.trigger', editor, {
+            supportsMultipleEditorsPerDocument: true,
+            webviewOptions: {retainContextWhenHidden: true},
+        }),
+        commands.registerCommand('wc3.trg.openVisual', uri => {
+            const file = target(uri)
+            if (file) commands.executeCommand('vscode.openWith', file, 'wc3.trigger')
+        }),
+        commands.registerCommand('wc3.trg.openText', uri => {
+            const file = target(uri)
+            if (file) commands.executeCommand('vscode.openWith', file, 'default')
+        }),
+    )
+}
+
+/**
  * The txt2 preview, beside the text as Markdown's (`wc3.txt2.preview`,
  * `wc3.txt2.previewSide`): a page per document showing the server's HTML
  * for it (`QUERY.TXT2_HTML`), updated as the text changes. The page and
@@ -1429,6 +1598,7 @@ module.exports = {
         registerTextures(context)
         registerObjects(context)
         registerSlk(context)
+        registerTrigger(context)
         registerTxt2Preview(context)
 
         sendRoots()
