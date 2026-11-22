@@ -92,10 +92,16 @@ impl Language {
     /// The language of a file on disk, by its extension, the same mapping
     /// as the extension's `package.json`. BNI is `.bni`, and of `.txt`
     /// files, too common to claim, only the game's BNI ones by name
-    /// ([`BNI_FILES`]) and a map's `war3map*.txt` (`war3mapSkin.txt` ...).
+    /// ([`BNI_FILES`]) and a map's `war3map*.txt` (`war3mapSkin.txt` ...),
+    /// and the patches to those (`TriggerData.patch.txt`).
     pub fn from_path(path: &Path) -> Option<Language> {
         let name = path.file_name()?.to_str()?.to_ascii_lowercase();
-        if BNI_FILES.contains(&name.as_str()) || (name.starts_with("war3map") && name.ends_with(".txt")) {
+        // A patch to one of them (`TriggerData.patch.txt`, changing
+        // `TriggerData.txt` by meaning: `game::Game::read_patched`) is
+        // BNI as well.
+        let patched = name.strip_suffix(".patch.txt").map(|base| format!("{base}.txt"));
+        let name = patched.as_deref().unwrap_or(&name);
+        if BNI_FILES.contains(&name) || (name.starts_with("war3map") && name.ends_with(".txt")) {
             return Some(Language::Bni);
         }
         let ext = path.extension()?.to_str()?.to_ascii_lowercase();

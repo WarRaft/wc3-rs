@@ -69,6 +69,11 @@ fn the_games_bni_txt_files() {
     assert_eq!(bni("UI/worldeditstrings.TXT"), Some(Language::Bni));
     assert_eq!(bni("maps/a.w3x/war3mapSkin.txt"), Some(Language::Bni));
     assert_eq!(bni("war3mapMisc.txt"), Some(Language::Bni));
+    // Their patches.
+    assert_eq!(bni("jngp/UI/TriggerData.patch.txt"), Some(Language::Bni));
+    assert_eq!(bni("UI/worldeditstrings.PATCH.txt"), Some(Language::Bni));
+    assert_eq!(bni("UI/HelpStrings.patch.txt"), None);
+    assert_eq!(bni("notes.patch.txt"), None);
     // Not BNI, or too common a name.
     assert_eq!(bni("UI/HelpStrings.txt"), None);
     assert_eq!(bni("UI/Captions/HumanOp.txt"), None);
@@ -77,7 +82,8 @@ fn the_games_bni_txt_files() {
     assert_eq!(bni("war3map.j"), Some(Language::Jass));
 }
 
-/// `BNI_FILES` and the extension's `package.json` name the same files.
+/// `BNI_FILES` (and a patch to each) and the extension's `package.json`
+/// name the same files.
 #[test]
 fn bni_files_match_the_extension() {
     let manifest = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../extension/package.json")).unwrap();
@@ -93,7 +99,10 @@ fn bni_files_match_the_extension() {
         .filter(|n| n != "wc3.bni")
         .collect();
     names.sort();
-    let mut ours: Vec<String> = BNI_FILES.iter().map(|n| n.to_string()).collect();
+    let mut ours: Vec<String> = BNI_FILES
+        .iter()
+        .flat_map(|n| [n.to_string(), crate::game::patch_name(n)])
+        .collect();
     ours.sort();
     assert_eq!(names, ours);
     let block = &rest[..rest.find('}').unwrap()];

@@ -167,7 +167,8 @@ dialect=vjass
     natives declares them in its own files (a map script can declare a
     `native`).
   - **The name:** `.patch` before the extension, so the file keeps its
-    highlighting. A patch is the editor's data, for the project's tools:
+    highlighting: a patch to a BNI file opens as BNI
+    (`TriggerData.patch.txt`, as `TriggerData.txt`). A patch is the editor's data, for the project's tools:
     the game never reads one, so a build leaves them out of the map.
 - **Settings apply below the manifest.** A file under the project folder
   but outside `sources` isn't loaded as part of the project, but when it's
