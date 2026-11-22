@@ -23,6 +23,14 @@
 //! (`UI\WorldEditStrings.txt`, `TerrainArt\Weather.slk`, the metadata
 //! tables) goes through the same layers, and the last one that has it
 //! wins: any of them can replace (shadow) any file below it.
+//!
+//! A few BNI files are read **with patches** ([`Game::read_patched`]):
+//! `UI\TriggerData.patch.txt` beside `UI\TriggerData.txt` in any layer
+//! changes it by meaning (replaces its keys, adds keys and sections:
+//! `bni_rs::patch`) instead of replacing it whole. Which files: the ones
+//! whose reader asks for it (the editor's data and strings,
+//! `names::PATCHED`); everything else (tables, binaries, scripts) is read
+//! as it is.
 
 use std::path::{Path, PathBuf};
 
@@ -211,6 +219,44 @@ impl Game {
     /// where it came from.
     pub fn read(&self, name: &str) -> Option<(Vec<u8>, Source)> {
         self.0.read(name)
+    }
+
+    /// The text of BNI file `name` (`UI\TriggerData.txt`) changed by its
+    /// patches ([`patch_name`]: `UI\TriggerData.patch.txt`), each by
+    /// meaning (`bni_rs::patch`), lowest first: those in the layer `name`
+    /// comes from and in the layers over it. A patch below that layer
+    /// changed a file that layer replaces, so it's shadowed with that
+    /// file. Without `name` anywhere, every patch goes on an empty file.
+    /// `None` when there is neither. Only for the files a caller chooses
+    /// to read so (see the module docs).
+    pub fn read_patched(&self, name: &str) -> Option<String> {
+        let base = self.0.holders(name).last().copied();
+        let mut text = match base {
+            Some(layer) => crate::document::decode(self.0.read_in(layer, name)?.0),
+            None => String::new(),
+        };
+        let patch = patch_name(name);
+        let patches: Vec<usize> = self.0.holders(&patch).into_iter().filter(|&l| base.is_none_or(|b| l >= b)).collect();
+        if base.is_none() && patches.is_empty() {
+            return None;
+        }
+        for layer in patches {
+            if let Some((bytes, _)) = self.0.read_in(layer, &patch) {
+                text = bni_rs::patch(&text, &crate::document::decode(bytes));
+            }
+        }
+        Some(text)
+    }
+}
+
+/// The name of the patch to `name`: `.patch` before its extension
+/// (`UI\TriggerData.txt`: `UI\TriggerData.patch.txt`), or after a name
+/// without one.
+pub fn patch_name(name: &str) -> String {
+    let file = name.rfind(['\\', '/']).map_or(0, |i| i + 1);
+    match name[file..].rfind('.').filter(|&i| i > 0) {
+        Some(dot) => format!("{}.patch{}", &name[..file + dot], &name[file + dot..]),
+        None => format!("{name}.patch"),
     }
 }
 

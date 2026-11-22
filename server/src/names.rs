@@ -27,6 +27,11 @@
 //!   view, and its icons (each category's, and `UI\WorldEditData.txt`'s
 //!   `[WorldEditArt]` for the rest), decoded once.
 //!
+//! The editor's data and strings (`UI\TriggerData.txt` and the rest of
+//! [`PATCHED`]) are read with their patches (`UI\TriggerData.patch.txt`
+//! in any layer changes the file by meaning: `game::Game::read_patched`),
+//! so a map made with a modified editor needs only its additions.
+//!
 //! What the formats say a value means (the sound channels' numbers, a
 //! flag's bit) is built into the crates, with English names; the hints
 //! show the game's words for them where it has some, and the built-in
@@ -38,12 +43,30 @@ use std::sync::Arc;
 
 use crate::game::{Game, Lookup};
 
-/// The files names come from, for [`Cache::disk_changed`].
-pub const FILES: [&str; 9] = [
+/// The files names come from, and the patches to those read with them
+/// ([`PATCHED`]), for [`Cache::disk_changed`].
+pub const FILES: [&str; 14] = [
     "TerrainArt\\Weather.slk",
     "TerrainArt\\Terrain.slk",
     "TerrainArt\\CliffTypes.slk",
     "UI\\SoundInfo\\EAXDefs.slk",
+    "UI\\WorldEditData.txt",
+    "UI\\WorldEditStrings.txt",
+    "UI\\WorldEditGameStrings.txt",
+    "UI\\TriggerData.txt",
+    "UI\\TriggerStrings.txt",
+    "UI\\WorldEditData.patch.txt",
+    "UI\\WorldEditStrings.patch.txt",
+    "UI\\WorldEditGameStrings.patch.txt",
+    "UI\\TriggerData.patch.txt",
+    "UI\\TriggerStrings.patch.txt",
+];
+
+/// The files read with their patches (`game::Game::read_patched`:
+/// `UI\TriggerData.patch.txt` changes `UI\TriggerData.txt` by meaning):
+/// the editor's data and strings, the BNI files a modified editor
+/// extends (new functions, their phrases, categories and their names).
+pub const PATCHED: [&str; 5] = [
     "UI\\WorldEditData.txt",
     "UI\\WorldEditStrings.txt",
     "UI\\WorldEditGameStrings.txt",
@@ -104,7 +127,10 @@ impl Names {
     /// Reads them through `game`'s layers. What a file doesn't give stays
     /// out.
     pub fn load(game: &Game) -> Names {
-        let read = |name: &str| game.read(name).map(|(bytes, _)| crate::document::decode(bytes));
+        let read = |name: &str| match PATCHED.contains(&name) {
+            true => game.read_patched(name),
+            false => game.read(name).map(|(bytes, _)| crate::document::decode(bytes)),
+        };
         let mut names = Names::default();
         for file in ["UI\\WorldEditStrings.txt", "UI\\WorldEditGameStrings.txt"] {
             let Some(text) = read(file) else { continue };

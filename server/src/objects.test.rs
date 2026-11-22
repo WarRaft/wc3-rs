@@ -123,6 +123,13 @@ fn names_from_the_game() {
     let (errors, _) = diagnostics(&bni_rs::parse(&bad), &bad, Some(&meta));
     assert_eq!(errors.iter().map(|e| e.line).collect::<Vec<_>>(), [line as usize + 1], "{errors:?}");
     assert!(convert_collection(TO_BYTES, "all.w3o", bad.as_bytes(), &meta).unwrap_err().starts_with(&format!("Can't save all.w3o: line {}", line + 1)));
+
+    // A root's patch to the strings renames the field, the rest stays.
+    let root = tmp.0.join("map");
+    std::fs::create_dir_all(root.join("UI")).unwrap();
+    std::fs::write(root.join("UI/WorldEditGameStrings.patch.txt"), "WESTRING_UEVAL_UHPM=Health\n").unwrap();
+    let units = metadata(&Lookup { game: vec![wc3.clone()], roots: vec![root] }, Kind::Unit);
+    assert_eq!(units.name(w3abdhqtu_rs::Rawcode(*b"uhpm")), Some("Health"));
 }
 
 #[test]
@@ -131,6 +138,8 @@ fn which_files_change_the_metadata() {
     assert!(affects(folder, Path::new("/g/wc3/War3Patch.mpq")));
     assert!(affects(folder, Path::new("/g/wc3/units/abilitydata.slk")));
     assert!(affects(folder, Path::new("/g/wc3/UI/WorldEditStrings.txt")));
+    assert!(affects(folder, Path::new("/g/wc3/UI/WorldEditStrings.patch.txt")));
+    assert!(is_game_file_name(Path::new("/x/worldeditgamestrings.patch.txt")));
     assert!(!affects(folder, Path::new("/g/wc3/Units/Other.slk")));
     assert!(!affects(folder, Path::new("/g/other/War3Patch.mpq")));
     assert!(is_game_file_name(Path::new("/x/UNITMETADATA.SLK")));

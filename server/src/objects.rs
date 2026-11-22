@@ -142,13 +142,18 @@ pub fn affects(folder: &Path, path: &Path) -> bool {
 
 /// The metadata of `kind` looked up through `lookup` (the game folders,
 /// then the map's roots: see `crate::game`): its table, its objects'
-/// codes and the editor's strings. Empty without them.
+/// codes and the editor's strings, those with their patches
+/// (`names::PATCHED`: `UI\WorldEditStrings.patch.txt` renames a field).
+/// Empty without them.
 pub fn metadata(lookup: &Lookup, kind: Kind) -> Metadata {
     if lookup.is_empty() {
         return Metadata::default();
     }
     let (game, _) = lookup.open();
-    Metadata::load(kind, |name| game.read(name).map(|(bytes, _)| String::from_utf8_lossy(&bytes).into_owned()))
+    Metadata::load(kind, |name| match crate::names::PATCHED.contains(&name) {
+        true => game.read_patched(name),
+        false => game.read(name).map(|(bytes, _)| String::from_utf8_lossy(&bytes).into_owned()),
+    })
 }
 
 /// Metadata read so far, by game folders and kind: the checks run on

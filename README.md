@@ -141,6 +141,34 @@ dialect=vjass
   effects and tilesets come from them (`server/src/names.rs`). The one
   exception is a file inside a map that isn't a root: the game's folders
   and that map alone (see "Inside a map: two cases").
+- **Patches: changing an editor file instead of replacing it.** Some
+  BNI files are read with patches: `UI\TriggerData.patch.txt` in any
+  layer changes `UI\TriggerData.txt` by meaning instead of shadowing it
+  whole (`Game::read_patched`, applied by
+  [`bni_rs::patch`](../bni-rs/README.md#patches)): a key it has replaces
+  that key's lines (all of them: a function's name and phrase in
+  `TriggerStrings.txt` go together), a new key goes to the end of its
+  section, a new section to the end of the file. So a map made with a
+  modified editor (a JNGP with natives added to the GUI) needs only a
+  root with its additions, not a copy of the editor's whole files.
+  - **Which patches:** those in the layer the file comes from and in the
+    layers over it, lowest first, each over the ones before. A patch
+    below that layer was a change to a file that layer replaces, so it's
+    shadowed with it. With no file anywhere, the patches go on an empty
+    one.
+  - **Which files: the ones a reader asks for, not every file.** The
+    editor's data and strings, the files a modified editor extends
+    (`server/src/names.rs`, `PATCHED`): `UI\TriggerData.txt`,
+    `UI\TriggerStrings.txt`, `UI\WorldEditStrings.txt`,
+    `UI\WorldEditGameStrings.txt`, `UI\WorldEditData.txt`, wherever
+    they're read: names and triggers (`names.rs`) and object data's field
+    names (`objects.rs`). Tables,
+    binary files and scripts are read as they are: code that needs more
+    natives declares them in its own files (a map script can declare a
+    `native`).
+  - **The name:** `.patch` before the extension, so the file keeps its
+    highlighting. A patch is the editor's data, for the project's tools:
+    the game never reads one, so a build leaves them out of the map.
 - **Settings apply below the manifest.** A file under the project folder
   but outside `sources` isn't loaded as part of the project, but when it's
   opened it's still read with the project's settings.

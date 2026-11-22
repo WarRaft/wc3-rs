@@ -53,6 +53,34 @@ fn names_come_from_the_layers_and_the_last_wins() {
     assert!(super::names(&Lookup::default()).weather.is_empty());
 }
 
+#[test]
+fn the_editors_files_read_with_their_patches() {
+    let tmp = TempDir::new("names-patches");
+    let game = tmp.0.join("game");
+    write(&game, "UI/TriggerData.txt", "[TriggerActions]\nDoNothing=0,nothing\n_DoNothing_Category=TC_NOTHING\n");
+    write(&game, "UI/TriggerStrings.txt", "[TriggerActionStrings]\nDoNothing=\"Do Nothing\"\nDoNothing=\"Do nothing\"\n");
+    write(&game, "UI/WorldEditStrings.txt", "[WorldEditStrings]\nWESTRING_WEATHER_RAIN=Rain\n");
+    // A root adds a function, its phrase and a string, and renames one.
+    let root = tmp.0.join("map");
+    write(&root, "UI/TriggerData.patch.txt", "[TriggerActions]\nMyAction=0,unit,real\n_MyAction_Category=TC_UNIT\n");
+    write(&root, "UI/TriggerStrings.patch.txt", "[TriggerActionStrings]\nMyAction=\"My Action\"\nMyAction=\"Hit \",~Unit,\" for \",~Amount\n");
+    write(&root, "UI/WorldEditStrings.patch.txt", "[WorldEditStrings]\nWESTRING_WEATHER_RAIN=Downpour\nWESTRING_MINE=Mine\n");
+    let lookup = Lookup { game: vec![game.clone()], roots: vec![root.clone()] };
+    let names = names(&lookup);
+    assert_eq!(names.triggers.params(wtg_rs::FunctionKind::Action, "MyAction"), Some(2));
+    assert_eq!(names.triggers.params(wtg_rs::FunctionKind::Action, "DoNothing"), Some(0));
+    let ui = names.trigger_ui.function(wtg_rs::FunctionKind::Action, "MyAction").unwrap();
+    assert_eq!(ui.title, "My Action");
+    assert_eq!(ui.args, ["unit", "real"]);
+    assert_eq!(names.string("WESTRING_WEATHER_RAIN").as_deref(), Some("Downpour"));
+    assert_eq!(names.string("WESTRING_MINE").as_deref(), Some("Mine"));
+
+    // A patch changing on disk is a change of the names.
+    let mut cache = Cache::default();
+    cache.get(&lookup);
+    assert!(cache.disk_changed(&[game.join("UI/TriggerData.patch.txt")]));
+}
+
 /// The names the game's own files give: `WC3_GAME` is a game folder.
 #[test]
 #[ignore]

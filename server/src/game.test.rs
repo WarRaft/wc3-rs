@@ -112,3 +112,43 @@ fn which_changes_affect_a_game_folder() {
     assert!(!affects(folder, Path::new("/G/Warcraft III2/War3.mpq")));
     assert!(is_archive_name(Path::new("/x/war3xlocal.mpq")) && !is_archive_name(Path::new("/x/other.mpq")));
 }
+
+#[test]
+fn a_patch_is_named_before_the_extension() {
+    assert_eq!(patch_name("UI\\TriggerData.txt"), "UI\\TriggerData.patch.txt");
+    assert_eq!(patch_name("UI/a.b.txt"), "UI/a.b.patch.txt");
+    assert_eq!(patch_name("UI\\README"), "UI\\README.patch");
+    assert_eq!(patch_name("dir.d\\.hidden"), "dir.d\\.hidden.patch");
+}
+
+#[test]
+fn patches_from_the_base_layer_up_change_it_by_meaning() {
+    let tmp = TempDir::new("game-patches");
+    let (wc3, low, high) = (tmp.0.join("wc3"), tmp.0.join("low"), tmp.0.join("high"));
+    std::fs::create_dir_all(wc3.join("UI")).unwrap();
+    mpq(&wc3.join("War3.mpq"), &[("UI\\TriggerData.txt", "[A]\na=game\nb=game\n")]);
+    std::fs::write(wc3.join("UI/TriggerData.patch.txt"), "[A]\nb=game patch\n").unwrap();
+    let (game, _) = Game::open(std::slice::from_ref(&wc3));
+    // The folder's patch is over the archive's file.
+    assert_eq!(game.read_patched("ui/triggerdata.txt").as_deref(), Some("[A]\na=game\nb=game patch\n"));
+    // A file nobody patches reads as it is; one nobody has, not at all.
+    assert_eq!(game.read_patched("missing.txt"), None);
+
+    std::fs::create_dir_all(low.join("UI")).unwrap();
+    std::fs::create_dir_all(high.join("ui")).unwrap();
+    std::fs::write(low.join("UI/TriggerData.patch.txt"), "[A]\nc=low\n").unwrap();
+    std::fs::write(high.join("ui/triggerdata.PATCH.txt"), "[A]\nc=high\n[B]\nd=high\n").unwrap();
+    let lookup = Lookup { game: vec![wc3.clone()], roots: vec![low.clone(), high.clone()] };
+    let (game, _) = lookup.open();
+    // Lowest first: each one over the ones before.
+    assert_eq!(game.read_patched("UI\\TriggerData.txt").as_deref(), Some("[A]\na=game\nb=game patch\nc=high\n[B]\nd=high\n"));
+
+    // A root that replaces the file shadows the patches below it.
+    std::fs::write(low.join("UI/TriggerData.txt"), "[A]\na=low\n").unwrap();
+    let (game, _) = lookup.open();
+    assert_eq!(game.read_patched("UI\\TriggerData.txt").as_deref(), Some("[A]\na=low\nc=high\n[B]\nd=high\n"));
+
+    // Only patches: on an empty file.
+    let only = Lookup { game: vec![], roots: vec![high] };
+    assert_eq!(only.open().0.read_patched("UI\\TriggerData.txt").as_deref(), Some("[A]\nc=high\n[B]\nd=high\n"));
+}
