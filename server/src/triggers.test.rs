@@ -321,18 +321,18 @@ fn private_and_local_variables_seen_where_they_are() {
         let c = choices(text, line, "2", &ui, &seen);
         ["g", "p", "l"].iter().filter(|n| c.contains(&format!("[\"{n}\","))).map(|n| n.to_string()).collect()
     };
-    // In the actions, inside an inline loop too: all; in a condition or a
-    // callback block: no local.
+    // In the actions, inside any block: all (a build makes a
+    // ForGroupMultiple's a loop of the trigger's function); in a
+    // condition: no local.
     assert_eq!(names(3), ["g", "p", "l"]);
+    assert_eq!(names(5), ["g", "p", "l"]);
     assert_eq!(names(7), ["g", "p", "l"]);
     assert_eq!(names(2), ["g", "p"]);
-    assert_eq!(names(5), ["g", "p"]);
     assert!(choices(text, 3, "2", &ui, &seen).contains("[\"l\",\"WESTRING_TRIGTYPE_player\",false,\"local\"]"));
     // The view: the same.
     let v = view(text, &crate::names::Names::default(), &seen);
     assert!(v.contains("[2,\"the local `l` isn't seen here"), "{v}");
-    assert!(v.contains("[5,\"the local `l` isn't seen here"), "{v}");
-    assert!(!v.contains("[3,\"the local") && !v.contains("[7,\""), "{v}");
+    assert!(!v.contains("[3,\"the local") && !v.contains("[5,\"") && !v.contains("[7,\""), "{v}");
     // A new local brings its trigger; a private one is written with its scope.
     let t = applied("", op::NEW_VARIABLE, 0, "l\ninteger\n0\n\nlocal\n").unwrap();
     assert_eq!(t, "[variable]\nname=\"l\"\ntype=\"integer\"\nscope=local\nsize=1\n\n[trigger]\n");

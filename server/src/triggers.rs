@@ -212,8 +212,8 @@ impl<'a> Seen<'a> {
 
 /// Marks the variables of `nodes` (and what's inside them) that aren't
 /// seen unknown, each with an error at its line. `locals`: are the
-/// trigger's locals seen here (in its actions, but not in a block that
-/// runs as a function of its own)?
+/// trigger's locals seen here (in its actions, every block inside
+/// included)?
 fn undeclared(nodes: &mut [wtg_rs::ui::Node], seen: &Seen, locals: bool, errors: &mut Vec<(usize, String)>) {
     use wtg_rs::ui::{Role, Span};
     fn walk(spans: &mut [Span], line: usize, seen: &Seen, locals: bool, errors: &mut Vec<(usize, String)>) {
@@ -225,7 +225,7 @@ fn undeclared(nodes: &mut [wtg_rs::ui::Node], seen: &Seen, locals: bool, errors:
                     && !(locals && seen.locals.contains(name.as_str()))
                 {
                     let message = if seen.locals.contains(name.as_str()) {
-                        format!("the local `{name}` isn't seen here: a trigger's locals are its actions', and not a block's that runs as a function of its own")
+                        format!("the local `{name}` isn't seen here: a trigger's locals are its actions'")
                     } else {
                         format!("the variable `{name}` isn't declared in the project's trigger files ([variable])")
                     };
@@ -239,29 +239,23 @@ fn undeclared(nodes: &mut [wtg_rs::ui::Node], seen: &Seen, locals: bool, errors:
     for n in nodes {
         walk(&mut n.text, n.line, seen, locals, errors);
         for b in &mut n.blocks {
-            undeclared(&mut b.nodes, seen, locals && !b.callback, errors);
+            undeclared(&mut b.nodes, seen, locals, errors);
         }
     }
 }
 
 /// Does the ECA at index `i` see its trigger's locals: is it in the
-/// actions, and not inside a block that runs as a function of its own
-/// (`wtg_rs::ui::BlockKind::callback`)?
+/// actions (its top line an action), whatever block it's in?
 fn sees_locals(doc: &Doc, mut i: usize) -> bool {
     loop {
         let Some((key, _)) = doc.eca(i) else { return false };
         if key.depth == 0 {
             return key.kind == 2;
         }
-        let Some(p) = (doc.section.start..i).rev().find(|&j| doc.eca(j).is_some_and(|(k, _)| k.depth + 1 == key.depth)) else {
-            return false;
-        };
-        let (pk, name) = doc.eca(p).expect("an ECA");
-        let group = key.group.unwrap_or(0);
-        if wtg_rs::ui::blocks(pk.kind, name).iter().any(|b| b.group == group && b.callback) {
-            return false;
+        match (doc.section.start..i).rev().find(|&j| doc.eca(j).is_some_and(|(k, _)| k.depth + 1 == key.depth)) {
+            Some(p) => i = p,
+            None => return false,
         }
-        i = p;
     }
 }
 

@@ -727,7 +727,7 @@ variable's `scope=` narrows that:
 |---|---|---|
 | (none) | a global of the map | by every trigger file of the project |
 | `private` | a global of this file | by this file only; a build names it so that no other file's clashes |
-| `local` | a local of this trigger's actions, which are one function | in the actions only, and not in a block that runs as a function of its own: a `ForGroupMultiple`'s, `ForForceMultiple`'s, `Enum...Multiple`'s actions (a `For each Integer` loop's and an if/then/else's, conditions too, are inside the function) |
+| `local` | a local of this trigger's actions, which are one function | in the actions, every block inside included; not in the events and conditions |
 
 ```ini
 [variable]
@@ -737,6 +737,14 @@ scope=local
 size=1
 initial="0"
 ```
+
+The actions are one function, every block too: a build makes the
+blocks World Editor runs as functions of their own loops of it
+instead (`ForGroupMultiple`: over a copy of the group, `FirstOfGroup`
+and `GroupRemoveUnit`; `ForForceMultiple`: over the player slots,
+`IsPlayerInForce`; `Enum...Multiple`: the items or destructables
+gathered first, then a loop over them), so a local is seen in them
+too, and *Picked unit* and the like are the loop's.
 
 A local needs its file's `[trigger]`, and `scope=` is a `.trg`'s own (the
 text of `war3map.wtg` has globals only). A parameter's dialog offers
