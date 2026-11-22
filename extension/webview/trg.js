@@ -36,8 +36,10 @@ const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.get
 /** @typedef {string | {r: string, s: Span[]}} Span */
 /** @typedef {{label: string, group: number, kind: number, nodes: Node[]}} Block */
 /** @typedef {{line: number, kind: number, enabled: boolean, name: string, known: boolean, icon: string, hint: string, text: Span[], blocks: Block[]}} Node */
+/** @typedef {{line: number, name: string, type: string, type_name: string, array: boolean, size: number, initial: string | null}} Variable */
 /**
  * @typedef {{
+ *   trigger: boolean, variables: Variable[],
  *   name: string, description: string, enabled: number, initially_off: number, run_on_init: number,
  *   custom_text: number, comment: number, data: boolean, errors: [number, string][], labels: string[],
  *   events: Node[], conditions: Node[], actions: Node[]
@@ -46,7 +48,7 @@ const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.get
 /**
  * A row of the tree.
  * @typedef {{
- *   type: 'heading' | 'node' | 'block', path: string, depth: number, label: string,
+ *   type: 'heading' | 'node' | 'block' | 'variable' | 'variables', variable?: Variable, path: string, depth: number, label: string,
  *   kind: number, parent: number, group: number, index: number, count: number,
  *   node?: Node, off: boolean, inOff: boolean, open: boolean, hasChildren: boolean,
  * }} Row
@@ -77,6 +79,21 @@ const save = () => vscode.setState({collapsed: [...collapsed], selected})
 function buildRows(v) {
     /** @type {Row[]} */
     const out = []
+    if (v.variables.length) {
+        const path = 'vars'
+        const open = !collapsed.has(path)
+        out.push({
+            type: 'variables', path, depth: 0, label: v.labels[3] || 'Variables', kind: -1,
+            parent: 0, group: -1, index: 0, count: v.variables.length, off: false, inOff: false, open, hasChildren: true,
+        })
+        if (open) {
+            v.variables.forEach((variable, index) => out.push({
+                type: 'variable', path: `vars/${index}`, depth: 1, label: '', kind: -1, parent: 0, group: -1, index,
+                count: v.variables.length, variable, off: false, inOff: false, open: false, hasChildren: false,
+            }))
+        }
+    }
+    if (!v.trigger) return out
     const lists = [v.events, v.conditions, v.actions]
     lists.forEach((nodes, kind) => {
         const path = `h${kind}`
@@ -163,7 +180,7 @@ function draw() {
 function drawRow(row) {
     const el = document.createElement('div')
     el.className = `row ${row.type}-row`
-    if (row.type === 'heading') el.classList.add('heading')
+    if (row.type === 'heading' || row.type === 'variables') el.classList.add('heading')
     if (row.off) el.classList.add('off')
     if (row.inOff) el.classList.add('in-off')
     if (row.path === selected) el.classList.add('selected')
@@ -173,7 +190,7 @@ function drawRow(row) {
 
     const twisty = document.createElement('span')
     twisty.className = 'twisty'
-    if (row.hasChildren || row.type !== 'node') {
+    if (row.hasChildren || (row.type !== 'node' && row.type !== 'variable')) {
         twisty.innerHTML = `<i class="fa-solid ${row.open ? 'fa-chevron-down' : 'fa-chevron-right'}"></i>`
         if (!row.hasChildren) twisty.style.visibility = 'hidden'
         twisty.addEventListener('click', e => {
@@ -192,6 +209,23 @@ function drawRow(row) {
         drawSpans(label, n.text)
         el.title = [n.name, n.hint, n.known ? '' : 'Not in UI\\TriggerData.txt', `Line ${n.line}`].filter(Boolean).join('\n')
         el.draggable = true
+    } else if (row.type === 'variable' && row.variable) {
+        const va = row.variable
+        icon.className = 'icon fa-solid fa-cube variable'
+        const name = document.createElement('span')
+        name.className = 'v v-v'
+        name.textContent = va.name
+        label.append(name, ` : ${va.type_name}${va.array ? ` [${va.size}]` : ''}`)
+        if (va.initial !== null && va.initial !== '') {
+            const init = document.createElement('span')
+            init.className = 'v v-l'
+            init.textContent = va.initial
+            label.append(' = ', init)
+        }
+        el.title = `${va.type}\nLine ${va.line}`
+    } else if (row.type === 'variables') {
+        icon.className = 'icon fa-solid fa-cubes variable'
+        label.textContent = row.label
     } else if (row.type === 'heading') {
         icon.className = `icon fa-solid ${KIND_ICON[row.kind]} ${KIND_CLASS[row.kind]}`
         label.textContent = row.label
@@ -236,7 +270,7 @@ function select(path) {
 /** Where a paste goes for the selected row: after a line, at a block's or heading's end. */
 function pastePlace() {
     const row = selectedRow()
-    if (!row) return '0 2 99999'
+    if (!row || row.group < 0) return '0 2 99999'
     if (row.type === 'node') return `${row.parent} ${row.group} ${row.index + 1}`
     return `${row.parent} ${row.group} ${row.count}`
 }
@@ -251,7 +285,7 @@ function updateTools() {
     set('cut', !!node)
     set('up', !!node && node.index > 0)
     set('down', !!node && node.index < node.count - 1)
-    set('paste', !!view)
+    set('paste', !!view && view.trigger)
 }
 
 /** @param {'toggle' | 'delete' | 'copy' | 'cut' | 'up' | 'down' | 'paste'} what */
@@ -288,6 +322,7 @@ tree.addEventListener('dblclick', e => {
     const row = el && rows.find(r => r.path === el.dataset.path)
     if (!row) return
     if (row.type === 'node' && row.node) vscode.postMessage({type: 'reveal', line: row.node.line})
+    else if (row.type === 'variable' && row.variable) vscode.postMessage({type: 'reveal', line: row.variable.line})
     else setOpen(row, !row.open)
 })
 
@@ -313,7 +348,9 @@ tree.addEventListener('keydown', e => {
     } else if (key === 'ArrowRight' && row) {
         if (!row.open && row.hasChildren) setOpen(row, true)
         else if (rows[i + 1] && rows[i + 1].depth > row.depth) select(rows[i + 1].path)
-    } else if (key === 'Enter' && row && row.node) vscode.postMessage({type: 'reveal', line: row.node.line})
+    } else if (key === 'Enter' && row && (row.node || row.variable)) {
+        vscode.postMessage({type: 'reveal', line: row.node ? row.node.line : row.variable ? row.variable.line : 0})
+    }
     else if (key === 'Delete' || (key === 'Backspace' && e.metaKey)) act('delete')
     else if (mod && key.toLowerCase() === 'c') act('copy')
     else if (mod && key.toLowerCase() === 'x') act('cut')
@@ -362,6 +399,7 @@ tree.addEventListener('dragover', e => {
     if (!el || !row) return
     // Not into itself.
     if (row.path === dragged.path || row.path.startsWith(`${dragged.path}/`)) return
+    if (row.group < 0) return
     if (row.type === 'node') {
         if (row.kind !== dragged.kind) return
         const box = el.getBoundingClientRect()
@@ -420,6 +458,8 @@ $('open-text').addEventListener('click', () => vscode.postMessage({type: 'openTe
 
 /** @param {View} v */
 function showFields(v) {
+    for (const id of ['name', 'description']) $(id).hidden = !v.trigger
+    for (const el of document.querySelectorAll('.check')) /** @type {HTMLElement} */ (el).hidden = !v.trigger
     // What's being typed stays.
     if (document.activeElement !== nameInput) nameInput.value = v.name
     if (document.activeElement !== description) description.value = v.description

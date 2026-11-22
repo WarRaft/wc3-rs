@@ -89,7 +89,7 @@ pub enum ClientMsg {
     /// is the file's text), 8 path completion and 9 path links in a
     /// `wc3.bni`, 10 an SLK table, 11 an SLK cell written, 12 inlay
     /// hints, 13 colors, 14 a txt2 preview, 15 a trigger's view, 16 an
-    /// operation in it (see `index::QueryKind`). An unknown one gets an
+    /// operation in it, 17 triggers as files (see `index::QueryKind`). An unknown one gets an
     /// empty answer.
     Query {
         request: u32,
@@ -212,7 +212,7 @@ fn kind_code(kind: Kind) -> u8 {
     }
 }
 
-const QUERY_KINDS: [QueryKind; 17] = [
+const QUERY_KINDS: [QueryKind; 18] = [
     QueryKind::Definition,
     QueryKind::References,
     QueryKind::Hover,
@@ -230,6 +230,7 @@ const QUERY_KINDS: [QueryKind; 17] = [
     QueryKind::Txt2Html,
     QueryKind::TriggerView,
     QueryKind::TriggerEdit,
+    QueryKind::TriggerExtract,
 ];
 
 const SYMBOL_KINDS: [SymbolKind; 17] = [

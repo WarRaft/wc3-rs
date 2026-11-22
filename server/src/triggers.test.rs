@@ -100,9 +100,9 @@ fn trg_diagnostics_and_tokens() {
 fn trg_view() {
     let names = crate::names::Names::default();
     let v = view(TRG, &names);
-    assert!(v.starts_with("{\"name\":\"Spawn\",\"description\":\"\",\"enabled\":1,"), "{v}");
+    assert!(v.starts_with("{\"trigger\":true,\"variables\":[],\"name\":\"Spawn\",\"description\":\"\",\"enabled\":1,"), "{v}");
     assert!(v.contains("\"data\":false"), "{v}");
-    assert!(v.contains("\"labels\":[\"Events\",\"Conditions\",\"Actions\"]"), "{v}");
+    assert!(v.contains("\"labels\":[\"Events\",\"Conditions\",\"Actions\",\"Variables\"]"), "{v}");
     assert!(v.contains("{\"line\":5,\"kind\":2,\"enabled\":true,\"name\":\"IfThenElseMultiple\",\"known\":false,"), "{v}");
     assert!(v.contains("{\"label\":\"Then - Actions\",\"group\":1,\"kind\":2,\"nodes\":[{\"line\":7,"), "{v}");
     assert!(v.contains("{\"label\":\"Loop - Actions\",\"group\":0,\"kind\":2,\"nodes\":[{\"line\":9,"), "{v}");
@@ -182,4 +182,17 @@ fn trg_line_breaks_kept() {
     let bare = "[trigger]\naction=DoNothing()";
     assert_eq!(applied(bare, op::PASTE, 0, "0 2 1\naction=Two()\n").unwrap(), "[trigger]\naction=DoNothing()\naction=Two()\n");
     assert_eq!(applied(bare, op::TOGGLE, 2, "").unwrap(), "[trigger]\n!action=DoNothing()");
+}
+
+#[test]
+fn extract_as_files() {
+    let answer = extract(TEXT);
+    assert_eq!(answer, "{\"folders\":[],\"files\":[[\"Init.trg\",\"[trigger]\\u000aname=\\\"Init\\\"\\u000adescription=\\\"\\\"\\u000aevent=MapInitializationEvent()\\u000aaction=DoNothing()\\u000a\"]]}");
+    assert!(extract("[wtg]\nversion=9\n").starts_with("{\"error\":\"Can't extract the triggers: line 2:"));
+}
+
+#[test]
+fn trg_view_of_variables() {
+    let v = view("[variable]\nname=\"hero\"\ntype=\"unit\"\narray=1\nsize=12\n", &crate::names::Names::default());
+    assert!(v.starts_with("{\"trigger\":false,\"variables\":[{\"line\":1,\"name\":\"hero\",\"type\":\"unit\",\"type_name\":\"unit\",\"array\":true,\"size\":12,\"initial\":null}],"), "{v}");
 }

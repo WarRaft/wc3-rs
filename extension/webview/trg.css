@@ -195,6 +195,7 @@ body {
 .icon.event { color: #FFA000; }
 .icon.condition { color: #42A5F5; }
 .icon.action { color: #66BB6A; }
+.icon.variable { color: var(--vscode-symbolIcon-variableForeground, #75BEFF); }
 .icon.block { color: var(--vscode-icon-foreground, var(--vscode-foreground)); opacity: .75; }
 .icon.unknown { color: var(--vscode-errorForeground); }
 
@@ -256,4 +257,8 @@ body {
 .row.drop-into {
     background: var(--vscode-list-dropBackground);
     border-color: var(--vscode-focusBorder);
+}
+
+[hidden] {
+    display: none !important;
 }

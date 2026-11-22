@@ -72,6 +72,9 @@ pub enum QueryKind {
     /// on the ECA at line `line` (from 1) with the query text, as JSON in
     /// the text (`triggers::edit`).
     TriggerEdit,
+    /// In the text form of triggers (`.wtg`): every trigger as a file of
+    /// its own, as JSON in the text (`triggers::extract`).
+    TriggerExtract,
 }
 
 /// Path completion and links in a manifest; nothing for any other file.
@@ -190,6 +193,13 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
                     format!("<style>{}</style>\n{}", txt2_rs::html::STYLE, txt2_rs::html::render(&parsed))
                 }
                 None => String::new(),
+            };
+            return Answer { locations: Vec::new(), text };
+        }
+        QueryKind::TriggerExtract => {
+            let text = match ws.file(id).filter(|(d, _)| d.path.as_deref().is_some_and(crate::triggers::is_trigger_file)) {
+                Some((doc, _)) => crate::triggers::extract(&doc.text),
+                None => "{\"error\":\"not the text of triggers (.wtg)\"}".into(),
             };
             return Answer { locations: Vec::new(), text };
         }

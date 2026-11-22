@@ -81,6 +81,7 @@ const QUERY = {
     TXT2_HTML: 14,
     TRIGGER_VIEW: 15,
     TRIGGER_EDIT: 16,
+    TRIGGER_EXTRACT: 17,
 }
 
 /** Symbol kinds, in wire order (`parser_rs::SymbolKind`). */

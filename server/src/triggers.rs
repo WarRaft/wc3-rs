@@ -78,6 +78,28 @@ pub fn diagnostics(path: Option<&Path>, doc: &bni_rs::Document, text: &str) -> V
     wtg_rs::text::from_bni(doc, text, None).errors.into_iter().filter(|e| !bni.contains(e)).collect()
 }
 
+/// The triggers of the text form `text` (of a `.wtg`) as files, as JSON:
+/// `{"folders": ["Init", ...], "files": [["Init/Spawn.trg", "[trigger]..."],
+/// ["_variables.trg", "[variable]..."]]}` (`wtg_rs::text::to_files`: a
+/// folder per category, a `.trg` per trigger, the variables at the top),
+/// or `{"error": "..."}` when the text has errors.
+pub fn extract(text: &str) -> String {
+    let js = crate::objects::json_string;
+    let p = wtg_rs::text::from_text(text, None);
+    let result = match p.file {
+        Some(f) => wtg_rs::text::to_files(&f),
+        None => Err(p.errors.first().map_or("the text has errors".into(), |e| format!("line {}: {}", e.line, e.message))),
+    };
+    match result {
+        Ok(made) => {
+            let folders: Vec<String> = made.folders.iter().map(|f| js(f)).collect();
+            let files: Vec<String> = made.files.iter().map(|(p, t)| format!("[{},{}]", js(p), js(t))).collect();
+            format!("{{\"folders\":[{}],\"files\":[{}]}}", folders.join(","), files.join(","))
+        }
+        Err(e) => format!("{{\"error\":{}}}", js(&format!("Can't extract the triggers: {e}"))),
+    }
+}
+
 // ---------------------------------------------------- a trigger of its own
 //
 // A `.trg` is one trigger as text (`wtg_rs::text::trigger_from_text`),
@@ -90,10 +112,12 @@ pub fn diagnostics(path: Option<&Path>, doc: &bni_rs::Document, text: &str) -> V
 /// The view of the trigger `text`, as JSON:
 ///
 /// ```json
-/// {"name": "Spawn", "description": "", "enabled": 1, "initially_off": 0,
+/// {"trigger": true, "variables": [{"line": 1, "name": "hero", "type": "unit",
+///  "type_name": "Unit", "array": true, "size": 12, "initial": null}],
+///  "name": "Spawn", "description": "", "enabled": 1, "initially_off": 0,
 ///  "run_on_init": 0, "custom_text": 0, "comment": 0, "data": true,
 ///  "errors": [[3, "`action`: ..."]],
-///  "labels": ["Events", "Conditions", "Actions"],
+///  "labels": ["Events", "Conditions", "Actions", "Variables"],
 ///  "events": [node], "conditions": [...], "actions": [...]}
 /// ```
 ///
@@ -113,14 +137,36 @@ pub fn view(text: &str, names: &crate::names::Names) -> String {
         p.errors = wtg_rs::text::trigger_from_text(text, data).errors;
     }
     let ui: &Ui = &names.trigger_ui;
-    let v = ui.render(&p.trigger, &p.lines);
-    let t = &p.trigger;
+    let has_trigger = p.trigger.is_some();
+    let t = p.trigger.clone().unwrap_or_default();
+    let v = ui.render(&t, &p.lines);
     let js = crate::objects::json_string;
     let errors: Vec<String> = p.errors.iter().map(|e| format!("[{},{}]", e.line, js(&e.message))).collect();
-    let labels = ["WESTRING_EVENTS", "WESTRING_CONDITIONS", "WESTRING_ACTIONS"].map(|k| js(&ui.label(k)));
+    let labels = ["WESTRING_EVENTS", "WESTRING_CONDITIONS", "WESTRING_ACTIONS", "WESTRING_VARIABLES"].map(|k| js(&ui.label(k)));
     let nodes = |n: &[wtg_rs::ui::Node]| format!("[{}]", n.iter().map(node_json).collect::<Vec<_>>().join(","));
+    // Each variable with the line of its section.
+    let doc = wtg_rs::text::parse_bni(text);
+    let var_lines = doc.sections.iter().filter(|s| s.name.text == wtg_rs::text::VARIABLE).map(|s| s.line);
+    let variables: Vec<String> = p
+        .variables
+        .iter()
+        .zip(var_lines)
+        .map(|(var, line)| {
+            let type_name = ui.types.get(&var.kind).cloned().unwrap_or_else(|| var.kind.clone());
+            format!(
+                "{{\"line\":{line},\"name\":{},\"type\":{},\"type_name\":{},\"array\":{},\"size\":{},\"initial\":{}}}",
+                js(&var.name),
+                js(&var.kind),
+                js(&type_name),
+                var.is_array != 0,
+                var.array_size,
+                if var.has_initial != 0 { js(&var.initial) } else { "null".into() },
+            )
+        })
+        .collect();
     format!(
-        "{{\"name\":{},\"description\":{},\"enabled\":{},\"initially_off\":{},\"run_on_init\":{},\"custom_text\":{},\"comment\":{},\"data\":{},\"errors\":[{}],\"labels\":[{}],\"events\":{},\"conditions\":{},\"actions\":{}}}",
+        "{{\"trigger\":{has_trigger},\"variables\":[{}],\"name\":{},\"description\":{},\"enabled\":{},\"initially_off\":{},\"run_on_init\":{},\"custom_text\":{},\"comment\":{},\"data\":{},\"errors\":[{}],\"labels\":[{}],\"events\":{},\"conditions\":{},\"actions\":{}}}",
+        variables.join(","),
         js(&t.name),
         js(&t.description),
         t.enabled,
@@ -434,10 +480,11 @@ fn pasted(text: &str) -> Result<Vec<u32>, String> {
     if let Some(l) = lines.iter().find(|l| !filler(l) && eca_line(l).is_none()) {
         return Err(format!("not an event, condition or action: {l:?}"));
     }
-    if p.trigger.ecas.is_empty() {
+    let ecas = p.trigger.map(|t| t.ecas).unwrap_or_default();
+    if ecas.is_empty() {
         return Err("nothing to paste".into());
     }
-    Ok(p.trigger.ecas.iter().map(|e| e.kind).collect())
+    Ok(ecas.iter().map(|e| e.kind).collect())
 }
 
 const KIND_NAMES: [&str; 3] = ["an event", "a condition", "an action"];

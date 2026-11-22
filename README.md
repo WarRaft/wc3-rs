@@ -688,6 +688,21 @@ action=ForLoopAMultiple("1", "10")
 >action:0=DisplayTextToForce(GetPlayersAll(), "Hello")
 ```
 
+A `.trg` may also declare the map's global variables, `[variable]`
+sections as above (before or after its `[trigger]`); a file of them
+alone holds the map's, `_variables.trg` at the top of the triggers'
+folder, and its view lists them (name, type, array size, initial
+value).
+
+**Extract Triggers…** (the button in the title of a `war3map.wtg`'s
+text, or the Explorer's context menu of a `.wtg`) asks for a folder and
+puts the map's triggers there as files: a folder per category (empty
+ones too), a `.trg` per trigger, the variables in `_variables.trg`.
+Names a file can't have are made safe (`a/b?` is `a_b_`), and two that
+would clash get `(2)`, `(3)` ...; files already there are replaced
+after asking. It splits the text as it is in the editor, saved or not
+(`wtg_rs::text::to_files`).
+
 It opens as World Editor shows it (**Open as Text** and **Open as
 Trigger** switch, as Reopen Editor With does): Events, Conditions and
 Actions, each line its phrase from the editor's files

@@ -1484,6 +1484,54 @@ function registerTrigger(context) {
 }
 
 /**
+ * Extract Triggers (`wc3.wtg.extract`, on the text of a `.wtg` and on the
+ * file in the Explorer): every trigger as a `.trg` of its own in a folder
+ * picked for it, a folder per category, the variables in `_variables.trg`.
+ * The server splits the text (`QUERY.TRIGGER_EXTRACT`, so what's edited
+ * and not saved counts); the files are written here, through VS Code, so
+ * a folder inside a map works as any other. Files already there are
+ * replaced, after asking.
+ *
+ * @param {import('vscode').ExtensionContext} context
+ */
+function registerTriggerExtract(context) {
+    const run = async uri => {
+        let doc
+        if (uri instanceof Uri) doc = await workspace.openTextDocument(Uri.file(uri.fsPath).with({scheme: OBJECTS_SCHEME}))
+        else doc = window.activeTextEditor?.document
+        if (!doc || doc.languageId !== 'wtg') return window.showWarningMessage('WC3: open the triggers (war3map.wtg) first.')
+        const answer = await query(QUERY.TRIGGER_EXTRACT, idOf(doc), {line: 0, character: 0}, '')
+        if (!answer || !answer.text) return window.showErrorMessage('WC3: the language server did not answer.')
+        const result = JSON.parse(answer.text)
+        if (result.error) return window.showErrorMessage(`WC3: ${result.error}`)
+        const onDisk = doc.uri.fsPath && fs.existsSync(doc.uri.fsPath) ? Uri.file(path.dirname(doc.uri.fsPath)) : undefined
+        const picked = await window.showOpenDialog({
+            canSelectFiles: false, canSelectFolders: true, canSelectMany: false, defaultUri: onDisk,
+            openLabel: 'Extract Here', title: `Extract ${result.files.length} files of ${path.basename(doc.uri.fsPath)}`,
+        })
+        if (!picked || !picked.length) return
+        const root = picked[0]
+        const at = rel => Uri.joinPath(root, ...rel.split('/'))
+        const exists = async u => workspace.fs.stat(u).then(() => true, () => false)
+        const taken = []
+        for (const [rel] of result.files) if (await exists(at(rel))) taken.push(rel)
+        if (taken.length) {
+            const go = await window.showWarningMessage(
+                `${taken.length} of the files are there already (${taken.slice(0, 3).join(', ')}${taken.length > 3 ? ', …' : ''}). Replace them?`,
+                {modal: true}, 'Replace')
+            if (go !== 'Replace') return
+        }
+        for (const folder of result.folders) await workspace.fs.createDirectory(at(folder))
+        for (const [rel, text] of result.files) await workspace.fs.writeFile(at(rel), Buffer.from(text, 'utf8'))
+        const triggers = result.files.filter(([rel]) => !rel.endsWith('_variables.trg')).length
+        const reveal = await window.showInformationMessage(
+            `WC3: ${triggers} triggers in ${result.folders.length} folders extracted to ${root.fsPath}.`, 'Reveal')
+        if (reveal) commands.executeCommand('revealInExplorer', root).then(undefined, () => commands.executeCommand('revealFileInOS', root))
+    }
+    context.subscriptions.push(commands.registerCommand('wc3.wtg.extract', uri => run(uri).catch(e => window.showErrorMessage(`WC3: ${e.message}`))))
+}
+
+/**
  * The txt2 preview, beside the text as Markdown's (`wc3.txt2.preview`,
  * `wc3.txt2.previewSide`): a page per document showing the server's HTML
  * for it (`QUERY.TXT2_HTML`), updated as the text changes. The page and
@@ -1599,6 +1647,7 @@ module.exports = {
         registerObjects(context)
         registerSlk(context)
         registerTrigger(context)
+        registerTriggerExtract(context)
         registerTxt2Preview(context)
 
         sendRoots()
