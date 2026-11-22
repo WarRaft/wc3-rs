@@ -69,6 +69,12 @@
         "icon": "$(go-to-file)"
       },
       {
+        "command": "wc3.trg.showJass",
+        "title": "Show JASS",
+        "category": "WC3",
+        "icon": "$(code)"
+      },
+      {
         "command": "wc3.wtg.extract",
         "title": "Extract Triggers…",
         "category": "WC3",
@@ -326,6 +332,10 @@
         {
           "command": "wc3.wtg.extract",
           "when": "editorLangId == wtg"
+        },
+        {
+          "command": "wc3.trg.showJass",
+          "when": "editorLangId == trg || activeCustomEditorId == wc3.trigger"
         }
       ],
       "view/title": [
@@ -371,6 +381,11 @@
           "command": "wc3.wtg.extract",
           "when": "resourceExtname =~ /^\\.wtg$/i",
           "group": "navigation"
+        },
+        {
+          "command": "wc3.trg.showJass",
+          "when": "resourceExtname =~ /^\\.trg$/i",
+          "group": "navigation"
         }
       ],
       "editor/title": [
@@ -402,6 +417,11 @@
         {
           "command": "wc3.wtg.extract",
           "when": "editorLangId == wtg",
+          "group": "navigation"
+        },
+        {
+          "command": "wc3.trg.showJass",
+          "when": "editorLangId == trg || activeCustomEditorId == wc3.trigger",
           "group": "navigation"
         }
       ]

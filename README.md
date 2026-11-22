@@ -810,6 +810,20 @@ dirty mark are the text's. In the view:
 - arrows move and fold, a double click or **Enter** shows the line in
   the text, and the problems count goes to the first one.
 
+**Show JASS** (the view's button, the editor's title, the Explorer's
+context menu of a `.trg`) shows the JASS the trigger is built into,
+beside it and read-only, following the text as it changes
+(`wtg_rs::jass`): World Editor's layout (`Trig_<name>_Conditions`,
+`Trig_<name>_Actions`, `InitTrig_<name>` registering the events), the
+file's globals in a `globals` block (`udg_<name>`, a private one
+`udg_<trigger>__<name>`) and its locals at the top of the actions; a
+preset as its code (`bj_UNIT_FACING`), a function by its script name
+(`_Name_ScriptName`), an object's id in single quotes (`'hfoo'`); the
+loops of `ForGroupMultiple`, `ForForceMultiple` and `Enum...Multiple`
+inside the actions, *Picked unit* and the like the loop's. What's
+disabled isn't in it. It's highlighted as JASS but not a file of the
+project, so it isn't checked.
+
 While it's edited, the text gets its errors (a field that isn't there,
 a call that doesn't read), and the view counts them with what
 `UI\TriggerData.txt` says (a function it doesn't have, a parameter too

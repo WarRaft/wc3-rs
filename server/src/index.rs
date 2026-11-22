@@ -85,6 +85,9 @@ pub enum QueryKind {
     /// In a trigger of its own: the trigger editor's icons, as JSON in
     /// the text (`triggers::icons`).
     TriggerIcons,
+    /// In a trigger of its own: the JASS it's built into, as the text
+    /// (`triggers::jass`).
+    TriggerJass,
 }
 
 /// The variables the trigger file `id` sees: every global its project's
@@ -229,6 +232,14 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
                 Some((doc, _)) => crate::triggers::extract(&doc.text),
                 None => "{\"error\":\"not the text of triggers (.wtg)\"}".into(),
             };
+            return Answer { locations: Vec::new(), text };
+        }
+        QueryKind::TriggerJass => {
+            let Some((doc, names, _)) = ws.names_text(id).filter(|(d, _, _)| d.path.as_deref().is_some_and(crate::triggers::is_trg_file)) else {
+                return Answer::default();
+            };
+            let file = doc.path.as_deref().and_then(|p| p.file_stem()).map_or(String::new(), |s| s.to_string_lossy().into_owned());
+            let text = crate::triggers::jass(&doc.text, &file, names, &project_variables(ws, id));
             return Answer { locations: Vec::new(), text };
         }
         QueryKind::TriggerIcons => {

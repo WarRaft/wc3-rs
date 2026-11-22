@@ -39,7 +39,7 @@
  * `{type: 'field', key, value}`, `{type: 'reveal', line}`,
  * `{type: 'choices', line, path}`, `{type: 'set', line, path, kind,
  * value}`, `{type: 'catalog', kind, place}`, `{type: 'new', place, kind,
- * name}`, `{type: 'openText'}`.
+ * name}`, `{type: 'openText'}`, `{type: 'showJass'}`.
  */
 
 // @ts-ignore: provided by VS Code
@@ -531,6 +531,7 @@ $('problems').addEventListener('click', () => {
     if (view && view.errors.length) vscode.postMessage({type: 'reveal', line: view.errors[0][0]})
 })
 $('open-text').addEventListener('click', () => vscode.postMessage({type: 'openText'}))
+$('show-jass').addEventListener('click', () => vscode.postMessage({type: 'showJass'}))
 
 /** @param {View} v */
 function showFields(v) {

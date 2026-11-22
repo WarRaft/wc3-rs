@@ -81,7 +81,8 @@
  * events, conditions and actions as lines of calls; the server reads them
  * with the project's `UI\TriggerData.txt`. A trigger of its own (`.trg`,
  * one `[trigger]` of that text, its folder its category) opens as World
- * Editor shows it (`registerTrigger`, `webview/trg.js`). A collection of object data
+ * Editor shows it (`registerTrigger`, `webview/trg.js`), and Show JASS
+ * shows what it's built into (`registerTriggerJass`). A collection of object data
  * (`.w3o`, World Editor's export) too: `[w3o]`, then each kind's text form.
  *
  * In `wc3.bni`, the paths of `game=`, `sources=`, `exclude=` and `root=`
@@ -1362,6 +1363,7 @@ function registerTrigger(context) {
   </div>
   <div class="spacer"></div>
   <span id="problems" class="problems" hidden></span>
+  <button id="show-jass" class="text-button" title="The JASS this trigger is built into, beside it">Show JASS</button>
   <button id="open-text" class="text-button" title="Open the text of this file">Open as Text</button>
 </div>
 <textarea id="description" class="description" rows="2" spellcheck="false" placeholder="Comment"></textarea>
@@ -1474,6 +1476,7 @@ function registerTrigger(context) {
                     return run(OP.NEW_VARIABLE, 0, [msg.name, msg.vtype, msg.array ? '1' : '0', msg.size, msg.scope, msg.initial].join('\n'))
                 case 'reveal': return reveal(msg.line)
                 case 'openText': return commands.executeCommand('vscode.openWith', document.uri, 'default', panel.viewColumn)
+                case 'showJass': return commands.executeCommand('wc3.trg.showJass', document.uri)
                 }
             }
             const subscriptions = [
@@ -1558,6 +1561,61 @@ function registerTriggerExtract(context) {
         if (reveal) commands.executeCommand('revealInExplorer', root).then(undefined, () => commands.executeCommand('revealFileInOS', root))
     }
     context.subscriptions.push(commands.registerCommand('wc3.wtg.extract', uri => run(uri).catch(e => window.showErrorMessage(`WC3: ${e.message}`))))
+}
+
+/**
+ * Show JASS (`wc3.trg.showJass`): the JASS a `.trg` is built into, beside
+ * it, read-only, under the `wc3jass:` scheme (`<name>.j`, the trigger's
+ * URI in the query). The server builds it from the text as it is
+ * (`QUERY.TRIGGER_JASS`, `wtg_rs::jass`), and it follows the text as it
+ * changes. It isn't a file of the project: it's highlighted as JASS, not
+ * analyzed.
+ *
+ * @param {import('vscode').ExtensionContext} context
+ */
+function registerTriggerJass(context) {
+    const SCHEME = 'wc3jass'
+    const changed = new EventEmitter()
+    /** @param {import('vscode').Uri} trg */
+    const jassUri = trg => Uri.from({scheme: SCHEME, path: `${trg.path.replace(/\.trg$/i, '')}.j`, query: trg.toString()})
+    const provider = {
+        onDidChange: changed.event,
+        /** @param {import('vscode').Uri} uri */
+        async provideTextDocumentContent(uri) {
+            const trg = Uri.parse(uri.query)
+            const doc = workspace.textDocuments.find(d => d.uri.toString() === trg.toString()) ?? await workspace.openTextDocument(trg)
+            const answer = await query(QUERY.TRIGGER_JASS, idOf(doc), {line: 0, character: 0}, '')
+            return answer ? answer.text : '// The language server did not answer.\n'
+        },
+    }
+    /** @type {Map<string, NodeJS.Timeout>} */
+    const timers = new Map()
+    /** The `.trg` a command is about: the one it was run on, or the active one. */
+    const target = uri => {
+        if (uri instanceof Uri) return uri
+        const tab = window.tabGroups.activeTabGroup.activeTab
+        const input = tab && tab.input
+        return input && input.uri instanceof Uri ? input.uri : window.activeTextEditor?.document.uri
+    }
+    context.subscriptions.push(
+        changed,
+        workspace.registerTextDocumentContentProvider(SCHEME, provider),
+        commands.registerCommand('wc3.trg.showJass', async uri => {
+            const trg = target(uri)
+            if (!trg || !/\.trg$/i.test(trg.path)) return window.showWarningMessage('WC3: open a trigger (.trg) first.')
+            const doc = await workspace.openTextDocument(jassUri(trg))
+            await window.showTextDocument(doc, {viewColumn: ViewColumn.Beside, preview: true, preserveFocus: true})
+        }),
+        // After the server has the change: the text is sent as it changes,
+        // and this waits.
+        workspace.onDidChangeTextDocument(e => {
+            if (!/\.trg$/i.test(e.document.uri.path)) return
+            const uri = jassUri(e.document.uri)
+            if (!workspace.textDocuments.some(d => d.uri.toString() === uri.toString())) return
+            clearTimeout(timers.get(uri.toString()))
+            timers.set(uri.toString(), setTimeout(() => changed.fire(uri), 150))
+        }),
+    )
 }
 
 /**
@@ -1677,6 +1735,7 @@ module.exports = {
         registerSlk(context)
         registerTrigger(context)
         registerTriggerExtract(context)
+        registerTriggerJass(context)
         registerTxt2Preview(context)
 
         sendRoots()

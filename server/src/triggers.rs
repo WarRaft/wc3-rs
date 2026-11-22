@@ -221,6 +221,7 @@ fn undeclared(nodes: &mut [wtg_rs::ui::Node], seen: &Seen, locals: bool, errors:
             if let Span::Value { role, spans, .. } = s {
                 if *role == Role::Variable
                     && let Some(Span::Text(name)) = spans.first()
+                    && !name.starts_with("gg_")
                     && !seen.globals.contains(name.as_str())
                     && !(locals && seen.locals.contains(name.as_str()))
                 {
@@ -999,6 +1000,22 @@ pub fn catalog(kind: u32, ui: &wtg_rs::ui::Ui) -> String {
     let out: Vec<String> =
         items.iter().map(|(c, t, n, h, show)| format!("[{},{},{},{},{show}]", js(n), js(t), js(c), js(h))).collect();
     format!("[{}]", out.join(","))
+}
+
+/// The JASS the trigger file `text` (named `file`, without its
+/// extension) is built into (`wtg_rs::jass::compile`), with the
+/// variables it sees (`visible`: its own and the project's globals).
+pub fn jass(text: &str, file: &str, names: &crate::names::Names, visible: &[Declared]) -> String {
+    let p = wtg_rs::text::trigger_from_text(text, None);
+    let mut out = String::new();
+    if !p.errors.is_empty() {
+        out += &format!("// The text has {} problem(s); what reads is built:\n", p.errors.len());
+        for e in p.errors.iter().take(5) {
+            out += &format!("//   line {}: {}\n", e.line, e.message);
+        }
+        out += "\n";
+    }
+    out + &wtg_rs::jass::compile(p.trigger.as_ref(), file, &p.variables, visible, &names.trigger_ui)
 }
 
 /// The trigger editor's icons, as JSON: `{"ReplaceableTextures\\WorldEditUI\\Actions-Unit":

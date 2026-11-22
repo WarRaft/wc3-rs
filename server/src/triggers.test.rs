@@ -290,7 +290,7 @@ fn trg_without_a_trigger_and_new_variables() {
 #[test]
 fn trg_view_marks_undeclared_variables() {
     let names = crate::names::Names::default();
-    let text = "[trigger]\naction=SetVariable($a, $b)\n";
+    let text = "[trigger]\naction=SetVariable($a, $b)\naction=SetVariable($gg_trg_X, $a)\n";
     let a = wtg_rs::Variable { name: "a".into(), kind: "integer".into(), unknown: 1, is_array: 0, array_size: 1, has_initial: 0, initial: String::new() };
     let v = view(text, &names, &[Declared { variable: a, scope: Scope::Global }]);
     assert!(v.contains("{\"r\":\"v\",\"p\":\"0\",\"s\":[\"a\"]}"), "{v}");
@@ -337,4 +337,13 @@ fn private_and_local_variables_seen_where_they_are() {
     let t = applied("", op::NEW_VARIABLE, 0, "l\ninteger\n0\n\nlocal\n").unwrap();
     assert_eq!(t, "[variable]\nname=\"l\"\ntype=\"integer\"\nscope=local\nsize=1\n\n[trigger]\n");
     assert!(applied("", op::NEW_VARIABLE, 0, "p\ninteger\n0\n\nprivate\n").unwrap().contains("scope=private\n"));
+}
+
+#[test]
+fn trg_jass() {
+    let names = crate::names::Names::default();
+    let j = jass("[trigger]\nname=\"T\"\naction=DoNothing()\n", "file", &names, &[]);
+    assert!(j.contains("function Trig_T_Actions takes nothing returns nothing\n    call DoNothing()\nendfunction"), "{j}");
+    let j = jass("[trigger]\nwhat=1\naction=DoNothing()\n", "file", &names, &[]);
+    assert!(j.starts_with("// The text has 1 problem(s); what reads is built:\n//   line 2:"), "{j}");
 }
