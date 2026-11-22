@@ -1069,8 +1069,13 @@ into and changes MPQ archives and maps (list, read, extract, verify, add,
 remove, rename), object data (list, read, text, check, set, add and
 remove objects; `TRIGSTR_<n>` names as their text) and string tables
 (`war3map.wts`: list, read, resolve, set), on the same `slk-rs`,
-`storm-rs`, `w3abdhqtu-rs` and `wts-rs` as the editor. Build it first (`cargo build --release` in
-`../wc3-mcp`); Claude Code asks once whether to use it.
+`storm-rs`, `w3abdhqtu-rs` and `wts-rs` as the editor. It runs the
+binary the extension ships, `extension/bin/wc3-mcp-macos`, so it's the
+same as the editor's: build it first (`server/build-mac.sh`, or
+`server/build.sh` for every system; on Linux or Windows point `.mcp.json`
+at `wc3-mcp-linux` or `wc3-mcp-windows.exe`), and restart Claude Code
+after a build to have the new one. Claude Code asks once whether to use
+it.
 
 The extension ships it too: `server/build.sh` cross-compiles `wc3-mcp`
 next to `wc3-server` into `extension/bin/` (`wc3-mcp-{macos,linux,windows.exe}`),
