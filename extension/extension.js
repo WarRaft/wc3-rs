@@ -1388,7 +1388,7 @@ function registerTrigger(context) {
 
             const post = async select => {
                 const answer = await query(QUERY.TRIGGER_VIEW, id, {line: 0, character: 0})
-                if (answer && answer.text) webview.postMessage({type: 'view', view: JSON.parse(answer.text), select})
+                if (answer && answer.text) webview.postMessage({type: 'view', view: JSON.parse(answer.text), select, file: path.basename(document.uri.path).replace(/\.trg$/i, '')})
             }
             let timer
             let select = 0
@@ -1412,18 +1412,20 @@ function registerTrigger(context) {
                     return null
                 }
                 if (result.edits) {
-                    if (!result.edits.length) {
+                    if (!result.edits.length && !result.files?.length) {
                         if (result.line) webview.postMessage({type: 'select', line: result.line})
                         return result
                     }
                     const edit = new WorkspaceEdit()
                     for (const [l, c, el, ec, t] of result.edits) edit.replace(document.uri, new Range(l, c, el, ec), t)
+                    // A variable renamed: its uses in other files too.
+                    for (const [file, l, c, el, ec, t] of result.files ?? []) edit.replace(uriOf(file), new Range(l, c, el, ec), t)
                     select = result.line || 0
                     if (!(await workspace.applyEdit(edit))) refresh()
                 }
                 return result
             }
-            const OP = {TOGGLE: 0, DELETE: 1, MOVE: 2, PASTE: 3, COPY: 4, FIELD: 5, SET_PARAM: 6, NEW: 7, NEW_VARIABLE: 8}
+            const OP = {TOGGLE: 0, DELETE: 1, MOVE: 2, PASTE: 3, COPY: 4, FIELD: 5, SET_PARAM: 6, NEW: 7, NEW_VARIABLE: 8, REPLACE: 9, SET_VARIABLE: 10, CHECK_VARIABLE: 11, RENAMED: 12}
             const reveal = async line => {
                 const at = new Position(Math.max(0, line - 1), 0)
                 const shown = window.visibleTextEditors.find(e => e.document === document)
@@ -1431,6 +1433,48 @@ function registerTrigger(context) {
                 ed.selection = new Selection(at, at)
                 ed.revealRange(new Range(at, at), TextEditorRevealType.InCenterIfOutsideViewport)
                 if (shown) window.showTextDocument(document, shown.viewColumn)
+            }
+            /**
+             * Changes or deletes (`arg` empty) the variable at `line`: what's
+             * safe (its uses renamed with it) at once; what breaks uses
+             * (deleting a used one, a narrower scope, another type, array or
+             * not, its name in custom script) only once the places are shown
+             * and it's confirmed, and they're offered to go to after.
+             */
+            const changeVariable = async (line, arg) => {
+                const answer = await query(QUERY.TRIGGER_EDIT, id, {line, character: OP.CHECK_VARIABLE}, arg)
+                if (!answer || !answer.text) return window.showErrorMessage('WC3: the language server did not answer; the trigger is unchanged.')
+                const check = JSON.parse(answer.text)
+                if (check.error) return window.showWarningMessage(`WC3: ${check.error}`)
+                const places = check.places ?? []
+                const deleting = !arg
+                if (places.length) {
+                    const what = deleting ? 'Deleting the variable' : 'This change'
+                    const shown = places.slice(0, 12).map(([file, l, why]) => `${path.basename(file)}:${l}: ${why}`)
+                    if (places.length > shown.length) shown.push(`… and ${places.length - shown.length} more`)
+                    const go = deleting ? 'Delete Anyway' : 'Change Anyway'
+                    const picked = await window.showWarningMessage(
+                        `${what} breaks ${places.length} place${places.length === 1 ? '' : 's'} that will need fixing by hand.`,
+                        {modal: true, detail: shown.join('\n')}, go)
+                    if (picked !== go) return
+                }
+                const done = deleting ? await run(OP.DELETE, line) : await run(OP.SET_VARIABLE, line, arg)
+                if (!done) return
+                if (check.renamed) window.setStatusBarMessage(`WC3: ${check.renamed} use${check.renamed === 1 ? '' : 's'} of the variable renamed`, 5000)
+                if (places.length) showPlaces(places)
+            }
+            /** The places a change broke, to go to one by one. */
+            const showPlaces = async places => {
+                const show = 'Show Places'
+                if (await window.showWarningMessage(`WC3: ${places.length} place${places.length === 1 ? '' : 's'} to fix.`, show) !== show) return
+                const items = places.map(([file, l, why]) => ({label: `${path.basename(file)}:${l}`, description: why, detail: file, file, line: l}))
+                for (;;) {
+                    const item = await window.showQuickPick(items, {title: 'Places to fix', matchOnDescription: true, ignoreFocusOut: true})
+                    if (!item) return
+                    const at = new Position(Math.max(0, item.line - 1), 0)
+                    await window.showTextDocument(uriOf(item.file), {selection: new Range(at, at), preview: false})
+                    item.label = `$(check) ${path.basename(item.file)}:${item.line}`
+                }
             }
             const handle = async msg => {
                 switch (msg.type) {
@@ -1440,16 +1484,17 @@ function registerTrigger(context) {
                     if (icons && icons.text) webview.postMessage({type: 'icons', icons: JSON.parse(icons.text)})
                     return post(0)
                 }
-                case 'toggle': return run(OP.TOGGLE, msg.line)
-                case 'delete': return run(OP.DELETE, msg.line)
-                case 'move': return run(OP.MOVE, msg.line, msg.place)
+                case 'toggle': return run(OP.TOGGLE, msg.line, msg.lines || '')
+                case 'delete': return run(OP.DELETE, msg.line, msg.lines || '')
+                case 'move': return run(OP.MOVE, msg.line, msg.lines ? `${msg.place}\n${msg.lines}` : msg.place)
                 case 'field': return run(OP.FIELD, 0, `${msg.key}\n${msg.value}`)
+                case 'renamed': return run(OP.RENAMED, 0, msg.from)
                 case 'copy':
                 case 'cut': {
-                    const copied = await run(OP.COPY, msg.line)
+                    const copied = await run(OP.COPY, msg.line, msg.lines || '')
                     if (!copied || copied.text === undefined) return
                     await env.clipboard.writeText(copied.text)
-                    if (msg.type === 'cut') await run(OP.DELETE, msg.line)
+                    if (msg.type === 'cut') await run(OP.DELETE, msg.line, msg.lines || '')
                     return
                 }
                 case 'paste': {
@@ -1467,27 +1512,37 @@ function registerTrigger(context) {
                 case 'set': return run(OP.SET_PARAM, msg.line, `${msg.path}\n${msg.kind}\n${msg.value}`)
                 case 'catalog': {
                     const answer = await query(QUERY.TRIGGER_CATALOG, id, {line: 0, character: msg.kind}, '')
-                    if (answer && answer.text) webview.postMessage({type: 'catalog', kind: msg.kind, place: msg.place, items: JSON.parse(answer.text)})
+                    if (answer && answer.text) webview.postMessage({type: 'catalog', kind: msg.kind, place: msg.place, line: msg.line || 0, items: JSON.parse(answer.text)})
                     return
                 }
                 case 'new': return run(OP.NEW, 0, `${msg.place}\n${msg.kind} ${msg.name}`)
                 case 'types': {
                     const answer = await query(QUERY.TRIGGER_CATALOG, id, {line: 0, character: 3}, '')
-                    if (answer && answer.text) webview.postMessage({type: 'types', items: JSON.parse(answer.text)})
+                    if (answer && answer.text) webview.postMessage({type: 'types', line: msg.line || 0, items: JSON.parse(answer.text)})
                     return
                 }
                 case 'newVariable':
-                    return run(OP.NEW_VARIABLE, 0, [msg.name, msg.vtype, msg.array ? '1' : '0', msg.size, msg.scope, msg.initial].join('\n'))
+                case 'setVariable': {
+                    const arg = [msg.name, msg.vtype, msg.array ? '1' : '0', msg.size, msg.scope, msg.initial].join('\n')
+                    return msg.type === 'setVariable' ? changeVariable(msg.line, arg) : run(OP.NEW_VARIABLE, 0, arg)
+                }
+                case 'deleteVariable': return changeVariable(msg.line, '')
+                case 'replace': return run(OP.REPLACE, msg.line, msg.name)
                 case 'reveal': return reveal(msg.line)
                 case 'openText': return commands.executeCommand('vscode.openWith', document.uri, 'default', panel.viewColumn)
                 case 'showJass': return commands.executeCommand('wc3.trg.showJass', document.uri)
                 }
             }
+            let queue = Promise.resolve()
             const subscriptions = [
                 workspace.onDidChangeTextDocument(e => {
                     if (e.document.uri.toString() === document.uri.toString()) refresh()
                 }),
-                webview.onDidReceiveMessage(msg => handle(msg).catch(e => window.showErrorMessage(`WC3: ${e.message}`))),
+                // One at a time: each edit is worked out on the text the one
+                // before left (typing a name sends one after another).
+                webview.onDidReceiveMessage(msg => {
+                    queue = queue.then(() => handle(msg)).catch(e => window.showErrorMessage(`WC3: ${e.message}`))
+                }),
             ]
             panel.onDidDispose(() => {
                 clearTimeout(timer)
@@ -1572,7 +1627,7 @@ function registerTriggerExtract(context) {
  * it, read-only, under the `wc3jass:` scheme (`<name>.j`, the trigger's
  * URI in the query). The server builds it from the text as it is
  * (`QUERY.TRIGGER_JASS`, `wtg_rs::jass`), and it follows the text as it
- * changes. It isn't a file of the project, but the server analyzes it as
+ * changes, saved or not. It isn't a file of the project, but the server analyzes it as
  * JASS without a file: its highlighting, its diagnostics (lint).
  *
  * @param {import('vscode').ExtensionContext} context
@@ -1610,8 +1665,10 @@ function registerTriggerJass(context) {
             const doc = await workspace.openTextDocument(jassUri(trg))
             await window.showTextDocument(doc, {viewColumn: ViewColumn.Beside, preview: true, preserveFocus: true})
         }),
-        // After the server has the change: the text is sent as it changes,
-        // and this waits.
+        // The text is the one truth, saved or not (the view is another way
+        // to edit it): the JASS follows it as it changes, whoever changes
+        // it. After the server has the change: the text is sent as it
+        // changes, and this waits.
         workspace.onDidChangeTextDocument(e => {
             if (!/\.trg$/i.test(e.document.uri.path)) return
             const uri = jassUri(e.document.uri)

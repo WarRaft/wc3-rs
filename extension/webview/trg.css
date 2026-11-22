@@ -173,6 +173,10 @@ body {
 .tree:focus .row.selected {
     color: var(--vscode-list-activeSelectionForeground, inherit);
     background: var(--vscode-list-activeSelectionBackground);
+}
+
+/* Of several selected, the one the keys move. */
+.tree:focus .row.focused {
     border-color: var(--vscode-list-focusOutline, transparent);
 }
 
@@ -319,7 +323,7 @@ body {
     font-weight: 600;
 }
 
-.dialog select, .dialog input[type="text"], .dialog input[type="search"] {
+.dialog select, .dialog input[type="text"], .dialog input[type="search"], .dialog textarea {
     width: 100%;
     padding: 3px 6px;
     color: var(--vscode-input-foreground);
@@ -329,7 +333,7 @@ body {
     font: inherit;
 }
 
-.dialog select:focus, .dialog input:focus {
+.dialog select:focus, .dialog input:focus, .dialog textarea:focus {
     outline: 1px solid var(--vscode-focusBorder);
     outline-offset: -1px;
 }
@@ -411,4 +415,14 @@ img.icon.art {
 
 .scope-private {
     background: var(--vscode-charts-purple, #7a3e9d);
+}
+
+/* Custom script: lines of JASS. */
+.dialog textarea.code {
+    box-sizing: border-box;
+    resize: vertical;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: var(--vscode-editor-font-size, 12px);
+    white-space: pre;
+    tab-size: 4;
 }

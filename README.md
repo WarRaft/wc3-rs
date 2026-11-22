@@ -788,11 +788,42 @@ edits of the text (`server/src/triggers.rs`), so undo, save and the
 dirty mark are the text's. In the view:
 
 - the name, the comment (`description`), **Enabled** and **Initially
-  On** edit the trigger's fields;
+  On** edit the trigger's fields. The name and the comment go into the
+  text as they're typed, as any edit of a line does: it shows changed,
+  and the text, the JASS and everything else follow it at once, saved or
+  not (**Enter** leaves the name, **Escape** puts back what it was).
+  The name isn't the file's: the file's name is only what an empty one
+  means (shown in the empty box), and an empty name or comment leaves
+  its field out; renaming either doesn't rename the other. What the
+  map's script names the trigger by (`gg_trg_...`, in the name's
+  tooltip) is World Editor's name of it, made of its name alone: `_`
+  for each byte that can't be in a JASS name, so a Cyrillic letter is
+  two, and a `u` after a `_` at the end (`wtg_rs::jass::ident`);
+- references to triggers (`$gg_trg_<name>`) are checked and kept true.
+  One that means no trigger of the project, or several (`Шляпа` and
+  `Кепка` are both `gg_trg_` and ten `_` and `u`), is marked, and so is
+  a trigger the script names as another. Once a name is done (**Enter**,
+  or the focus gone; typed, it's in the text at once), the references
+  that meant the trigger by its name before say its new one:
+  `$gg_trg_...` in every trigger file, names in **Custom Script** (the
+  JASS lexer's tokens, not in its comments or strings), and in the
+  project's code (the names its index found), each file an edit of its
+  own; nothing found by searching text. When the script names another
+  trigger as it now, they're left as they are (marked, then) and it
+  says so: never moved to mean another;
 - **Ctrl+E** turns a line on or off, **Delete** deletes it (with what's
   inside), **Alt+Up** / **Alt+Down** move it in its block, and dragging
   moves it before or after another line, or to the end of a heading or a
   block; an action can't go where a condition goes;
+- **Shift** with a click or **Up**/**Down** selects several lines, those
+  beside each other in one heading or block from the line selected
+  before (a far end in another block stops at the first's); **Ctrl**
+  (**Cmd** on a Mac) with a click adds a line or takes it out, from
+  anywhere. Copy, cut, delete and enable/disable take them all (enabled
+  or disabled as the first becomes), paste goes after the last; dragging
+  one of them drags them all, which land together in the text's order;
+  **Alt+Up**/**Down** moves them a step when they're in one heading or
+  block. A plain click on one of them selects it alone;
 - **Ctrl+C**, **Ctrl+X** and **Ctrl+V** copy, cut and paste lines with
   what's inside them, through the clipboard as lines of the text (so
   they paste into a text editor too, and back): after the selected line,
@@ -802,20 +833,57 @@ dirty mark are the text's. In the view:
   project's `.trg` files declare), a **Function** (a call, filtered as
   you type; it comes with its default parameters, which are links in
   turn) or a **Value**, whichever the type has; an empty value shows its
-  name (`Value`) so it can be clicked;
+  name (`Value`) so it can be clicked. **Custom Script**'s value is lines
+  of JASS (a box with Tab and **Ctrl+Enter** for OK): one line of the
+  text still, the lines `\n` in its string, and a build writes each
+  indented as the action is (World Editor's is one line; there's no way
+  back to it, so it needn't be);
 - **New** (+, **Ctrl+Shift+N**) adds an event, condition or action
   after the selected line or at the end of the selected heading or
   block: a category, then a function, its hint below; it comes with its
   default parameters (`UI\TriggerData.txt`'s `_Defaults`);
-- arrows move and fold, a double click or **Enter** shows the line in
-  the text, and the problems count goes to the first one.
+- a click on a line selects it, a double click (or **Enter**) opens its
+  dialog, as World Editor's does (a click on a parameter is the
+  parameter's, at once): the function it calls, picked as for **New**; another
+  one comes with its default parameters, keeps the line's place and
+  whether it's on, and keeps what's inside only in the blocks it has
+  (an if/then/else's Then - Actions don't survive becoming a loop). A
+  double click on a variable opens its own: name, type, scope, array and
+  size, initial value, rewritten in place. A double click on a heading
+  or a block folds it. **Show in Text** in either dialog shows the line
+  in the text;
+- changing or deleting a variable is safe where it can be and asks where
+  it can't. Its uses are the `$name`s that mean it: in its file (a
+  local's in the actions only) and, for a global, in every other trigger
+  file of the project that has no variable of that name of its own.
+  Renamed, they're renamed with it, in every file; a size or an initial
+  value changes nothing else. Nothing is found by searching text: a use
+  is a `$name` the trigger reader parses (`wtg_rs::text`'s tokens, so a
+  string or a comment that says `$name` isn't one), and a name in code
+  is a name token, the JASS lexer's in a `scriptcode` parameter, the
+  index's (each language's parser) in the project's files. What
+  breaks a use is shown first, each place with why, and done only once
+  confirmed: deleting a used variable, a narrower scope (a private one
+  isn't seen by other files, a local by the events and conditions),
+  another type where a parameter takes the old one (or `SetVariable`
+  gives it a value of the old one), becoming an array or no longer one,
+  and custom script (a **Custom Script** in a trigger file, the
+  project's JASS, Zinc, Lua ...) that names it in the map's script (`udg_<name>`,
+  a private one's `udg_<trigger>__<name>`, a local's `<name>`) when that
+  name changes or goes. After, **Show Places** goes to them one by one.
+  A new name or scope that clashes is refused: another file's global of
+  that name, or a private or local one that would hide a project's
+  global;
+- arrows move and fold, and the problems count goes to the first one.
 
 **Show JASS** (the view's button, the editor's title, the Explorer's
 context menu of a `.trg`) shows the JASS the trigger is built into,
-beside it and read-only, following the text as it changes
+beside it and read-only, following the text as it changes, saved or
+not (the text is the one truth; the view is only another way to edit it)
 (`wtg_rs::jass`): World Editor's layout (`Trig_<name>_Conditions`,
-`Trig_<name>_Actions`, `InitTrig_<name>` registering the events), the
-file's globals in a `globals` block (`udg_<name>`, a private one
+`Trig_<name>_Actions`, `InitTrig_<name>` registering the events; the
+`<name>` World Editor's until the trigger is renamed here, then one of
+its own: see above and `wtg_rs`'s README), the file's globals in a `globals` block (`udg_<name>`, a private one
 `udg_<trigger>__<name>`) and its locals at the top of the actions; a
 preset as its code (`bj_UNIT_FACING`), a function by its script name
 (`_Name_ScriptName`), an object's id in single quotes (`'hfoo'`); the

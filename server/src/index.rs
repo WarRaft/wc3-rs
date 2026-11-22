@@ -238,8 +238,7 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             let Some((doc, names, _)) = ws.names_text(id).filter(|(d, _, _)| d.path.as_deref().is_some_and(crate::triggers::is_trg_file)) else {
                 return Answer::default();
             };
-            let file = doc.path.as_deref().and_then(|p| p.file_stem()).map_or(String::new(), |s| s.to_string_lossy().into_owned());
-            let text = crate::triggers::jass(&doc.text, &file, names, &project_variables(ws, id));
+            let text = crate::triggers::jass(&doc.text, id, names, &project_variables(ws, id));
             return Answer { locations: Vec::new(), text };
         }
         QueryKind::TriggerIcons => {
@@ -265,8 +264,17 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
                 return Answer::default();
             };
             let text = match kind {
-                QueryKind::TriggerView => crate::triggers::view(&doc.text, names, &project_variables(ws, id)),
-                _ => crate::triggers::edit(&doc.text, pos.character, pos.line as usize, query, &names.trigger_ui),
+                QueryKind::TriggerView => {
+                    let others: Vec<(&str, &str)> = ws.scope(id).filter(|(fid, _, _)| *fid != id).map(|(fid, d, _)| (fid, d.text.as_str())).collect();
+                    let triggers = crate::triggers::Triggers::of(id, &doc.text, &others);
+                    crate::triggers::view(&doc.text, names, &project_variables(ws, id), &triggers)
+                }
+                _ => {
+                    // The project's other files: a variable's uses, renamed or checked.
+                    let others = ws.scope(id).filter(|(fid, _, _)| *fid != id && !ws.is_game(fid)).map(|(fid, d, names)| (fid, d.text.as_str(), names)).collect();
+                    let project = crate::triggers::Project { me: id, others };
+                    crate::triggers::edit_in(&doc.text, pos.character, pos.line as usize, query, &names.trigger_ui, &project)
+                }
             };
             return Answer { locations: Vec::new(), text };
         }

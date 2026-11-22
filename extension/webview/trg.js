@@ -28,18 +28,37 @@
  * (`triggers::catalog`). **New variable** declares a global in this
  * file (`[variable]`): name, type, array and size, initial value.
  *
+ * A double click on a line (a click on a parameter is the parameter's)
+ * opens the same dialog as New, of that line: another
+ * function replaces its own (`replace`); a double click on a variable opens New
+ * variable's, filled in (`setVariable`). Both have Show in Text. What a
+ * variable's change or deletion breaks the extension shows before it's
+ * done (`triggers::op::CHECK_VARIABLE`).
+ *
+ * Shift with a click or an arrow selects the lines from the one selected
+ * before, beside each other in its heading or block; Ctrl (Cmd on a Mac)
+ * with a click adds a line or takes it out, anywhere. Copy, Cut, Delete,
+ * Enable/Disable and dragging take them all (`lines`, the others'
+ * lines); Paste goes after the last; Alt+Up/Down moves them when they're
+ * in one heading or block.
+ *
  * Icons are World Editor's (`{type: 'icons', icons}`, once): a line's
  * category's, the headings' and blocks', the variables'.
  *
  * Messages in: `{type: 'view', view, select}` (select: a line to select,
  * 0 for none), `{type: 'select', line}`, `{type: 'choices', line, path,
- * choices}`, `{type: 'catalog', kind, place, items}`.
+ * choices}`, `{type: 'catalog', kind, place, line, items}` (line: the
+ * line edited, 0 for a new one), `{type: 'types', line, items}`.
  * Messages out: `{type: 'ready'}`, `{type: 'toggle' | 'delete' | 'copy' |
- * 'cut', line}`, `{type: 'move', line, place}`, `{type: 'paste', place}`,
+ * 'cut', line, lines}`, `{type: 'move', line, lines, place}`, `{type: 'paste', place}`,
  * `{type: 'field', key, value}`, `{type: 'reveal', line}`,
  * `{type: 'choices', line, path}`, `{type: 'set', line, path, kind,
- * value}`, `{type: 'catalog', kind, place}`, `{type: 'new', place, kind,
- * name}`, `{type: 'openText'}`, `{type: 'showJass'}`.
+ * value}`, `{type: 'catalog', kind, place, line}`, `{type: 'new', place, kind,
+ * name}`, `{type: 'replace', line, name}`, `{type: 'types', line}`,
+ * `{type: 'renamed', from}`,
+ * `{type: 'deleteVariable', line}`,
+ * `{type: 'newVariable' | 'setVariable', line, name, vtype, array, size,
+ * scope, initial}`, `{type: 'openText'}`, `{type: 'showJass'}`.
  */
 
 // @ts-ignore: provided by VS Code
@@ -53,7 +72,7 @@ const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.get
 /** @typedef {{line: number, scope: string, name: string, type: string, type_name: string, array: boolean, size: number, initial: string | null}} Variable */
 /**
  * @typedef {{
- *   trigger: boolean, variables: Variable[],
+ *   trigger: boolean, script: string, variables: Variable[],
  *   name: string, description: string, enabled: number, initially_off: number, run_on_init: number,
  *   custom_text: number, comment: number, data: boolean, errors: [number, string][], labels: string[],
  *   events: Node[], conditions: Node[], actions: Node[]
@@ -94,8 +113,17 @@ let rows = []
 const saved = vscode.getState() || {}
 /** Paths of collapsed rows. */
 const collapsed = new Set(saved.collapsed || [])
-/** The selected row's path. */
+/** The selected row's path: where the keys and the mouse are. */
 let selected = saved.selected || ''
+/** Where a Shift-selection started: with `selected`, its two ends. */
+let anchor = selected
+/**
+ * The paths of the selected lines: one with a click, from the anchor with
+ * Shift, one more or less with Ctrl (Cmd on a Mac). Empty: the selected
+ * row alone.
+ * @type {Set<string>}
+ */
+let chosen = new Set()
 /** A line to select once a view has it (after an operation). */
 let selectLine = 0
 
@@ -198,10 +226,12 @@ function draw() {
     rows = buildRows(v)
     if (selectLine) {
         const r = rows.find(r => r.type === 'node' && r.node && r.node.line === selectLine)
-        if (r) selected = r.path
+        if (r) anchor = selected = r.path
         selectLine = 0
     }
     if (!rows.some(r => r.path === selected)) selected = rows.length ? rows[0].path : ''
+    if (!rows.some(r => r.path === anchor)) anchor = selected
+    chosen = new Set([...chosen].filter(p => rows.some(r => r.path === p)))
     const frag = document.createDocumentFragment()
     for (const row of rows) frag.appendChild(drawRow(row))
     tree.replaceChildren(frag)
@@ -217,7 +247,8 @@ function drawRow(row) {
     if (row.type === 'heading' || row.type === 'variables') el.classList.add('heading')
     if (row.off) el.classList.add('off')
     if (row.inOff) el.classList.add('in-off')
-    if (row.path === selected) el.classList.add('selected')
+    if (row.path === selected) el.classList.add('focused')
+    if (row.path === selected && !chosen.size || chosen.has(row.path)) el.classList.add('selected')
     el.dataset.path = row.path
     el.style.paddingLeft = `${8 + row.depth * INDENT}px`
     el.setAttribute('role', 'treeitem')
@@ -311,24 +342,97 @@ function selectedRow() {
     return rows.find(r => r.path === selected) || null
 }
 
-/** @param {string} path */
-function select(path) {
-    selected = path
-    for (const el of tree.querySelectorAll('.row.selected')) el.classList.remove('selected')
-    const el = tree.querySelector(`.row[data-path="${CSS.escape(path)}"]`)
-    if (el) {
-        el.classList.add('selected')
-        el.scrollIntoView({block: 'nearest'})
+/**
+ * The lines from `anchor` to `path`, beside each other in the anchor's
+ * heading or block (a far end in another block: as far as it goes).
+ * @param {string} path @returns {Row[]}
+ */
+function range(path) {
+    const start = rows.find(r => r.path === anchor)
+    const end = rows.find(r => r.path === path)
+    if (!end) return []
+    if (!start || start === end || start.type !== 'node' || end.type !== 'node') return [end]
+    let [a, b] = [rows.indexOf(start), rows.indexOf(end)]
+    if (a > b) [a, b] = [b, a]
+    return rows.slice(a, b + 1).filter(r => r.type === 'node' && r.parent === start.parent && r.group === start.group && r.kind === start.kind)
+}
+
+/**
+ * The selected rows, in the tree's order: the chosen lines (one inside
+ * another counts with it), else the selected row.
+ * @returns {Row[]}
+ */
+function selection() {
+    if (!chosen.size) {
+        const row = selectedRow()
+        return row ? [row] : []
     }
+    const picked = rows.filter(r => chosen.has(r.path))
+    return picked.filter(r => !picked.some(o => o !== r && r.path.startsWith(`${o.path}/`)))
+}
+
+/**
+ * Selects `path`: alone; with `how` 'range', the lines from the anchor to
+ * it; with 'toggle', one line more or less.
+ * @param {string} path @param {'one' | 'range' | 'toggle' | boolean} [how]
+ */
+function select(path, how = 'one') {
+    if (how === true) how = 'range'
+    if (how === false) how = 'one'
+    const row = rows.find(r => r.path === path)
+    const line = !!row && row.type === 'node'
+    if (how === 'toggle' && line) {
+        // The one selected before is a line chosen too.
+        const before = selectedRow()
+        if (!chosen.size && before && before.type === 'node') chosen.add(before.path)
+        if (chosen.has(path)) chosen.delete(path)
+        else chosen.add(path)
+        anchor = path
+    } else if (how === 'range' && line) {
+        chosen = new Set(range(path).map(r => r.path))
+    } else {
+        chosen = new Set()
+        anchor = path
+    }
+    selected = path
+    for (const el of tree.querySelectorAll('.row')) {
+        const p = /** @type {HTMLElement} */ (el).dataset.path || ''
+        el.classList.toggle('selected', chosen.size ? chosen.has(p) : p === path)
+        el.classList.toggle('focused', p === path)
+    }
+    const el = tree.querySelector(`.row[data-path="${CSS.escape(path)}"]`)
+    if (el) el.scrollIntoView({block: 'nearest'})
     updateTools()
     save()
+}
+
+/**
+ * Where the selected lines move one step up or down, when they're all in
+ * one heading or block: a place, else null.
+ * @param {'up' | 'down'} what
+ */
+function stepPlace(what) {
+    const all = selection()
+    const first = all[0]
+    if (!first || all.some(r => r.type !== 'node' || r.parent !== first.parent || r.group !== first.group || r.kind !== first.kind)) return null
+    const low = Math.min(...all.map(r => r.index))
+    const high = Math.max(...all.map(r => r.index))
+    if (what === 'up') return low > 0 ? `${first.parent} ${first.group} ${low - 1}` : null
+    return high < first.count - 1 ? `${first.parent} ${first.group} ${high + 2}` : null
+}
+
+/** The lines of the selected lines: the first, and the others. */
+function selectedLines() {
+    const lines = selection().filter(r => r.node).map(r => /** @type {Node} */ (r.node).line)
+    return {line: lines[0], lines: lines.slice(1).join(' ')}
 }
 
 // ---------------------------------------------------------------- operations
 
 /** Where a paste goes for the selected row: after a line, at a block's or heading's end. */
 function pastePlace() {
-    const row = selectedRow()
+    const all = selection()
+    const row = all.length > 1 ? all[all.length - 1] : selectedRow()
     if (!row || row.group < 0) return '0 2 99999'
     if (row.type === 'node') return `${row.parent} ${row.group} ${row.index + 1}`
     return `${row.parent} ${row.group} ${row.count}`
@@ -342,8 +446,8 @@ function updateTools() {
     set('delete', !!node || (!!row && row.type === 'variable'))
     set('copy', !!node)
     set('cut', !!node)
-    set('up', !!node && node.index > 0)
-    set('down', !!node && node.index < node.count - 1)
+    set('up', !!node && !!stepPlace('up'))
+    set('down', !!node && !!stepPlace('down'))
     set('paste', !!view)
     set('new', !!view && !!row && row.kind >= 0)
     set('new-variable', !!view)
@@ -354,15 +458,17 @@ function act(what) {
     const row = selectedRow()
     if (what === 'paste') return vscode.postMessage({type: 'paste', place: pastePlace()})
     if (what === 'delete' && row && row.type === 'variable' && row.variable) {
-        return vscode.postMessage({type: 'delete', line: row.variable.line})
+        return vscode.postMessage({type: 'deleteVariable', line: row.variable.line})
     }
     if (!row || row.type !== 'node' || !row.node) return
     const line = row.node.line
+    if (what === 'toggle' || what === 'delete' || what === 'copy' || what === 'cut') {
+        return vscode.postMessage({type: what, ...selectedLines()})
+    }
     if (what === 'up' || what === 'down') {
-        if (what === 'up' && row.index === 0) return
-        if (what === 'down' && row.index >= row.count - 1) return
-        const index = what === 'up' ? row.index - 1 : row.index + 2
-        return vscode.postMessage({type: 'move', line, place: `${row.parent} ${row.group} ${index}`})
+        const place = stepPlace(what)
+        if (place) vscode.postMessage({type: 'move', ...selectedLines(), place})
+        return
     }
     vscode.postMessage({type: what, line})
 }
@@ -379,27 +485,55 @@ for (const id of ['toggle', 'delete', 'copy', 'cut', 'up', 'down', 'paste']) {
 
 // ---------------------------------------------------------------- mouse and keys
 
+/** Pressed on a line of several selected: one alone on the click, unless it's dragged. */
+let pressed = ''
+const isMac = navigator.platform.toUpperCase().includes('MAC')
 tree.addEventListener('mousedown', e => {
+    pressed = ''
     const el = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('.row'))
-    if (el && el.dataset.path) select(el.dataset.path)
+    if (!el || !el.dataset.path || e.button !== 0) return
+    const path = el.dataset.path
+    if (e.shiftKey) select(path, 'range')
+    else if (isMac ? e.metaKey : e.ctrlKey) select(path, 'toggle')
+    else if (chosen.size > 1 && chosen.has(path)) pressed = path
+    else select(path)
 })
 
-tree.addEventListener('click', e => {
-    const link = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('.link'))
-    const el = link && /** @type {HTMLElement | null} */ (link.closest('.row'))
+/** The row under a mouse event, and the parameter link, if it's on one. */
+function hit(/** @type {MouseEvent} */ e) {
+    const target = /** @type {HTMLElement} */ (e.target)
+    if (target.closest('.twisty')) return null
+    const el = /** @type {HTMLElement | null} */ (target.closest('.row'))
     const row = el && rows.find(r => r.path === el.dataset.path)
-    if (!link || !row || !row.node || !link.dataset.path) return
-    vscode.postMessage({type: 'choices', line: row.node.line, path: link.dataset.path})
+    if (!row) return null
+    const link = /** @type {HTMLElement | null} */ (target.closest('.link'))
+    return {row, link: link && row.node && link.dataset.path ? link : null}
+}
+
+// A click on a parameter opens its dialog at once; elsewhere on a row it
+// only selects, and a double click opens the row's own (a line's
+// function, a variable's name, type ...) or folds a heading or block.
+tree.addEventListener('click', e => {
+    const at = hit(e)
+    if (pressed && at && at.row.path === pressed) select(pressed)
+    pressed = ''
+    // With Shift or Ctrl it's selecting, not editing.
+    if (e.shiftKey || e.ctrlKey || e.metaKey) return
+    if (at && at.link && at.row.node) vscode.postMessage({type: 'choices', line: at.row.node.line, path: at.link.dataset.path})
 })
 
 tree.addEventListener('dblclick', e => {
-    const el = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('.row'))
-    const row = el && rows.find(r => r.path === el.dataset.path)
-    if (!row) return
-    if (row.type === 'node' && row.node) vscode.postMessage({type: 'reveal', line: row.node.line})
-    else if (row.type === 'variable' && row.variable) vscode.postMessage({type: 'reveal', line: row.variable.line})
-    else setOpen(row, !row.open)
+    if (e.shiftKey || e.ctrlKey || e.metaKey) return
+    const at = hit(e)
+    if (at && !at.link) editRow(at.row)
 })
+
+/** @param {Row} row */
+function editRow(row) {
+    if (row.type === 'node' && row.node) vscode.postMessage({type: 'catalog', kind: row.node.kind, line: row.node.line})
+    else if (row.type === 'variable' && row.variable) vscode.postMessage({type: 'types', line: row.variable.line})
+    else if (row.hasChildren) setOpen(row, !row.open)
+}
 
 tree.addEventListener('keydown', e => {
     const row = selectedRow()
@@ -409,8 +543,8 @@ tree.addEventListener('keydown', e => {
     let handled = true
     if (e.altKey && key === 'ArrowUp') act('up')
     else if (e.altKey && key === 'ArrowDown') act('down')
-    else if (key === 'ArrowUp') { if (i > 0) select(rows[i - 1].path) }
-    else if (key === 'ArrowDown') { if (i < rows.length - 1) select(rows[i + 1].path) }
+    else if (key === 'ArrowUp') { if (i > 0) select(rows[i - 1].path, e.shiftKey) }
+    else if (key === 'ArrowDown') { if (i < rows.length - 1) select(rows[i + 1].path, e.shiftKey) }
     else if (key === 'Home') { if (rows.length) select(rows[0].path) }
     else if (key === 'End') { if (rows.length) select(rows[rows.length - 1].path) }
     else if (key === 'ArrowLeft' && row) {
@@ -423,9 +557,7 @@ tree.addEventListener('keydown', e => {
     } else if (key === 'ArrowRight' && row) {
         if (!row.open && row.hasChildren) setOpen(row, true)
         else if (rows[i + 1] && rows[i + 1].depth > row.depth) select(rows[i + 1].path)
-    } else if (key === 'Enter' && row && (row.node || row.variable)) {
-        vscode.postMessage({type: 'reveal', line: row.node ? row.node.line : row.variable ? row.variable.line : 0})
-    }
+    } else if (key === 'Enter' && row) editRow(row)
     else if (key === 'Delete' || (key === 'Backspace' && e.metaKey)) act('delete')
     else if (mod && key.toLowerCase() === 'c') act('copy')
     else if (mod && key.toLowerCase() === 'x') act('cut')
@@ -439,8 +571,8 @@ tree.addEventListener('keydown', e => {
 // Drag and drop: a line onto another goes before or after it; onto a
 // heading or a block, at its end.
 
-/** @type {Row | null} */
-let dragged = null
+/** The lines dragged: the selected ones, when it's one of them. @type {Row[]} */
+let dragged = []
 /** @type {{row: Row, place: string, cls: string} | null} */
 let dropAt = null
 
@@ -452,37 +584,37 @@ tree.addEventListener('dragstart', e => {
     const el = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('.row'))
     const row = el && rows.find(r => r.path === el.dataset.path)
     if (!el || !row || row.type !== 'node' || !e.dataTransfer) return
-    dragged = row
+    pressed = ''
+    if (!selection().includes(row)) select(row.path)
+    dragged = selection().filter(r => r.type === 'node')
     e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', row.path)
-    el.classList.add('dragging')
-    select(row.path)
+    e.dataTransfer.setData('text/plain', dragged.map(r => r.path).join('\n'))
+    for (const r of dragged) tree.querySelector(`.row[data-path="${CSS.escape(r.path)}"]`)?.classList.add('dragging')
 })
 
 tree.addEventListener('dragend', () => {
     for (const el of tree.querySelectorAll('.dragging')) el.classList.remove('dragging')
     clearDrop()
-    dragged = null
+    dragged = []
     dropAt = null
 })
 
 tree.addEventListener('dragover', e => {
-    if (!dragged || !e.dataTransfer) return
+    if (!dragged.length || !e.dataTransfer) return
     const el = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('.row'))
     const row = el && rows.find(r => r.path === el.dataset.path)
     clearDrop()
     dropAt = null
     if (!el || !row) return
     // Not into itself.
-    if (row.path === dragged.path || row.path.startsWith(`${dragged.path}/`)) return
+    if (dragged.some(d => row.path === d.path || row.path.startsWith(`${d.path}/`))) return
     if (row.group < 0) return
+    if (dragged.some(d => d.kind !== row.kind)) return
     if (row.type === 'node') {
-        if (row.kind !== dragged.kind) return
         const box = el.getBoundingClientRect()
         const after = e.clientY > box.top + box.height / 2
         dropAt = {row, place: `${row.parent} ${row.group} ${row.index + (after ? 1 : 0)}`, cls: after ? 'drop-after' : 'drop-before'}
     } else {
-        if (row.kind !== dragged.kind) return
         dropAt = {row, place: `${row.parent} ${row.group} ${row.count}`, cls: 'drop-into'}
     }
     el.classList.add(dropAt.cls)
@@ -497,8 +629,9 @@ tree.addEventListener('dragleave', e => {
 tree.addEventListener('drop', e => {
     e.preventDefault()
     clearDrop()
-    if (dragged && dragged.node && dropAt) vscode.postMessage({type: 'move', line: dragged.node.line, place: dropAt.place})
-    dragged = null
+    const lines = dragged.filter(r => r.node).map(r => /** @type {Node} */ (r.node).line)
+    if (lines.length && dropAt) vscode.postMessage({type: 'move', line: lines[0], lines: lines.slice(1).join(' '), place: dropAt.place})
+    dragged = []
     dropAt = null
 })
 
@@ -511,19 +644,49 @@ const initiallyOn = /** @type {HTMLInputElement} */ ($('initially-on'))
 
 const field = (/** @type {string} */ key, /** @type {string} */ value) => vscode.postMessage({type: 'field', key, value})
 
-nameInput.addEventListener('change', () => {
-    if (view && nameInput.value !== view.name) field('name', nameInput.value)
-})
-nameInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') nameInput.blur()
-    if (e.key === 'Escape' && view) {
-        nameInput.value = view.name
-        nameInput.blur()
+/**
+ * A text field written into the document as it's typed (a moment after the
+ * last key), so the editor shows it changed at once and saving keeps it;
+ * Escape puts back what it was when it got the focus. The name, once it's
+ * done (Enter, or the focus gone) and other than it was, has the
+ * references to the trigger follow it (`renamed`, from what it was).
+ * @param {HTMLInputElement | HTMLTextAreaElement} input @param {'name' | 'description'} key
+ */
+function liveField(input, key) {
+    let timer = 0
+    let sent = ''
+    let before = ''
+    const send = () => {
+        clearTimeout(timer)
+        if (view && input.value !== sent) {
+            sent = input.value
+            field(key, input.value)
+        }
     }
-})
-description.addEventListener('change', () => {
-    if (view && description.value !== view.description) field('description', description.value)
-})
+    input.addEventListener('focus', () => { before = sent = input.value })
+    input.addEventListener('input', () => {
+        clearTimeout(timer)
+        timer = setTimeout(send, 300)
+    })
+    input.addEventListener('blur', () => {
+        send()
+        if (key === 'name' && view && input.value !== before) vscode.postMessage({type: 'renamed', from: before})
+        before = input.value
+    })
+    input.addEventListener('keydown', e => {
+        const k = /** @type {KeyboardEvent} */ (e)
+        if (k.key === 'Enter' && input === nameInput) {
+            k.preventDefault()
+            tree.focus()
+        } else if (k.key === 'Escape') {
+            input.value = before
+            send()
+            tree.focus()
+        }
+    })
+}
+liveField(nameInput, 'name')
+liveField(description, 'description')
 enabled.addEventListener('change', () => field('enabled', enabled.checked ? '1' : '0'))
 initiallyOn.addEventListener('change', () => field('initially_off', initiallyOn.checked ? '0' : '1'))
 
@@ -540,6 +703,7 @@ function showFields(v) {
 
     // What's being typed stays.
     if (document.activeElement !== nameInput) nameInput.value = v.name
+    nameInput.title = `The trigger's name; in the map's script ${v.script}, as World Editor names it`
     if (document.activeElement !== description) description.value = v.description
     enabled.checked = v.enabled !== 0
     initiallyOn.checked = v.initially_off === 0
@@ -583,14 +747,19 @@ function closeDialog() {
 
 /**
  * Shows the dialog with `body`; `ok` runs on OK (Enter), and closes it
- * unless it returns false.
- * @param {string} title @param {HTMLElement[]} body @param {() => boolean | void} ok
+ * unless it returns false. With a `line`, a button opens the text there.
+ * @param {string} title @param {HTMLElement[]} body @param {() => boolean | void} ok @param {number} [line]
  */
-function openDialog(title, body, ok) {
+function openDialog(title, body, ok, line = 0) {
+    const reveal = line ? [h('button', {type: 'button', class: 'text-button', title: 'Open the text at this line', onclick: () => {
+        closeDialog()
+        vscode.postMessage({type: 'reveal', line})
+    }}, ['Show in Text']), h('div', {class: 'spacer'})] : []
     box.replaceChildren(
         h('div', {class: 'dialog-title'}, [title]),
         ...body,
         h('div', {class: 'dialog-buttons'}, [
+            ...reveal,
             h('button', {type: 'button', class: 'text-button', onclick: closeDialog}, ['Cancel']),
             h('button', {type: 'submit', class: 'primary-button'}, ['OK']),
         ]),
@@ -599,6 +768,7 @@ function openDialog(title, body, ok) {
         e.preventDefault()
         if (ok() !== false) closeDialog()
     }
+    openedAt = performance.now()
     overlay.hidden = false
 }
 
@@ -608,8 +778,11 @@ overlay.addEventListener('keydown', e => {
         closeDialog()
     }
 })
+/** When the dialog opened: the second click of a double click that
+ * opened it lands on the overlay, and mustn't close it. */
+let openedAt = 0
 overlay.addEventListener('mousedown', e => {
-    if (e.target === overlay) closeDialog()
+    if (e.target === overlay && performance.now() - openedAt > 500) closeDialog()
 })
 
 /**
@@ -680,7 +853,24 @@ function paramDialog(line, path, c) {
         option('call', 'Function', [filter, list], () => list.value ? ['call', list.value] : null)
     }
     if (c.value) {
-        const input = /** @type {HTMLInputElement} */ (h('input', {type: 'text', class: 'wide', spellcheck: false}))
+        // Custom script: lines, each a line of JASS (Ctrl+Enter is OK).
+        const lines = c.type === 'scriptcode'
+        const input = /** @type {HTMLInputElement} */ (lines
+            ? h('textarea', {class: 'wide code', rows: 8, spellcheck: false, wrap: 'off'})
+            : h('input', {type: 'text', class: 'wide', spellcheck: false}))
+        if (lines) {
+            input.addEventListener('keydown', e => {
+                const k = /** @type {KeyboardEvent} */ (e)
+                if (k.key === 'Enter' && (k.ctrlKey || k.metaKey)) {
+                    k.preventDefault()
+                    submit()
+                } else if (k.key === 'Tab' && !k.shiftKey) {
+                    // A tab indents, as in an editor.
+                    k.preventDefault()
+                    input.setRangeText('    ', input.selectionStart ?? 0, input.selectionEnd ?? 0, 'end')
+                }
+            })
+        }
         if (c.current.kind === 'value') input.value = c.current.value
         option('value', 'Value', [input], () => ['value', input.value])
     }
@@ -699,6 +889,22 @@ function paramDialog(line, path, c) {
     if (target) target.focus()
 }
 
+/** The line at `line` in the view. @param {number} line @returns {Node | null} */
+function findNode(line) {
+    /** @param {Node[]} nodes @returns {Node | null} */
+    const find = nodes => {
+        for (const n of nodes) {
+            if (n.line === line) return n
+            for (const b of n.blocks) {
+                const got = find(b.nodes)
+                if (got) return got
+            }
+        }
+        return null
+    }
+    return view ? find([...view.events, ...view.conditions, ...view.actions]) : null
+}
+
 /** New: asks the server for the functions of the selected row's kind. */
 function newLine() {
     const row = selectedRow()
@@ -707,21 +913,23 @@ function newLine() {
 }
 
 /**
- * The dialog of a new line: a category, then a function in it.
- * @param {number} kind @param {string} place @param {[string, string, string, string, boolean][]} items
+ * The dialog of a new line: a category, then a function in it. With a
+ * `line`, of the line there: what's picked replaces its function.
+ * @param {number} kind @param {string} place @param {[string, string, string, string, boolean][]} items @param {number} [line]
  */
-function newDialog(kind, place, items) {
+function newDialog(kind, place, items, line = 0) {
+    const node = line ? findNode(line) : null
     const categories = [...new Set(items.map(i => i[2]))]
     const category = /** @type {HTMLSelectElement} */ (h('select', {class: 'wide'},
         [h('option', {value: '\u0000'}, ['- All -']), ...categories.map(cat => h('option', {value: cat}, [cat || '(none)']))]))
     const hint = h('div', {class: 'hint'})
-    let picker = pickList([], '', () => box.requestSubmit())
+    let picker = pickList([], node ? node.name : '', () => box.requestSubmit())
     const holder = h('div', {class: 'picker'})
     const fill = () => {
         const all = category.value === '\u0000'
         const shown = items.filter(i => all || i[2] === category.value)
         const q = picker.filter.value
-        picker = pickList(shown.map(([n, t, cat, , show]) => [n, all && cat && show ? `${cat} - ${t}` : t]), '', () => box.requestSubmit())
+        picker = pickList(shown.map(([n, t, cat, , show]) => [n, all && cat && show ? `${cat} - ${t}` : t]), node ? node.name : '', () => box.requestSubmit())
         picker.filter.value = q
         picker.filter.dispatchEvent(new Event('input'))
         picker.list.addEventListener('change', showHint)
@@ -734,20 +942,30 @@ function newDialog(kind, place, items) {
     }
     category.addEventListener('change', fill)
     fill()
-    const title = ['New Event', 'New Condition', 'New Action'][kind] || 'New'
-    openDialog(title, [h('div', {class: 'choice'}, [h('label', {class: 'choice-label'}, ['Category']), category]), holder, hint], () => {
+    const current = node && items.find(i => i[0] === node.name)
+    if (current) {
+        category.value = current[2]
+        fill()
+    }
+    const title = (line ? ['Edit Event', 'Edit Condition', 'Edit Action'] : ['New Event', 'New Condition', 'New Action'])[kind] || 'New'
+    const body = [h('div', {class: 'choice'}, [h('label', {class: 'choice-label'}, ['Category']), category]), holder, hint]
+    if (node && node.blocks.length) body.push(h('div', {class: 'hint'}, ["Another function keeps what's inside only in the blocks it has."]))
+    openDialog(title, body, () => {
         if (!picker.list.value) return false
-        vscode.postMessage({type: 'new', place, kind, name: picker.list.value})
-    })
-    picker.filter.focus()
+        if (!line) vscode.postMessage({type: 'new', place, kind, name: picker.list.value})
+        else if (!node || picker.list.value !== node.name) vscode.postMessage({type: 'replace', line, name: picker.list.value})
+    }, line)
+    if (line) picker.list.focus()
+    else picker.filter.focus()
 }
 
 /**
- * The dialog of a new global variable: name, type, array and size,
- * initial value.
- * @param {[string, string][]} types
+ * The dialog of a new variable: name, type, scope, array and size,
+ * initial value. With a `line`, of the variable there: OK rewrites it.
+ * @param {[string, string][]} types @param {number} [line]
  */
-function variableDialog(types) {
+function variableDialog(types, line = 0) {
+    const v = line && view ? view.variables.find(x => x.line === line) : null
     const name = /** @type {HTMLInputElement} */ (h('input', {type: 'text', class: 'wide', spellcheck: false, placeholder: 'name'}))
     const type = /** @type {HTMLSelectElement} */ (h('select', {class: 'wide'}, types.map(([t, n]) => h('option', {value: t}, [n]))))
     const integer = types.find(t => t[0] === 'integer')
@@ -761,9 +979,19 @@ function variableDialog(types) {
         h('option', {value: 'private'}, ['Private: a global this file only sees']),
         h('option', {value: 'local'}, ["Local: this trigger's actions"]),
     ]))
+    if (v) {
+        name.value = v.name
+        if (![...type.options].some(o => o.value === v.type)) type.append(h('option', {value: v.type}, [v.type_name || v.type]))
+        type.value = v.type
+        scope.value = v.scope || 'global'
+        array.checked = v.array
+        size.disabled = !v.array
+        size.value = String(v.size || 1)
+        initial.value = v.initial ?? ''
+    }
     const row = (/** @type {string} */ label, /** @type {HTMLElement[]} */ controls) =>
         h('div', {class: 'choice'}, [h('label', {class: 'choice-label'}, [label]), ...controls])
-    openDialog('New Variable', [
+    openDialog(v ? 'Edit Variable' : 'New Variable', [
         row('Name', [name]),
         row('Type', [type]),
         row('Scope', [scope]),
@@ -775,11 +1003,12 @@ function variableDialog(types) {
             return false
         }
         vscode.postMessage({
-            type: 'newVariable', name: name.value.trim(), vtype: type.value, array: array.checked,
+            type: v ? 'setVariable' : 'newVariable', line, name: name.value.trim(), vtype: type.value, array: array.checked,
             size: size.value.trim() || '1', scope: scope.value, initial: initial.value,
         })
-    })
+    }, line)
     name.focus()
+    if (v) name.select()
 }
 
 // ---------------------------------------------------------------- messages
@@ -787,6 +1016,10 @@ function variableDialog(types) {
 window.addEventListener('message', e => {
     const msg = e.data
     if (msg.type === 'view') {
+        // No name: the file's (a build names it so).
+        if (msg.file) nameInput.placeholder = msg.file
+        // The text changed: the lines chosen are other lines now.
+        if (view) chosen = new Set()
         view = msg.view
         if (msg.select) selectLine = msg.select
         showFields(msg.view)
@@ -797,9 +1030,9 @@ window.addEventListener('message', e => {
         icons = msg.icons || {}
         draw()
     } else if (msg.type === 'types') {
-        variableDialog(msg.items)
+        variableDialog(msg.items, msg.line)
     } else if (msg.type === 'catalog') {
-        newDialog(msg.kind, msg.place, msg.items)
+        newDialog(msg.kind, msg.place, msg.items, msg.line)
     } else if (msg.type === 'select') {
         const r = rows.find(r => r.type === 'node' && r.node && r.node.line === msg.line)
         if (r) select(r.path)

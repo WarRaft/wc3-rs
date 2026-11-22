@@ -132,7 +132,7 @@ pub fn extract(text: &str) -> String {
 /// `wtg_rs::ui::Span::Value`). `data` is whether the editor's files
 /// were found; the errors are checked against them when they were, but
 /// the tree isn't: a function they don't have shows, as unknown.
-pub fn view(text: &str, names: &crate::names::Names, visible: &[Declared]) -> String {
+pub fn view(text: &str, names: &crate::names::Names, visible: &[Declared], triggers: &Triggers) -> String {
     use wtg_rs::ui::Ui;
     let data = (!names.triggers.is_empty()).then_some(&names.triggers);
     let mut p = wtg_rs::text::trigger_from_text(text, None);
@@ -147,10 +147,21 @@ pub fn view(text: &str, names: &crate::names::Names, visible: &[Declared]) -> St
     let mut errors: Vec<(usize, String)> = p.errors.iter().map(|e| (e.line, e.message.clone())).collect();
     // A variable no trigger file of the project declares, or a local
     // where it isn't seen: unknown.
-    let seen = Seen::of(visible);
+    let seen = Seen::of(visible, triggers);
     undeclared(&mut v.events, &seen, false, &mut errors);
     undeclared(&mut v.conditions, &seen, false, &mut errors);
     undeclared(&mut v.actions, &seen, true, &mut errors);
+    // Named as another: World Editor's name of it may mean either.
+    let alike = triggers.named_alike(&triggers.me);
+    if !alike.is_empty() {
+        let line = text.lines().position(|l| l.trim_start().starts_with("name=")).map_or(1, |i| i + 1);
+        let files: Vec<String> = alike.iter().map(|f| file_name(f)).collect();
+        errors.push((line, format!(
+            "the map's script would name {} gg_trg_{} too: rename one",
+            files.join(", "),
+            triggers.mine
+        )));
+    }
     errors.sort_by_key(|e| e.0);
     let errors: Vec<String> = errors.iter().map(|(line, m)| format!("[{line},{}]", js(m))).collect();
     let labels = ["WESTRING_EVENTS", "WESTRING_CONDITIONS", "WESTRING_ACTIONS", "WESTRING_VARIABLES"].map(|k| js(&ui.label(k)));
@@ -178,7 +189,8 @@ pub fn view(text: &str, names: &crate::names::Names, visible: &[Declared]) -> St
         })
         .collect();
     format!(
-        "{{\"trigger\":{has_trigger},\"variables\":[{}],\"name\":{},\"description\":{},\"enabled\":{},\"initially_off\":{},\"run_on_init\":{},\"custom_text\":{},\"comment\":{},\"data\":{},\"errors\":[{}],\"labels\":[{}],\"events\":{},\"conditions\":{},\"actions\":{}}}",
+        "{{\"trigger\":{has_trigger},\"script\":{},\"variables\":[{}],\"name\":{},\"description\":{},\"enabled\":{},\"initially_off\":{},\"run_on_init\":{},\"custom_text\":{},\"comment\":{},\"data\":{},\"errors\":[{}],\"labels\":[{}],\"events\":{},\"conditions\":{},\"actions\":{}}}",
+        js(&format!("gg_trg_{}", triggers.mine)),
         variables.join(","),
         js(&t.name),
         js(&t.description),
@@ -201,12 +213,28 @@ pub fn view(text: &str, names: &crate::names::Names, visible: &[Declared]) -> St
 struct Seen<'a> {
     globals: std::collections::HashSet<&'a str>,
     locals: std::collections::HashSet<&'a str>,
+    triggers: &'a Triggers,
 }
 
 impl<'a> Seen<'a> {
-    fn of(visible: &'a [Declared]) -> Seen<'a> {
+    fn of(visible: &'a [Declared], triggers: &'a Triggers) -> Seen<'a> {
         let names = |local: bool| visible.iter().filter(|d| (d.scope == Scope::Local) == local).map(|d| d.variable.name.as_str()).collect();
-        Seen { globals: names(false), locals: names(true) }
+        Seen { globals: names(false), locals: names(true), triggers }
+    }
+
+    /// What's wrong with a reference to a trigger (`gg_trg_...`): it means
+    /// none of the project's, or several.
+    fn trigger_problem(&self, name: &str) -> Option<String> {
+        let files = |f: &[&str]| f.iter().map(|id| file_name(id)).collect::<Vec<_>>().join(", ");
+        match &self.triggers.resolve(name)[..] {
+            [_] => None,
+            [] => Some(format!("no trigger of the project is named `{name}`")),
+            many => Some(format!(
+                "`{name}` may mean {} triggers ({}): rename one",
+                many.len(),
+                files(many)
+            )),
+        }
     }
 }
 
@@ -220,6 +248,13 @@ fn undeclared(nodes: &mut [wtg_rs::ui::Node], seen: &Seen, locals: bool, errors:
         for s in spans {
             if let Span::Value { role, spans, .. } = s {
                 if *role == Role::Variable
+                    && let Some(Span::Text(name)) = spans.first()
+                    && name.starts_with("gg_trg_")
+                    && let Some(problem) = seen.trigger_problem(name)
+                {
+                    errors.push((line, problem));
+                    *role = Role::Unknown;
+                } else if *role == Role::Variable
                     && let Some(Span::Text(name)) = spans.first()
                     && !name.starts_with("gg_")
                     && !seen.globals.contains(name.as_str())
@@ -307,24 +342,30 @@ fn spans_json(spans: &[wtg_rs::ui::Span]) -> String {
 
 /// The operations of [`edit`].
 pub mod op {
-    /// Turn the ECA at the line on or off (`!`).
+    /// Turn the ECA at the line on or off (`!`); with the argument, lines
+    /// (from 1, separated by spaces) of more ECAs, turned as it is.
     pub const TOGGLE: u32 = 0;
-    /// Delete the ECA at the line, and what's inside it; or the variable
-    /// whose `[variable]` is at the line.
+    /// Delete the ECA at the line, and what's inside it (and the
+    /// argument's, as for `TOGGLE`); or the variable whose `[variable]`
+    /// is at the line.
     pub const DELETE: u32 = 1;
     /// Move the ECA at the line, and what's inside it, to the place the
-    /// argument says: `parent group index` (see [`super::edit`]).
+    /// argument says: `parent group index` (see [`super::edit`]); after a
+    /// line break, lines of more ECAs to move with it, as for `TOGGLE`,
+    /// which go there in the text's order.
     pub const MOVE: u32 = 2;
     /// Insert the lines after the argument's first line (a place, as for
     /// `MOVE`): ECAs, each at the top (no `>`, no block), with what's
     /// inside them, as `COPY` gives them.
     pub const PASTE: u32 = 3;
     /// The lines of the ECA at the line and what's inside it, as if at the
-    /// top: the answer's `text`.
+    /// top (and the argument's, as for `TOGGLE`, in the text's order):
+    /// the answer's `text`.
     pub const COPY: u32 = 4;
     /// Set a field of the trigger: the argument is its name, a line break,
     /// its value (`name` and `description` as typed; the flags a number).
-    /// A flag set to its default goes.
+    /// A flag set to its default goes, and so does an empty name (the
+    /// trigger's is then its file's) or description.
     pub const FIELD: u32 = 5;
     /// Set a parameter of the ECA at the line: the argument is its path
     /// (`wtg_rs::ui::Span::Value`), a line break, what it becomes
@@ -342,6 +383,29 @@ pub mod op {
     /// each. It goes after the file's last variable, or before its
     /// trigger; a local brings the trigger when there's none.
     pub const NEW_VARIABLE: u32 = 8;
+    /// The ECA at the line becomes a call of another function, the
+    /// argument (of its kind), with its default parameters; it keeps its
+    /// place and whether it's on. What's inside it stays in the blocks the
+    /// new function has (by block and kind), the rest goes.
+    pub const REPLACE: u32 = 9;
+    /// The variable whose `[variable]` is at the line becomes what the
+    /// argument says, as for `NEW_VARIABLE`. Renamed, its uses are
+    /// renamed too, in every trigger file that sees it (the answer's
+    /// `files`). Refused when its new name or scope would clash with
+    /// another variable. See [`super::variable_change`].
+    pub const SET_VARIABLE: u32 = 10;
+    /// The trigger was renamed from the argument (its name before; empty
+    /// for none): the references to it in the project that said its old
+    /// name in the script say its new one (the answer's `files` for other
+    /// files). Refused, changing nothing, when the script would name
+    /// another trigger as it now. See [`super::retarget_project`].
+    pub const RENAMED: u32 = 12;
+    /// What changing the variable whose `[variable]` is at the line, as
+    /// `SET_VARIABLE`'s argument says, or deleting it (an empty
+    /// argument), would do, changing nothing: the answer is
+    /// `{"renamed": n, "places": [[id, line, why], ...]}`, the uses
+    /// renamed and the places that would need fixing by hand.
+    pub const CHECK_VARIABLE: u32 = 11;
 }
 
 const KINDS: [&str; 3] = ["event", "condition", "action"];
@@ -491,6 +555,27 @@ impl Doc {
         last + 1
     }
 
+    /// The ECA at `line` and those at the lines `more` lists (from 1,
+    /// separated by spaces): each's index and end, in the text's order;
+    /// one inside another counts with it.
+    fn selection(&self, line: usize, more: &str) -> Result<Vec<(usize, usize)>, String> {
+        let mut at = vec![self.at(line)?.0];
+        for w in more.split_whitespace() {
+            let l: usize = w.parse().map_err(|_| format!("not a line: {w:?}"))?;
+            at.push(self.at(l)?.0);
+        }
+        at.sort();
+        at.dedup();
+        let mut out: Vec<(usize, usize)> = Vec::new();
+        for i in at {
+            if out.last().is_some_and(|&(_, end)| i < end) {
+                continue;
+            }
+            out.push((i, self.end(i)));
+        }
+        Ok(out)
+    }
+
     /// The ECAs right under the one at `parent` (an index; `None` for the
     /// top): each's index, key and end.
     fn children(&self, parent: Option<usize>) -> Vec<(usize, Key, usize)> {
@@ -594,6 +679,41 @@ impl Doc {
         self.lines.splice(at..at, new.collect::<Vec<_>>());
     }
 
+    /// Sets the trigger's field `key` to `value` (as the text writes it),
+    /// or takes it out (`None`); a field that's new goes after the others
+    /// (`name` and `description` first).
+    fn set_field(&mut self, key: &str, value: Option<String>) {
+        let line = value.map(|v| format!("{key}={v}{}", self.eol));
+        if line.is_some() {
+            self.ensure_trigger();
+        }
+        match (self.field(key), line) {
+            (Some(i), Some(l)) => {
+                let keep_eol = self.lines[i].ends_with('\n');
+                self.lines[i] = if keep_eol { l } else { l.trim_end().to_string() };
+            }
+            (Some(i), None) => {
+                self.lines.remove(i);
+            }
+            (None, Some(l)) => {
+                let mut fields = self.section.clone().filter(|&i| !filler(&self.lines[i]) && self.eca(i).is_none());
+                let at = if matches!(key, "name" | "description") {
+                    self.section.start
+                } else {
+                    fields.next_back().map_or(self.section.start, |i| i + 1)
+                };
+                if at == self.lines.len()
+                    && let Some(last) = self.lines.last_mut()
+                    && !last.ends_with('\n')
+                {
+                    last.push_str(self.eol);
+                }
+                self.lines.insert(at, l);
+            }
+            (None, None) => {}
+        }
+    }
+
     /// The trigger's field `key`'s line, if it has one.
     fn field(&self, key: &str) -> Option<usize> {
         self.section.clone().find(|&i| self.lines[i].split_once('=').is_some_and(|(k, _)| k.trim() == key))
@@ -635,16 +755,41 @@ fn fits(kinds: &[u32], kind: u32) -> Result<(), String> {
 /// 1; 0 for none); `{"text": "..."}` for `COPY`; `{"error": "..."}` when
 /// it can't be done.
 pub fn edit(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> String {
+    edit_in(text, op, line, arg, ui, &Project::default())
+}
+
+/// The trigger file being edited (`me`, its id) and the other files of
+/// its project (id, text, and the names the index found in it), for what
+/// changes a variable.
+#[derive(Default)]
+pub struct Project<'a> {
+    pub me: &'a str,
+    pub others: Vec<(&'a str, &'a str, &'a [parser_rs::Occurrence])>,
+}
+
+/// [`edit`], in its project: an edit that renames a variable's uses in
+/// other files adds `"files": [[id, startLine, startChar, endLine,
+/// endChar, "text"], ...]`.
+pub fn edit_in(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui, project: &Project) -> String {
     let js = crate::objects::json_string;
-    match apply(text, op, line, arg, ui) {
+    let edit_of = |text: &str, new: &[String]| {
+        let old: Vec<&str> = text.split_inclusive('\n').collect();
+        diff(text, &old, new).map(|(r, t)| format!("{},{},{},{},{}", r.start.line, r.start.character, r.end.line, r.end.character, js(&t)))
+    };
+    match apply(text, op, line, arg, ui, project) {
         Ok(Done::Text(t)) => format!("{{\"text\":{}}}", js(&t)),
-        Ok(Done::Lines(new, at)) => {
-            let old: Vec<&str> = text.split_inclusive('\n').collect();
-            let edits = match diff(text, &old, &new) {
-                Some((r, t)) => format!("[[{},{},{},{},{}]]", r.start.line, r.start.character, r.end.line, r.end.character, js(&t)),
-                None => "[]".into(),
-            };
-            format!("{{\"edits\":{edits},\"line\":{}}}", at.map_or(0, |i| i + 1))
+        Ok(Done::Json(t)) => t,
+        Ok(Done::Lines(new, at, files)) => {
+            let edits = edit_of(text, &new).map_or("[]".into(), |e| format!("[[{e}]]"));
+            let files: Vec<String> = files
+                .iter()
+                .filter_map(|(id, old, new)| {
+                    let lines: Vec<String> = new.split_inclusive('\n').map(String::from).collect();
+                    edit_of(old, &lines).map(|e| format!("[{},{e}]", js(id)))
+                })
+                .collect();
+            let files = if files.is_empty() { String::new() } else { format!(",\"files\":[{}]", files.join(",")) };
+            format!("{{\"edits\":{edits},\"line\":{}{files}}}", at.map_or(0, |i| i + 1))
         }
         Err(e) => format!("{{\"error\":{}}}", js(&e)),
     }
@@ -652,51 +797,66 @@ pub fn edit(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) ->
 
 enum Done {
     Text(String),
-    /// The new lines, and the index of the one to show.
-    Lines(Vec<String>, Option<usize>),
+    /// An answer of its own.
+    Json(String),
+    /// The new lines, the index of the one to show, and other files
+    /// changed: id, old text, new text.
+    Lines(Vec<String>, Option<usize>, Vec<(String, String, String)>),
 }
 
-fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Result<Done, String> {
+fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui, project: &Project) -> Result<Done, String> {
+    let mut files = Vec::new();
     let mut doc = Doc::new(text);
     let mut shown = None;
     match op {
         op::TOGGLE => {
-            let (i, _) = doc.at(line)?;
-            doc.lines[i] = rekey(&doc.lines[i], |k| k.enabled = !k.enabled).expect("an ECA");
+            // Several: all as the first becomes.
+            let (i, key) = doc.at(line)?;
+            for (j, _) in doc.selection(line, arg)? {
+                doc.lines[j] = rekey(&doc.lines[j], |k| k.enabled = !key.enabled).expect("an ECA");
+            }
             shown = Some(i);
         }
         op::DELETE => {
             if let Some(range) = doc.variable_at(line) {
                 doc.lines.drain(range);
             } else {
-                let (i, _) = doc.at(line)?;
-                let end = doc.end(i);
-                doc.lines.drain(i..end);
+                for (i, end) in doc.selection(line, arg)?.into_iter().rev() {
+                    doc.lines.drain(i..end);
+                }
             }
         }
         op::COPY => {
-            let (i, _) = doc.at(line)?;
-            let mut out = doc.lift(i, doc.end(i)).concat();
+            let mut out: String = doc.selection(line, arg)?.into_iter().map(|(i, end)| doc.lift(i, end).concat()).collect();
             if !out.ends_with('\n') {
                 out.push_str(doc.eol);
             }
             return Ok(Done::Text(out));
         }
         op::MOVE => {
-            let (i, key) = doc.at(line)?;
-            let end = doc.end(i);
-            let place = Place::parse(arg)?;
-            if place.parent != 0 && (i..end).contains(&(place.parent - 1)) {
+            let (place, more) = arg.split_once('\n').unwrap_or((arg, ""));
+            let place = Place::parse(place)?;
+            let moved = doc.selection(line, more)?;
+            let inside = |j: usize| moved.iter().any(|&(i, end)| (i..end).contains(&j));
+            if place.parent != 0 && inside(place.parent - 1) {
                 return Err("can't move it into itself".into());
             }
             let (at, depth, group, kind) = doc.place(place)?;
-            fits(&[key.kind], kind)?;
-            if i < at && at < end {
+            let kinds: Vec<u32> = moved.iter().map(|&(i, _)| doc.eca(i).expect("an ECA").0.kind).collect();
+            fits(&kinds, kind)?;
+            if moved.iter().any(|&(i, end)| i < at && at < end) {
                 return Err("can't move it into itself".into());
             }
-            let lines = doc.lift(i, end);
-            doc.lines.drain(i..end);
-            let at = if at >= end { at - (end - i) } else { at };
+            // Lifted in the text's order, taken out from the bottom up;
+            // the place moves up by what was above it.
+            let lines: Vec<String> = moved.iter().flat_map(|&(i, end)| doc.lift(i, end)).collect();
+            let mut at = at;
+            for &(i, end) in moved.iter().rev() {
+                doc.lines.drain(i..end);
+                if at >= end {
+                    at -= end - i;
+                }
+            }
             doc.insert(at, &lines, depth, group);
             shown = Some(at);
         }
@@ -713,7 +873,8 @@ fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Re
         op::FIELD => {
             let (key, value) = arg.split_once('\n').unwrap_or((arg, ""));
             let value = match key {
-                "name" | "description" => Some(wtg_rs::text::jass_string(value)),
+                // Empty: none (a trigger without a name is its file's).
+                "name" | "description" => (!value.is_empty()).then(|| wtg_rs::text::jass_string(value)),
                 "enabled" | "initially_off" | "run_on_init" | "comment" | "custom_text" => {
                     let n: u32 = value.trim().parse().map_err(|_| format!("`{key}` is a number, not {value:?}"))?;
                     let default = if key == "enabled" { 1 } else { 0 };
@@ -721,37 +882,28 @@ fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Re
                 }
                 _ => return Err(format!("no field `{key}`")),
             };
-            let line = value.map(|v| format!("{key}={v}{}", doc.eol));
-            if line.is_some() {
-                doc.ensure_trigger();
+            doc.set_field(key, value);
+        }
+        op::RENAMED => {
+            // The text as it was named before, to see what references meant.
+            let mut was = Doc::new(text);
+            was.set_field("name", (!arg.is_empty()).then(|| wtg_rs::text::jass_string(arg)));
+            let was = was.lines.concat();
+            let pairs: Vec<(&str, &str)> = project.others.iter().map(|&(id, t, _)| (id, t)).collect();
+            let after = Triggers::of(project.me, text, &pairs);
+            let now = format!("gg_trg_{}", after.mine);
+            let alike = after.named_alike(project.me);
+            if !alike.is_empty() {
+                let old = format!("gg_trg_{}", Triggers::of(project.me, &was, &pairs).mine);
+                let files: Vec<String> = alike.iter().map(|f| file_name(f)).collect();
+                return Err(format!(
+                    "the map's script names {} {now} too: references to {old} were left as they are, rename it to a name of its own",
+                    files.join(", ")
+                ));
             }
-            match (doc.field(key), line) {
-                (Some(i), Some(l)) => {
-                    let keep_eol = doc.lines[i].ends_with('\n');
-                    doc.lines[i] = if keep_eol { l } else { l.trim_end().to_string() };
-                }
-                (Some(i), None) => {
-                    doc.lines.remove(i);
-                }
-                (None, Some(l)) => {
-                    // After the fields, before the ECAs; `name` and
-                    // `description` first.
-                    let mut fields = doc.section.clone().filter(|&i| !filler(&doc.lines[i]) && doc.eca(i).is_none());
-                    let at = if matches!(key, "name" | "description") {
-                        doc.section.start
-                    } else {
-                        fields.next_back().map_or(doc.section.start, |i| i + 1)
-                    };
-                    if at == doc.lines.len()
-                        && let Some(last) = doc.lines.last_mut()
-                        && !last.ends_with('\n')
-                    {
-                        last.push_str(doc.eol);
-                    }
-                    doc.lines.insert(at, l);
-                }
-                (None, None) => {}
-            }
+            let (mine, others) = retarget_project(project.me, &was, text, project);
+            doc = Doc::new(&mine);
+            files = others;
         }
         op::SET_PARAM => {
             let (i, _) = doc.at(line)?;
@@ -787,48 +939,14 @@ fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Re
             shown = Some(at);
         }
         op::NEW_VARIABLE => {
-            let parts: Vec<&str> = arg.split('\n').collect();
-            let [name, kind, array, size, scope, ref rest @ ..] = parts[..] else {
-                return Err("a new variable: its name, type, array, size, scope".into());
-            };
-            let scope = match scope.trim() {
-                "" | "global" => Scope::Global,
-                "private" => Scope::Private,
-                "local" => Scope::Local,
-                w => return Err(format!("scope {w:?}: global, private or local")),
-            };
-            let name = name.trim();
-            let ident = name.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-            if !ident {
-                return Err(format!("{name:?} isn't a variable's name: a letter, then letters, digits and _"));
-            }
-            let declared = wtg_rs::text::trigger_from_text(text, None).variables;
-            if declared.iter().any(|d| d.variable.name.eq_ignore_ascii_case(name)) {
-                return Err(format!("this file has a variable {name} already"));
-            }
-            if kind.trim().is_empty() {
-                return Err("a variable needs a type".into());
-            }
-            let is_array = array.trim() == "1";
-            let size: u32 = if is_array { size.trim().parse().map_err(|_| format!("an array's size is a number, not {size:?}"))? } else { 1 };
-            let initial = rest.first().filter(|v| !v.is_empty());
-            let v = wtg_rs::Variable {
-                name: name.into(),
-                kind: kind.trim().into(),
-                unknown: 1,
-                is_array: is_array as u32,
-                array_size: size,
-                has_initial: initial.is_some() as u32,
-                initial: initial.map_or(String::new(), |v| v.to_string()),
-            };
+            let d = variable_arg(arg, text, None)?;
+            let scope = d.scope;
             // A local is its trigger's: the file gets one.
             if scope == Scope::Local {
                 doc.ensure_trigger();
             }
             let eol = doc.eol;
-            let section: Vec<String> =
-                wtg_rs::text::declared_to_text(&[Declared { variable: v, scope }])?.lines().map(|l| format!("{l}{eol}")).collect();
+            let section: Vec<String> = wtg_rs::text::declared_to_text(&[d])?.lines().map(|l| format!("{l}{eol}")).collect();
             // After the last variable, else before the trigger, else at
             // the end; a blank line between sections.
             let headers: Vec<usize> = (0..doc.lines.len()).filter(|&i| doc.variable_at(i + 1).is_some()).collect();
@@ -858,9 +976,412 @@ fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Re
             shown = Some(at + before as usize);
             doc.lines.splice(at..at, block);
         }
+        op::REPLACE => {
+            let (i, key) = doc.at(line)?;
+            let name = arg.trim();
+            let fk = wtg_rs::FunctionKind::of(key.kind).ok_or(format!("no kind {}", key.kind))?;
+            if name.is_empty() {
+                return Err("a function to become".into());
+            }
+            let old = doc.eca(i).map_or("", |(_, n)| n).to_string();
+            if old != name {
+                // Inside it: what has no block in the new function goes.
+                let blocks = wtg_rs::ui::blocks(key.kind, name);
+                for (c, k, end) in doc.children(Some(i)).into_iter().rev() {
+                    if !blocks.iter().any(|b| Some(b.group) == k.group && b.kind == k.kind) {
+                        doc.lines.drain(c..end);
+                    }
+                }
+                let eol = &doc.lines[i][doc.lines[i].trim_end_matches(['\n', '\r']).len()..];
+                doc.lines[i] = format!("{}={}{eol}", key.text(), ui.new_call(fk, name));
+            }
+            shown = Some(i);
+        }
+        op::CHECK_VARIABLE => {
+            let old = variable_of(&doc, line)?;
+            let new = if arg.trim().is_empty() { None } else { Some(variable_arg(arg, text, Some(&old.variable.name))?) };
+            let change = variable_change(text, &old, new.as_ref(), ui, project)?;
+            let js = crate::objects::json_string;
+            let places: Vec<String> = change.places.iter().map(|(id, l, why)| format!("[{},{l},{}]", js(id), js(why))).collect();
+            return Ok(Done::Json(format!("{{\"renamed\":{},\"places\":[{}]}}", change.renamed, places.join(","))));
+        }
+        op::SET_VARIABLE => {
+            let old = variable_of(&doc, line)?;
+            let d = variable_arg(arg, text, Some(&old.variable.name))?;
+            let change = variable_change(text, &old, Some(&d), ui, project)?;
+            // The uses renamed: lines here change, none come or go.
+            let eol = doc.eol;
+            doc = Doc::new(&change.me);
+            doc.eol = eol;
+            files = change.files;
+            if d.scope == Scope::Local {
+                doc.ensure_trigger();
+            }
+            let range = doc.variable_at(line).expect("still there");
+            // Its own lines: not the blank ones before the next section.
+            let end = range.clone().rev().find(|&i| !doc.lines[i].trim().is_empty()).map_or(range.end, |i| i + 1);
+            let eol = doc.eol;
+            let mut section: Vec<String> = wtg_rs::text::declared_to_text(&[d])?.lines().map(|l| format!("{l}{eol}")).collect();
+            if end == doc.lines.len() && !doc.lines[end - 1].ends_with('\n') {
+                // The file ended without a line break: so does it still.
+                if let Some(last) = section.last_mut() {
+                    *last = last.trim_end().to_string();
+                }
+            }
+            doc.lines.splice(range.start..end, section);
+            shown = Some(range.start);
+        }
         _ => return Err(format!("unknown operation {op}")),
     }
-    Ok(Done::Lines(doc.lines, shown))
+    Ok(Done::Lines(doc.lines, shown, files))
+}
+
+/// The variable whose `[variable]` is at `line`.
+fn variable_of(doc: &Doc, line: usize) -> Result<Declared, String> {
+    let range = doc.variable_at(line).ok_or_else(|| format!("line {line} isn't a variable's"))?;
+    wtg_rs::text::trigger_from_text(&doc.lines[range].concat(), None).variables.into_iter().next().ok_or_else(|| "no variable there".into())
+}
+
+/// What changing a variable does to the project: the file's text with its
+/// uses renamed (`me`), the other files whose uses are renamed (id, old
+/// text, new text), how many uses are, and the places that need fixing
+/// by hand (id, line from 1, why).
+struct Change {
+    me: String,
+    files: Vec<(String, String, String)>,
+    renamed: usize,
+    places: Vec<(String, usize, String)>,
+}
+
+/// A variable's use in an ECA line.
+struct Use {
+    id: String,
+    /// From 1.
+    line: usize,
+    /// In the trigger's actions, where its locals are seen.
+    in_actions: bool,
+    indexed: bool,
+    /// The type the parameter takes: empty when unknown, `AnyGlobal` for
+    /// any variable.
+    expects: String,
+    /// A parameter after it takes its type (`SetVariable`'s value).
+    sets: bool,
+}
+
+/// The name a build gives a variable in the map's script (see
+/// `wtg_rs::jass`): `udg_<name>`, a private one's `udg_<trigger>__<name>`
+/// (`trigger`: what the build names its file's trigger by), a local its
+/// name.
+fn jass_name(d: &Declared, trigger: &str) -> String {
+    let name = &d.variable.name;
+    match d.scope {
+        Scope::Global => format!("udg_{name}"),
+        Scope::Local => name.clone(),
+        Scope::Private => format!("udg_{trigger}__{name}"),
+    }
+}
+
+fn file_name(id: &str) -> String {
+    Path::new(id).file_name().map_or(id.to_string(), |n| n.to_string_lossy().into_owned())
+}
+
+/// Does the JASS `code` (custom script) name `name`: a name token, as the
+/// JASS lexer reads it (not in a string or a comment)?
+fn names_in_jass(code: &str, name: &str) -> bool {
+    let lexed = parser_rs::tokenize_lossy(code, &jass_rs::lexer::VJASS_SPEC);
+    lexed.tokens.iter().any(|t| matches!(&t.kind, parser_rs::TokenKind::Ident(n) if n == name))
+}
+
+/// The ECA lines of a trigger file: index, key, and the parsed call.
+fn calls(doc: &Doc) -> impl Iterator<Item = (usize, Key, String, Vec<wtg_rs::Param>)> + '_ {
+    doc.section.clone().filter_map(|i| {
+        let (key, _) = doc.eca(i)?;
+        let (_, rest) = doc.lines[i].split_once('=')?;
+        let (name, params) = wtg_rs::text::read_call(rest.trim_end_matches(['\n', '\r'])).ok()?;
+        Some((i, key, name, params))
+    })
+}
+
+/// The uses of the variable `name` in the trigger file `text` (`only_actions`:
+/// in its actions only, where a local is), and the lines whose strings
+/// (custom script) name `jass`.
+fn uses_in(
+    id: &str,
+    text: &str,
+    name: &str,
+    jass: Option<&str>,
+    only_actions: bool,
+    ui: &wtg_rs::ui::Ui,
+    kind_of: &dyn Fn(&str) -> Option<String>,
+) -> (Vec<Use>, Vec<usize>) {
+    use wtg_rs::{FunctionKind, Param};
+    struct Walk<'a> {
+        name: &'a str,
+        jass: Option<&'a str>,
+        ui: &'a wtg_rs::ui::Ui,
+        kind_of: &'a dyn Fn(&str) -> Option<String>,
+        /// indexed, expects, sets
+        found: Vec<(bool, String, bool)>,
+        script: bool,
+    }
+    impl Walk<'_> {
+        fn list(&mut self, params: &[Param], function: Option<&wtg_rs::ui::Function>) {
+            let arg = |j: usize| function.and_then(|f| f.args.get(j)).cloned().unwrap_or_default();
+            for (j, p) in params.iter().enumerate() {
+                let mut ty = arg(j);
+                if ty == "Null" {
+                    let before = j.checked_sub(1).and_then(|k| params.get(k)).filter(|b| b.kind == 1);
+                    ty = before.and_then(|b| (self.kind_of)(&b.value)).unwrap_or_default();
+                }
+                self.one(p, ty, arg(j + 1) == "Null");
+            }
+        }
+        fn one(&mut self, p: &Param, ty: String, sets: bool) {
+            if p.kind == 1 && p.value == self.name {
+                self.found.push((p.index.is_some(), ty.clone(), sets));
+            }
+            if p.kind == 3 && ty == "scriptcode" && self.jass.is_some_and(|j| names_in_jass(&p.value, j)) {
+                self.script = true;
+            }
+            if let Some(ix) = &p.index {
+                self.one(ix, "integer".into(), false);
+            }
+            if let Some(c) = &p.call {
+                let f = self.ui.function(FunctionKind::of(c.kind).unwrap_or(FunctionKind::Call), &c.name);
+                self.list(&c.params, f);
+            }
+        }
+    }
+    let doc = Doc::new(text);
+    let mut uses = Vec::new();
+    let mut script = Vec::new();
+    for (i, key, call, params) in calls(&doc) {
+        let in_actions = sees_locals(&doc, i);
+        let mut w = Walk { name, jass, ui, kind_of, found: Vec::new(), script: false };
+        w.list(&params, ui.function(FunctionKind::of(key.kind).unwrap_or(FunctionKind::Action), &call));
+        if w.script {
+            script.push(i + 1);
+        }
+        if only_actions && !in_actions {
+            continue;
+        }
+        for (indexed, expects, sets) in w.found {
+            uses.push(Use { id: id.to_string(), line: i + 1, in_actions, indexed, expects, sets });
+        }
+    }
+    (uses, script)
+}
+
+/// The trigger file `text` with `$old` made `$new` on `lines` (from 1):
+/// the variable tokens its reader finds there (`wtg_rs::text`), so a
+/// string or a comment that says `$old` stays as it is.
+fn rename_on_lines(text: &str, lines: &[usize], old: &str, new: &str) -> String {
+    let tokens = wtg_rs::text::trigger_from_text(text, None).tokens;
+    let wanted = format!("${old}");
+    text.split_inclusive('\n')
+        .enumerate()
+        .map(|(i, line)| {
+            if !lines.contains(&(i + 1)) {
+                return line.to_string();
+            }
+            let mut chars: Vec<char> = line.chars().collect();
+            // Columns from 1, in characters; from the right, so the ones
+            // before stay where they are.
+            let mut at: Vec<(usize, usize)> = tokens
+                .iter()
+                .filter(|t| t.line == i + 1 && t.ty == parser_rs::SemanticType::Variable)
+                .map(|t| (t.start_col - 1, t.end_col - 1))
+                .filter(|&(a, b)| chars.get(a..b).is_some_and(|c| c.iter().collect::<String>() == wanted))
+                .collect();
+            at.sort();
+            for (a, b) in at.into_iter().rev() {
+                chars.splice(a..b, format!("${new}").chars());
+            }
+            chars.into_iter().collect()
+        })
+        .collect()
+}
+
+/// What changing the variable `old` of the trigger file `text` into
+/// `new` (`None`: deleting it) does: its uses are those that see it, in
+/// this file (a local's in the actions only) and, for a global, in the
+/// project's other trigger files that have no variable of that name of
+/// their own.
+///
+/// - Renamed, its uses are renamed (safe: they mean the same variable).
+/// - These need fixing by hand, and are the places: a use that won't see
+///   it any more (a narrower scope), that indexes it and it's no array or
+///   the other way round, whose parameter takes another type (or whose
+///   `SetVariable` value is of the old type), every use of a deleted one;
+///   and custom script naming it in the map's script when that name
+///   changes (`udg_<name>` ...), or it goes: a `scriptcode` parameter
+///   whose JASS has it as a name token, a name the index found in the
+///   project's code (JASS, Zinc, Lua ...).
+/// - Refused: a new name or scope that clashes with a variable another
+///   trigger file declares (a global of the same name; a private or local
+///   one would hide a global of the project).
+fn variable_change(text: &str, old: &Declared, new: Option<&Declared>, ui: &wtg_rs::ui::Ui, project: &Project) -> Result<Change, String> {
+    let me = project.me;
+    let name = old.variable.name.as_str();
+    let trg: Vec<(&str, &str, Vec<Declared>)> = project
+        .others
+        .iter()
+        .filter(|(id, _, _)| is_trg_file(Path::new(id)))
+        .map(|&(id, t, _)| (id, t, wtg_rs::text::trigger_from_text(t, None).variables))
+        .collect();
+    let own = wtg_rs::text::trigger_from_text(text, None).variables;
+    // A clash: only when the name or the scope changes.
+    if let Some(n) = new
+        && (n.variable.name != name || n.scope != old.scope)
+    {
+        let new_name = n.variable.name.as_str();
+        for (id, _, vars) in &trg {
+            let Some(d) = vars.iter().find(|d| d.variable.name == new_name) else { continue };
+            if n.scope == Scope::Global {
+                return Err(format!("{} declares a variable {new_name} already", file_name(id)));
+            }
+            if d.scope == Scope::Global {
+                return Err(format!("{new_name} is a global of {}: this file's would hide it", file_name(id)));
+            }
+        }
+    }
+    let globals: Vec<&Declared> = trg.iter().flat_map(|(_, _, v)| v.iter()).filter(|d| d.scope == Scope::Global).collect();
+    let kind_in = |vars: &[Declared], v: &str| {
+        vars.iter().chain(globals.iter().copied()).find(|d| d.variable.name == v).map(|d| d.variable.kind.clone())
+    };
+    let pairs: Vec<(&str, &str)> = project.others.iter().map(|&(id, t, _)| (id, t)).collect();
+    let trigger = Triggers::of(me, text, &pairs).mine;
+    let old_jass = jass_name(old, &trigger);
+    let jass_changes = new.is_none_or(|n| jass_name(n, &trigger) != old_jass);
+    let jass = jass_changes.then_some(old_jass.as_str());
+
+    let (mut uses, mut script) = uses_in(me, text, name, jass, old.scope == Scope::Local, ui, &|v| kind_in(&own, v));
+    let mut script: Vec<(String, usize)> = script.drain(..).map(|l| (me.to_string(), l)).collect();
+    if old.scope == Scope::Global {
+        for (id, t, vars) in &trg {
+            if vars.iter().any(|d| d.variable.name == name) {
+                continue;
+            }
+            let (u, s) = uses_in(id, t, name, jass, false, ui, &|v| kind_in(vars, v));
+            uses.extend(u);
+            script.extend(s.into_iter().map(|l| (id.to_string(), l)));
+        }
+        // The project's code (JASS, Zinc, Lua ...): the names its index
+        // found, as each language's parser reads them.
+        if let Some(j) = jass {
+            for (id, _, names) in project.others.iter().filter(|(id, _, _)| !is_trg_file(Path::new(id))) {
+                script.extend(names.iter().filter(|o| o.name == j).map(|o| (id.to_string(), o.line)));
+            }
+        }
+    }
+
+    let mut places = Vec::new();
+    let v = &old.variable;
+    for u in &uses {
+        let mut why = |w: String| places.push((u.id.clone(), u.line, w));
+        let Some(n) = new else {
+            why(format!("uses {name}, which is deleted"));
+            continue;
+        };
+        let nv = &n.variable;
+        let sees = match n.scope {
+            Scope::Global => true,
+            Scope::Private => u.id == me,
+            Scope::Local => u.id == me && u.in_actions,
+        };
+        if !sees {
+            why(match n.scope {
+                Scope::Local if u.id == me => format!("{} is a local now: a trigger's locals are its actions'", nv.name),
+                Scope::Local => format!("{} is a local of {} now", nv.name, file_name(me)),
+                _ => format!("{} is private to {} now", nv.name, file_name(me)),
+            });
+        }
+        if u.indexed && nv.is_array == 0 {
+            why(format!("indexes {}, which isn't an array now", nv.name));
+        } else if !u.indexed && nv.is_array != 0 && v.is_array == 0 {
+            why(format!("{} is an array now: it needs an index", nv.name));
+        }
+        if nv.kind != v.kind {
+            let ty = |t: &str| ui.types.get(t).cloned().unwrap_or_else(|| t.to_string());
+            if !u.expects.is_empty() && u.expects != "AnyGlobal" && u.expects == v.kind {
+                why(format!("takes {}, and {} is {} now", ty(&u.expects), nv.name, ty(&nv.kind)));
+            }
+            if u.sets {
+                why(format!("sets {} to {} (its old type), and it's {} now", nv.name, ty(&v.kind), ty(&nv.kind)));
+            }
+        }
+    }
+    for (id, line) in script {
+        let why = match new {
+            None => format!("custom script uses {old_jass}, which is deleted"),
+            Some(n) => format!("custom script uses {old_jass}, which is {} now", jass_name(n, &trigger)),
+        };
+        places.push((id, line, why));
+    }
+    places.sort();
+    places.dedup();
+
+    // Renamed: every use, where it is.
+    let mut out = Change { me: text.to_string(), files: Vec::new(), renamed: 0, places };
+    if let Some(n) = new.filter(|n| n.variable.name != name) {
+        let new_name = n.variable.name.as_str();
+        out.renamed = uses.len();
+        let rewrite = |t: &str, id: &str| -> String {
+            let lines: Vec<usize> = uses.iter().filter(|u| u.id == id).map(|u| u.line).collect();
+            rename_on_lines(t, &lines, name, new_name)
+        };
+        out.me = rewrite(text, me);
+        for (id, t, _) in &trg {
+            if uses.iter().any(|u| u.id == *id) {
+                out.files.push((id.to_string(), t.to_string(), rewrite(t, id)));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The variable an argument of `NEW_VARIABLE` or `SET_VARIABLE` says:
+/// name, type, `1` for an array, size, scope, initial value, a line each.
+/// Its name mustn't be another of the file's (`except`: its own, when it's
+/// one already).
+fn variable_arg(arg: &str, text: &str, except: Option<&str>) -> Result<Declared, String> {
+    let parts: Vec<&str> = arg.split('\n').collect();
+    let [name, kind, array, size, scope, ref rest @ ..] = parts[..] else {
+        return Err("a variable: its name, type, array, size, scope".into());
+    };
+    let scope = match scope.trim() {
+        "" | "global" => Scope::Global,
+        "private" => Scope::Private,
+        "local" => Scope::Local,
+        w => return Err(format!("scope {w:?}: global, private or local")),
+    };
+    let name = name.trim();
+    let ident =
+        name.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if !ident {
+        return Err(format!("{name:?} isn't a variable's name: a letter, then letters, digits and _"));
+    }
+    let declared = wtg_rs::text::trigger_from_text(text, None).variables;
+    let other = |n: &str| except.is_none_or(|e| !e.eq_ignore_ascii_case(n));
+    if declared.iter().any(|d| d.variable.name.eq_ignore_ascii_case(name) && other(&d.variable.name)) {
+        return Err(format!("this file has a variable {name} already"));
+    }
+    if kind.trim().is_empty() {
+        return Err("a variable needs a type".into());
+    }
+    let is_array = array.trim() == "1";
+    let size: u32 = if is_array { size.trim().parse().map_err(|_| format!("an array's size is a number, not {size:?}"))? } else { 1 };
+    let initial = rest.first().filter(|v| !v.is_empty());
+    let variable = wtg_rs::Variable {
+        name: name.into(),
+        kind: kind.trim().into(),
+        unknown: 1,
+        is_array: is_array as u32,
+        array_size: size,
+        has_initial: initial.is_some() as u32,
+        initial: initial.map_or(String::new(), |v| v.to_string()),
+    };
+    Ok(Declared { variable, scope })
 }
 
 /// What the parameter at `path` (see `wtg_rs::ui::Span::Value`) of the
@@ -1002,10 +1523,176 @@ pub fn catalog(kind: u32, ui: &wtg_rs::ui::Ui) -> String {
     format!("[{}]", out.join(","))
 }
 
-/// The JASS the trigger file `text` (named `file`, without its
-/// extension) is built into (`wtg_rs::jass::compile`), with the
-/// variables it sees (`visible`: its own and the project's globals).
-pub fn jass(text: &str, file: &str, names: &crate::names::Names, visible: &[Declared]) -> String {
+/// The project's triggers as the map's script names them
+/// (`gg_trg_<name>`, `$gg_trg_<name>` in a trigger file; World Editor's way,
+/// `wtg_rs::jass::ident`).
+pub struct Triggers {
+    /// Each trigger file with a trigger, in the order they're built (by
+    /// path): its id, its trigger's name, and the script's name of it
+    /// (`gg_trg_...`).
+    list: Vec<(String, String, String)>,
+    /// What the build names the file looked at by (its trigger; a file of
+    /// variables alone, its private ones), without `gg_trg_`.
+    pub mine: String,
+    /// The file looked at.
+    me: String,
+}
+
+impl Triggers {
+    /// The triggers of the trigger file `me` (its text `text`) and the
+    /// project's other files (id and text; its trigger files count). A
+    /// trigger's name is its `name=`, or its file's.
+    pub fn of(me: &str, text: &str, others: &[(&str, &str)]) -> Triggers {
+        let mut files: Vec<(&str, &str)> = others.iter().copied().filter(|(id, _)| *id != me && is_trg_file(Path::new(id))).collect();
+        files.push((me, text));
+        files.sort_by(|a, b| a.0.cmp(b.0));
+        let stem = |id: &str| Path::new(id).file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
+        // Each trigger: its name, and what the script names it by.
+        let list: Vec<(String, String, String)> = files
+            .iter()
+            .filter_map(|&(id, t)| {
+                let trigger = wtg_rs::text::trigger_from_text(t, None).trigger?;
+                let name = if trigger.name.is_empty() { stem(id) } else { trigger.name };
+                let own = format!("gg_trg_{}", wtg_rs::jass::ident(&name));
+                Some((id.to_string(), name, own))
+            })
+            .collect();
+        let mine = wtg_rs::jass::ident(&list.iter().find(|(id, _, _)| id == me).map_or_else(|| stem(me), |(_, name, _)| name.clone()));
+        Triggers { list, mine, me: me.to_string() }
+    }
+
+    /// The triggers (their files) the reference `r` (`gg_trg_...`) means:
+    /// one, none, or several when the script would name them alike
+    /// (`Шляпа` and `Кепка` are both `gg_trg_` and ten `_` and `u`).
+    fn resolve(&self, r: &str) -> Vec<&str> {
+        self.list.iter().filter(|(_, _, own)| own == r).map(|(id, _, _)| id.as_str()).collect()
+    }
+
+    /// What the script names the trigger of the file `id`, `gg_trg_...`.
+    fn own(&self, id: &str) -> Option<&str> {
+        self.list.iter().find(|(f, _, _)| f == id).map(|(_, _, own)| own.as_str())
+    }
+
+    /// The other trigger files whose trigger the script names as the file
+    /// `id`'s.
+    fn named_alike(&self, id: &str) -> Vec<&str> {
+        let Some(own) = self.own(id) else { return Vec::new() };
+        self.list.iter().filter(|(f, _, o)| f != id && o == own).map(|(f, _, _)| f.as_str()).collect()
+    }
+
+    /// Where the reference `r` must change, from these triggers (`self`,
+    /// before) to `after`: the trigger it meant alone, renamed, by its new
+    /// name in the script.
+    fn retarget(&self, r: &str, after: &Triggers) -> Option<String> {
+        let [meant] = self.resolve(r)[..] else { return None };
+        let now = after.own(meant).filter(|now| *now != r)?;
+        // Never to a name that means another too.
+        (after.resolve(now) == [meant]).then(|| now.to_string())
+    }
+}
+
+/// The trigger file `text` with its references to triggers retargeted
+/// from `before` to `after` ([`Triggers::retarget`]): `$gg_trg_...`, the
+/// variable tokens its reader finds, and names in custom script, the
+/// tokens the JASS lexer finds in a `CustomScriptCode`'s string.
+fn retarget_trg(text: &str, before: &Triggers, after: &Triggers) -> String {
+    use parser_rs::SemanticType;
+    let tokens = wtg_rs::text::trigger_from_text(text, None).tokens;
+    text.split_inclusive('\n')
+        .enumerate()
+        .map(|(i, line)| {
+            let mut chars: Vec<char> = line.chars().collect();
+            let script = eca_line(line).is_some_and(|(_, n)| n == "CustomScriptCode");
+            let mut edits: Vec<(usize, usize, String)> = Vec::new();
+            for t in tokens.iter().filter(|t| t.line == i + 1) {
+                let (a, b) = (t.start_col - 1, t.end_col - 1);
+                let Some(word) = chars.get(a..b).map(|c| c.iter().collect::<String>()) else { continue };
+                if t.ty == SemanticType::Variable
+                    && let Some(r) = word.strip_prefix('$').filter(|r| r.starts_with("gg_trg_"))
+                    && let Some(new) = before.retarget(r, after)
+                {
+                    edits.push((a, b, format!("${new}")));
+                } else if t.ty == SemanticType::String
+                    && script
+                    && let Ok(p) = wtg_rs::text::read_param(&word)
+                    && let Some(code) = retarget_jass(&p.value, before, after)
+                {
+                    edits.push((a, b, wtg_rs::text::jass_string(&code)));
+                }
+            }
+            edits.sort_by_key(|e| e.0);
+            for (a, b, new) in edits.into_iter().rev() {
+                chars.splice(a..b, new.chars());
+            }
+            chars.into_iter().collect::<String>()
+        })
+        .collect()
+}
+
+/// JASS with its names of triggers retargeted (the lexer's name tokens),
+/// if any is.
+fn retarget_jass(code: &str, before: &Triggers, after: &Triggers) -> Option<String> {
+    let lexed = parser_rs::tokenize_lossy(code, &jass_rs::lexer::VJASS_SPEC);
+    let names = lexed.tokens.iter().filter_map(|t| match &t.kind {
+        parser_rs::TokenKind::Ident(n) if n.starts_with("gg_trg_") => Some((t.line, t.col, t.end_col, n.as_str())),
+        _ => None,
+    });
+    let found: Vec<(usize, usize, usize, String)> = names.filter_map(|(l, a, b, n)| Some((l, a, b, before.retarget(n, after)?))).collect();
+    (!found.is_empty()).then(|| replace_at(code, &found))
+}
+
+/// `text` with each `(line, col, end_col, new)` (from 1, in characters)
+/// replaced.
+fn replace_at(text: &str, at: &[(usize, usize, usize, String)]) -> String {
+    text.split_inclusive('\n')
+        .enumerate()
+        .map(|(i, line)| {
+            let mut chars: Vec<char> = line.chars().collect();
+            let mut here: Vec<&(usize, usize, usize, String)> = at.iter().filter(|e| e.0 == i + 1).collect();
+            here.sort_by_key(|e| e.1);
+            for (_, a, b, new) in here.into_iter().rev() {
+                if *b - 1 <= chars.len() {
+                    chars.splice(a - 1..b - 1, new.chars());
+                }
+            }
+            chars.into_iter().collect::<String>()
+        })
+        .collect()
+}
+
+/// The project's files whose references to triggers change when the
+/// trigger file `me` becomes `new` (from `old`): trigger files
+/// ([`retarget_trg`]), code (the names the index found): id, old text,
+/// new text; and `me`'s new text.
+fn retarget_project(me: &str, old: &str, new: &str, project: &Project) -> (String, Vec<(String, String, String)>) {
+    let pairs: Vec<(&str, &str)> = project.others.iter().map(|&(id, t, _)| (id, t)).collect();
+    let before = Triggers::of(me, old, &pairs);
+    let after = Triggers::of(me, new, &pairs);
+    let mine = retarget_trg(new, &before, &after);
+    let mut files = Vec::new();
+    for &(id, t, names) in &project.others {
+        let changed = if is_trg_file(Path::new(id)) {
+            retarget_trg(t, &before, &after)
+        } else {
+            let at: Vec<(usize, usize, usize, String)> = names
+                .iter()
+                .filter(|o| o.name.starts_with("gg_trg_"))
+                .filter_map(|o| Some((o.line, o.col, o.end_col, before.retarget(&o.name, &after)?)))
+                .collect();
+            if at.is_empty() { continue } else { replace_at(t, &at) }
+        };
+        if changed != t {
+            files.push((id.to_string(), t.to_string(), changed));
+        }
+    }
+    (mine, files)
+}
+
+/// The JASS the trigger file `me` (its text `text`) is built into
+/// (`wtg_rs::jass::compile`; a trigger without a name is named as the
+/// file), with the variables it sees (`visible`: its own and the
+/// project's globals).
+pub fn jass(text: &str, me: &str, names: &crate::names::Names, visible: &[Declared]) -> String {
     let p = wtg_rs::text::trigger_from_text(text, None);
     let mut out = String::new();
     if !p.errors.is_empty() {
@@ -1015,7 +1702,8 @@ pub fn jass(text: &str, file: &str, names: &crate::names::Names, visible: &[Decl
         }
         out += "\n";
     }
-    out + &wtg_rs::jass::compile(p.trigger.as_ref(), file, &p.variables, visible, &names.trigger_ui)
+    let stem = Path::new(me).file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
+    out + &wtg_rs::jass::compile(p.trigger.as_ref(), &stem, &p.variables, visible, &names.trigger_ui)
 }
 
 /// The trigger editor's icons, as JSON: `{"ReplaceableTextures\\WorldEditUI\\Actions-Unit":
