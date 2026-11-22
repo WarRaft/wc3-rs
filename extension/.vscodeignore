@@ -1,6 +1,8 @@
 .vscodeignore
 .gitignore
 **/.DS_Store
+**/.ds_store
 .vscode/**
 test/**
 icons/make.py
+.idea/**
