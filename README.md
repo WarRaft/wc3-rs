@@ -850,11 +850,11 @@ and links open in the browser.
 ## SLK tables
 
 A `.slk` (the game's data tables: `Units\UnitBalance.slk`, the
-`*MetaData.slk`, ...) opens as text, highlighted and checked by
-[`slk-rs`](../slk-rs/README.md): records, cell values, formulas, comments;
-parse errors and lint as you type. **Open as Table** (the editor's title
-bar, the Explorer's context menu, or Reopen Editor With) shows it as a
-table to edit, and **Open as Text** goes back.
+`*MetaData.slk`, ...) opens as a table to edit. **Open as Text** (the
+editor's title bar, or Reopen Editor With) shows the text, highlighted and
+checked by [`slk-rs`](../slk-rs/README.md): records, cell values, formulas,
+comments; parse errors and lint as you type. **Open as Table** (the title
+bar, the Explorer's context menu) goes back.
 
 The table is the same document: the text stays what's saved, so undo,
 save and the dirty mark are the text's. The server reads the sheet from

@@ -77,10 +77,10 @@ Warcraft III language support for VS Code.
   comments, text and color codes (`|cffff0000`, `|r`, `|n`), with live
   errors. Hovering over `TRIGSTR_<n>` in any file of a map shows the
   string's text, in its colors, and what uses it.
-- SLK tables (`.slk`): highlighted text with live errors, or, with **Open
-  as Table** (title bar, Explorer context menu), a table to edit: frozen
-  header row and column A, find, keyboard editing, copy and paste. **Open
-  as Text** goes back. Both are the same document.
+- SLK tables (`.slk`): open as a table to edit: frozen header row and
+  column A, find, keyboard editing, copy and paste. **Open as Text** (title
+  bar) shows the highlighted text with live errors, **Open as Table** goes
+  back. Both are the same document.
 - Triggers of their own (`.trg`, one trigger per file, its folder its
   category) open as World Editor shows them: Events, Conditions and
   Actions as the editor's phrases, blocks of if/then/else and loops, a
@@ -144,7 +144,7 @@ dependencies besides the VS Code API.
   the server reads as BNI; the text is opened with the file's path, so
   the server reads it with the file's project and its game.
 - **SLK tables.** The table is a custom *text* editor (`wc3.slkTable`,
-  priority `option`, so the text opens by default): the document stays the
+  priority `default`, so a `.slk` opens as the table): the document stays the
   text. The page (`webview/slk.js`) draws the grid on a canvas, only what's
   in view; the sheet comes from the server (`QUERY.SLK_TABLE`), and a
   written cell goes back as text edits (`QUERY.SLK_SET_CELL`) applied as a
