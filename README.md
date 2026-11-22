@@ -668,6 +668,7 @@ function takes isn't in the file but in World Editor's
 `UI\TriggerData.txt`, found like every game file (see "Finding a file"):
 a modded editor's in a root replaces the game's. Opening needs it, and
 saving checks every function's name and parameter count against it.
+A trigger's `category=` shows its category's name as an inlay hint.
 
 ## txt2
 

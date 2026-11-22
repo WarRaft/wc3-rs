@@ -108,3 +108,13 @@ fn minimap_kinds_and_colors() {
     assert_eq!(colors(text, Path::new("x/war3map.MMP")), "[[4,6,4,17,255,3,3,255]]");
     assert!(has_colors(Path::new("war3map.w3r")) && !has_colors(Path::new("war3map.w3s")));
 }
+
+#[test]
+fn trigger_categories_by_index() {
+    let text = "[wtg]\n\n[category]\nindex=38\nname=\"Cinematics, \\\"intro\\\"\"\n\n[trigger]\nname=\"A\"\ncategory=38\n\n[trigger]\ncategory=5\n";
+    let path = Path::new("/m/war3map.wtg");
+    assert!(has_names(path));
+    assert_eq!(hints(text, path, &Names::default(), None, 0, 20), r#"[[8,11,"Cinematics, \"intro\""],[11,10,"no category 5"]]"#);
+    // Only the lines asked for.
+    assert_eq!(hints(text, path, &Names::default(), None, 10, 20), r#"[[11,10,"no category 5"]]"#);
+}

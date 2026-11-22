@@ -32,7 +32,7 @@ use crate::document::LineIndex;
 use crate::names::Names;
 
 /// The file types whose text forms have hints, by extension.
-const TYPES: [&str; 6] = ["w3r", "w3s", "w3e", "w3i", "imp", "mmp"];
+const TYPES: [&str; 7] = ["w3r", "w3s", "w3e", "w3i", "imp", "mmp", "wtg"];
 
 /// The file types whose text forms have colors for a picker, by
 /// extension: regions' and minimap icons' `color=`.
@@ -239,10 +239,13 @@ pub fn hints(
     first: u32,
     last: u32,
 ) -> String {
-    let doc = bni_rs::parse(text);
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
     let lines = LineIndex::new(text);
     let range = first as usize + 1..=last as usize + 1;
+    if ext == "wtg" {
+        return triggers(text, &lines, range);
+    }
+    let doc = bni_rs::parse(text);
     if doc.sections.first().is_none_or(|h| h.name.text != ext) {
         return "[]".into();
     }
@@ -279,6 +282,33 @@ pub fn hints(
                 _ => None,
             };
             let Some(label) = label else { continue };
+            let end = item.fields.last().map_or(item.eq, |f| f.span);
+            let at = lines.range(text, end.end_line, end.end_col, end.end_col).start;
+            out.push(format!("[{},{},{}]", at.line, at.character, crate::objects::json_string(&label)));
+        }
+    }
+    format!("[{}]", out.join(","))
+}
+
+/// The triggers' text form: a trigger's `category=` index, the
+/// category's name.
+fn triggers(text: &str, lines: &LineIndex, range: std::ops::RangeInclusive<usize>) -> String {
+    let doc = wtg_rs::text::parse_bni(text);
+    if !wtg_rs::text::is_trigger_text(&doc) {
+        return "[]".into();
+    }
+    let categories = wtg_rs::text::categories(&doc);
+    let mut out = Vec::new();
+    for section in doc.sections.iter().filter(|s| s.name.text == "trigger") {
+        for item in section.items.iter().filter(|i| range.contains(&i.line)) {
+            if item.key.as_ref().is_none_or(|k| k.text.trim() != "category") {
+                continue;
+            }
+            let Ok(index) = item.value_text().trim().parse::<i32>() else { continue };
+            let label = match categories.iter().find(|(i, _)| *i == index) {
+                Some((_, name)) => name.clone(),
+                None => format!("no category {index}"),
+            };
             let end = item.fields.last().map_or(item.eq, |f| f.span);
             let at = lines.range(text, end.end_line, end.end_col, end.end_col).start;
             out.push(format!("[{},{},{}]", at.line, at.character, crate::objects::json_string(&label)));
