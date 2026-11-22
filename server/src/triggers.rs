@@ -126,11 +126,12 @@ pub fn extract(text: &str) -> String {
 /// "text": [span], "blocks": [{"label": "Then - Actions", "group": 1,
 /// "kind": 2, "nodes": [...]}]}`; a span a string, or a value
 /// `{"r": "p", "p": "2.0", "s": [span]}` (`r`: `p` preset, `v` variable,
-/// `l` a value typed in, `c` a call, `u` unknown; `p` its path, see
+/// `l` a value typed in, `c` a call, `u` unknown, and a variable
+/// `globals` doesn't have, with an error; `p` its path, see
 /// `wtg_rs::ui::Span::Value`). `data` is whether the editor's files
 /// were found; the errors are checked against them when they were, but
 /// the tree isn't: a function they don't have shows, as unknown.
-pub fn view(text: &str, names: &crate::names::Names) -> String {
+pub fn view(text: &str, names: &crate::names::Names, globals: &[wtg_rs::Variable]) -> String {
     use wtg_rs::ui::Ui;
     let data = (!names.triggers.is_empty()).then_some(&names.triggers);
     let mut p = wtg_rs::text::trigger_from_text(text, None);
@@ -140,9 +141,16 @@ pub fn view(text: &str, names: &crate::names::Names) -> String {
     let ui: &Ui = &names.trigger_ui;
     let has_trigger = p.trigger.is_some();
     let t = p.trigger.clone().unwrap_or_default();
-    let v = ui.render(&t, &p.lines);
+    let mut v = ui.render(&t, &p.lines);
     let js = crate::objects::json_string;
-    let errors: Vec<String> = p.errors.iter().map(|e| format!("[{},{}]", e.line, js(&e.message))).collect();
+    let mut errors: Vec<(usize, String)> = p.errors.iter().map(|e| (e.line, e.message.clone())).collect();
+    // A variable no trigger file of the project declares: unknown.
+    let declared: std::collections::HashSet<&str> = globals.iter().map(|g| g.name.as_str()).collect();
+    for nodes in [&mut v.events, &mut v.conditions, &mut v.actions] {
+        undeclared(nodes, &declared, &mut errors);
+    }
+    errors.sort_by_key(|e| e.0);
+    let errors: Vec<String> = errors.iter().map(|(line, m)| format!("[{line},{}]", js(m))).collect();
     let labels = ["WESTRING_EVENTS", "WESTRING_CONDITIONS", "WESTRING_ACTIONS", "WESTRING_VARIABLES"].map(|k| js(&ui.label(k)));
     let nodes = |n: &[wtg_rs::ui::Node]| format!("[{}]", n.iter().map(node_json).collect::<Vec<_>>().join(","));
     // Each variable with the line of its section.
@@ -182,6 +190,32 @@ pub fn view(text: &str, names: &crate::names::Names) -> String {
         nodes(&v.conditions),
         nodes(&v.actions),
     )
+}
+
+/// Marks the variables of `nodes` (and what's inside them) that aren't
+/// `declared` unknown, each with an error at its line.
+fn undeclared(nodes: &mut [wtg_rs::ui::Node], declared: &std::collections::HashSet<&str>, errors: &mut Vec<(usize, String)>) {
+    use wtg_rs::ui::{Role, Span};
+    fn walk(spans: &mut [Span], line: usize, declared: &std::collections::HashSet<&str>, errors: &mut Vec<(usize, String)>) {
+        for s in spans {
+            if let Span::Value { role, spans, .. } = s {
+                if *role == Role::Variable
+                    && let Some(Span::Text(name)) = spans.first()
+                    && !declared.contains(name.as_str())
+                {
+                    errors.push((line, format!("the variable `{name}` isn't declared in the project's trigger files ([variable])")));
+                    *role = Role::Unknown;
+                }
+                walk(spans, line, declared, errors);
+            }
+        }
+    }
+    for n in nodes {
+        walk(&mut n.text, n.line, declared, errors);
+        for b in &mut n.blocks {
+            undeclared(&mut b.nodes, declared, errors);
+        }
+    }
 }
 
 fn node_json(n: &wtg_rs::ui::Node) -> String {

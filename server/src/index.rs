@@ -87,6 +87,24 @@ pub enum QueryKind {
     TriggerIcons,
 }
 
+/// The global variables of the map `id` is a trigger of: what every
+/// trigger file of its project declares (`[variable]`), the file itself
+/// as it's being edited included. One project is one map, so every
+/// trigger of it sees them all.
+fn project_variables(ws: &Workspace, id: &str) -> Vec<wtg_rs::Variable> {
+    let mut out: Vec<wtg_rs::Variable> = ws
+        .scope(id)
+        .filter(|(_, d, _)| d.path.as_deref().is_some_and(crate::triggers::is_trg_file))
+        .flat_map(|(_, d, _)| wtg_rs::text::trigger_from_text(&d.text, None).variables)
+        .collect();
+    if !ws.scope(id).any(|(fid, _, _)| fid == id)
+        && let Some((doc, _)) = ws.file(id)
+    {
+        out.extend(wtg_rs::text::trigger_from_text(&doc.text, None).variables);
+    }
+    out
+}
+
 /// Path completion and links in a manifest; nothing for any other file.
 fn manifest_paths(ws: &Workspace, kind: QueryKind, id: &str, pos: Position) -> Answer {
     let Some((doc, _)) = ws.file(id) else {
@@ -227,14 +245,7 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             let text = if kind == QueryKind::TriggerCatalog {
                 crate::triggers::catalog(pos.character, &names.trigger_ui)
             } else {
-                // The global variables every trigger file of the project
-                // declares.
-                let variables: Vec<wtg_rs::Variable> = ws
-                    .scope(id)
-                    .filter(|(_, d, _)| d.path.as_deref().is_some_and(crate::triggers::is_trg_file))
-                    .flat_map(|(_, d, _)| wtg_rs::text::trigger_from_text(&d.text, None).variables)
-                    .collect();
-                crate::triggers::choices(&doc.text, pos.line as usize, query, &names.trigger_ui, &variables)
+                crate::triggers::choices(&doc.text, pos.line as usize, query, &names.trigger_ui, &project_variables(ws, id))
             };
             return Answer { locations: Vec::new(), text };
         }
@@ -243,7 +254,7 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
                 return Answer::default();
             };
             let text = match kind {
-                QueryKind::TriggerView => crate::triggers::view(&doc.text, names),
+                QueryKind::TriggerView => crate::triggers::view(&doc.text, names, &project_variables(ws, id)),
                 _ => crate::triggers::edit(&doc.text, pos.character, pos.line as usize, query, &names.trigger_ui),
             };
             return Answer { locations: Vec::new(), text };

@@ -99,7 +99,7 @@ fn trg_diagnostics_and_tokens() {
 #[test]
 fn trg_view() {
     let names = crate::names::Names::default();
-    let v = view(TRG, &names);
+    let v = view(TRG, &names, &[]);
     assert!(v.starts_with("{\"trigger\":true,\"variables\":[],\"name\":\"Spawn\",\"description\":\"\",\"enabled\":1,"), "{v}");
     assert!(v.contains("\"data\":false"), "{v}");
     assert!(v.contains("\"labels\":[\"Events\",\"Conditions\",\"Actions\",\"Variables\"]"), "{v}");
@@ -193,7 +193,7 @@ fn extract_as_files() {
 
 #[test]
 fn trg_view_of_variables() {
-    let v = view("[variable]\nname=\"hero\"\ntype=\"unit\"\narray=1\nsize=12\n", &crate::names::Names::default());
+    let v = view("[variable]\nname=\"hero\"\ntype=\"unit\"\narray=1\nsize=12\n", &crate::names::Names::default(), &[]);
     assert!(v.starts_with("{\"trigger\":false,\"variables\":[{\"line\":1,\"name\":\"hero\",\"type\":\"unit\",\"type_name\":\"unit\",\"array\":true,\"size\":12,\"initial\":null}],"), "{v}");
 }
 
@@ -281,4 +281,15 @@ fn trg_without_a_trigger_and_new_variables() {
     let two = format!("{vars}\n[variable]\nname=\"b\"\ntype=\"unit\"\nsize=1\n");
     assert_eq!(ok(&two, op::DELETE, 1, ""), "[variable]\nname=\"b\"\ntype=\"unit\"\nsize=1\n");
     assert!(catalog(3, &ui).starts_with("[[\"player\",\"WESTRING_TRIGTYPE_player\"]"));
+}
+
+#[test]
+fn trg_view_marks_undeclared_variables() {
+    let names = crate::names::Names::default();
+    let text = "[trigger]\naction=SetVariable($a, $b)\n";
+    let a = wtg_rs::Variable { name: "a".into(), kind: "integer".into(), unknown: 1, is_array: 0, array_size: 1, has_initial: 0, initial: String::new() };
+    let v = view(text, &names, &[a]);
+    assert!(v.contains("{\"r\":\"v\",\"p\":\"0\",\"s\":[\"a\"]}"), "{v}");
+    assert!(v.contains("{\"r\":\"u\",\"p\":\"1\",\"s\":[\"b\"]}"), "{v}");
+    assert!(v.contains("\"errors\":[[2,\"the variable `b` isn't declared in the project's trigger files ([variable])\"]]"), "{v}");
 }
