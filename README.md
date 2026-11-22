@@ -401,8 +401,8 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    An unknown function, variable or type is an error, and so is a call
    with too many or too few arguments; then types, the `handle` tree
    from `common.j`. In the editor, the build and MCP (`code_check`; the
-   natives: see `wc3-mcp`'s README). Names: done, in the editor and in
-   `code_check`; types next.
+   natives: see `wc3-mcp`'s README). Names and types: done, in the
+   editor and in `code_check`.
 1. **This toolchain's JASS into the game's.** The output above, for
    the triggers and hand-written JASS: the first thing that runs.
 2. **The map's script out of the map's files** (the table above):
@@ -1227,8 +1227,9 @@ empty-branch=error        // on, raised to an error
 Without a setting, a rule is on at its own level (the level it reports
 in each language) unless the table says it's off by default.
 
-**Names are checked across the project** (`unknown-name`,
-`argument-count`; `jass_rs::names`): each JASS file against what every
+**Names and types are checked across the project** (`unknown-name`,
+`argument-count`, `type-mismatch`, `array-access`,
+`constant-assignment`; `jass_rs::names`): each JASS file against what every
 file it sees declares, its project's and the game's scripts it runs with
 (`common.j`, `Blizzard.j` or `common.ai`, through `game=` and the
 roots; see [Projects](#projects)), and the names other languages declare
@@ -1273,6 +1274,9 @@ aren't lint: they can't be turned off. The rules are defined in
 | `unterminated-string`            | BNI                          | on      | a quoted string with no closing `"` |
 | `unknown-name`                   | JASS                         | on      | a function, variable or type declared nowhere: in the file, the files of its project, the game's scripts it runs with (see below) |
 | `argument-count`                 | JASS                         | on      | a call with more or fewer arguments than its function takes, or `function F` (a code value) of one that takes some |
+| `type-mismatch`                  | JASS                         | on      | a value of the wrong type: an argument, a value set or returned, a condition, an operator's side |
+| `array-access`                   | JASS                         | on      | an array used without its index, or an index of what isn't an array |
+| `constant-assignment`            | JASS                         | on      | a constant set |
 | `implicit-signature`             | JASS                         | **off** | a `function` or `native` without `takes` or `returns`, which the game requires (group `pure`) |
 | `implicit-keyword`               | JASS                         | **off** | an assignment without `set`, a call without `call` or a local without `local`, which the game requires (group `pure`) |
 | `merged-function`                | JASS                         | **off** | more than one `main` or `config`, which the build merges into one; the game reads one (group `pure`) |
