@@ -1,8 +1,16 @@
 # WC3
 
-Warcraft III language support for VS Code.
+A Warcraft III map editor in VS Code.
 
-## Features
+The goal is a full replacement for World Editor: a map is a project of
+plain files (scripts, triggers, object data, terrain, placed units and
+doodads, imports ...) that you open, edit and build into a `.w3x` here,
+with the code and the map in one place, under version control. It isn't
+all there yet: some parts of the map are already edited as in World
+Editor, some only as text, and some not at all. What works and what's
+coming is listed below.
+
+## What works now
 
 - An MCP server for chat agents in VS Code ([`wc3-mcp`](https://github.com/WarRaft/wc3-mcp),
   registered as **WC3**): tools that read and change SLK tables, MPQ
@@ -106,6 +114,23 @@ Warcraft III language support for VS Code.
   - Zinc via [`zinc-rs`](https://github.com/WarRaft/zinc-rs): duplicate libraries/members/
     locals, unused locals, `while (true)` without `break`/`return`,
     `break` outside a loop, empty `if`/`else`, missing `return`, ...
+- The map's other parts as text, checked as you type and written back on
+  save: cameras (`.w3c`), regions (`.w3r`), sounds (`.w3s`), the
+  terrain's header (`.w3e`), map info (`.w3i`), the custom script
+  (`.wct`), GUI triggers (`.wtg`), imports (`.imp`), minimap icons
+  (`.mmp`), placed doodads and units (`.doo`).
+
+## Not yet
+
+- **Building the map.** A project's `[build]` scenarios are declared,
+  but the builder that puts the roots and the code together into a
+  `.w3x` isn't there yet.
+- **Terrain.** Only the header is editable; heights, textures, cliffs and
+  water have no editor.
+- **Placing things.** Units, doodads, regions and cameras are edited as
+  text, not on a view of the map.
+- **Object data** as World Editor's tables and forms (it's text for now).
+- **Models** (`.mdx`, `.mdl`): no viewer.
 
 ## Architecture
 

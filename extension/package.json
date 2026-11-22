@@ -1,7 +1,7 @@
 {
   "name": "wc3",
   "displayName": "WC3",
-  "description": "Warcraft III language support for VS Code — JASS/vJASS, Zinc, Lua, AngelScript and BNI: semantic highlighting, live diagnostics and wc3.bni projects; maps as folders and a BLP texture viewer; object data (.w3a .w3u ...), cameras (.w3c), regions (.w3r), sounds (.w3s), the terrain's header (.w3e), map info (.w3i) and the custom script (.wct) as editable text; pathing maps (.wpm) as a picture.",
+    "description": "A Warcraft III map editor in VS Code, on its way to replacing World Editor (not everything is there yet): JASS/vJASS, Zinc, Lua, AngelScript and BNI with semantic highlighting, live diagnostics and wc3.bni projects; maps as folders; GUI triggers (.trg) as World Editor shows them; SLK tables as a grid; BLP textures and pathing maps (.wpm) as pictures; object data (.w3a .w3u ...), cameras, regions, sounds, the terrain's header, map info, the custom script, imports and placed units and doodads as editable text.",
   "version": "0.0.8",
   "publisher": "WarRaft",
   "icon": "images/logo.png",
@@ -14,7 +14,10 @@
     "vscode": "^1.111.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Linters",
+    "Visualization",
+    "Other"
   ],
   "main": "./extension.js",
   "activationEvents": [
