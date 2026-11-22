@@ -977,8 +977,8 @@ context menu of a `.trg`) shows the JASS the trigger is built into,
 beside it and read-only, following the text as it changes, saved or
 not (the text is the one truth; the view is only another way to edit it)
 (`wtg_rs::jass`). It's this toolchain's JASS, which the build makes the
-game's of (`jass-rs`'s README): no `set` and `call`, no `takes nothing
-returns nothing`, globals at the top level. Functions are named as World
+game's of (`jass-rs`'s README): no `set`, `call` and `local`, no
+`takes nothing returns nothing`, globals at the top level. Functions are named as World
 Editor's (`Trig_<name>_Conditions`, `Trig_<name>_Actions`; the `<name>`
 World Editor's, see above and `wtg_rs`'s README); its `InitTrig_<name>`
 is a `main` of the trigger's own, which the build merges with every
@@ -1167,7 +1167,7 @@ aren't lint: they can't be turned off. The rules are defined in
 | `unclosed-section-header`        | BNI                          | on      | a section header missing its `]` |
 | `unterminated-string`            | BNI                          | on      | a quoted string with no closing `"` |
 | `implicit-signature`             | JASS                         | **off** | a `function` or `native` without `takes` or `returns`, which the game requires (group `pure`) |
-| `implicit-keyword`               | JASS                         | **off** | an assignment without `set` or a call without `call`, which the game requires (group `pure`) |
+| `implicit-keyword`               | JASS                         | **off** | an assignment without `set`, a call without `call` or a local without `local`, which the game requires (group `pure`) |
 | `merged-function`                | JASS                         | **off** | more than one `main` or `config`, which the build merges into one; the game reads one (group `pure`) |
 | `declaration-after-function`     | JASS                         | **off** | a global, `globals` block, `native` or `type` after a function; the game reads them only before the first one (group `pure`) |
 | `global-outside-globals`         | JASS                         | **off** | a variable at the top level outside `globals ... endglobals`, where the game doesn't read it (group `pure`) |
