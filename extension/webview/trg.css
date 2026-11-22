@@ -395,3 +395,20 @@ img.icon.art {
     filter: grayscale(1);
     opacity: .5;
 }
+
+/* A variable's scope, when it isn't the map's. */
+.scope {
+    padding: 0 5px;
+    border-radius: 8px;
+    font-size: .85em;
+    color: var(--vscode-badge-foreground, #fff);
+    background: var(--vscode-badge-background, #4d4d4d);
+}
+
+.scope-local {
+    background: var(--vscode-charts-green, #388a34);
+}
+
+.scope-private {
+    background: var(--vscode-charts-purple, #7a3e9d);
+}

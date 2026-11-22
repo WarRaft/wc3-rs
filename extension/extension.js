@@ -1471,7 +1471,7 @@ function registerTrigger(context) {
                     return
                 }
                 case 'newVariable':
-                    return run(OP.NEW_VARIABLE, 0, [msg.name, msg.vtype, msg.array ? '1' : '0', msg.size, msg.initial].join('\n'))
+                    return run(OP.NEW_VARIABLE, 0, [msg.name, msg.vtype, msg.array ? '1' : '0', msg.size, msg.scope, msg.initial].join('\n'))
                 case 'reveal': return reveal(msg.line)
                 case 'openText': return commands.executeCommand('vscode.openWith', document.uri, 'default', panel.viewColumn)
                 }

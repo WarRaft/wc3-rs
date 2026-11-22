@@ -194,7 +194,7 @@ fn extract_as_files() {
 #[test]
 fn trg_view_of_variables() {
     let v = view("[variable]\nname=\"hero\"\ntype=\"unit\"\narray=1\nsize=12\n", &crate::names::Names::default(), &[]);
-    assert!(v.starts_with("{\"trigger\":false,\"variables\":[{\"line\":1,\"name\":\"hero\",\"type\":\"unit\",\"type_name\":\"unit\",\"array\":true,\"size\":12,\"initial\":null}],"), "{v}");
+    assert!(v.starts_with("{\"trigger\":false,\"variables\":[{\"line\":1,\"scope\":\"global\",\"name\":\"hero\",\"type\":\"unit\",\"type_name\":\"unit\",\"array\":true,\"size\":12,\"initial\":null}],"), "{v}");
 }
 
 fn edit_(text: &str, op: u32, line: usize, arg: &str) -> String {
@@ -208,6 +208,7 @@ fn ui() -> wtg_rs::ui::Ui {
         "[TriggerParams]\nPlayer00=0,player,Player(0),WESTRING_PLAYER_00\nPlayer01=0,player,Player(1),WESTRING_PLAYER_01\n",
         "[TriggerActions]\nCreateNUnitsAtLoc=0,integer,unitcode,player\n_CreateNUnitsAtLoc_Defaults=1,hfoo,Player00\n_CreateNUnitsAtLoc_Category=TC_UNIT\n",
         "SetVariable=0,AnyGlobal,Null\n",
+        "[TriggerConditions]\nOperatorComparePlayer=0,player,EqualNotEqualOperator,player\n",
         "[TriggerCalls]\nGetOwningPlayer=0,0,player,unit\nGetTriggerUnit=0,0,unit\n_GetOwningPlayer_Defaults=GetTriggerUnit\n",
     );
     let strings = "[TriggerActionStrings]\nCreateNUnitsAtLoc=\"Create Units\"\nCreateNUnitsAtLoc=\"Create \",~Number\n";
@@ -239,8 +240,11 @@ fn trg_set_param_and_new() {
 #[test]
 fn trg_choices_and_catalog() {
     let ui = ui();
-    let var = |name: &str, kind: &str, array: u32| wtg_rs::Variable {
-        name: name.into(), kind: kind.into(), unknown: 1, is_array: array, array_size: 0, has_initial: 0, initial: String::new(),
+    let var = |name: &str, kind: &str, array: u32| Declared {
+        variable: wtg_rs::Variable {
+            name: name.into(), kind: kind.into(), unknown: 1, is_array: array, array_size: 0, has_initial: 0, initial: String::new(),
+        },
+        scope: Scope::Global,
     };
     let vars = [var("p", "player", 0), var("ps", "player", 1), var("n", "integer", 0)];
     let text = "[trigger]\naction=CreateNUnitsAtLoc(\"1\", \"hfoo\", Player00)\naction=SetVariable($n, \"3\")\n";
@@ -248,7 +252,7 @@ fn trg_choices_and_catalog() {
     assert_eq!(c, concat!(
         "{\"type\":\"player\",\"type_name\":\"WESTRING_TRIGTYPE_player\",\"current\":{\"kind\":\"preset\",\"value\":\"Player00\"},",
         "\"presets\":[[\"Player00\",\"WESTRING_PLAYER_00\"],[\"Player01\",\"WESTRING_PLAYER_01\"]],",
-        "\"variables\":[[\"p\",\"WESTRING_TRIGTYPE_player\",false],[\"ps\",\"WESTRING_TRIGTYPE_player\",true]],",
+        "\"variables\":[[\"p\",\"WESTRING_TRIGTYPE_player\",false,\"\"],[\"ps\",\"WESTRING_TRIGTYPE_player\",true,\"\"]],",
         "\"calls\":[[\"GetOwningPlayer\",\"GetOwningPlayer\",\"\"]],\"value\":false}"
     ));
     // A type of the editor's own over integer takes a value.
@@ -270,13 +274,13 @@ fn trg_without_a_trigger_and_new_variables() {
     let vars = "[variable]\nname=\"a\"\ntype=\"unit\"\nsize=1\n";
     assert_eq!(ok(vars, op::PASTE, 0, "0 2 0\naction=DoNothing()\n"), format!("{vars}\n[trigger]\naction=DoNothing()\n"));
     // New variables: after the last, before the trigger, or at the end.
-    let t = ok(vars, op::NEW_VARIABLE, 0, "b\nplayer\n1\n12\n");
+    let t = ok(vars, op::NEW_VARIABLE, 0, "b\nplayer\n1\n12\n\n");
     assert_eq!(t, format!("{vars}\n[variable]\nname=\"b\"\ntype=\"player\"\narray=1\nsize=12\n"));
-    let t = ok("[trigger]\naction=DoNothing()\n", op::NEW_VARIABLE, 0, "n\ninteger\n0\n\n5");
+    let t = ok("[trigger]\naction=DoNothing()\n", op::NEW_VARIABLE, 0, "n\ninteger\n0\n\nglobal\n5");
     assert_eq!(t, "[variable]\nname=\"n\"\ntype=\"integer\"\nsize=1\ninitial=\"5\"\n\n[trigger]\naction=DoNothing()\n");
-    assert_eq!(ok("", op::NEW_VARIABLE, 0, "n\ninteger\n0\n\n"), "[variable]\nname=\"n\"\ntype=\"integer\"\nsize=1\n");
-    assert!(edit(vars, op::NEW_VARIABLE, 0, "A\nunit\n0\n\n", &ui).contains("has a variable A already"));
-    assert!(edit(vars, op::NEW_VARIABLE, 0, "1x\nunit\n0\n\n", &ui).contains("isn't a variable's name"));
+    assert_eq!(ok("", op::NEW_VARIABLE, 0, "n\ninteger\n0\n\n\n"), "[variable]\nname=\"n\"\ntype=\"integer\"\nsize=1\n");
+    assert!(edit(vars, op::NEW_VARIABLE, 0, "A\nunit\n0\n\n\n", &ui).contains("has a variable A already"));
+    assert!(edit(vars, op::NEW_VARIABLE, 0, "1x\nunit\n0\n\n\n", &ui).contains("isn't a variable's name"));
     // Deleting a variable: its section.
     let two = format!("{vars}\n[variable]\nname=\"b\"\ntype=\"unit\"\nsize=1\n");
     assert_eq!(ok(&two, op::DELETE, 1, ""), "[variable]\nname=\"b\"\ntype=\"unit\"\nsize=1\n");
@@ -288,8 +292,49 @@ fn trg_view_marks_undeclared_variables() {
     let names = crate::names::Names::default();
     let text = "[trigger]\naction=SetVariable($a, $b)\n";
     let a = wtg_rs::Variable { name: "a".into(), kind: "integer".into(), unknown: 1, is_array: 0, array_size: 1, has_initial: 0, initial: String::new() };
-    let v = view(text, &names, &[a]);
+    let v = view(text, &names, &[Declared { variable: a, scope: Scope::Global }]);
     assert!(v.contains("{\"r\":\"v\",\"p\":\"0\",\"s\":[\"a\"]}"), "{v}");
     assert!(v.contains("{\"r\":\"u\",\"p\":\"1\",\"s\":[\"b\"]}"), "{v}");
     assert!(v.contains("\"errors\":[[2,\"the variable `b` isn't declared in the project's trigger files ([variable])\"]]"), "{v}");
+}
+
+#[test]
+fn private_and_local_variables_seen_where_they_are() {
+    let ui = ui();
+    let declared = |name: &str, scope: Scope| Declared {
+        variable: wtg_rs::Variable {
+            name: name.into(), kind: "player".into(), unknown: 1, is_array: 0, array_size: 1, has_initial: 0, initial: String::new(),
+        },
+        scope,
+    };
+    let seen = [declared("g", Scope::Global), declared("p", Scope::Private), declared("l", Scope::Local)];
+    let text = concat!(
+        "[trigger]\n",                                                 // 1
+        "condition=OperatorComparePlayer(\"1\", OperatorEqualENE, $l)\n", // 2
+        "action=CreateNUnitsAtLoc(\"1\", \"hfoo\", $l)\n",            // 3
+        "action=ForGroupMultiple()\n",                                 // 4
+        ">action:0=CreateNUnitsAtLoc(\"1\", \"hfoo\", $l)\n",         // 5
+        "action=ForLoopAMultiple()\n",                                 // 6
+        ">action:0=CreateNUnitsAtLoc(\"1\", \"hfoo\", $p)\n",         // 7
+    );
+    let names = |line: usize| -> Vec<String> {
+        let c = choices(text, line, "2", &ui, &seen);
+        ["g", "p", "l"].iter().filter(|n| c.contains(&format!("[\"{n}\","))).map(|n| n.to_string()).collect()
+    };
+    // In the actions, inside an inline loop too: all; in a condition or a
+    // callback block: no local.
+    assert_eq!(names(3), ["g", "p", "l"]);
+    assert_eq!(names(7), ["g", "p", "l"]);
+    assert_eq!(names(2), ["g", "p"]);
+    assert_eq!(names(5), ["g", "p"]);
+    assert!(choices(text, 3, "2", &ui, &seen).contains("[\"l\",\"WESTRING_TRIGTYPE_player\",false,\"local\"]"));
+    // The view: the same.
+    let v = view(text, &crate::names::Names::default(), &seen);
+    assert!(v.contains("[2,\"the local `l` isn't seen here"), "{v}");
+    assert!(v.contains("[5,\"the local `l` isn't seen here"), "{v}");
+    assert!(!v.contains("[3,\"the local") && !v.contains("[7,\""), "{v}");
+    // A new local brings its trigger; a private one is written with its scope.
+    let t = applied("", op::NEW_VARIABLE, 0, "l\ninteger\n0\n\nlocal\n").unwrap();
+    assert_eq!(t, "[variable]\nname=\"l\"\ntype=\"integer\"\nscope=local\nsize=1\n\n[trigger]\n");
+    assert!(applied("", op::NEW_VARIABLE, 0, "p\ninteger\n0\n\nprivate\n").unwrap().contains("scope=private\n"));
 }

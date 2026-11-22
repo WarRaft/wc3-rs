@@ -50,7 +50,7 @@ const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.get
 /** @typedef {string | {r: string, p: string, s: Span[]}} Span */
 /** @typedef {{label: string, group: number, kind: number, nodes: Node[]}} Block */
 /** @typedef {{line: number, kind: number, enabled: boolean, name: string, known: boolean, icon: string, hint: string, text: Span[], blocks: Block[]}} Node */
-/** @typedef {{line: number, name: string, type: string, type_name: string, array: boolean, size: number, initial: string | null}} Variable */
+/** @typedef {{line: number, scope: string, name: string, type: string, type_name: string, array: boolean, size: number, initial: string | null}} Variable */
 /**
  * @typedef {{
  *   trigger: boolean, variables: Variable[],
@@ -69,6 +69,12 @@ const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.get
  */
 
 const KIND_CLASS = ['event', 'condition', 'action']
+/** What a variable's scope means. */
+const SCOPE_TITLE = /** @type {Record<string, string>} */ ({
+    global: 'seen by every trigger of the map',
+    private: 'a global seen by this file only',
+    local: "a local of this trigger's actions",
+})
 /** The editor's icons by kind (`[WorldEditArt]` keys). */
 const KIND_ART = ['SEIcon_Event', 'SEIcon_Condition', 'SEIcon_Action']
 /**
@@ -244,13 +250,14 @@ function drawRow(row) {
         name.className = 'v v-v'
         name.textContent = va.name
         label.append(name, ` : ${va.type_name}${va.array ? ` [${va.size}]` : ''}`)
+        if (va.scope !== 'global') label.append(' ', h('span', {class: `scope scope-${va.scope}`}, [va.scope]))
         if (va.initial !== null && va.initial !== '') {
             const init = document.createElement('span')
             init.className = 'v v-l'
             init.textContent = va.initial
             label.append(' = ', init)
         }
-        el.title = `${va.type}\nLine ${va.line}`
+        el.title = `${va.type}, ${SCOPE_TITLE[va.scope] || va.scope}\nLine ${va.line}`
     } else if (row.type === 'variables') {
         icon.className = 'icon fa-solid fa-cubes variable'
         label.textContent = row.label
@@ -637,7 +644,7 @@ function pickList(items, current, onPick) {
  * function or value, whichever its type has.
  * @param {number} line @param {string} path
  * @param {{type: string, type_name: string, current: {kind: string, value: string}, presets: [string, string][],
- *   variables: [string, string, boolean][], calls: [string, string, string][], value: boolean}} c
+ *   variables: [string, string, boolean, string][], calls: [string, string, string][], value: boolean}} c
  */
 function paramDialog(line, path, c) {
     /** @type {{kind: string, radio: HTMLInputElement, get: () => [string, string] | null}[]} */
@@ -659,7 +666,7 @@ function paramDialog(line, path, c) {
     }
     if (c.variables.length) {
         const select = /** @type {HTMLSelectElement} */ (h('select', {class: 'wide'},
-            c.variables.map(([n, t, a]) => h('option', {value: n}, [`${n}${a ? '[]' : ''} : ${t}`]))))
+            c.variables.map(([n, t, a, sc]) => h('option', {value: n}, [`${n}${a ? '[]' : ''} : ${t}${sc ? ` (${sc})` : ''}`]))))
         if (c.current.kind === 'variable') select.value = c.current.value
         option('variable', 'Variable', [select], () => {
             const v = c.variables.find(x => x[0] === select.value)
@@ -748,11 +755,17 @@ function variableDialog(types) {
     const size = /** @type {HTMLInputElement} */ (h('input', {type: 'text', class: 'size', value: '1', disabled: true}))
     array.addEventListener('change', () => { size.disabled = !array.checked })
     const initial = /** @type {HTMLInputElement} */ (h('input', {type: 'text', class: 'wide', spellcheck: false, placeholder: 'none'}))
+    const scope = /** @type {HTMLSelectElement} */ (h('select', {class: 'wide'}, [
+        h('option', {value: 'global'}, ['Global: every trigger of the map']),
+        h('option', {value: 'private'}, ['Private: a global this file only sees']),
+        h('option', {value: 'local'}, ["Local: this trigger's actions"]),
+    ]))
     const row = (/** @type {string} */ label, /** @type {HTMLElement[]} */ controls) =>
         h('div', {class: 'choice'}, [h('label', {class: 'choice-label'}, [label]), ...controls])
     openDialog('New Variable', [
         row('Name', [name]),
         row('Type', [type]),
+        row('Scope', [scope]),
         h('label', {class: 'check'}, [array, 'Array, of size ', size]),
         row('Initial value', [initial]),
     ], () => {
@@ -762,7 +775,7 @@ function variableDialog(types) {
         }
         vscode.postMessage({
             type: 'newVariable', name: name.value.trim(), vtype: type.value, array: array.checked,
-            size: size.value.trim() || '1', initial: initial.value,
+            size: size.value.trim() || '1', scope: scope.value, initial: initial.value,
         })
     })
     name.focus()

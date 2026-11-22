@@ -87,20 +87,20 @@ pub enum QueryKind {
     TriggerIcons,
 }
 
-/// The global variables of the map `id` is a trigger of: what every
-/// trigger file of its project declares (`[variable]`), the file itself
-/// as it's being edited included. One project is one map, so every
-/// trigger of it sees them all.
-fn project_variables(ws: &Workspace, id: &str) -> Vec<wtg_rs::Variable> {
-    let mut out: Vec<wtg_rs::Variable> = ws
+/// The variables the trigger file `id` sees: every global its project's
+/// trigger files declare (`[variable]`; one project is one map, so every
+/// trigger sees them all), and its own private ones and locals, as it's
+/// being edited.
+fn project_variables(ws: &Workspace, id: &str) -> Vec<wtg_rs::text::Declared> {
+    use wtg_rs::text::{Scope, trigger_from_text};
+    let mut out: Vec<wtg_rs::text::Declared> = ws
         .scope(id)
-        .filter(|(_, d, _)| d.path.as_deref().is_some_and(crate::triggers::is_trg_file))
-        .flat_map(|(_, d, _)| wtg_rs::text::trigger_from_text(&d.text, None).variables)
+        .filter(|(fid, d, _)| *fid != id && d.path.as_deref().is_some_and(crate::triggers::is_trg_file))
+        .flat_map(|(_, d, _)| trigger_from_text(&d.text, None).variables)
+        .filter(|d| d.scope == Scope::Global)
         .collect();
-    if !ws.scope(id).any(|(fid, _, _)| fid == id)
-        && let Some((doc, _)) = ws.file(id)
-    {
-        out.extend(wtg_rs::text::trigger_from_text(&doc.text, None).variables);
+    if let Some((doc, _)) = ws.file(id) {
+        out.extend(trigger_from_text(&doc.text, None).variables);
     }
     out
 }

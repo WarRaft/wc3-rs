@@ -715,10 +715,30 @@ alone holds the map's, `_variables.trg` at the top of the triggers'
 folder. The view lists them (name, type, array size, initial value);
 One project is one map, so its globals are the map's: every trigger
 file of the project sees every variable any of them declares. A
-parameter's dialog offers them all (of its type), and a `$name` no
-trigger file of the project declares shows as unknown, with a problem
-at its line. **New variable** declares one in the file (name, type, array and size,
-initial value), after its last variable, and **Delete** on one removes
+variable's `scope=` narrows that:
+
+| `scope=` | what it is | seen |
+|---|---|---|
+| (none) | a global of the map | by every trigger file of the project |
+| `private` | a global of this file | by this file only; a build names it so that no other file's clashes |
+| `local` | a local of this trigger's actions, which are one function | in the actions only, and not in a block that runs as a function of its own: a `ForGroupMultiple`'s, `ForForceMultiple`'s, `Enum...Multiple`'s actions (a `For each Integer` loop's and an if/then/else's, conditions too, are inside the function) |
+
+```ini
+[variable]
+name="i"
+type="integer"
+scope=local
+size=1
+initial="0"
+```
+
+A local needs its file's `[trigger]`, and `scope=` is a `.trg`'s own (the
+text of `war3map.wtg` has globals only). A parameter's dialog offers
+what's seen where the parameter is (of its type), and a `$name` not seen
+there shows as unknown, with a problem at its line: one no trigger file
+declares, or a local outside its actions. **New variable** declares one in the file (name, type, scope, array
+and size, initial value; a local brings the file's `[trigger]` when it
+has none), after its last variable, and **Delete** on one removes
 it. The trigger always shows: an empty file (a new one) is fine, and a
 file without a `[trigger]` gets one with the first thing put in it.
 

@@ -14,6 +14,7 @@
 use std::path::Path;
 
 use wtg_rs::TriggerData;
+use wtg_rs::text::{Declared, Scope};
 
 use crate::objects::{TO_BYTES, TO_TEXT};
 
@@ -131,7 +132,7 @@ pub fn extract(text: &str) -> String {
 /// `wtg_rs::ui::Span::Value`). `data` is whether the editor's files
 /// were found; the errors are checked against them when they were, but
 /// the tree isn't: a function they don't have shows, as unknown.
-pub fn view(text: &str, names: &crate::names::Names, globals: &[wtg_rs::Variable]) -> String {
+pub fn view(text: &str, names: &crate::names::Names, visible: &[Declared]) -> String {
     use wtg_rs::ui::Ui;
     let data = (!names.triggers.is_empty()).then_some(&names.triggers);
     let mut p = wtg_rs::text::trigger_from_text(text, None);
@@ -144,11 +145,12 @@ pub fn view(text: &str, names: &crate::names::Names, globals: &[wtg_rs::Variable
     let mut v = ui.render(&t, &p.lines);
     let js = crate::objects::json_string;
     let mut errors: Vec<(usize, String)> = p.errors.iter().map(|e| (e.line, e.message.clone())).collect();
-    // A variable no trigger file of the project declares: unknown.
-    let declared: std::collections::HashSet<&str> = globals.iter().map(|g| g.name.as_str()).collect();
-    for nodes in [&mut v.events, &mut v.conditions, &mut v.actions] {
-        undeclared(nodes, &declared, &mut errors);
-    }
+    // A variable no trigger file of the project declares, or a local
+    // where it isn't seen: unknown.
+    let seen = Seen::of(visible);
+    undeclared(&mut v.events, &seen, false, &mut errors);
+    undeclared(&mut v.conditions, &seen, false, &mut errors);
+    undeclared(&mut v.actions, &seen, true, &mut errors);
     errors.sort_by_key(|e| e.0);
     let errors: Vec<String> = errors.iter().map(|(line, m)| format!("[{line},{}]", js(m))).collect();
     let labels = ["WESTRING_EVENTS", "WESTRING_CONDITIONS", "WESTRING_ACTIONS", "WESTRING_VARIABLES"].map(|k| js(&ui.label(k)));
@@ -160,10 +162,12 @@ pub fn view(text: &str, names: &crate::names::Names, globals: &[wtg_rs::Variable
         .variables
         .iter()
         .zip(var_lines)
-        .map(|(var, line)| {
+        .map(|(d, line)| {
+            let var = &d.variable;
             let type_name = ui.types.get(&var.kind).cloned().unwrap_or_else(|| var.kind.clone());
             format!(
-                "{{\"line\":{line},\"name\":{},\"type\":{},\"type_name\":{},\"array\":{},\"size\":{},\"initial\":{}}}",
+                "{{\"line\":{line},\"scope\":\"{}\",\"name\":{},\"type\":{},\"type_name\":{},\"array\":{},\"size\":{},\"initial\":{}}}",
+                d.scope.word().unwrap_or("global"),
                 js(&var.name),
                 js(&var.kind),
                 js(&type_name),
@@ -192,29 +196,72 @@ pub fn view(text: &str, names: &crate::names::Names, globals: &[wtg_rs::Variable
     )
 }
 
+/// The names of the variables a trigger file sees: the globals (the
+/// project's and its own private ones), and its locals.
+struct Seen<'a> {
+    globals: std::collections::HashSet<&'a str>,
+    locals: std::collections::HashSet<&'a str>,
+}
+
+impl<'a> Seen<'a> {
+    fn of(visible: &'a [Declared]) -> Seen<'a> {
+        let names = |local: bool| visible.iter().filter(|d| (d.scope == Scope::Local) == local).map(|d| d.variable.name.as_str()).collect();
+        Seen { globals: names(false), locals: names(true) }
+    }
+}
+
 /// Marks the variables of `nodes` (and what's inside them) that aren't
-/// `declared` unknown, each with an error at its line.
-fn undeclared(nodes: &mut [wtg_rs::ui::Node], declared: &std::collections::HashSet<&str>, errors: &mut Vec<(usize, String)>) {
+/// seen unknown, each with an error at its line. `locals`: are the
+/// trigger's locals seen here (in its actions, but not in a block that
+/// runs as a function of its own)?
+fn undeclared(nodes: &mut [wtg_rs::ui::Node], seen: &Seen, locals: bool, errors: &mut Vec<(usize, String)>) {
     use wtg_rs::ui::{Role, Span};
-    fn walk(spans: &mut [Span], line: usize, declared: &std::collections::HashSet<&str>, errors: &mut Vec<(usize, String)>) {
+    fn walk(spans: &mut [Span], line: usize, seen: &Seen, locals: bool, errors: &mut Vec<(usize, String)>) {
         for s in spans {
             if let Span::Value { role, spans, .. } = s {
                 if *role == Role::Variable
                     && let Some(Span::Text(name)) = spans.first()
-                    && !declared.contains(name.as_str())
+                    && !seen.globals.contains(name.as_str())
+                    && !(locals && seen.locals.contains(name.as_str()))
                 {
-                    errors.push((line, format!("the variable `{name}` isn't declared in the project's trigger files ([variable])")));
+                    let message = if seen.locals.contains(name.as_str()) {
+                        format!("the local `{name}` isn't seen here: a trigger's locals are its actions', and not a block's that runs as a function of its own")
+                    } else {
+                        format!("the variable `{name}` isn't declared in the project's trigger files ([variable])")
+                    };
+                    errors.push((line, message));
                     *role = Role::Unknown;
                 }
-                walk(spans, line, declared, errors);
+                walk(spans, line, seen, locals, errors);
             }
         }
     }
     for n in nodes {
-        walk(&mut n.text, n.line, declared, errors);
+        walk(&mut n.text, n.line, seen, locals, errors);
         for b in &mut n.blocks {
-            undeclared(&mut b.nodes, declared, errors);
+            undeclared(&mut b.nodes, seen, locals && !b.callback, errors);
         }
+    }
+}
+
+/// Does the ECA at index `i` see its trigger's locals: is it in the
+/// actions, and not inside a block that runs as a function of its own
+/// (`wtg_rs::ui::BlockKind::callback`)?
+fn sees_locals(doc: &Doc, mut i: usize) -> bool {
+    loop {
+        let Some((key, _)) = doc.eca(i) else { return false };
+        if key.depth == 0 {
+            return key.kind == 2;
+        }
+        let Some(p) = (doc.section.start..i).rev().find(|&j| doc.eca(j).is_some_and(|(k, _)| k.depth + 1 == key.depth)) else {
+            return false;
+        };
+        let (pk, name) = doc.eca(p).expect("an ECA");
+        let group = key.group.unwrap_or(0);
+        if wtg_rs::ui::blocks(pk.kind, name).iter().any(|b| b.group == group && b.callback) {
+            return false;
+        }
+        i = p;
     }
 }
 
@@ -294,9 +341,11 @@ pub mod op {
     /// its kind (0 event, 1 condition, 2 action) and function name; its
     /// parameters are the function's defaults.
     pub const NEW: u32 = 7;
-    /// A new global variable: the argument is its name, type, `1` for an
-    /// array, its size, and (if any) its initial value, a line each. It
-    /// goes after the file's last variable, or before its trigger.
+    /// A new variable: the argument is its name, type, `1` for an array,
+    /// its size, its scope (`global`, `private`, `local`; see
+    /// `wtg_rs::text::Scope`), and (if any) its initial value, a line
+    /// each. It goes after the file's last variable, or before its
+    /// trigger; a local brings the trigger when there's none.
     pub const NEW_VARIABLE: u32 = 8;
 }
 
@@ -744,8 +793,14 @@ fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Re
         }
         op::NEW_VARIABLE => {
             let parts: Vec<&str> = arg.split('\n').collect();
-            let [name, kind, array, size, ref rest @ ..] = parts[..] else {
-                return Err("a new variable: its name, type, array, size".into());
+            let [name, kind, array, size, scope, ref rest @ ..] = parts[..] else {
+                return Err("a new variable: its name, type, array, size, scope".into());
+            };
+            let scope = match scope.trim() {
+                "" | "global" => Scope::Global,
+                "private" => Scope::Private,
+                "local" => Scope::Local,
+                w => return Err(format!("scope {w:?}: global, private or local")),
             };
             let name = name.trim();
             let ident = name.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
@@ -754,7 +809,7 @@ fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Re
                 return Err(format!("{name:?} isn't a variable's name: a letter, then letters, digits and _"));
             }
             let declared = wtg_rs::text::trigger_from_text(text, None).variables;
-            if declared.iter().any(|v| v.name.eq_ignore_ascii_case(name)) {
+            if declared.iter().any(|d| d.variable.name.eq_ignore_ascii_case(name)) {
                 return Err(format!("this file has a variable {name} already"));
             }
             if kind.trim().is_empty() {
@@ -772,9 +827,13 @@ fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Re
                 has_initial: initial.is_some() as u32,
                 initial: initial.map_or(String::new(), |v| v.to_string()),
             };
+            // A local is its trigger's: the file gets one.
+            if scope == Scope::Local {
+                doc.ensure_trigger();
+            }
             let eol = doc.eol;
             let section: Vec<String> =
-                wtg_rs::text::variables_to_text(&[v])?.lines().map(|l| format!("{l}{eol}")).collect();
+                wtg_rs::text::declared_to_text(&[Declared { variable: v, scope }])?.lines().map(|l| format!("{l}{eol}")).collect();
             // After the last variable, else before the trigger, else at
             // the end; a blank line between sections.
             let headers: Vec<usize> = (0..doc.lines.len()).filter(|&i| doc.variable_at(i + 1).is_some()).collect();
@@ -828,7 +887,7 @@ fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Re
 /// (`[variable]`): name, type's name, is it an array. `current.kind` is
 /// `preset`, `variable`, `call`, `value` or `other`. `{"error": "..."}`
 /// when there's no such parameter.
-pub fn choices(text: &str, line: usize, path: &str, ui: &wtg_rs::ui::Ui, variables: &[wtg_rs::Variable]) -> String {
+pub fn choices(text: &str, line: usize, path: &str, ui: &wtg_rs::ui::Ui, variables: &[Declared]) -> String {
     let js = crate::objects::json_string;
     match choices_of(text, line, path, ui, variables) {
         Ok(c) => c,
@@ -836,11 +895,15 @@ pub fn choices(text: &str, line: usize, path: &str, ui: &wtg_rs::ui::Ui, variabl
     }
 }
 
-fn choices_of(text: &str, line: usize, path: &str, ui: &wtg_rs::ui::Ui, variables: &[wtg_rs::Variable]) -> Result<String, String> {
+fn choices_of(text: &str, line: usize, path: &str, ui: &wtg_rs::ui::Ui, declared: &[Declared]) -> Result<String, String> {
     use wtg_rs::FunctionKind;
     let js = crate::objects::json_string;
     let doc = Doc::new(text);
     let (i, key) = doc.at(line)?;
+    // The variables seen here: a local in the actions only.
+    let locals = sees_locals(&doc, i);
+    let seen: Vec<&Declared> = declared.iter().filter(|d| d.scope != Scope::Local || locals).collect();
+    let variables: Vec<&wtg_rs::Variable> = seen.iter().map(|d| &d.variable).collect();
     let (_, rest) = doc.lines[i].split_once('=').expect("an ECA's line");
     let (name, params) = wtg_rs::text::read_call(rest.trim_end_matches(['\n', '\r']))?;
     // The type, step by step: the function's parameter's, a call's
@@ -882,10 +945,13 @@ fn choices_of(text: &str, line: usize, path: &str, ui: &wtg_rs::ui::Ui, variable
     let type_name = |t: &str| ui.types.get(t).cloned().unwrap_or_else(|| t.to_string());
     let presets: Vec<String> =
         if any { Vec::new() } else { ui.presets_of(&ty).iter().map(|(k, p)| format!("[{},{}]", js(k), js(&p.display))).collect() };
-    let vars: Vec<String> = variables
+    let vars: Vec<String> = seen
         .iter()
-        .filter(|v| any || (!ty.is_empty() && v.kind == ty))
-        .map(|v| format!("[{},{},{}]", js(&v.name), js(&type_name(&v.kind)), v.is_array != 0))
+        .filter(|d| any || (!ty.is_empty() && d.variable.kind == ty))
+        .map(|d| {
+            let v = &d.variable;
+            format!("[{},{},{},\"{}\"]", js(&v.name), js(&type_name(&v.kind)), v.is_array != 0, d.scope.word().unwrap_or(""))
+        })
         .collect();
     let calls: Vec<String> = if any || ty.is_empty() {
         Vec::new()
