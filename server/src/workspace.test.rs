@@ -897,3 +897,52 @@ fn a_roots_custom_script_is_code_of_the_project() {
     assert_eq!(definition(&ws, 1), vec![path_id(&disk)]);
     assert!(ws.file("wc3obj:/w").is_none());
 }
+
+#[test]
+fn names_are_checked_across_the_project() {
+    const COMMON: &str = "type unit extends handle\nnative KillUnit takes unit u returns nothing\n";
+    let tmp = project("ws-names", &[
+        ("game/README", ""),
+        ("p/wc3.bni", "[project]\ngame=../game\n[code]\nsources=.\n"),
+        ("p/a.j", "function Helper takes integer n returns nothing\nendfunction\n"),
+        ("p/b.j", "function F\n    Helper(1, 2)\n    Missing()\n    KillUnit(null)\nendfunction\n"),
+    ]);
+    crate::map::tests::make_map(&tmp.0.join("game/War3Patch.mpq"), &[("Scripts\\common.j", COMMON)]);
+    let mut ws = init(&tmp.0);
+    let b = path_id(&tmp.0.join("p/b.j"));
+    let messages = |ws: &mut Workspace| -> HashMap<String, Vec<String>> {
+        ws.take_reports()
+            .into_iter()
+            .map(|m| match m {
+                ServerMsg::File { id, diagnostics, .. } => (id, diagnostics.into_iter().map(|d| format!("{}: {}", d.rule, d.message)).collect()),
+                _ => unreachable!(),
+            })
+            .collect()
+    };
+    let r = messages(&mut ws);
+    // Helper of a.j, KillUnit of the game's common.j; Missing nowhere.
+    assert_eq!(
+        r[&b],
+        ["argument-count: 'Helper' takes 1 argument, not 2", "unknown-name: the function 'Missing' is declared nowhere"],
+        "{r:?}"
+    );
+    // a.j changes: b.j is checked again and reported, its text unchanged.
+    let a = path_id(&tmp.0.join("p/a.j"));
+    ws.open(a.clone(), Some(tmp.0.join("p/a.j")), Language::Jass, 2, "function Helper takes integer n, integer m returns nothing\nendfunction\nfunction Missing\nendfunction\n".into());
+    let r = messages(&mut ws);
+    assert_eq!(r.get(&b), Some(&Vec::new()), "{r:?}");
+    // A change that declares nothing new reports a.j alone.
+    ws.open(a.clone(), Some(tmp.0.join("p/a.j")), Language::Jass, 3, "function Helper takes integer n, integer m returns nothing\n    KillUnit(null)\nendfunction\nfunction Missing\nendfunction\n".into());
+    let r = messages(&mut ws);
+    assert_eq!(r.keys().collect::<Vec<_>>(), [&a], "{r:?}");
+}
+
+#[test]
+fn names_are_not_checked_without_the_games_common_j() {
+    let tmp = project("ws-names-none", &[("p/wc3.bni", "[code]\nsources=.\n"), ("p/b.j", "function F\n    Missing()\nendfunction\n")]);
+    let mut ws = init(&tmp.0);
+    for m in ws.take_reports() {
+        let ServerMsg::File { diagnostics, .. } = m else { unreachable!() };
+        assert!(!diagnostics.iter().any(|d| d.rule == parser_rs::rule::UNKNOWN_NAME), "{diagnostics:?}");
+    }
+}

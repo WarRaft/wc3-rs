@@ -5,6 +5,9 @@
 
 use std::path::Path;
 
+use std::sync::Arc;
+
+use jass_rs::names::Declarations;
 use parser_rs::{Level, Occurrence, ParseError};
 
 use crate::document::{Document, Language, LineIndex, Range};
@@ -213,6 +216,38 @@ pub struct Analysis {
     /// Every name declared or referenced, for the symbol index. Every
     /// language but BNI (a data format) produces them.
     pub symbols: Vec<Occurrence>,
+    /// A JASS file that parses: its program, to check its names against
+    /// its project's (`names`).
+    pub program: Option<Arc<jass_rs::Program>>,
+    /// What a file of code declares for the others: a JASS file's
+    /// functions, globals and types, and the names any language declares
+    /// project-wide (a public Zinc function, say).
+    pub declarations: Option<Arc<Declarations>>,
+}
+
+/// The project-wide declarations of a file of code, for the JASS files
+/// of its project: a JASS program's own, and every name its symbols
+/// declare project-wide (another language's, a Zinc block's).
+fn declarations(program: Option<&jass_rs::Program>, symbols: &[Occurrence]) -> Declarations {
+    let mut d = program.map(Declarations::of).unwrap_or_default();
+    for o in symbols.iter().filter(|o| o.declaration && o.scope == parser_rs::Scope::Project) {
+        if !d.functions.contains_key(&o.name) && !d.globals.contains_key(&o.name) && !d.types.contains_key(&o.name) {
+            d.name(o.name.clone());
+        }
+    }
+    d
+}
+
+/// Each name `program` (of `doc`) uses that neither it nor `env` (what
+/// the rest of its project and the game's scripts declare) has, and each
+/// call of the wrong arity (`jass_rs::names`), with `project`'s `[lint]`
+/// settings.
+pub fn names(doc: &Document, project: Option<&Project>, program: &jass_rs::Program, env: &[&Declarations]) -> Vec<Diagnostic> {
+    let text = doc.text.as_str();
+    let lines = LineIndex::new(text);
+    let out = Out { text, lines: &lines };
+    let found = jass_rs::names::check(program, env);
+    project::apply_lint(found, project).into_iter().map(|d| out.lint(d)).collect()
 }
 
 /// Analyzes `doc` with the settings of its `project`. Pure, so documents
@@ -221,9 +256,11 @@ pub struct Analysis {
 pub fn analyze(doc: &Document, project: Option<&Project>, highlight: bool, objects: Option<&Metadata>) -> Analysis {
     let diagnostics = diagnostics_with(doc, project, objects);
     let text = doc.text.as_str();
+    let mut program = None;
     let (tokens, symbols) = match doc.language {
         Language::Jass => {
             let dialect = jass_dialect(doc, project);
+            program = jass_rs::parse_with(text, dialect).ok().map(Arc::new);
             if highlight {
                 let (tokens, symbols) = jass_rs::semantic_tokens_and_symbols(text, dialect);
                 (parser_rs::semantic::encode(tokens, text), symbols)
@@ -249,7 +286,9 @@ pub fn analyze(doc: &Document, project: Option<&Project>, highlight: bool, objec
         _ if highlight => (semantic_tokens(doc, project), Vec::new()),
         _ => (Vec::new(), Vec::new()),
     };
-    Analysis { diagnostics, tokens, symbols }
+    let code = matches!(doc.language, Language::Jass | Language::Zinc | Language::Lua | Language::AngelScript);
+    let declarations = code.then(|| Arc::new(declarations(program.as_deref(), &symbols)));
+    Analysis { diagnostics, tokens, symbols, program, declarations }
 }
 
 /// `deltaLine, deltaStartChar, length, tokenType, tokenModifiers` per

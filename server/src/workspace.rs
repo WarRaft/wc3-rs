@@ -68,11 +68,39 @@ struct Entry {
     /// For the text form of terrain, what its file's points say (how many
     /// use each texture), read from the file as it is on disk.
     usage: Option<Arc<w3e_rs::text::Usage>>,
+    /// A JASS file that parses: its program, to check its names.
+    program: Option<Arc<jass_rs::Program>>,
+    /// What a file of code declares for the rest of its project.
+    declarations: Option<Arc<jass_rs::names::Declarations>>,
+    /// Its own diagnostics (parse errors, lint), from its last analysis.
+    own: Vec<analysis::Diagnostic>,
+    /// Its names checked against its project ([`Workspace::check_names`]).
+    named: Vec<analysis::Diagnostic>,
+    /// Its highlighting, from its last analysis, sent again with a new
+    /// check of its names.
+    tokens: Vec<u32>,
+    /// The settings it was last analyzed with (its `[lint]` for its names).
+    settings: Option<Arc<Project>>,
 }
 
 impl Entry {
     fn new(doc: Document, open: bool) -> Entry {
-        Entry { doc, open, symbols: Vec::new(), project: None, game: false, objects: None, names: None, usage: None }
+        Entry {
+            doc,
+            open,
+            symbols: Vec::new(),
+            project: None,
+            game: false,
+            objects: None,
+            names: None,
+            usage: None,
+            program: None,
+            declarations: None,
+            own: Vec::new(),
+            named: Vec::new(),
+            tokens: Vec::new(),
+            settings: None,
+        }
     }
 
     fn game(doc: Document, open: bool) -> Entry {
@@ -349,22 +377,83 @@ impl Workspace {
             ((*id).clone(), entry.doc.version, a)
         });
         let quiet: HashSet<String> = ids.iter().filter(|id| self.is_map_script(id)).cloned().collect();
-        let roots: HashMap<String, Option<PathBuf>> =
-            jobs.iter().map(|(id, _, p, _)| ((*id).clone(), p.as_ref().map(|p| p.root.clone()))).collect();
+        let mut roots: HashMap<String, Option<Arc<Project>>> = jobs.iter().map(|(id, _, p, _)| ((*id).clone(), p.clone())).collect();
         let mut objects: HashMap<String, Option<Arc<Metadata>>> =
             jobs.iter().map(|(id, _, _, o)| ((*id).clone(), o.clone())).collect();
-        for (id, version, mut a) in results {
+        // What any file declares for the others changed (or files left):
+        // every JASS file's names are checked again, else the analyzed ones'.
+        let mut changed = !out.is_empty();
+        let mut analyzed = Vec::new();
+        for (id, _, mut a) in results {
             if let Some(entry) = self.files.get_mut(&id) {
                 entry.symbols = a.symbols;
-                entry.project = roots.get(&id).cloned().flatten();
+                entry.settings = roots.remove(&id).flatten();
+                entry.project = entry.settings.as_ref().map(|p| p.root.clone());
                 entry.objects = objects.remove(&id).flatten();
                 if entry.game || quiet.contains(&id) {
                     a.diagnostics.clear();
                 }
+                changed |= entry.declarations != a.declarations;
+                entry.program = a.program;
+                entry.declarations = a.declarations;
+                entry.own = a.diagnostics;
+                entry.tokens = a.tokens;
+                analyzed.push(id);
             }
-            out.push(ServerMsg::File { id, version, diagnostics: a.diagnostics, tokens: a.tokens });
+        }
+        let recheck: Vec<String> = if changed {
+            self.files.iter().filter(|(_, e)| e.program.is_some()).map(|(id, _)| id.clone()).collect()
+        } else {
+            analyzed.iter().filter(|id| self.files.get(*id).is_some_and(|e| e.program.is_some())).cloned().collect()
+        };
+        let named = self.check_names(&recheck);
+        let analyzed: HashSet<String> = analyzed.into_iter().collect();
+        let mut ids: Vec<String> = analyzed.iter().cloned().collect();
+        for (id, diags) in named {
+            let entry = self.files.get_mut(&id).expect("checked");
+            // Sent again only when they changed.
+            if entry.named != diags && !analyzed.contains(&id) {
+                ids.push(id.clone());
+            }
+            entry.named = diags;
+        }
+        ids.sort();
+        ids.dedup();
+        for id in ids {
+            let e = &self.files[&id];
+            let mut diagnostics = e.own.clone();
+            diagnostics.extend(e.named.iter().cloned());
+            diagnostics.sort_by_key(|d| (d.range.start.line, d.range.start.character));
+            out.push(ServerMsg::File { id: id.clone(), version: e.doc.version, diagnostics, tokens: e.tokens.clone() });
         }
         out
+    }
+
+    /// The names of the JASS files `ids` checked against what the files
+    /// each one sees declare (its project's, the game's scripts it runs
+    /// with: [`Workspace::scope`]), in parallel: `jass_rs::names`. Only
+    /// where the game's `common.j` is seen (without it every native would
+    /// be unknown); never in the game's scripts or a map's own script,
+    /// whose problems aren't reported. Each id with its diagnostics.
+    fn check_names(&self, ids: &[String]) -> Vec<(String, Vec<analysis::Diagnostic>)> {
+        let jobs: Vec<(&String, &Entry)> = ids.iter().filter_map(|id| self.files.get(id).map(|e| (id, e))).collect();
+        parallel_map(&jobs, |(id, e)| {
+            let Some(program) = e.program.as_deref().filter(|_| !e.game && !self.is_map_script(id)) else {
+                return ((*id).clone(), Vec::new());
+            };
+            let mut env = Vec::new();
+            let mut common = false;
+            for (fid, _, _) in self.scope(id).filter(|(fid, _, _)| fid != id) {
+                common |= self.files[fid].game && crate::game::Script::of(Path::new(fid)) == Some(crate::game::Script::Common);
+                if let Some(d) = self.files[fid].declarations.as_deref() {
+                    env.push(d);
+                }
+            }
+            if !common {
+                return ((*id).clone(), Vec::new());
+            }
+            ((*id).clone(), analysis::names(&e.doc, e.settings.as_deref(), program, &env))
+        })
     }
 
     /// The set of game files read together with the game file `id` (or,

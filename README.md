@@ -330,6 +330,94 @@ Problems panel shows the whole project's errors without opening anything.
 - **Cost.** Files are analyzed in parallel: 25 MB of JASS (60 copies of
   `Blizzard.j`) loads in about 0.2 s.
 
+## Building a map
+
+Not built yet: this is the plan, and what's decided about it. A build
+makes the map's script and the map out of everything a project has.
+
+### One model, several outputs
+
+Every source goes into one model of the code (the IR, in a crate of its
+own, `wc3-build`, which the server and `wc3-mcp` use as a library), and
+each output is made from it:
+
+```
+ this toolchain's JASS ─┐
+ vJASS ─────────────────┤                          ┌─▶ JASS, as the game reads it
+ Zinc ──────────────────┼─▶ the IR ─▶ checks ─▶ ───┼─▶ AngelScript (UjAPI)
+ triggers (.wtg, .trg) ─┤                          └─▶ Lua
+ custom script (.wct) ──┤
+ the map's data ────────┘
+```
+
+- **The IR keeps what's object-oriented**: libraries, structs, methods,
+  interfaces. Only the JASS output turns structs into arrays and an
+  allocator; AngelScript gets classes. Lowered early, AngelScript
+  couldn't be had.
+- **The map's data is code too, made into the IR, not into JASS text**:
+  the players, forces, alliances and start locations of `war3map.w3i`,
+  its fog, sky, weather and music; what `.doo` places (units, items and
+  what they drop, the destructables code names); the regions of `.w3r`
+  with their weather and sounds; the cameras of `.w3c`, the sounds of
+  `.w3s`; the variables and triggers of `.wtg` and `.trg`; the custom
+  script of `.wct`, its header and the triggers of custom text. So every
+  output gets it the same.
+- **One set of checks** for the editor, the build and MCP: the same
+  rules, the same `[lint]` settings, the same messages.
+
+### Outputs
+
+- **JASS, as the game reads it.** The functions sorted so that none
+  calls one below it (by their calls, a graph sorted topologically).
+  Calls that can't be sorted (A calls B, B calls A) go through
+  `TriggerEvaluate`, as JassHelper's `.evaluate`: the arguments and the
+  result through globals of the function's own. JASS runs one thing at
+  a time and an evaluated function takes no arguments, so two calls
+  can't race for those globals. `main` and `config`, declared any number
+  of times, are merged into one each, and the triggers of map
+  initialization run after every `main` (as World Editor's
+  `RunInitializationTriggers`). `set`, `call`, `local` and `takes nothing
+  returns nothing` are written; locals go to the top of their function,
+  globals into `globals`. What it makes passes the rules of the group
+  `pure`.
+- **AngelScript, for UjAPI.** Classes for structs. A stub to begin
+  with: what matters now is that the IR leaves room for it.
+- **Lua.** The lowest priority: a stub, which may well translate the
+  JASS, and doesn't have to run yet.
+
+### vJASS and Zinc
+
+The most used of each first, not all of JassHelper: libraries and
+scopes with `requires` and initializers, `private`/`public`, structs
+with methods, `static` members, `create`/`destroy`/`onDestroy`,
+interfaces, `.evaluate`/`.execute`, `static if` on constants. The rest
+(`textmacro`, `hook`, operators, `delegate`, `stub`, modules ...) when
+a map needs it. Zinc's parser is complete; it goes into the same IR.
+
+### In order
+
+0. **Names and types.** Every name resolved: the game's `common.j` and
+   `Blizzard.j` (through the project's lookup) and the project's files.
+   An unknown function, variable or type is an error, and so is a call
+   with too many or too few arguments; then types, the `handle` tree
+   from `common.j`. In the editor, the build and MCP (`code_check`; the
+   natives: see `wc3-mcp`'s README). Names: done, in the editor and in
+   `code_check`; types next.
+1. **This toolchain's JASS into the game's.** The output above, for
+   the triggers and hand-written JASS: the first thing that runs.
+2. **The map's script out of the map's files** (the table above):
+   saving a `.w3x` makes its `war3map.j` again, and so does a build.
+   Checked against the `war3map.j` of real maps by what each part does
+   (its calls), not byte for byte; taking a file out of a map into a
+   folder doesn't change what's built.
+3. **vJASS and Zinc into the IR**, the most used first.
+4. **Their objects in JASS**: structs as arrays and an allocator,
+   interfaces through `TriggerEvaluate`, libraries in the order of
+   `requires`.
+5. **AngelScript and Lua** past their stubs.
+6. **The map**: `[build]` scenarios, the roots' layers, the `.w3x`
+   written (`storm-rs`); optimizations (dead code, shorter names) after.
+
 ## Textures
 
 A `.blp` opens in the editor's texture viewer, from disk or from inside a
@@ -1139,6 +1227,18 @@ empty-branch=error        // on, raised to an error
 Without a setting, a rule is on at its own level (the level it reports
 in each language) unless the table says it's off by default.
 
+**Names are checked across the project** (`unknown-name`,
+`argument-count`; `jass_rs::names`): each JASS file against what every
+file it sees declares, its project's and the game's scripts it runs with
+(`common.j`, `Blizzard.j` or `common.ai`, through `game=` and the
+roots; see [Projects](#projects)), and the names other languages declare
+project-wide (a public Zinc function is known, its arguments not
+counted). When a file's declarations change, every JASS file is checked
+again, so a problem between files shows and goes as it's typed. Only
+where the game's `common.j` is found: without it every native would be
+unknown. The game's scripts and a map's own `war3map.j` aren't checked.
+`wc3-mcp`'s `code_check` gives the same for a whole project.
+
 A **group** switches several rules at once: `pure=error` sets every rule
 of the group `pure`. A rule set by name wins over its group, wherever
 the lines are, so `pure=error` with `implicit-signature=off` keeps that
@@ -1171,6 +1271,8 @@ aren't lint: they can't be turned off. The rules are defined in
 | `duplicate-section`              | BNI                          | on      | a section header repeated in the file |
 | `unclosed-section-header`        | BNI                          | on      | a section header missing its `]` |
 | `unterminated-string`            | BNI                          | on      | a quoted string with no closing `"` |
+| `unknown-name`                   | JASS                         | on      | a function, variable or type declared nowhere: in the file, the files of its project, the game's scripts it runs with (see below) |
+| `argument-count`                 | JASS                         | on      | a call with more or fewer arguments than its function takes, or `function F` (a code value) of one that takes some |
 | `implicit-signature`             | JASS                         | **off** | a `function` or `native` without `takes` or `returns`, which the game requires (group `pure`) |
 | `implicit-keyword`               | JASS                         | **off** | an assignment without `set`, a call without `call` or a local without `local`, which the game requires (group `pure`) |
 | `merged-function`                | JASS                         | **off** | more than one `main` or `config`, which the build merges into one; the game reads one (group `pure`) |
