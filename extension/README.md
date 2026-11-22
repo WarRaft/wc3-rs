@@ -100,6 +100,14 @@ coming is listed below.
   or drag), copy, cut and paste them, and edit the name, comment,
   Enabled and Initially On. **Open as Text** and **Open as Trigger**
   switch; both are the same document.
+- A map's GUI triggers (`war3map.wtg`) open the same way, with the tree
+  of their categories, triggers and variables on the left: pick a
+  trigger there and edit it as above; make, rename and delete
+  categories, triggers and variables (globals, as World Editor's), and
+  drag triggers between categories; custom script is one line there,
+  as World Editor's; saving writes `war3map.wtg`.
+  **Open as Text** and **Open as Triggers** switch; **Extract
+  Triggers…** takes them out as `.trg` files.
 - Symbol navigation across the whole project, in every language: go to
   definition, find references, hover with the declaration, outline, go
   to symbol in workspace, and rename (F2), which refuses with a reason
@@ -183,6 +191,11 @@ dependencies besides the VS Code API.
   (`webview/trg.js`) draws the tree the server reads from the text
   (`QUERY.TRIGGER_VIEW`), and every operation goes back as one edit of
   whole lines (`QUERY.TRIGGER_EDIT`), with the line to select after it.
+  A `.wtg`'s text opens in the same editor (`wc3.wtgTriggers`, priority
+  `option`; `wc3.objects` opens the file's text in it), with
+  `webview/wtg.js` drawing the map's tree beside: the queries carry
+  which trigger is picked, and the server cuts it out of the text and
+  puts it back.
 - **Restored tabs.** `wc3obj:` and `wc3map:` exist only while the
   extension runs, so it activates on them (`onFileSystem:wc3obj`,
   `onFileSystem:wc3map`): a tab of either that VS Code restores after a

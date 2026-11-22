@@ -126,6 +126,12 @@ let anchor = selected
 let chosen = new Set()
 /** A line to select once a view has it (after an operation). */
 let selectLine = 0
+/**
+ * A map's triggers (`wtg.js` sets it): its variables, edited from its tree
+ * by their lines in the text; globals only, World Editor's.
+ * @type {Variable[] | null}
+ */
+let mapVariables = null
 
 const tree = $('tree')
 const save = () => vscode.setState({collapsed: [...collapsed], selected})
@@ -694,7 +700,7 @@ $('problems').addEventListener('click', () => {
     if (view && view.errors.length) vscode.postMessage({type: 'reveal', line: view.errors[0][0]})
 })
 $('open-text').addEventListener('click', () => vscode.postMessage({type: 'openText'}))
-$('show-jass').addEventListener('click', () => vscode.postMessage({type: 'showJass'}))
+$('show-jass')?.addEventListener('click', () => vscode.postMessage({type: 'showJass'}))
 
 /** @param {View} v */
 function showFields(v) {
@@ -747,13 +753,14 @@ function closeDialog() {
 
 /**
  * Shows the dialog with `body`; `ok` runs on OK (Enter), and closes it
- * unless it returns false. With a `line`, a button opens the text there.
- * @param {string} title @param {HTMLElement[]} body @param {() => boolean | void} ok @param {number} [line]
+ * unless it returns false. With a `line`, a button opens the text there
+ * (`textLine`: a line of the whole text, not of the trigger's).
+ * @param {string} title @param {HTMLElement[]} body @param {() => boolean | void} ok @param {number} [line] @param {boolean} [textLine]
  */
-function openDialog(title, body, ok, line = 0) {
+function openDialog(title, body, ok, line = 0, textLine = false) {
     const reveal = line ? [h('button', {type: 'button', class: 'text-button', title: 'Open the text at this line', onclick: () => {
         closeDialog()
-        vscode.postMessage({type: 'reveal', line})
+        vscode.postMessage({type: textLine ? 'revealText' : 'reveal', line})
     }}, ['Show in Text']), h('div', {class: 'spacer'})] : []
     box.replaceChildren(
         h('div', {class: 'dialog-title'}, [title]),
@@ -853,8 +860,9 @@ function paramDialog(line, path, c) {
         option('call', 'Function', [filter, list], () => list.value ? ['call', list.value] : null)
     }
     if (c.value) {
-        // Custom script: lines, each a line of JASS (Ctrl+Enter is OK).
-        const lines = c.type === 'scriptcode'
+        // Custom script: lines, each a line of JASS (Ctrl+Enter is OK); in
+        // a map's triggers one line, as World Editor's.
+        const lines = c.type === 'scriptcode' && mapVariables === null
         const input = /** @type {HTMLInputElement} */ (lines
             ? h('textarea', {class: 'wide code', rows: 8, spellcheck: false, wrap: 'off'})
             : h('input', {type: 'text', class: 'wide', spellcheck: false}))
@@ -961,11 +969,13 @@ function newDialog(kind, place, items, line = 0) {
 
 /**
  * The dialog of a new variable: name, type, scope, array and size,
- * initial value. With a `line`, of the variable there: OK rewrites it.
+ * initial value (no scope in a map's triggers: their variables are
+ * globals). With a `line`, of the variable there: OK rewrites it.
  * @param {[string, string][]} types @param {number} [line]
  */
 function variableDialog(types, line = 0) {
-    const v = line && view ? view.variables.find(x => x.line === line) : null
+    const list = mapVariables ?? (view ? view.variables : [])
+    const v = line ? list.find(x => x.line === line) : null
     const name = /** @type {HTMLInputElement} */ (h('input', {type: 'text', class: 'wide', spellcheck: false, placeholder: 'name'}))
     const type = /** @type {HTMLSelectElement} */ (h('select', {class: 'wide'}, types.map(([t, n]) => h('option', {value: t}, [n]))))
     const integer = types.find(t => t[0] === 'integer')
@@ -994,7 +1004,8 @@ function variableDialog(types, line = 0) {
     openDialog(v ? 'Edit Variable' : 'New Variable', [
         row('Name', [name]),
         row('Type', [type]),
-        row('Scope', [scope]),
+        // A map's are globals.
+        ...(mapVariables ? [] : [row('Scope', [scope])]),
         h('label', {class: 'check'}, [array, 'Array, of size ', size]),
         row('Initial value', [initial]),
     ], () => {
@@ -1004,9 +1015,9 @@ function variableDialog(types, line = 0) {
         }
         vscode.postMessage({
             type: v ? 'setVariable' : 'newVariable', line, name: name.value.trim(), vtype: type.value, array: array.checked,
-            size: size.value.trim() || '1', scope: scope.value, initial: initial.value,
+            size: size.value.trim() || '1', scope: mapVariables ? 'global' : scope.value, initial: initial.value,
         })
-    }, line)
+    }, line, !!mapVariables)
     name.focus()
     if (v) name.select()
 }

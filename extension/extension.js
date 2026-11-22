@@ -81,7 +81,8 @@
  * events, conditions and actions as lines of calls; the server reads them
  * with the project's `UI\TriggerData.txt`. A trigger of its own (`.trg`,
  * one `[trigger]` of that text, its folder its category) opens as World
- * Editor shows it (`registerTrigger`, `webview/trg.js`), and Show JASS
+ * Editor shows it (`registerTrigger`, `webview/trg.js`), and so does the
+ * `.wtg`'s text, with the map's tree beside (`webview/wtg.js`); Show JASS
  * shows what it's built into (`registerTriggerJass`). A collection of object data
  * (`.w3o`, World Editor's export) too: `[w3o]`, then each kind's text form.
  *
@@ -1115,7 +1116,9 @@ function registerObjects(context) {
 </head><body><p>Opening ${html(path.basename(document.uri.fsPath))} as text…</p></body></html>`
             try {
                 const doc = await workspace.openTextDocument(text)
-                await window.showTextDocument(doc, {viewColumn: panel.viewColumn, preview: false})
+                // A map's triggers: as World Editor shows them (Open as Text for the text).
+                if (doc.languageId === 'wtg') await commands.executeCommand('vscode.openWith', text, 'wc3.wtgTriggers', {viewColumn: panel.viewColumn, preview: false})
+                else await window.showTextDocument(doc, {viewColumn: panel.viewColumn, preview: false})
                 panel.dispose()
             } catch (e) {
                 const message = e instanceof Error ? e.message : String(e)
@@ -1373,11 +1376,25 @@ function registerSlk(context) {
  * here as a workspace edit. Copy and paste go through the clipboard as
  * lines of the text, so they paste into a text editor too.
  *
+ * A map's triggers (`.wtg`) open the same way (`wc3.wtgTriggers`, over
+ * their text under the `wc3obj:` scheme): a tree of the categories,
+ * triggers and variables beside it (`webview/wtg.js`), and the trigger
+ * picked there as a `.trg` shows. The server cuts that trigger out of the
+ * text (`triggers::wtg_view`): the page speaks in the lines of its
+ * section, which trigger it is (from 1, its place among them) goes before
+ * the text of each query, and the edits come back as edits of the whole
+ * text. The tree's operations (a new trigger or category, renaming or
+ * deleting one, the variables) are queries of the same kind
+ * (`triggers::map_op`); the answer's `pick` is the trigger to pick after
+ * one. Only World Editor's own is offered there: the variables are
+ * globals, and there's no Show JASS.
+ *
  * @param {import('vscode').ExtensionContext} context
  */
 function registerTrigger(context) {
     const media = Uri.joinPath(context.extensionUri, 'webview')
-    const html = webview => {
+    /** The page; `wtg`: a map's triggers, with their tree beside it. */
+    const html = (webview, wtg) => {
         const nonce = [...Array(32)].map(() => Math.floor(Math.random() * 36).toString(36)).join('')
         const asset = name => webview.asWebviewUri(Uri.joinPath(media, name))
         const fa = name => asset(`fontawesome/${name}`)
@@ -1385,11 +1402,23 @@ function registerTrigger(context) {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; img-src data:; script-src 'nonce-${nonce}'">
 <link rel="stylesheet" href="${fa('fontawesome.min.css')}">
 <link rel="stylesheet" href="${asset('trg.css')}">
+${wtg ? `<link rel="stylesheet" href="${asset('wtg.css')}">` : ''}
 <style>
 @font-face { font-family: "Font Awesome 6 Free"; font-style: normal; font-weight: 900; font-display: block; src: url("${fa('fa-solid-900.woff2')}") format("woff2"); }
 .fa-solid { font-family: "Font Awesome 6 Free"; font-weight: 900; }
 </style>
-</head><body>
+</head><body${wtg ? ' class="wtg"' : ''}>
+${wtg ? `<div class="map-side">
+<div class="map-tools">
+  <button id="map-new-category" title="New category"><i class="fa-solid fa-folder-plus"></i></button>
+  <button id="map-new-trigger" title="New trigger, in the category selected"><i class="fa-solid fa-file-circle-plus"></i></button>
+  <button id="map-new-variable" title="New variable"><i class="fa-solid fa-cube"></i></button>
+  <button id="map-rename" title="Rename (F2)"><i class="fa-solid fa-pen"></i></button>
+  <button id="map-delete" title="Delete (Delete)"><i class="fa-solid fa-trash"></i></button>
+</div>
+<nav id="map-tree" class="map-tree" tabindex="0" role="tree"></nav>
+</div>
+<div class="main">` : ''}
 <div class="bar">
   <span id="title-icon" class="title-icon"><i class="fa-solid fa-bolt"></i></span>
   <input id="name" class="name" spellcheck="false" title="The trigger's name">
@@ -1408,28 +1437,49 @@ function registerTrigger(context) {
   </div>
   <div class="spacer"></div>
   <span id="problems" class="problems" hidden></span>
-  <button id="show-jass" class="text-button" title="The JASS this trigger is built into, beside it">Show JASS</button>
+  ${wtg ? `<button id="extract" class="text-button" title="Every trigger as a file of its own (.trg), in a folder you pick">Extract Triggers…</button>`
+        : `<button id="show-jass" class="text-button" title="The JASS this trigger is built into, beside it">Show JASS</button>`}
   <button id="open-text" class="text-button" title="Open the text of this file">Open as Text</button>
 </div>
 <textarea id="description" class="description" rows="2" spellcheck="false" placeholder="Comment"></textarea>
 <div id="notice" class="notice" hidden></div>
 <div id="tree" class="tree" tabindex="0" role="tree"></div>
 <div id="loading" class="message">Reading the trigger…</div>
+${wtg ? '</div>' : ''}
 <div id="dialog" class="overlay" hidden><form id="dialog-box" class="dialog"></form></div>
 <script nonce="${nonce}" src="${asset('trg.js')}"></script>
+${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
 </body></html>`
     }
 
     const editor = {
-        resolveCustomTextEditor(document, panel) {
+        async resolveCustomTextEditor(document, panel) {
             const {webview} = panel
+            const wtg = /\.wtg$/i.test(document.uri.path)
+            if (wtg && document.uri.scheme !== OBJECTS_SCHEME) {
+                // The file itself: its text is what opens.
+                await commands.executeCommand('vscode.openWith', Uri.file(document.uri.fsPath).with({scheme: OBJECTS_SCHEME}), 'wc3.wtgTriggers', panel.viewColumn)
+                return panel.dispose()
+            }
             webview.options = {enableScripts: true, localResourceRoots: [media]}
-            webview.html = html(webview)
+            webview.html = html(webview, wtg)
             const id = idOf(document)
+            /** A map's triggers: which is picked (from 1; 0: the first), and the text's line of each of its lines. */
+            let picked = 0
+            /** @type {number[]} */
+            let at = []
+            /** A query's text: in a map's triggers, after which is picked. */
+            const of = text => wtg ? `${picked}\n${text}` : text
 
             const post = async select => {
-                const answer = await query(QUERY.TRIGGER_VIEW, id, {line: 0, character: 0})
-                if (answer && answer.text) webview.postMessage({type: 'view', view: JSON.parse(answer.text), select, file: path.basename(document.uri.path).replace(/\.trg$/i, '')})
+                const answer = await query(QUERY.TRIGGER_VIEW, id, {line: picked, character: 0})
+                if (!answer || !answer.text) return
+                if (!wtg) return webview.postMessage({type: 'view', view: JSON.parse(answer.text), select, file: path.basename(document.uri.path).replace(/\.trg$/i, '')})
+                const map = JSON.parse(answer.text)
+                picked = map.picked
+                at = map.at
+                webview.postMessage({type: 'tree', tree: map})
+                if (map.view) webview.postMessage({type: 'view', view: map.view, select, file: ''})
             }
             let timer
             let select = 0
@@ -1442,7 +1492,7 @@ function registerTrigger(context) {
             }
             /** One operation of `triggers::op` on the ECA at `line`. */
             const run = async (op, line, arg = '') => {
-                const answer = await query(QUERY.TRIGGER_EDIT, id, {line, character: op}, arg)
+                const answer = await query(QUERY.TRIGGER_EDIT, id, {line, character: op}, of(arg))
                 if (!answer || !answer.text) {
                     window.showErrorMessage('WC3: the language server did not answer; the trigger is unchanged.')
                     return null
@@ -1453,6 +1503,8 @@ function registerTrigger(context) {
                     return null
                 }
                 if (result.edits) {
+                    // A map's: the trigger to pick after it.
+                    if (wtg && result.pick !== undefined) picked = result.pick
                     if (!result.edits.length && !result.files?.length) {
                         if (result.line) webview.postMessage({type: 'select', line: result.line})
                         return result
@@ -1466,13 +1518,17 @@ function registerTrigger(context) {
                 }
                 return result
             }
-            const OP = {TOGGLE: 0, DELETE: 1, MOVE: 2, PASTE: 3, COPY: 4, FIELD: 5, SET_PARAM: 6, NEW: 7, NEW_VARIABLE: 8, REPLACE: 9, SET_VARIABLE: 10, CHECK_VARIABLE: 11, RENAMED: 12}
-            const reveal = async line => {
-                const at = new Position(Math.max(0, line - 1), 0)
+            const OP = {TOGGLE: 0, DELETE: 1, MOVE: 2, PASTE: 3, COPY: 4, FIELD: 5, SET_PARAM: 6, NEW: 7, NEW_VARIABLE: 8, REPLACE: 9, SET_VARIABLE: 10, CHECK_VARIABLE: 11, RENAMED: 12,
+                // A map's tree (`triggers::map_op`).
+                NEW_TRIGGER: 20, NEW_CATEGORY: 21, DELETE_TRIGGER: 22, DELETE_CATEGORY: 23, RENAME_CATEGORY: 24, DELETE_VARIABLE: 25, MOVE_TRIGGER: 26}
+            /** Shows the text at `line`: of the picked trigger's section, or (`own`) the text's. */
+            const reveal = async (line, own = false) => {
+                if (wtg && !own) line = at[line - 1] ?? at[0] ?? 1
+                const where = new Position(Math.max(0, line - 1), 0)
                 const shown = window.visibleTextEditors.find(e => e.document === document)
                 const ed = shown ?? await window.showTextDocument(document, {viewColumn: ViewColumn.Beside, preserveFocus: false})
-                ed.selection = new Selection(at, at)
-                ed.revealRange(new Range(at, at), TextEditorRevealType.InCenterIfOutsideViewport)
+                ed.selection = new Selection(where, where)
+                ed.revealRange(new Range(where, where), TextEditorRevealType.InCenterIfOutsideViewport)
                 if (shown) window.showTextDocument(document, shown.viewColumn)
             }
             /**
@@ -1491,7 +1547,7 @@ function registerTrigger(context) {
                 const deleting = !arg
                 if (places.length) {
                     const what = deleting ? 'Deleting the variable' : 'This change'
-                    const shown = places.slice(0, 12).map(([file, l, why]) => `${path.basename(file)}:${l}: ${why}`)
+                    const shown = places.slice(0, 12).map(([file, l, why]) => `${path.basename(file || document.uri.path)}:${l}: ${why}`)
                     if (places.length > shown.length) shown.push(`… and ${places.length - shown.length} more`)
                     const go = deleting ? 'Delete Anyway' : 'Change Anyway'
                     const picked = await window.showWarningMessage(
@@ -1499,7 +1555,7 @@ function registerTrigger(context) {
                         {modal: true, detail: shown.join('\n')}, go)
                     if (picked !== go) return
                 }
-                const done = deleting ? await run(OP.DELETE, line) : await run(OP.SET_VARIABLE, line, arg)
+                const done = deleting ? await run(wtg ? OP.DELETE_VARIABLE : OP.DELETE, line) : await run(OP.SET_VARIABLE, line, arg)
                 if (!done) return
                 if (check.renamed) window.setStatusBarMessage(`WC3: ${check.renamed} use${check.renamed === 1 ? '' : 's'} of the variable renamed`, 5000)
                 if (places.length) showPlaces(places)
@@ -1508,13 +1564,16 @@ function registerTrigger(context) {
             const showPlaces = async places => {
                 const show = 'Show Places'
                 if (await window.showWarningMessage(`WC3: ${places.length} place${places.length === 1 ? '' : 's'} to fix.`, show) !== show) return
-                const items = places.map(([file, l, why]) => ({label: `${path.basename(file)}:${l}`, description: why, detail: file, file, line: l}))
+                // A file of `''`: this text's line (a map's triggers).
+                const name = file => path.basename(file || document.uri.path)
+                const items = places.map(([file, l, why]) => ({label: `${name(file)}:${l}`, description: why, detail: file || document.uri.fsPath, file, line: l}))
                 for (;;) {
                     const item = await window.showQuickPick(items, {title: 'Places to fix', matchOnDescription: true, ignoreFocusOut: true})
                     if (!item) return
-                    const at = new Position(Math.max(0, item.line - 1), 0)
-                    await window.showTextDocument(uriOf(item.file), {selection: new Range(at, at), preview: false})
-                    item.label = `$(check) ${path.basename(item.file)}:${item.line}`
+                    const where = new Position(Math.max(0, item.line - 1), 0)
+                    if (item.file) await window.showTextDocument(uriOf(item.file), {selection: new Range(where, where), preview: false})
+                    else await reveal(item.line, true)
+                    item.label = `$(check) ${name(item.file)}:${item.line}`
                 }
             }
             const handle = async msg => {
@@ -1544,7 +1603,7 @@ function registerTrigger(context) {
                     return run(OP.PASTE, 0, `${msg.place}\n${text}`)
                 }
                 case 'choices': {
-                    const answer = await query(QUERY.TRIGGER_CHOICES, id, {line: msg.line, character: 0}, msg.path)
+                    const answer = await query(QUERY.TRIGGER_CHOICES, id, {line: msg.line, character: 0}, of(msg.path))
                     if (!answer || !answer.text) return
                     const choices = JSON.parse(answer.text)
                     if (choices.error) return window.showWarningMessage(`WC3: ${choices.error}`)
@@ -1570,8 +1629,29 @@ function registerTrigger(context) {
                 case 'deleteVariable': return changeVariable(msg.line, '')
                 case 'replace': return run(OP.REPLACE, msg.line, msg.name)
                 case 'reveal': return reveal(msg.line)
-                case 'openText': return commands.executeCommand('vscode.openWith', document.uri, 'default', panel.viewColumn)
-                case 'showJass': return commands.executeCommand('wc3.trg.showJass', document.uri)
+                case 'revealText': return reveal(msg.line, true)
+                case 'pick':
+                    picked = msg.nth
+                    return post(0)
+                case 'extract': return commands.executeCommand('wc3.wtg.extract', document.uri)
+                case 'newCategory': return run(OP.NEW_CATEGORY, 0, msg.name)
+                case 'newTrigger': return run(OP.NEW_TRIGGER, 0, `${msg.category}\n${msg.name}`)
+                case 'renameCategory': return run(OP.RENAME_CATEGORY, 0, `${msg.index}\n${msg.name}`)
+                case 'moveTrigger': return run(OP.MOVE_TRIGGER, 0, `${msg.moved}\n${msg.category}\n${msg.before}`)
+                case 'deleteTrigger': {
+                    const go = await window.showWarningMessage(`Delete the trigger ${msg.name}?`, {modal: true}, 'Delete')
+                    return go === 'Delete' ? run(OP.DELETE_TRIGGER, 0) : undefined
+                }
+                case 'deleteCategory': {
+                    const what = msg.count ? ` and its ${msg.count} trigger${msg.count === 1 ? '' : 's'}` : ''
+                    const go = await window.showWarningMessage(`Delete the category ${msg.name}${what}?`, {modal: true}, 'Delete')
+                    return go === 'Delete' ? run(OP.DELETE_CATEGORY, 0, String(msg.index)) : undefined
+                }
+                case 'openText':
+                    // A map's: its text, which `default` would open here again.
+                    if (wtg) return window.showTextDocument(document, {viewColumn: panel.viewColumn, preview: false})
+                    return commands.executeCommand('vscode.openWith', document.uri, 'default', panel.viewColumn)
+                case 'showJass': return wtg ? undefined : commands.executeCommand('wc3.trg.showJass', document.uri)
                 }
             }
             let queue = Promise.resolve()
@@ -1604,13 +1684,24 @@ function registerTrigger(context) {
             supportsMultipleEditorsPerDocument: true,
             webviewOptions: {retainContextWhenHidden: true},
         }),
+        window.registerCustomEditorProvider('wc3.wtgTriggers', editor, {
+            supportsMultipleEditorsPerDocument: true,
+            webviewOptions: {retainContextWhenHidden: true},
+        }),
+        commands.registerCommand('wc3.wtg.openVisual', uri => {
+            const file = target(uri)
+            if (file) commands.executeCommand('vscode.openWith', Uri.file(file.fsPath).with({scheme: OBJECTS_SCHEME}), 'wc3.wtgTriggers')
+        }),
         commands.registerCommand('wc3.trg.openVisual', uri => {
             const file = target(uri)
             if (file) commands.executeCommand('vscode.openWith', file, 'wc3.trigger')
         }),
-        commands.registerCommand('wc3.trg.openText', uri => {
+        commands.registerCommand('wc3.trg.openText', async uri => {
             const file = target(uri)
-            if (file) commands.executeCommand('vscode.openWith', file, 'default')
+            if (!file) return
+            // A map's triggers: their text, which `default` would open as triggers again.
+            if (/\.wtg$/i.test(file.path)) return window.showTextDocument(await workspace.openTextDocument(Uri.file(file.fsPath).with({scheme: OBJECTS_SCHEME})), {preview: false})
+            commands.executeCommand('vscode.openWith', file, 'default')
         }),
     )
 }

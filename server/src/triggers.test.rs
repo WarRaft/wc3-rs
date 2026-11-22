@@ -81,7 +81,12 @@ fn json_text(s: &str) -> String {
 
 /// The text after `edit`'s answer is applied.
 fn applied(text: &str, op: u32, line: usize, arg: &str) -> Result<String, String> {
-    let answer = edit(text, op, line, arg, &wtg_rs::ui::Ui::default());
+    answer_applied(text, &edit(text, op, line, arg, &wtg_rs::ui::Ui::default()))
+}
+
+/// The text after the edit of the answer `answer` is applied.
+fn answer_applied(text: &str, answer: &str) -> Result<String, String> {
+    let answer = answer.to_string();
     if let Some(e) = answer.strip_prefix("{\"error\":") {
         return Err(e.trim_end_matches('}').to_string());
     }
@@ -593,4 +598,208 @@ fn comments_are_no_triggers() {
     let text = "[trigger]\nname=\"Кепка\"\ncomment=1\naction=TriggerExecute($gg_trg___________u)\n";
     let v = view(text, &names, &[], &Triggers::of("/m/2.trg", text, &others));
     assert!(v.contains("\"errors\":[[4,\"no trigger of the project is named `gg_trg___________u`\"]]"), "{v}");
+}
+
+const MAP: &str = concat!(
+    "[wtg]\nversion=7\ngame=2\n\n",
+    "[category]\nindex=0\nname=\"Init\"\n\n",
+    "[variable]\nname=\"hero\"\ntype=\"unit\"\n\n",
+    "[trigger]\nname=\"A\"\ndescription=\"\"\ncategory=0\nevent=MapInitializationEvent()\naction=DoNothing()\n\n",
+    "[trigger]\nname=\"B\"\ncategory=0\nenabled=0\naction=DoNothing()\naction=TriggerExecute($gg_trg_A)\n",
+);
+
+#[test]
+fn wtg_view_has_the_tree_and_the_picked_trigger() {
+    let names = crate::names::Names::default();
+    let v = wtg_view(MAP, 0, &names);
+    assert!(v.starts_with("{\"categories\":[{\"line\":5,\"index\":0,\"name\":\"Init\",\"comment\":0}],\"triggers\":[{\"line\":13,\"name\":\"A\",\"category\":0,\"enabled\":1,\"comment\":0,\"custom\":0},{\"line\":20,\"name\":\"B\",\"category\":0,\"enabled\":0,\"comment\":0,\"custom\":0}],\"variables\":[{\"line\":9,\"scope\":\"global\",\"name\":\"hero\",\"type\":\"unit\",\"type_name\":\"unit\",\"array\":false,\"size\":0,\"initial\":null}],"), "{v}");
+    // The first, without its category= (line 16): its lines are the text's.
+    assert!(v.contains("\"picked\":1,\"at\":[13,14,15,17,18,19],\"view\":{\"trigger\":true,\"script\":\"gg_trg_A\""), "{v}");
+    // B, the second; its reference to A is one of the map's triggers.
+    let v = wtg_view(MAP, 2, &names);
+    assert!(v.contains("\"picked\":2,\"at\":[20,21,23,24,25],"), "{v}");
+    assert!(v.contains("\"errors\":[]"), "{v}");
+    assert!(!v.contains("\"category\" ") && !v.contains("no field `category`"), "{v}");
+    // No trigger: no view.
+    assert!(wtg_view("[wtg]\nversion=7\n", 0, &names).ends_with("\"picked\":0,\"at\":[],\"view\":null}"));
+}
+
+#[test]
+fn wtg_edits_are_of_the_whole_text() {
+    let ui = wtg_rs::ui::Ui::default();
+    // B's first action (its section's line 4, the text's 24) turned off.
+    let a = wtg_edit(MAP, op::TOGGLE, 4, "2\n", &ui);
+    assert_eq!(a, "{\"edits\":[[23,0,24,0,\"!action=DoNothing()\\u000a\"]],\"line\":4}");
+    // Its name: the category= stays.
+    let a = wtg_edit(MAP, op::FIELD, 0, "2\nname\nC", &ui);
+    assert_eq!(a, "{\"edits\":[[20,0,21,0,\"name=\\\"C\\\"\\u000a\"]],\"line\":0}");
+    // A's actions deleted: the next trigger is untouched.
+    let a = wtg_edit(MAP, op::DELETE, 5, "1\n", &ui);
+    assert_eq!(a, "{\"edits\":[[17,0,18,0,\"\"]],\"line\":0}");
+    // B's second action moved first: category= stays where it was.
+    let a = wtg_edit(MAP, op::MOVE, 5, "2\n0 2 0", &ui);
+    assert_eq!(a, "{\"edits\":[[23,0,25,0,\"action=TriggerExecute($gg_trg_A)\\u000aaction=DoNothing()\\u000a\"]],\"line\":4}");
+    assert!(wtg_edit("[wtg]\n", op::TOGGLE, 1, "0\n", &ui).starts_with("{\"error\":"));
+}
+
+/// The text after the edit of a `.wtg`'s answer `a` is applied.
+fn wtg_applied(text: &str, a: &str) -> String {
+    answer_applied(text, a).unwrap_or_else(|e| panic!("{e}"))
+}
+
+#[test]
+fn wtg_tree_operations() {
+    let ui = wtg_rs::ui::Ui::default();
+    // A new trigger after its category's last, picked.
+    let a = wtg_edit(MAP, map_op::NEW_TRIGGER, 0, "1\n0\nC", &ui);
+    assert!(a.ends_with("\"pick\":3}"), "{a}");
+    let t = wtg_applied(MAP, &a);
+    assert!(t.ends_with("action=TriggerExecute($gg_trg_A)\n\n[trigger]\nname=\"C\"\ndescription=\"\"\ncategory=0\n"), "{t}");
+    // Named as another in the script: refused.
+    assert!(wtg_edit(MAP, map_op::NEW_TRIGGER, 0, "1\n0\nA", &ui).contains("gg_trg_A too"));
+    // A new category after the last, with the next index.
+    let t = wtg_applied(MAP, &wtg_edit(MAP, map_op::NEW_CATEGORY, 0, "1\nMore", &ui));
+    assert!(t.contains("name=\"Init\"\n\n[category]\nindex=1\nname=\"More\"\n\n[variable]"), "{t}");
+    // A trigger of it goes after the others.
+    let a = wtg_edit(&t, map_op::NEW_TRIGGER, 0, "1\n1\nD", &ui);
+    assert!(a.ends_with("\"pick\":3}"), "{a}");
+    // Renamed.
+    let r = wtg_applied(&t, &wtg_edit(&t, map_op::RENAME_CATEGORY, 0, "1\n1\nLess", &ui));
+    assert!(r.contains("index=1\nname=\"Less\"\n"), "{r}");
+    // The picked trigger deleted: the next is picked in its place.
+    let a = wtg_edit(MAP, map_op::DELETE_TRIGGER, 0, "1\n", &ui);
+    assert!(a.ends_with("\"pick\":1}"), "{a}");
+    let t = wtg_applied(MAP, &a);
+    assert!(!t.contains("name=\"A\"") && t.contains("[variable]\nname=\"hero\"\ntype=\"unit\"\n\n[trigger]\nname=\"B\""), "{t}");
+    // The last deleted: no blank lines left at the end.
+    let t = wtg_applied(MAP, &wtg_edit(MAP, map_op::DELETE_TRIGGER, 0, "2\n", &ui));
+    assert!(t.ends_with("action=DoNothing()\n"), "{t:?}");
+    // A category with its triggers.
+    let t = wtg_applied(MAP, &wtg_edit(MAP, map_op::DELETE_CATEGORY, 0, "2\n0", &ui));
+    assert_eq!(t, "[wtg]\nversion=7\ngame=2\n\n[variable]\nname=\"hero\"\ntype=\"unit\"\n");
+}
+
+#[test]
+fn wtg_variables_are_globals() {
+    let ui = wtg_rs::ui::Ui::default();
+    // New: after the last variable.
+    let t = wtg_applied(MAP, &wtg_edit(MAP, op::NEW_VARIABLE, 0, "1\nn\ninteger\n0\n1\nglobal\n", &ui));
+    assert!(t.contains("type=\"unit\"\n\n[variable]\nname=\"n\"\ntype=\"integer\"\nsize=1\n\n[trigger]"), "{t}");
+    // Reign of Chaos's file: no size.
+    let roc = MAP.replace("version=7", "version=4");
+    let t = wtg_applied(&roc, &wtg_edit(&roc, op::NEW_VARIABLE, 0, "1\nn\ninteger\n0\n1\nglobal\n", &ui));
+    assert!(t.contains("[variable]\nname=\"n\"\ntype=\"integer\"\n\n[trigger]"), "{t}");
+    // Private and local ones are a .trg's; a name taken is refused.
+    assert!(wtg_edit(MAP, op::NEW_VARIABLE, 0, "1\nn\ninteger\n0\n1\nlocal\n", &ui).contains("a map's variables are globals"));
+    assert!(wtg_edit(MAP, op::NEW_VARIABLE, 0, "1\nHERO\ninteger\n0\n1\nglobal\n", &ui).contains("has a variable HERO already"));
+    // Renamed: its uses in every trigger.
+    let text = MAP.replace("action=DoNothing()\n\n", "action=SetVariable($hero, $hero)\n\n");
+    let check = wtg_edit(&text, op::CHECK_VARIABLE, 9, "1\nboss\nunit\n0\n1\nglobal\n", &ui);
+    assert_eq!(check, "{\"renamed\":2,\"places\":[]}");
+    let t = wtg_applied(&text, &wtg_edit(&text, op::SET_VARIABLE, 9, "1\nboss\nunit\n0\n1\nglobal\n", &ui));
+    assert!(t.contains("[variable]\nname=\"boss\"\ntype=\"unit\"\nsize=1\n\n") && t.contains("action=SetVariable($boss, $boss)\n"), "{t}");
+    // Deleted: its uses are the places, at their lines in the text.
+    let check = wtg_edit(&text, op::CHECK_VARIABLE, 9, "1\n", &ui);
+    assert_eq!(check, "{\"renamed\":0,\"places\":[[\"\",18,\"uses hero, which is deleted\"]]}");
+    let t = wtg_applied(&text, &wtg_edit(&text, map_op::DELETE_VARIABLE, 9, "1\n", &ui));
+    assert!(!t.contains("[variable]") && t.contains("name=\"Init\"\n\n[trigger]"), "{t}");
+}
+
+#[test]
+fn wtg_rename_retargets_the_other_triggers() {
+    let ui = wtg_rs::ui::Ui::default();
+    let text = MAP.replace("name=\"A\"", "name=\"Z\"");
+    let t = wtg_applied(&text, &wtg_edit(&text, op::RENAMED, 0, "1\nA", &ui));
+    assert!(t.contains("action=TriggerExecute($gg_trg_Z)\n"), "{t}");
+}
+
+/// Every trigger of a real map's text (`WTG_TEXT`, a file of it): put
+/// back unchanged, turned off and on again, the text is the same; its
+/// view reads.
+#[test]
+#[ignore]
+fn wtg_slices_of_a_real_map() {
+    let text = std::fs::read_to_string(std::env::var("WTG_TEXT").expect("WTG_TEXT")).unwrap();
+    let names = crate::names::Names::default();
+    let ui = wtg_rs::ui::Ui::default();
+    let map = Map::of(&text);
+    let count = text.lines().filter(|l| l.trim() == "[trigger]").count();
+    assert_eq!(map.triggers.len(), count);
+    let mut toggled = 0;
+    for (k, slice) in map.triggers.iter().enumerate() {
+        let nth = k + 1;
+        let mut lines = map.lines.clone();
+        slice.put(&mut lines, slice.text.split_inclusive('\n').map(String::from).collect(), None);
+        assert_eq!(lines, map.lines, "trigger {nth}");
+        if nth % 50 == 1 {
+            assert!(!wtg_view(&text, nth, &names).contains("no field `category`"), "trigger {nth}");
+        }
+        if let Some(e) = slice.text.lines().position(|l| eca_line(l).is_some()) {
+            let once = wtg_edit(&text, op::TOGGLE, e + 1, &format!("{nth}\n"), &ui);
+            let once = answer_applied(&text, &once).unwrap();
+            let twice = answer_applied(&once, &wtg_edit(&once, op::TOGGLE, e + 1, &format!("{nth}\n"), &ui)).unwrap();
+            assert!(twice == text, "trigger {nth}");
+            toggled += 1;
+        }
+    }
+    println!("{count} triggers, {toggled} toggled back");
+    // A variable's uses, over every trigger.
+    if let Some((_, r)) = map.sections.iter().find(|(n, _)| n == wtg_rs::text::VARIABLE) {
+        let t = std::time::Instant::now();
+        let check = wtg_edit(&text, op::CHECK_VARIABLE, r.start + 1, "1\n", &ui);
+        println!("checked deleting the first variable in {:?}: {}", t.elapsed(), &check[..check.len().min(120)]);
+        assert!(check.starts_with("{\"renamed\":0,\"places\":["), "{check}");
+    }
+    assert!(count > 0);
+}
+
+#[test]
+fn wtg_moving_triggers() {
+    let ui = wtg_rs::ui::Ui::default();
+    let two = applied_map(&applied_map(MAP, map_op::NEW_CATEGORY, "More", &ui), map_op::NEW_TRIGGER, "1\nC", &ui);
+    let names = |t: &str| Map::of(t).triggers.iter().map(|t| t.name.clone()).collect::<Vec<_>>().join(" ");
+    assert_eq!(names(&two), "A B C");
+    // B before A: its category stays, and it's picked where it is now.
+    let a = wtg_edit(&two, map_op::MOVE_TRIGGER, 0, "1\n2\n0\n1", &ui);
+    assert!(a.ends_with("\"pick\":1}"), "{a}");
+    let t = wtg_applied(&two, &a);
+    assert_eq!(names(&t), "B A C");
+    assert!(t.contains("[trigger]\nname=\"B\"\ncategory=0\nenabled=0\n"), "{t}");
+    // A to the other category, at its end: after C, its category= that one's.
+    let a = wtg_edit(&two, map_op::MOVE_TRIGGER, 0, "1\n1\n1\n0", &ui);
+    assert!(a.ends_with("\"pick\":3}"), "{a}");
+    let t = wtg_applied(&two, &a);
+    assert_eq!(names(&t), "B C A");
+    assert!(t.ends_with("category=1\n\n[trigger]\nname=\"A\"\ndescription=\"\"\ncategory=1\nevent=MapInitializationEvent()\naction=DoNothing()\n"), "{t}");
+    // C before B, into category 0; the text stays one blank line between sections.
+    let t = wtg_applied(&two, &wtg_edit(&two, map_op::MOVE_TRIGGER, 0, "1\n3\n0\n2", &ui));
+    assert_eq!(names(&t), "A C B");
+    assert!(!t.contains("\n\n\n") && t.contains("name=\"C\"\ndescription=\"\"\ncategory=0\n\n[trigger]\nname=\"B\""), "{t}");
+    // Before itself: nothing.
+    assert_eq!(wtg_applied(&two, &wtg_edit(&two, map_op::MOVE_TRIGGER, 0, "1\n2\n0\n2", &ui)), two);
+}
+
+/// `text` after the tree's operation `op` with `arg`, the first trigger picked.
+fn applied_map(text: &str, op: u32, arg: &str, ui: &wtg_rs::ui::Ui) -> String {
+    wtg_applied(text, &wtg_edit(text, op, 0, &format!("1\n{arg}"), ui))
+}
+
+#[test]
+fn custom_script_is_one_line_in_a_map() {
+    let ui = wtg_rs::ui::Ui::default();
+    let many = "action=CustomScriptCode(\"call A()\\ncall B()\")";
+    // A .trg has it.
+    assert!(diagnostics(Some(Path::new("a.trg")), &bni_rs::parse(&format!("[trigger]\n{many}\n")), &format!("[trigger]\n{many}\n")).is_empty());
+    // A map's text: a problem at its line, and it doesn't save.
+    let text = MAP.replace("action=DoNothing()\n\n", &format!("{many}\n\n"));
+    let errors = diagnostics(Some(Path::new("war3map.wtg")), &bni_rs::parse(&text), &text);
+    assert_eq!(errors.iter().map(|e| (e.line, e.message.as_str())).collect::<Vec<_>>(), [(18, ONE_LINE)]);
+    let data = TriggerData::parse("[TriggerEvents]\nMapInitializationEvent=0,nothing\n[TriggerActions]\nDoNothing=0,nothing\nCustomScriptCode=0,scriptcode\nTriggerExecute=0,trigger\n");
+    let err = convert(TO_BYTES, "war3map.wtg", text.as_bytes(), &data).unwrap_err();
+    assert_eq!(err, format!("Can't save war3map.wtg: line 18: {ONE_LINE}"));
+    // Pasted or set in the view: refused; one line is fine.
+    let a = wtg_edit(MAP, op::PASTE, 0, &format!("1\n0 2 0\n{many}\n"), &ui);
+    assert_eq!(a, format!("{{\"error\":{}}}", crate::objects::json_string(ONE_LINE)));
+    let a = wtg_edit(MAP, op::PASTE, 0, "1\n0 2 0\naction=CustomScriptCode(\"call A()\")\n", &ui);
+    assert!(a.starts_with("{\"edits\":"), "{a}");
 }

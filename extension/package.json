@@ -79,6 +79,12 @@
         "icon": "$(code)"
       },
       {
+        "command": "wc3.wtg.openVisual",
+        "title": "Open as Triggers",
+        "category": "WC3",
+        "icon": "$(symbol-event)"
+      },
+      {
         "command": "wc3.wtg.extract",
         "title": "Extract Triggers…",
         "category": "WC3",
@@ -277,6 +283,19 @@
         "priority": "default"
       },
       {
+        "viewType": "wc3.wtgTriggers",
+        "displayName": "Warcraft III Triggers",
+        "selector": [
+          {
+            "filenamePattern": "*.wtg"
+          },
+          {
+            "filenamePattern": "*.WTG"
+          }
+        ],
+        "priority": "option"
+      },
+      {
         "viewType": "wc3.trigger",
         "displayName": "Warcraft III Trigger",
         "selector": [
@@ -331,11 +350,15 @@
         },
         {
           "command": "wc3.trg.openText",
-          "when": "activeCustomEditorId == wc3.trigger"
+          "when": "activeCustomEditorId == wc3.trigger || activeCustomEditorId == wc3.wtgTriggers"
+        },
+        {
+          "command": "wc3.wtg.openVisual",
+          "when": "editorLangId == wtg && !activeCustomEditorId"
         },
         {
           "command": "wc3.wtg.extract",
-          "when": "editorLangId == wtg"
+          "when": "editorLangId == wtg || activeCustomEditorId == wc3.wtgTriggers"
         },
         {
           "command": "wc3.trg.showJass",
@@ -415,12 +438,17 @@
         },
         {
           "command": "wc3.trg.openText",
-          "when": "activeCustomEditorId == wc3.trigger",
+          "when": "activeCustomEditorId == wc3.trigger || activeCustomEditorId == wc3.wtgTriggers",
+          "group": "navigation"
+        },
+        {
+          "command": "wc3.wtg.openVisual",
+          "when": "editorLangId == wtg && !activeCustomEditorId",
           "group": "navigation"
         },
         {
           "command": "wc3.wtg.extract",
-          "when": "editorLangId == wtg",
+          "when": "editorLangId == wtg || activeCustomEditorId == wc3.wtgTriggers",
           "group": "navigation"
         },
         {

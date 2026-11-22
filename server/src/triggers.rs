@@ -59,6 +59,9 @@ pub fn convert(op: u8, name: &str, bytes: &[u8], data: &TriggerData) -> Result<V
                 let e = &p.errors[0];
                 return Err(format!("Can't save {file}: line {}: {}", e.line, e.message));
             };
+            if let Some(i) = script_lines(text).first() {
+                return Err(format!("Can't save {file}: line {}: {ONE_LINE}", i + 1));
+            }
             f.to_bytes().map_err(|e| format!("Can't save {file}: {e}"))
         }
         _ => Err(format!("unknown op {op}")),
@@ -76,7 +79,31 @@ pub fn diagnostics(path: Option<&Path>, doc: &bni_rs::Document, text: &str) -> V
     if !path.is_some_and(is_trigger_file) || !wtg_rs::text::is_trigger_text(doc) {
         return Vec::new();
     }
-    wtg_rs::text::from_bni(doc, text, None).errors.into_iter().filter(|e| !bni.contains(e)).collect()
+    let mut errors: Vec<parser_rs::ParseError> = wtg_rs::text::from_bni(doc, text, None).errors.into_iter().filter(|e| !bni.contains(e)).collect();
+    for i in script_lines(text) {
+        let width = text.lines().nth(i).map_or(1, |l| l.chars().count());
+        errors.push(parser_rs::ParseError { message: ONE_LINE.into(), line: i + 1, col: 1, end_col: width + 1 });
+    }
+    errors
+}
+
+/// Why custom script of more lines isn't in a map's triggers.
+const ONE_LINE: &str = "custom script in a map's triggers (war3map.wtg) is one line, as World Editor's: more lines are a trigger file's (.trg)";
+
+/// The lines (from 0) of the text `text` whose ECA is custom script of
+/// more than one line (`CustomScriptCode` with a line break in its
+/// string): a trigger file of its own (`.trg`) has them, World Editor's
+/// triggers don't.
+fn script_lines(text: &str) -> Vec<usize> {
+    text.lines()
+        .enumerate()
+        .filter(|(_, l)| eca_line(l).is_some_and(|(_, n)| n == "CustomScriptCode"))
+        .filter(|(_, l)| {
+            let (_, rest) = l.split_once('=').expect("an ECA's line");
+            wtg_rs::text::read_call(rest.trim()).is_ok_and(|(_, params)| params.iter().any(|p| p.kind == 3 && p.value.contains(['\n', '\r'])))
+        })
+        .map(|(i, _)| i)
+        .collect()
 }
 
 /// The triggers of the text form `text` (of a `.wtg`) as files, as JSON:
@@ -1727,6 +1754,673 @@ pub fn icons(names: &crate::names::Names) -> String {
     keys.sort();
     let items: Vec<String> = keys.iter().map(|k| format!("{}:{}", js(k), js(&names.trigger_icons[*k]))).collect();
     format!("{{{}}}", items.join(","))
+}
+
+// ------------------------------------------------- the triggers of a map
+//
+// The text of a `war3map.wtg` opens as World Editor shows it too: a tree
+// of its categories, triggers and variables, and the trigger picked in it
+// as a `.trg` shows. Each trigger's `[trigger]` section is cut out of the
+// text ([`Slice`], without its `category=`, which a trigger of its own
+// doesn't have) and is, for what's done to it, a trigger file of its own
+// in a project of them all ([`Map::project`]): the picked one is seen and
+// edited as a `.trg` is ([`view`], [`apply`]), a rename retargets the
+// others' references, a variable's change renames its uses in them; then
+// what changed is put back, and the edits are of the whole text. The page
+// speaks in the lines of the picked trigger's section; `at` maps them to
+// the text's. Only what World Editor's triggers have is offered: the
+// variables are the file's globals, none private or local.
+//
+// The tree's own operations ([`wtg_edit`]'s `NEW_TRIGGER` ...) change the
+// text's sections: a trigger, a category, a variable.
+
+/// A trigger's `[trigger]` section of the text of a `.wtg`.
+struct Slice {
+    /// Its lines in the text's, its header first.
+    range: std::ops::Range<usize>,
+    /// Its `category=` line, left out of `text`.
+    category: Option<usize>,
+    /// The section as a `.trg`'s text.
+    text: String,
+    /// Its name, as `name=` says.
+    name: String,
+}
+
+impl Slice {
+    /// The text's line (from 1) of the section's line `k` (from 1).
+    fn line(&self, k: usize) -> usize {
+        let i = self.range.start + k - 1;
+        i + 1 + self.category.is_some_and(|c| i >= c) as usize
+    }
+
+    /// The section's lines in `lines` (the text's) become `new` (as
+    /// `text`'s), its `category=` put back where it was, before the first
+    /// ECA at the latest; and where `new`'s index `shown` is in the text.
+    fn put(&self, lines: &mut Vec<String>, new: Vec<String>, shown: Option<usize>) -> Option<usize> {
+        let mut section = new;
+        let mut shown = shown;
+        if let Some(c) = self.category {
+            let first_eca = (1..section.len()).find(|&i| eca_line(&section[i]).is_some()).unwrap_or(section.len());
+            let at = (c - self.range.start).min(first_eca).max(1).min(section.len());
+            section.insert(at, lines[c].clone());
+            shown = shown.map(|s| if s >= at { s + 1 } else { s });
+        }
+        lines.splice(self.range.clone(), section);
+        shown.map(|s| s + self.range.start)
+    }
+
+    /// The section's lines in `lines` become `new`, line for line (a
+    /// rename: lines change, none come or go).
+    fn put_lines(&self, lines: &mut [String], new: &str) {
+        for (k, l) in new.split_inclusive('\n').enumerate() {
+            lines[self.line(k + 1) - 1] = l.to_string();
+        }
+    }
+}
+
+/// The text of a `.wtg`, cut into its sections.
+struct Map {
+    lines: Vec<String>,
+    eol: &'static str,
+    /// Each section: its name and its lines (header first, up to the next
+    /// header: the blank lines after it are its).
+    sections: Vec<(String, std::ops::Range<usize>)>,
+    /// Each trigger, in order.
+    triggers: Vec<Slice>,
+}
+
+/// The name of a section's header line (`[trigger]`: `trigger`).
+fn header_name(line: &str) -> Option<&str> {
+    let rest = line.trim().strip_prefix('[')?;
+    Some(rest.split_once(']').map_or(rest, |(n, _)| n).trim())
+}
+
+/// The value of the field `key` in the lines `range` of `lines`, raw.
+fn field_in<'a>(lines: &'a [String], range: std::ops::Range<usize>, key: &str) -> Option<(usize, &'a str)> {
+    range.into_iter().find(|&i| field_key(&lines[i]) == Some(key)).map(|i| {
+        let (_, v) = lines[i].split_once('=').expect("a field");
+        (i, v.trim_end_matches(['\n', '\r']).trim())
+    })
+}
+
+impl Map {
+    fn of(text: &str) -> Map {
+        let lines: Vec<String> = text.split_inclusive('\n').map(String::from).collect();
+        let eol = if text.contains("\r\n") { "\r\n" } else { "\n" };
+        let starts: Vec<usize> = (0..lines.len()).filter(|&i| lines[i].trim_start().starts_with('[')).collect();
+        let sections: Vec<(String, std::ops::Range<usize>)> = starts
+            .iter()
+            .enumerate()
+            .map(|(k, &s)| {
+                let end = starts.get(k + 1).copied().unwrap_or(lines.len());
+                (header_name(&lines[s]).unwrap_or("").to_string(), s..end)
+            })
+            .collect();
+        let triggers = sections
+            .iter()
+            .filter(|(n, _)| n == wtg_rs::text::TRIGGER)
+            .map(|(_, r)| {
+                let category = field_in(&lines, r.start + 1..r.end, "category").map(|(i, _)| i);
+                let text = r.clone().filter(|&i| Some(i) != category).map(|i| lines[i].as_str()).collect();
+                let name = field_in(&lines, r.start + 1..r.end, "name").and_then(|(_, v)| wtg_rs::text::read_string(v)).unwrap_or_default();
+                Slice { range: r.clone(), category, text, name }
+            })
+            .collect();
+        Map { lines, eol, sections, triggers }
+    }
+
+    /// Which trigger `nth` (from 1) picks: itself, or the first; from 1,
+    /// 0 when there's none.
+    fn pick(&self, nth: usize) -> usize {
+        if (1..=self.triggers.len()).contains(&nth) { nth } else { (!self.triggers.is_empty()) as usize }
+    }
+
+    /// The trigger file a trigger is in the project of them all.
+    fn id(&self, nth: usize) -> String {
+        format!("{} #{nth}.trg", self.triggers[nth - 1].name)
+    }
+
+    /// Which trigger the file `id` of [`Map::id`] is.
+    fn nth_of(id: &str) -> Option<usize> {
+        id.strip_suffix(".trg")?.rsplit_once('#')?.1.parse().ok()
+    }
+
+    /// The triggers as a project's trigger files, but `except` (from 1).
+    fn project<'a>(&'a self, ids: &'a [String], except: usize) -> Vec<(&'a str, &'a str, &'a [parser_rs::Occurrence])> {
+        (1..=self.triggers.len())
+            .filter(|&n| n != except)
+            .map(|n| (ids[n - 1].as_str(), self.triggers[n - 1].text.as_str(), &[][..]))
+            .collect()
+    }
+
+    /// The `[variable]` sections, as one trigger file's text, and the
+    /// text's line (from 1) of each of its lines.
+    fn variables_file(&self) -> (String, Vec<usize>) {
+        let mut text = String::new();
+        let mut at = Vec::new();
+        for (_, r) in self.sections.iter().filter(|(n, _)| n == wtg_rs::text::VARIABLE) {
+            for i in r.clone() {
+                text.push_str(&self.lines[i]);
+                at.push(i + 1);
+            }
+            if !text.ends_with('\n') {
+                text.push_str(self.eol);
+            }
+        }
+        (text, at)
+    }
+
+    /// Puts the lines of a new section in at `at`, a blank line between it
+    /// and the sections around it.
+    fn insert(&mut self, at: usize, section: &str) {
+        let eol = self.eol;
+        if let Some(last) = at.checked_sub(1).map(|i| &mut self.lines[i])
+            && !last.ends_with('\n')
+        {
+            last.push_str(eol);
+        }
+        let mut block = Vec::new();
+        if at > 0 && !self.lines[at - 1].trim().is_empty() {
+            block.push(eol.to_string());
+        }
+        block.extend(section.lines().map(|l| format!("{l}{eol}")));
+        if at < self.lines.len() {
+            block.push(eol.to_string());
+        }
+        self.lines.splice(at..at, block);
+    }
+
+    /// Takes the section `range` out (what's left of it, when the text
+    /// ended before its end: sections are taken out from the bottom up);
+    /// at the end of the text, the blank lines before it too.
+    fn remove(&mut self, range: std::ops::Range<usize>) {
+        let end = range.end.min(self.lines.len());
+        let mut start = range.start.min(end);
+        if end == self.lines.len() {
+            while start > 0 && self.lines[start - 1].trim().is_empty() {
+                start -= 1;
+            }
+        }
+        self.lines.drain(start..end);
+    }
+
+    /// The categories, in order: index, name, and the section's lines.
+    fn categories(&self) -> Vec<(i32, String, std::ops::Range<usize>)> {
+        self.sections
+            .iter()
+            .filter(|(n, _)| n == "category")
+            .map(|(_, r)| {
+                let index = field_in(&self.lines, r.start + 1..r.end, "index").and_then(|(_, v)| v.parse().ok()).unwrap_or(0);
+                let name = field_in(&self.lines, r.start + 1..r.end, "name").and_then(|(_, v)| wtg_rs::text::read_string(v)).unwrap_or_default();
+                (index, name, r.clone())
+            })
+            .collect()
+    }
+
+    /// Where a trigger goes at the end of the category `index`: after its
+    /// last trigger, or the last of a category before it (one the text
+    /// hasn't is at the top); and which trigger it then is, from 1.
+    fn end_of_category(&self, index: i32) -> (usize, usize) {
+        let categories = self.categories();
+        let place = |i: i32| categories.iter().position(|c| c.0 == i);
+        let mine = place(index);
+        let before = self.triggers.iter().enumerate().rev().find(|(_, t)| {
+            let theirs = place(self.category_of(t));
+            theirs.is_none() || (mine.is_some() && theirs <= mine)
+        });
+        match before {
+            Some((k, t)) => (t.range.end, k + 2),
+            None => (self.triggers.first().map_or(self.lines.len(), |t| t.range.start), 1),
+        }
+    }
+
+    /// The category of the trigger `t`.
+    fn category_of(&self, t: &Slice) -> i32 {
+        t.category.and_then(|c| field_in(&self.lines, c..c + 1, "category")).and_then(|(_, v)| v.parse().ok()).unwrap_or(0)
+    }
+
+    /// Where a section after the last of `names` goes: past it, else
+    /// before the first trigger, else at the end.
+    fn after_last(&self, names: &[&str]) -> usize {
+        let last = self.sections.iter().rev().find(|(n, _)| names.contains(&n.as_str()));
+        let first_trigger = self.triggers.first().map(|t| t.range.start);
+        match last {
+            Some((_, r)) => r.end,
+            None => first_trigger.unwrap_or(self.lines.len()),
+        }
+    }
+}
+
+/// The key of a `key=value` line, trimmed.
+fn field_key(line: &str) -> Option<&str> {
+    let (key, _) = line.split_once('=')?;
+    let key = key.trim();
+    (!key.is_empty() && !key.starts_with(['[', ';', '>', '!'])).then_some(key)
+}
+
+/// The variables of the text of a `.wtg` (`doc` read from `text`), each
+/// with the line (from 1) of its `[variable]`: the file's globals.
+fn wtg_variables(text: &str, doc: &bni_rs::ast::Document) -> Vec<(usize, Declared)> {
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    let headers: Vec<usize> = doc.sections.iter().map(|s| s.line).collect();
+    let mut out = Vec::new();
+    for s in doc.sections.iter().filter(|s| s.name.text == wtg_rs::text::VARIABLE) {
+        let end = headers.iter().copied().find(|&h| h > s.line).map_or(lines.len(), |h| h - 1);
+        let own: String = lines[s.line - 1..end].concat();
+        if let Some(d) = wtg_rs::text::trigger_from_text(&own, None).variables.into_iter().next() {
+            out.push((s.line, d));
+        }
+    }
+    out
+}
+
+/// The view of the text of a `.wtg` (`text`), its `nth` trigger (from 1;
+/// 0: the first) picked, as JSON:
+///
+/// ```json
+/// {"categories": [{"line": 3, "index": 0, "name": "Init", "comment": 0}],
+///  "triggers": [{"line": 9, "name": "Spawn", "category": 0, "enabled": 1,
+///   "comment": 0, "custom": 0}],
+///  "variables": [{"line": 6, "scope": "global", "name": "hero", "type": "unit",
+///   "type_name": "Unit", "array": false, "size": 1, "initial": null}],
+///  "picked": 1, "at": [9, 10, 12], "view": {...}}
+/// ```
+///
+/// `picked` is which trigger is (from 1; 0: none), `view` its view as
+/// [`view`] gives a `.trg`'s, in the lines of its section (`null` without
+/// one), and `at` the text's line of each (`at[k - 1]` for its line `k`).
+/// A trigger is picked by its place among the triggers, not by its line:
+/// typing in the text above it doesn't pick another.
+pub fn wtg_view(text: &str, nth: usize, names: &crate::names::Names) -> String {
+    let js = crate::objects::json_string;
+    let doc = wtg_rs::text::parse_bni(text);
+    let get = |s: &bni_rs::ast::Section, k: &str| s.items.iter().find(|i| i.key.as_ref().is_some_and(|n| n.text.trim() == k)).map(|i| i.value_text());
+    let int = |s: &bni_rs::ast::Section, k: &str, default: i64| get(s, k).and_then(|v| v.trim().parse().ok()).unwrap_or(default);
+    let string = |s: &bni_rs::ast::Section, k: &str| get(s, k).and_then(|v| wtg_rs::text::read_string(&v)).unwrap_or_default();
+    let categories: Vec<String> = doc
+        .sections
+        .iter()
+        .filter(|s| s.name.text == "category")
+        .map(|s| format!("{{\"line\":{},\"index\":{},\"name\":{},\"comment\":{}}}", s.line, int(s, "index", 0), js(&string(s, "name")), int(s, "comment", 0)))
+        .collect();
+    let triggers: Vec<String> = doc
+        .sections
+        .iter()
+        .filter(|s| s.name.text == wtg_rs::text::TRIGGER)
+        .map(|s| {
+            format!(
+                "{{\"line\":{},\"name\":{},\"category\":{},\"enabled\":{},\"comment\":{},\"custom\":{}}}",
+                s.line,
+                js(&string(s, "name")),
+                int(s, "category", 0),
+                int(s, "enabled", 1),
+                int(s, "comment", 0),
+                int(s, "custom_text", 0),
+            )
+        })
+        .collect();
+    let declared = wtg_variables(text, &doc);
+    let ui = &names.trigger_ui;
+    let variables: Vec<String> = declared
+        .iter()
+        .map(|(line, d)| {
+            let var = &d.variable;
+            let type_name = ui.types.get(&var.kind).cloned().unwrap_or_else(|| var.kind.clone());
+            format!(
+                "{{\"line\":{line},\"scope\":\"global\",\"name\":{},\"type\":{},\"type_name\":{},\"array\":{},\"size\":{},\"initial\":{}}}",
+                js(&var.name),
+                js(&var.kind),
+                js(&type_name),
+                var.is_array != 0,
+                var.array_size,
+                if var.has_initial != 0 { js(&var.initial) } else { "null".into() },
+            )
+        })
+        .collect();
+    let visible: Vec<Declared> = declared.into_iter().map(|(_, d)| d).collect();
+    let map = Map::of(text);
+    let picked = map.pick(nth);
+    let (at, view_json) = match picked {
+        0 => (String::new(), "null".into()),
+        n => {
+            let slice = &map.triggers[n - 1];
+            let count = slice.text.split_inclusive('\n').count();
+            let at: Vec<String> = (1..=count).map(|k| slice.line(k).to_string()).collect();
+            (at.join(","), view(&slice.text, names, &visible, &wtg_triggers(&doc, n)))
+        }
+    };
+    format!(
+        "{{\"categories\":[{}],\"triggers\":[{}],\"variables\":[{}],\"picked\":{picked},\"at\":[{at}],\"view\":{view_json}}}",
+        categories.join(","),
+        triggers.join(","),
+        variables.join(","),
+    )
+}
+
+/// The triggers of the text of a `.wtg` (`doc`), looked at from its `me`th
+/// (from 1), as [`Triggers`] has a project's files (named as [`Map::id`]),
+/// read from the sections at once.
+fn wtg_triggers(doc: &bni_rs::ast::Document, me: usize) -> Triggers {
+    let mut mine = String::new();
+    let mut me_id = String::new();
+    let list: Vec<(String, String, String)> = doc
+        .sections
+        .iter()
+        .filter(|s| s.name.text == wtg_rs::text::TRIGGER)
+        .enumerate()
+        .filter_map(|(k, s)| {
+            let get = |key: &str| s.items.iter().find(|i| i.key.as_ref().is_some_and(|n| n.text.trim() == key)).map(|i| i.value_text());
+            let name = get("name").and_then(|v| wtg_rs::text::read_string(&v)).unwrap_or_default();
+            let id = format!("{name} #{}.trg", k + 1);
+            if k + 1 == me {
+                mine = wtg_rs::jass::ident(&name);
+                me_id = id.clone();
+            }
+            // A comment isn't a trigger: the script has nothing of it.
+            if get("comment").is_some_and(|v| v.trim() != "0") {
+                return None;
+            }
+            let own = format!("gg_trg_{}", wtg_rs::jass::ident(&name));
+            Some((id, name, own))
+        })
+        .collect();
+    Triggers { list, mine, me: me_id }
+}
+
+/// The operations of a map's tree, past [`op`]'s, in a `.wtg`'s text only
+/// ([`wtg_edit`]).
+pub mod map_op {
+    /// A new trigger: the argument is its category's index, a line break,
+    /// its name. It goes after the category's last trigger (or the last
+    /// trigger of a category before it); the answer's `pick` is it.
+    pub const NEW_TRIGGER: u32 = 20;
+    /// A new category: the argument is its name; its index is one past
+    /// the greatest. It goes after the last category.
+    pub const NEW_CATEGORY: u32 = 21;
+    /// Delete the picked trigger; the answer's `pick` is the one now in
+    /// its place (or the last).
+    pub const DELETE_TRIGGER: u32 = 22;
+    /// Delete the category whose index is the argument, and its triggers.
+    pub const DELETE_CATEGORY: u32 = 23;
+    /// Rename the category whose index is the argument's first line to its
+    /// second.
+    pub const RENAME_CATEGORY: u32 = 24;
+    /// Delete the variable whose `[variable]` is at the line (of the
+    /// text). `CHECK_VARIABLE` with an empty argument says what it breaks.
+    pub const DELETE_VARIABLE: u32 = 25;
+    /// Move a trigger: the argument is which (from 1), a line break, the
+    /// category it goes in (its index), a line break, the trigger it goes
+    /// before (from 1, counted before the move; 0: at the end of the
+    /// category). The answer's `pick` is it, where it is then.
+    pub const MOVE_TRIGGER: u32 = 26;
+}
+
+/// What the operations of [`edit`] do in a `.wtg`'s text: `arg` is which
+/// trigger is picked (from 1, see [`wtg_view`]), a line break, and the
+/// operation's argument; `line` is a line of its section (see
+/// [`wtg_view`]), or for a variable's operations (`NEW_VARIABLE`,
+/// `SET_VARIABLE`, `CHECK_VARIABLE`, [`map_op::DELETE_VARIABLE`]) the
+/// text's line of its `[variable]`. And the tree's own ([`map_op`]). The
+/// edits are of the whole text; the answer's `line` is of the picked
+/// trigger's section, and `pick`, when there is one, the trigger to pick
+/// after it. The triggers are a project of trigger files to each other:
+/// renaming one retargets the others' references to it, and a variable's
+/// change renames its uses in all of them.
+pub fn wtg_edit(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> String {
+    let js = crate::objects::json_string;
+    let (nth, arg) = arg.split_once('\n').unwrap_or((arg, ""));
+    let map = Map::of(text);
+    let nth = map.pick(nth.trim().parse().unwrap_or(0));
+    let answer = match op {
+        op::NEW_VARIABLE | op::SET_VARIABLE | op::CHECK_VARIABLE | map_op::DELETE_VARIABLE => wtg_variable(map, op, line, arg, ui),
+        map_op::NEW_TRIGGER..=map_op::RENAME_CATEGORY | map_op::MOVE_TRIGGER => wtg_tree(map, op, nth, arg),
+        _ if nth == 0 => Err("no trigger to edit: the file has none".into()),
+        _ => wtg_trigger(map, op, nth, line, arg, ui),
+    };
+    match answer {
+        Ok(Answer::Json(t)) => t,
+        Ok(Answer::Lines(lines, at, pick)) => {
+            let old: Vec<&str> = text.split_inclusive('\n').collect();
+            let edits = diff(text, &old, &lines).map_or("[]".into(), |(r, t)| {
+                format!("[[{},{},{},{},{}]]", r.start.line, r.start.character, r.end.line, r.end.character, js(&t))
+            });
+            let pick = pick.map_or(String::new(), |p| format!(",\"pick\":{p}"));
+            format!("{{\"edits\":{edits},\"line\":{at}{pick}}}")
+        }
+        Err(e) => format!("{{\"error\":{}}}", js(&e)),
+    }
+}
+
+/// What an operation in a map's text comes to.
+enum Answer {
+    Json(String),
+    /// The text's new lines, the line (of the picked trigger's section) to
+    /// select, the trigger to pick.
+    Lines(Vec<String>, usize, Option<usize>),
+}
+
+/// An operation of [`edit`] on the picked trigger, `nth`.
+fn wtg_trigger(map: Map, op: u32, nth: usize, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Result<Answer, String> {
+    let ids: Vec<String> = (1..=map.triggers.len()).map(|n| map.id(n)).collect();
+    let project = Project { me: &ids[nth - 1], others: map.project(&ids, nth) };
+    let slice = &map.triggers[nth - 1];
+    match apply(&slice.text, op, line, arg, ui, &project)? {
+        Done::Text(t) => Ok(Answer::Json(format!("{{\"text\":{}}}", crate::objects::json_string(&t)))),
+        Done::Json(t) => Ok(Answer::Json(t)),
+        Done::Lines(new, shown, files) => {
+            // Its custom script one line, as World Editor's (what was so
+            // already isn't this edit's to refuse).
+            if script_lines(&new.concat()).len() > script_lines(&slice.text).len() {
+                return Err(ONE_LINE.into());
+            }
+            let mut lines = map.lines.clone();
+            // The others first: line for line, so the picked one's lines
+            // stay where they are.
+            for (id, _, changed) in &files {
+                if let Some(other) = Map::nth_of(id).and_then(|n| map.triggers.get(n - 1)) {
+                    other.put_lines(&mut lines, changed);
+                }
+            }
+            slice.put(&mut lines, new, None);
+            Ok(Answer::Lines(lines, shown.map_or(0, |i| i + 1), None))
+        }
+    }
+}
+
+/// A variable's operation in a map's text: its variables are the
+/// `[variable]` sections, one trigger file of variables alone to the
+/// project of the triggers; only globals.
+fn wtg_variable(map: Map, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Result<Answer, String> {
+    let js = crate::objects::json_string;
+    let (vars, at) = map.variables_file();
+    let ids: Vec<String> = (1..=map.triggers.len()).map(|n| map.id(n)).collect();
+    let project = Project { me: wtg_rs::text::VARIABLES_FILE, others: map.project(&ids, 0) };
+    let global = |d: Declared| match d.scope {
+        Scope::Global => Ok(d),
+        _ => Err("a map's variables are globals: private and local ones are a trigger file's (.trg)".to_string()),
+    };
+    // The variable whose `[variable]` is at the text's `line`, and its
+    // section's lines there.
+    let at_line = |line: usize| -> Result<(Declared, std::ops::Range<usize>), String> {
+        let (_, r) = map.sections.iter().find(|(n, r)| n == wtg_rs::text::VARIABLE && r.start + 1 == line).ok_or_else(|| format!("line {line} isn't a variable's"))?;
+        let d = wtg_rs::text::trigger_from_text(&map.lines[r.clone()].concat(), None).variables.into_iter().next().ok_or("no variable there")?;
+        Ok((d, r.clone()))
+    };
+    // A place a change breaks, in the text: its line.
+    let place = |id: &str, l: usize| match Map::nth_of(id).and_then(|n| map.triggers.get(n - 1)) {
+        Some(t) => t.line(l),
+        None => at.get(l - 1).copied().unwrap_or(l),
+    };
+    // Reign of Chaos's file (version 4) has no array sizes.
+    let v4 = map.sections.first().filter(|(n, _)| n == "wtg").and_then(|(_, r)| field_in(&map.lines, r.clone(), "version")).is_some_and(|(_, v)| v == "4");
+    let section = |d: &Declared| -> Result<String, String> {
+        let text = wtg_rs::text::declared_to_text(std::slice::from_ref(d))?;
+        Ok(if v4 { text.lines().filter(|l| field_key(l) != Some("size")).map(|l| format!("{l}\n")).collect() } else { text })
+    };
+    let mut lines = map.lines.clone();
+    match op {
+        op::NEW_VARIABLE => {
+            let d = global(variable_arg(arg, &vars, None)?)?;
+            let at = map.after_last(&[wtg_rs::text::VARIABLE, "category", "wtg"]);
+            let mut m = map;
+            m.insert(at, &section(&d)?);
+            lines = m.lines;
+        }
+        op::CHECK_VARIABLE | op::SET_VARIABLE | map_op::DELETE_VARIABLE => {
+            let (old, range) = at_line(line)?;
+            let new = match op {
+                map_op::DELETE_VARIABLE => None,
+                _ if arg.trim().is_empty() => None,
+                _ => Some(global(variable_arg(arg, &vars, Some(&old.variable.name))?)?),
+            };
+            let change = variable_change(&vars, &old, new.as_ref(), ui, &project)?;
+            if op == op::CHECK_VARIABLE {
+                let places: Vec<String> = change.places.iter().map(|(id, l, why)| format!("[\"\",{},{}]", place(id, *l), js(why))).collect();
+                return Ok(Answer::Json(format!("{{\"renamed\":{},\"places\":[{}]}}", change.renamed, places.join(","))));
+            }
+            for (id, _, changed) in &change.files {
+                if let Some(t) = Map::nth_of(id).and_then(|n| map.triggers.get(n - 1)) {
+                    t.put_lines(&mut lines, changed);
+                }
+            }
+            match new {
+                Some(d) => {
+                    // Its own lines: not the blank ones before the next section.
+                    let end = range.clone().rev().find(|&i| !lines[i].trim().is_empty()).map_or(range.end, |i| i + 1);
+                    let eol = map.eol;
+                    lines.splice(range.start..end, section(&d)?.lines().map(|l| format!("{l}{eol}")));
+                }
+                None => {
+                    let mut m = Map { lines, ..map };
+                    m.remove(range);
+                    lines = m.lines;
+                }
+            }
+        }
+        _ => unreachable!("a variable's operation"),
+    }
+    Ok(Answer::Lines(lines, 0, None))
+}
+
+/// One of the tree's own operations ([`map_op`]); `nth` the picked trigger.
+fn wtg_tree(mut map: Map, op: u32, nth: usize, arg: &str) -> Result<Answer, String> {
+    let categories = map.categories();
+    let index_arg = |s: &str| s.trim().parse::<i32>().map_err(|_| format!("not a category's index: {s:?}"));
+    match op {
+        map_op::NEW_TRIGGER => {
+            let (index, name) = arg.split_once('\n').unwrap_or((arg, ""));
+            let index = index_arg(index)?;
+            let name = name.trim();
+            if name.is_empty() {
+                return Err("a trigger needs a name".into());
+            }
+            let own = wtg_rs::jass::ident(name);
+            if let Some(t) = map.triggers.iter().find(|t| wtg_rs::jass::ident(&t.name) == own) {
+                return Err(format!("the map's script would name {:?} gg_trg_{own} too: name it otherwise", t.name));
+            }
+            let (at, pick) = map.end_of_category(index);
+            let section = format!("[{}]\nname={}\ndescription=\"\"\ncategory={index}\n", wtg_rs::text::TRIGGER, wtg_rs::text::jass_string(name));
+            map.insert(at, &section);
+            Ok(Answer::Lines(map.lines, 0, Some(pick)))
+        }
+        map_op::NEW_CATEGORY => {
+            let name = arg.trim();
+            if name.is_empty() {
+                return Err("a category needs a name".into());
+            }
+            let index = categories.iter().map(|c| c.0).max().map_or(0, |m| m + 1);
+            let at = map.after_last(&["category", "wtg"]);
+            map.insert(at, &format!("[category]\nindex={index}\nname={}\n", wtg_rs::text::jass_string(name)));
+            Ok(Answer::Lines(map.lines, 0, Some(nth)))
+        }
+        map_op::DELETE_TRIGGER => {
+            let t = map.triggers.get(nth.wrapping_sub(1)).ok_or("no trigger to delete")?;
+            let pick = nth.min(map.triggers.len() - 1);
+            let range = t.range.clone();
+            map.remove(range);
+            Ok(Answer::Lines(map.lines, 0, Some(pick)))
+        }
+        map_op::DELETE_CATEGORY => {
+            let index = index_arg(arg)?;
+            let (_, _, range) = categories.iter().find(|c| c.0 == index).ok_or(format!("no category {index}"))?.clone();
+            let mut ranges: Vec<std::ops::Range<usize>> = map.triggers.iter().filter(|t| map.category_of(t) == index).map(|t| t.range.clone()).collect();
+            let gone_before = map.triggers.iter().take(nth).filter(|t| map.category_of(t) == index).count();
+            let left = map.triggers.len() - ranges.len();
+            ranges.push(range);
+            ranges.sort_by_key(|r| std::cmp::Reverse(r.start));
+            for r in ranges {
+                map.remove(r);
+            }
+            Ok(Answer::Lines(map.lines, 0, Some(nth.saturating_sub(gone_before).max(1).min(left))))
+        }
+        map_op::RENAME_CATEGORY => {
+            let (index, name) = arg.split_once('\n').unwrap_or((arg, ""));
+            let index = index_arg(index)?;
+            let (_, _, range) = categories.iter().find(|c| c.0 == index).ok_or(format!("no category {index}"))?.clone();
+            let line = format!("name={}{}", wtg_rs::text::jass_string(name.trim()), map.eol);
+            match field_in(&map.lines, range.start + 1..range.end, "name") {
+                Some((i, _)) => map.lines[i] = line,
+                None => map.lines.insert(range.start + 1, line),
+            }
+            Ok(Answer::Lines(map.lines, 0, Some(nth)))
+        }
+        map_op::MOVE_TRIGGER => {
+            let mut parts = arg.split('\n');
+            let mut number = |what: &str| parts.next().and_then(|v| v.trim().parse::<i64>().ok()).ok_or_else(|| format!("a trigger's move: {what}"));
+            let moved = number("which")? as usize;
+            let index = number("its category")? as i32;
+            let before = number("before which")? as usize;
+            let t = map.triggers.get(moved.wrapping_sub(1)).ok_or(format!("no trigger {moved}"))?;
+            if before == moved {
+                return Ok(Answer::Lines(map.lines, 0, Some(moved)));
+            }
+            if before > map.triggers.len() {
+                return Err(format!("no trigger {before}"));
+            }
+            // Its lines, its category the new one, without the blank lines after it.
+            let eol = map.eol;
+            let mut section: Vec<String> = map.lines[t.range.clone()].to_vec();
+            while section.len() > 1 && section.last().is_some_and(|l| l.trim().is_empty()) {
+                section.pop();
+            }
+            let category = format!("category={index}{eol}");
+            match field_in(&section, 1..section.len(), "category") {
+                Some((i, _)) => section[i] = category,
+                None => section.insert(1, category),
+            }
+            if let Some(last) = section.last_mut()
+                && !last.ends_with('\n')
+            {
+                last.push_str(eol);
+            }
+            let range = t.range.clone();
+            map.remove(range);
+            let mut map = Map::of(&map.lines.concat());
+            // The one it goes before, counted without it.
+            let before = if before > moved { before - 1 } else { before };
+            let (at, pick) = match before {
+                0 => map.end_of_category(index),
+                b => (map.triggers[b - 1].range.start, b),
+            };
+            map.insert(at, &section.concat());
+            Ok(Answer::Lines(map.lines, 0, Some(pick)))
+        }
+        _ => Err(format!("unknown operation {op}")),
+    }
+}
+
+/// What the parameter at `path` of the ECA at `line` of the picked
+/// trigger can be ([`choices`]): `arg` is which trigger it is (from 1), a
+/// line break, and the path.
+pub fn wtg_choices(text: &str, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> String {
+    let (nth, path) = arg.split_once('\n').unwrap_or((arg, ""));
+    let map = Map::of(text);
+    let nth = map.pick(nth.trim().parse().unwrap_or(0));
+    if nth == 0 {
+        return format!("{{\"error\":{}}}", crate::objects::json_string("no trigger: the file has none"));
+    }
+    let visible: Vec<Declared> = wtg_variables(text, &wtg_rs::text::parse_bni(text)).into_iter().map(|(_, d)| d).collect();
+    choices(&map.triggers[nth - 1].text, line, path, ui, &visible)
 }
 
 /// The parameter at `path` (see `wtg_rs::ui::Span::Value`) of `params`.

@@ -66,7 +66,11 @@ pub enum QueryKind {
     /// block with the `data-line` it starts at) in the text.
     Txt2Html,
     /// In a trigger of its own (`.trg`): the view, as World Editor shows
-    /// it, as JSON in the text (`triggers::view`).
+    /// it, as JSON in the text (`triggers::view`). In the text of a map's
+    /// triggers (`.wtg`): its tree and its trigger number `line` picked
+    /// (from 1; `triggers::wtg_view`); the other trigger queries take that
+    /// number before their text there (`triggers::wtg_edit`,
+    /// `triggers::wtg_choices`).
     TriggerView,
     /// In a trigger of its own: the edits that do operation `character`
     /// on the ECA at line `line` (from 1) with the query text, as JSON in
@@ -242,9 +246,26 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             return Answer { locations: Vec::new(), text };
         }
         QueryKind::TriggerIcons => {
-            let text = match ws.names_text(id).filter(|(d, _, _)| d.path.as_deref().is_some_and(crate::triggers::is_trg_file)) {
+            let text = match ws.names_text(id).filter(|(d, _, _)| d.path.as_deref().is_some_and(crate::triggers::has_call_values)) {
                 Some((_, names, _)) => crate::triggers::icons(names),
                 None => "{}".into(),
+            };
+            return Answer { locations: Vec::new(), text };
+        }
+        // The text of a map's triggers (`.wtg`): its tree, and the trigger
+        // picked in it as a trigger of its own (`triggers::wtg_view`).
+        QueryKind::TriggerView | QueryKind::TriggerEdit | QueryKind::TriggerChoices | QueryKind::TriggerCatalog
+            if ws.file(id).is_some_and(|(d, _)| d.path.as_deref().is_some_and(crate::triggers::is_trigger_file)) =>
+        {
+            let Some((doc, names, _)) = ws.names_text(id) else {
+                return Answer::default();
+            };
+            let ui = &names.trigger_ui;
+            let text = match kind {
+                QueryKind::TriggerView => crate::triggers::wtg_view(&doc.text, pos.line as usize, names),
+                QueryKind::TriggerEdit => crate::triggers::wtg_edit(&doc.text, pos.character, pos.line as usize, query, ui),
+                QueryKind::TriggerChoices => crate::triggers::wtg_choices(&doc.text, pos.line as usize, query, ui),
+                _ => crate::triggers::catalog(pos.character, ui),
             };
             return Answer { locations: Vec::new(), text };
         }

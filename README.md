@@ -698,36 +698,100 @@ function takes isn't in the file but in World Editor's
 `UI\TriggerData.txt`, found like every game file (see "Finding a file"):
 a modded editor's in a root replaces the game's. Opening needs it, and
 saving checks every function's name and parameter count against it.
+
+The file opens as World Editor shows it (`wc3.wtgTriggers`, over that
+text: **Open as Text** and **Open as Triggers** switch, both the same
+document): on the left the tree, drawn by the view since there are no
+files to show it (each category with its triggers, a disabled one
+dimmed, a comment in italics, then the variables); on the right the
+trigger picked in it, as a `.trg` shows (below), and edited the same
+way. The tools above the tree make a new category, a new trigger (in
+the category selected, after its last), a new variable, and rename
+(F2) or delete (Delete, after asking) what's selected: a category with
+its triggers, a trigger, a variable. A trigger moves by dragging it:
+onto a trigger, before it, in its category; onto a category, to its
+end; Alt+Up and Alt+Down move the selected one in its category. A
+variable opens World Editor's dialog of it, without a scope: **a map's
+variables are globals**, private and local ones are a `.trg`'s. And
+**custom script is one line there**, as World Editor's: its dialog has
+a line to type, not lines, an edit that would make one of more lines is
+refused, and the text with one is a problem at its line and doesn't
+save; custom script of many lines is a `.trg`'s.
+
+The server cuts each trigger's `[trigger]` out of the text, without its
+`category=`, and to what's done the triggers are a project of trigger
+files of their own: the picked one is seen and edited as a `.trg`, a
+rename retargets the other triggers' references to it, a variable's
+change renames its uses in all of them and lists what it breaks, at
+their lines in the text. What changed is put back: every edit is of the
+text, so undo and save are the text's, and saving writes `war3map.wtg`
+as before (`triggers::wtg_view`, `triggers::wtg_edit`,
+`triggers::map_op`). A trigger is picked by its place among the
+triggers, not its line, so typing in the text above it doesn't pick
+another. There's no Show JASS, which needs the map's script made from
+its files (next).
 A trigger's `category=` shows its category's name as an inlay hint.
 
 ### A trigger of its own: `.trg`
 
-**`.trg` is the source, and there's no way back to `war3map.wtg`.** The
-aim is a trigger editor of its own, not World Editor's again: it will
-get what World Editor doesn't have, and every such thing would have to
-fit `war3map.wtg`'s layout (and `UI\TriggerData.txt`'s rules) to be
-written back, or be lost on the way. The game doesn't need that file
-anyway: it runs the map's script, and `war3map.wtg` is only World
-Editor's storage of its triggers. So:
+**Triggers live in one of two places, and a map moves from the first to
+the second in small steps.** Nobody starts by turning a whole map into
+folders: that's a lot of work to do before seeing anything come of it,
+and it's frightening. So the first step is nothing more than opening a
+`.w3x` and editing its triggers; the rest comes one file at a time,
+when it's worth it, and no step is one that can't be taken back.
 
-- triggers go one way: **Extract Triggers…** brings a map's
-  `war3map.wtg` in, once, and from then on the `.trg` files are the
-  triggers;
-- a build makes the map's script from them, not a `war3map.wtg`; a map
-  whose triggers are `.trg` files isn't one to edit in World Editor's
-  trigger editor;
-- the `.trg` format is free to grow: a new field, a new kind of line,
-  more than `UI\TriggerData.txt` describes, with nothing to keep in
-  step with World Editor's binary layout. **A new field is optional,
-  and its absence means what World Editor's trigger would be**: a
-  `[variable]` without `scope=` is a public global, as every one of
-  World Editor's is; so a file written before a field existed, or
-  extracted from a map, reads the same. A file holds one `[trigger]`:
-  a second is an error, not ignored, so nothing typed by hand is lost
-  without a word.
+- **In the map, `war3map.wtg`: World Editor's triggers.** They're edited
+  in the map itself, and the view draws their tree (categories,
+  triggers, variables) on its own, since there are no files to show
+  it. Only what World Editor's trigger editor can do is offered here:
+  `war3map.wtg`'s layout (and `UI\TriggerData.txt`'s rules) can't hold
+  any more, and what can't be stored would be lost. Saving writes
+  `war3map.wtg` and makes the map's script, `war3map.j`, again from
+  the map's files, as World Editor does: the game runs the script,
+  `war3map.wtg` is only World Editor's storage of the triggers. The
+  script behaves as World Editor's would; it isn't World Editor's
+  text (its conditions, for one, are written plainly).
+- **In files, `.trg`: the triggers of their own.** **Extract
+  Triggers…** takes all of the map's `war3map.wtg` out at once (not
+  some triggers here and some there), a file per trigger and a folder
+  per category; from then on the files are the triggers, and
+  everything this editor has beyond World Editor is theirs: local and
+  private variables, custom script of many lines, and what comes next.
+- **A map open is a project of one layer**, the map itself (see
+  "Projects": the project's own files win over the map's). Moving to folders is taking files out of the map into that
+  layer, one by one: the triggers, the object data, the rest. **Taking
+  a file out doesn't change the script a build makes**, byte for byte:
+  the map's script and a project's are made by the same build, only
+  the files come from different places. That's what makes each step
+  safe, and what a test checks.
+- **And back:** a `.trg` that uses nothing World Editor lacks can be
+  written into a map's `war3map.wtg` again, so a map is never held in
+  this tool; one that does use more is told what (a local here, a
+  private global there). The triggers' order hardly matters to them,
+  so little is lost going either way.
+
+Of this, the view of `.trg` files, Extract, and editing a map's
+`war3map.wtg` in place (its tree: new, renamed and deleted categories,
+triggers and variables; a trigger picked in it edited as a `.trg`;
+moved between categories; saved back) are done; making `war3map.j`
+from a map's files, the test that taking a file out keeps the script,
+and the way back are next. The way back writes only what World Editor
+has: a `.trg` with locals, private variables or custom script of many
+lines is told so.
+
+The `.trg` format is free to grow: a new field, a new kind of line,
+more than `UI\TriggerData.txt` describes, with nothing to keep in
+step with World Editor's binary layout. **A new field is optional,
+and its absence means what World Editor's trigger would be**: a
+`[variable]` without `scope=` is a public global, as every one of
+World Editor's is; so a file written before a field existed, or
+extracted from a map, reads the same. A file holds one `[trigger]`:
+a second is an error, not ignored, so nothing typed by hand is lost
+without a word.
 
 `war3map.wtg` itself still opens as its text and saves back exactly
-(above): that's for maps kept as they are, not for `.trg` files.
+(above).
 
 A `.trg` is one trigger, kept as a file: the map as files in folders has
 a file per trigger, and a folder per category. Its text is one
