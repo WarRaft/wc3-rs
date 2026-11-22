@@ -697,10 +697,12 @@ value).
 **Extract Triggers…** (the button in the title of a `war3map.wtg`'s
 text, or the Explorer's context menu of a `.wtg`) asks for a folder and
 puts the map's triggers there as files: a folder per category (empty
-ones too), a `.trg` per trigger, the variables in `_variables.trg`.
-Names a file can't have are made safe (`a/b?` is `a_b_`), and two that
-would clash get `(2)`, `(3)` ...; files already there are replaced
-after asking. It splits the text as it is in the editor, saved or not
+ones too), a `.trg` per trigger, the variables in `_variables.trg`. The
+game builds them top to bottom, so the order is in the names: a folder
+is its category's number and name (`000_Init`), a file its trigger's
+number in the category and name (`000_Spawn.trg`); the trigger's name
+stays in its `name=`. Names a file can't have are made safe (`a/b?` is
+`a_b_`); files already there are replaced after asking. It splits the text as it is in the editor, saved or not
 (`wtg_rs::text::to_files`).
 
 It opens as World Editor shows it (**Open as Text** and **Open as
