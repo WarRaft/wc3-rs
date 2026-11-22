@@ -990,6 +990,16 @@ remove objects; `TRIGSTR_<n>` names as their text) and string tables
 `storm-rs`, `w3abdhqtu-rs` and `wts-rs` as the editor. Build it first (`cargo build --release` in
 `../wc3-mcp`); Claude Code asks once whether to use it.
 
+Its tools read the game's files (names, `UI\TriggerData.txt`, metadata)
+the way the editor does for the same file: through `game` and `roots`
+when a call gives them, else through the settings of the project the file
+is in (the nearest `wc3.bni` above it, or `project`), with the same rule
+for a map that isn't a root (`game::Lookup::for_file`, shared with
+`Workspace::lookup`). `project_info` shows a project's settings, problems
+and where the editor's files and their patches come from;
+`project_write` checks a `wc3.bni` as the editor reads it before writing
+it.
+
 Planned for it: checking JASS (syntax, names, order as the game reads a
 map's `war3map.j`), lint, listing natives with their comments, and
 renaming symbols across the project. For that the server is a library as

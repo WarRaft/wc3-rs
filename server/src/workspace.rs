@@ -650,15 +650,9 @@ impl Workspace {
     /// kept in the repository to take things from) is read with that map
     /// alone over the game: the game folders, then the map.
     pub fn lookup(&mut self, path: &Path) -> crate::game::Lookup {
-        let Some(project) = self.settings_for(path) else {
-            return crate::game::Lookup::default();
-        };
-        // By the path, so it holds for a map that isn't in the model too
-        // (one only opened, not named by the project at all).
-        let map = path.ancestors().skip(1).find(|a| map::is_map_name(a));
-        match map.filter(|m| !project.roots.iter().any(|r| r == m)) {
-            Some(map) => crate::game::Lookup { game: project.game.clone(), roots: vec![map.to_path_buf()] },
-            None => crate::game::Lookup::of(&project),
+        match self.settings_for(path) {
+            Some(project) => crate::game::Lookup::for_file(&project, path),
+            None => crate::game::Lookup::default(),
         }
     }
 

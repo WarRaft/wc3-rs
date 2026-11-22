@@ -155,6 +155,21 @@ impl Lookup {
         }
     }
 
+    /// Where the files `path` (a file of `project`) is read with are
+    /// looked up: the project's layers ([`of`](Self::of)), except for a
+    /// file inside a map that isn't one of its roots (a map kept in the
+    /// repository to take things from), read with that map alone over
+    /// the game: the game folders, then the map.
+    pub fn for_file(project: &crate::project::Project, path: &Path) -> Lookup {
+        let path = crate::project::normalize(path);
+        // By the path, so it holds for a map the project names nowhere.
+        let map = path.ancestors().skip(1).find(|a| crate::map::is_map_name(a));
+        match map.filter(|m| !project.roots.iter().any(|r| r == m)) {
+            Some(map) => Lookup { game: project.game.clone(), roots: vec![map.to_path_buf()] },
+            None => Lookup::of(project),
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.game.is_empty() && self.roots.is_empty()
     }
