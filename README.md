@@ -673,6 +673,27 @@ A trigger's `category=` shows its category's name as an inlay hint.
 
 ### A trigger of its own: `.trg`
 
+**`.trg` is the source, and there's no way back to `war3map.wtg`.** The
+aim is a trigger editor of its own, not World Editor's again: it will
+get what World Editor doesn't have, and every such thing would have to
+fit `war3map.wtg`'s layout (and `UI\TriggerData.txt`'s rules) to be
+written back, or be lost on the way. The game doesn't need that file
+anyway: it runs the map's script, and `war3map.wtg` is only World
+Editor's storage of its triggers. So:
+
+- triggers go one way: **Extract Triggers…** brings a map's
+  `war3map.wtg` in, once, and from then on the `.trg` files are the
+  triggers;
+- a build makes the map's script from them, not a `war3map.wtg`; a map
+  whose triggers are `.trg` files isn't one to edit in World Editor's
+  trigger editor;
+- the `.trg` format is free to grow: a new field, a new kind of line,
+  more than `UI\TriggerData.txt` describes, with nothing to keep in
+  step with World Editor's binary layout.
+
+`war3map.wtg` itself still opens as its text and saves back exactly
+(above): that's for maps kept as they are, not for `.trg` files.
+
 A `.trg` is one trigger, kept as a file: the map as files in folders has
 a file per trigger, and a folder per category. Its text is one
 `[trigger]` of the text above, without `category=` (the folder is the
