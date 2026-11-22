@@ -128,3 +128,11 @@ fn a_shadow_map_takes_its_terrains_size() {
     assert!(decode_file(&name, &[0; 15]).error.contains("15 bytes for a 4x4 grid"));
     assert!(decode_file("/nowhere/war3map.shd", &cells).error.contains("can't be read"));
 }
+
+#[test]
+fn base64_and_icons() {
+    assert_eq!((base64(b""), base64(b"f"), base64(b"fo"), base64(b"foo"), base64(b"foob")), (
+        "".to_string(), "Zg==".to_string(), "Zm8=".to_string(), "Zm9v".to_string(), "Zm9vYg==".to_string()
+    ));
+    assert_eq!(png_data_url(b"not a picture"), None);
+}

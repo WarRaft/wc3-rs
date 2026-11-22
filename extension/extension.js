@@ -1336,7 +1336,7 @@ function registerTrigger(context) {
         const asset = name => webview.asWebviewUri(Uri.joinPath(media, name))
         const fa = name => asset(`fontawesome/${name}`)
         return `<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; script-src 'nonce-${nonce}'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; img-src data:; script-src 'nonce-${nonce}'">
 <link rel="stylesheet" href="${fa('fontawesome.min.css')}">
 <link rel="stylesheet" href="${asset('trg.css')}">
 <style>
@@ -1345,7 +1345,7 @@ function registerTrigger(context) {
 </style>
 </head><body>
 <div class="bar">
-  <i class="fa-solid fa-bolt title-icon"></i>
+  <span id="title-icon" class="title-icon"><i class="fa-solid fa-bolt"></i></span>
   <input id="name" class="name" spellcheck="false" title="The trigger's name">
   <label class="check" title="Is the trigger on at all?"><input id="enabled" type="checkbox">Enabled</label>
   <label class="check" title="Does the trigger start on? Off, something must turn it on"><input id="initially-on" type="checkbox">Initially On</label>
@@ -1428,7 +1428,12 @@ function registerTrigger(context) {
             }
             const handle = async msg => {
                 switch (msg.type) {
-                case 'ready': return post(0)
+                case 'ready': {
+                    // The editor's icons once (the project's), then the view.
+                    const icons = await query(QUERY.TRIGGER_ICONS, id, {line: 0, character: 0}, '')
+                    if (icons && icons.text) webview.postMessage({type: 'icons', icons: JSON.parse(icons.text)})
+                    return post(0)
+                }
                 case 'toggle': return run(OP.TOGGLE, msg.line)
                 case 'delete': return run(OP.DELETE, msg.line)
                 case 'move': return run(OP.MOVE, msg.line, msg.place)

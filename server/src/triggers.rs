@@ -907,6 +907,17 @@ pub fn catalog(kind: u32, ui: &wtg_rs::ui::Ui) -> String {
     format!("[{}]", out.join(","))
 }
 
+/// The trigger editor's icons, as JSON: `{"ReplaceableTextures\\WorldEditUI\\Actions-Unit":
+/// "data:image/png;base64,...", "SEIcon_Event": "data:...", ...}` (see
+/// `names::Names::trigger_icons`), by key in order.
+pub fn icons(names: &crate::names::Names) -> String {
+    let js = crate::objects::json_string;
+    let mut keys: Vec<&String> = names.trigger_icons.keys().collect();
+    keys.sort();
+    let items: Vec<String> = keys.iter().map(|k| format!("{}:{}", js(k), js(&names.trigger_icons[*k]))).collect();
+    format!("{{{}}}", items.join(","))
+}
+
 /// The parameter at `path` (see `wtg_rs::ui::Span::Value`) of `params`.
 fn param_at<'a>(params: &'a mut [wtg_rs::Param], path: &str) -> Result<&'a mut wtg_rs::Param, String> {
     let missing = || format!("no parameter {path}");

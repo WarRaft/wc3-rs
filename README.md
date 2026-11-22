@@ -713,7 +713,11 @@ Trigger** switch, as Reopen Editor With does): Events, Conditions and
 Actions, each line its phrase from the editor's files
 (`UI\TriggerData.txt`, `UI\TriggerStrings.txt` and its strings, found
 like every game file, so in the game's language, and a modded editor's
-in a root replaces them), parameters colored by what they are (a preset,
+in a root replaces them), each line with its category's icon and the
+headings and blocks with the editor's own (World Editor's textures,
+`ReplaceableTextures\WorldEditUI\*`, found the same way: the
+categories' in `UI\TriggerData.txt`, the rest in
+`UI\WorldEditData.txt`'s `[WorldEditArt]`), parameters colored by what they are (a preset,
 a variable, a value, a call), what's inside an if/then/else or a loop in
 its blocks (If - Conditions, Then - Actions, Else - Actions, Loop -
 Actions), a disabled line dimmed. A function the files don't have shows

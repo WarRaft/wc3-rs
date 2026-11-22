@@ -24,7 +24,8 @@
 //! - the trigger editor's functions: `UI\TriggerData.txt` (how many
 //!   parameters each takes, its category, the presets) and
 //!   `UI\TriggerStrings.txt` (their phrases), for triggers' text and
-//!   view.
+//!   view, and its icons (each category's, and `UI\WorldEditData.txt`'s
+//!   `[WorldEditArt]` for the rest), decoded once.
 //!
 //! What the formats say a value means (the sound channels' numbers, a
 //! flag's bit) is built into the crates, with English names; the hints
@@ -74,7 +75,30 @@ pub struct Names {
     /// presets and phrases (`UI\TriggerData.txt`, `UI\TriggerStrings.txt`,
     /// with the editor's strings), for the view of a `.trg`.
     pub trigger_ui: wtg_rs::ui::Ui,
+    /// The trigger editor's icons, as `data:` URLs (PNG): each category's
+    /// by its path as `UI\TriggerData.txt` says it
+    /// (`ReplaceableTextures\WorldEditUI\Actions-Unit`), and the
+    /// editor's own by their keys in `UI\WorldEditData.txt`'s
+    /// `[WorldEditArt]` ([`TRIGGER_ART`]).
+    pub trigger_icons: HashMap<String, String>,
 }
+
+/// The trigger editor's own icons, keys of `UI\WorldEditData.txt`'s
+/// `[WorldEditArt]`: the headings and blocks (events, conditions,
+/// actions), a function (one the editor's files don't have), a trigger,
+/// a category and the variables.
+pub const TRIGGER_ART: [&str; 10] = [
+    "SEIcon_Event",
+    "SEIcon_Condition",
+    "SEIcon_Action",
+    "SEIcon_Function",
+    "SEIcon_FunctionDisabled",
+    "SEIcon_Trigger",
+    "SEIcon_TriggerDisabled",
+    "SEIcon_TriggerCategory",
+    "SEIcon_TriggerCategoryOpen",
+    "ToolBarIcon_SE_Variables",
+];
 
 impl Names {
     /// Reads them through `game`'s layers. What a file doesn't give stays
@@ -118,8 +142,14 @@ impl Names {
 
         let mut tilesets = HashMap::new();
         let mut channels = HashMap::new();
+        let mut art: Vec<(String, String)> = Vec::new();
         if let Some(text) = read("UI\\WorldEditData.txt") {
             let doc = bni_rs::parse(&text);
+            for item in doc.section("WorldEditArt").map(|s| s.items.as_slice()).unwrap_or_default() {
+                if let Some(key) = item.key.as_ref().map(|k| k.text.trim()).filter(|k| TRIGGER_ART.contains(k)) {
+                    art.push((key.to_string(), item.value_text().trim().to_string()));
+                }
+            }
             let items = |name: &str| doc.section(name).map(|s| s.items.as_slice()).unwrap_or_default();
             for item in items("TileSets") {
                 let (Some(key), Some(first)) = (&item.key, item.fields.first()) else { continue };
@@ -143,7 +173,29 @@ impl Names {
             (Some(data), strings) => wtg_rs::ui::Ui::parse(data, strings.as_deref().unwrap_or(""), &|k| names.resolve(k)),
             (None, _) => wtg_rs::ui::Ui::default(),
         };
-        Names { weather, tilesets, eax, ground, cliffs, channels, triggers, trigger_ui, ..names }
+        // The icons, once: a few dozen small textures, only for a project
+        // with the trigger editor's data.
+        let mut trigger_icons = HashMap::new();
+        if !trigger_ui.is_empty() {
+            let icon = |path: &str| -> Option<String> {
+                let has_ext = std::path::Path::new(&path.replace('\\', "/")).extension().is_some();
+                let file = if has_ext { path.to_string() } else { format!("{path}.blp") };
+                crate::texture::png_data_url(&game.read(&file)?.0)
+            };
+            for c in trigger_ui.categories.values() {
+                if !c.icon.is_empty() && !trigger_icons.contains_key(&c.icon)
+                    && let Some(url) = icon(&c.icon)
+                {
+                    trigger_icons.insert(c.icon.clone(), url);
+                }
+            }
+            for (key, path) in &art {
+                if let Some(url) = icon(path) {
+                    trigger_icons.insert(key.clone(), url);
+                }
+            }
+        }
+        Names { weather, tilesets, eax, ground, cliffs, channels, triggers, trigger_ui, trigger_icons, ..names }
     }
 
     /// `text` with a key in it replaced by the string it names, and so on

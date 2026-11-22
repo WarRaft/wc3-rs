@@ -28,6 +28,9 @@
  * (`triggers::catalog`). **New variable** declares a global in this
  * file (`[variable]`): name, type, array and size, initial value.
  *
+ * Icons are World Editor's (`{type: 'icons', icons}`, once): a line's
+ * category's, the headings' and blocks', the variables'.
+ *
  * Messages in: `{type: 'view', view, select}` (select: a line to select,
  * 0 for none), `{type: 'select', line}`, `{type: 'choices', line, path,
  * choices}`, `{type: 'catalog', kind, place, items}`.
@@ -66,6 +69,15 @@ const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.get
  */
 
 const KIND_CLASS = ['event', 'condition', 'action']
+/** The editor's icons by kind (`[WorldEditArt]` keys). */
+const KIND_ART = ['SEIcon_Event', 'SEIcon_Condition', 'SEIcon_Action']
+/**
+ * World Editor's icons, as `data:` URLs: each category's by its path, the
+ * editor's own by their `[WorldEditArt]` keys (`triggers::icons`). Empty
+ * without the game's files: then FontAwesome's stand in.
+ * @type {Record<string, string>}
+ */
+let icons = {}
 const KIND_ICON = ['fa-bolt', 'fa-scale-balanced', 'fa-play']
 const INDENT = 18
 
@@ -216,7 +228,7 @@ function drawRow(row) {
     }
     el.appendChild(twisty)
 
-    const icon = document.createElement('i')
+    let icon = document.createElement('i')
     const label = document.createElement('span')
     label.className = 'label'
     if (row.type === 'node' && row.node) {
@@ -249,9 +261,33 @@ function drawRow(row) {
         icon.className = `icon fa-solid ${row.open && row.hasChildren ? 'fa-folder-open' : 'fa-folder'} block`
         label.textContent = row.label
     }
+    // World Editor's own icon over FontAwesome's, when the game's files
+    // have it.
+    const art = artOf(row)
+    if (art && icons[art]) {
+        const img = /** @type {HTMLImageElement} */ (document.createElement('img'))
+        img.className = 'icon art'
+        img.src = icons[art]
+        img.alt = ''
+        icon = /** @type {any} */ (img)
+    }
     el.appendChild(icon)
     el.appendChild(label)
     return el
+}
+
+/**
+ * The key of World Editor's icon for a row: a line's category's (or the
+ * function icon for one the files don't have), a heading's and a block's
+ * kind's, the variables'.
+ * @param {Row} row
+ */
+function artOf(row) {
+    if (row.type === 'node' && row.node) return row.node.known && row.node.icon ? row.node.icon : 'SEIcon_Function'
+    if (row.type === 'heading') return KIND_ART[row.kind]
+    if (row.type === 'block') return KIND_ART[row.kind]
+    if (row.type === 'variables' || row.type === 'variable') return 'ToolBarIcon_SE_Variables'
+    return ''
 }
 
 /**
@@ -491,6 +527,9 @@ $('open-text').addEventListener('click', () => vscode.postMessage({type: 'openTe
 
 /** @param {View} v */
 function showFields(v) {
+    const art = icons[v.enabled !== 0 ? 'SEIcon_Trigger' : 'SEIcon_TriggerDisabled']
+    $('title-icon').innerHTML = art ? `<img class="icon art" alt="" src="${art}">` : '<i class="fa-solid fa-bolt"></i>'
+
     // What's being typed stays.
     if (document.activeElement !== nameInput) nameInput.value = v.name
     if (document.activeElement !== description) description.value = v.description
@@ -740,6 +779,9 @@ window.addEventListener('message', e => {
         draw()
     } else if (msg.type === 'choices') {
         paramDialog(msg.line, msg.path, msg.choices)
+    } else if (msg.type === 'icons') {
+        icons = msg.icons || {}
+        draw()
     } else if (msg.type === 'types') {
         variableDialog(msg.items)
     } else if (msg.type === 'catalog') {

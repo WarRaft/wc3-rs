@@ -82,6 +82,9 @@ pub enum QueryKind {
     /// In a trigger of its own: the functions a new ECA of kind
     /// `character` can be, as JSON in the text (`triggers::catalog`).
     TriggerCatalog,
+    /// In a trigger of its own: the trigger editor's icons, as JSON in
+    /// the text (`triggers::icons`).
+    TriggerIcons,
 }
 
 /// Path completion and links in a manifest; nothing for any other file.
@@ -207,6 +210,13 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             let text = match ws.file(id).filter(|(d, _)| d.path.as_deref().is_some_and(crate::triggers::is_trigger_file)) {
                 Some((doc, _)) => crate::triggers::extract(&doc.text),
                 None => "{\"error\":\"not the text of triggers (.wtg)\"}".into(),
+            };
+            return Answer { locations: Vec::new(), text };
+        }
+        QueryKind::TriggerIcons => {
+            let text = match ws.names_text(id).filter(|(d, _, _)| d.path.as_deref().is_some_and(crate::triggers::is_trg_file)) {
+                Some((_, names, _)) => crate::triggers::icons(names),
+                None => "{}".into(),
             };
             return Answer { locations: Vec::new(), text };
         }

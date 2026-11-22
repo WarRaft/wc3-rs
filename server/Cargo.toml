@@ -42,9 +42,9 @@ storm-rs = { path = "../../storm-rs" }
 # Decoding only: no libjpeg-turbo (a C build), so cross-compiling stays
 # pure Rust.
 blp = { path = "../../blp-rs", default-features = false }
-# TGA for the viewer (map previews, loading screens): the `image` crate
-# blp-rs already uses, pure Rust.
-image = { version = "0.25.8", default-features = false, features = ["tga"] }
+# TGA for the viewer (map previews, loading screens), and PNG for the
+# trigger editor's icons: the `image` crate blp-rs already uses, pure Rust.
+image = { version = "0.25.8", default-features = false, features = ["tga", "png"] }
 notify = "8.2.0"
 
 # The parsers do the heavy work: optimize them even in debug builds, so a

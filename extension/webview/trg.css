@@ -34,6 +34,7 @@ body {
 }
 
 .title-icon {
+    display: flex;
     color: #FFA000;
 }
 
@@ -379,5 +380,18 @@ body {
 }
 
 .dialog input.size:disabled {
+    opacity: .5;
+}
+
+/* World Editor's icons: 16x16 textures, drawn pixel for pixel. */
+img.icon.art {
+    width: 16px;
+    height: 16px;
+    margin-top: 1px;
+    image-rendering: pixelated;
+}
+
+.off > img.icon.art, .in-off > img.icon.art {
+    filter: grayscale(1);
     opacity: .5;
 }
