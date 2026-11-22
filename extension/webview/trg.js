@@ -20,12 +20,22 @@
  * the line of the line it's under (0 at the top), its block (at the top,
  * the kind: 0 events, 1 conditions, 2 actions), before what's at `index`.
  *
+ * Clicking a parameter opens World Editor's dialog for it: a preset, a
+ * variable, a function (a call, with its default parameters) or a value,
+ * of the parameter's type (`triggers::choices`); what's picked is written
+ * at once, and a call's own parameters are links in turn. **New** (+)
+ * picks a function for a new event, condition or action
+ * (`triggers::catalog`).
+ *
  * Messages in: `{type: 'view', view, select}` (select: a line to select,
- * 0 for none), `{type: 'select', line}`.
+ * 0 for none), `{type: 'select', line}`, `{type: 'choices', line, path,
+ * choices}`, `{type: 'catalog', kind, place, items}`.
  * Messages out: `{type: 'ready'}`, `{type: 'toggle' | 'delete' | 'copy' |
  * 'cut', line}`, `{type: 'move', line, place}`, `{type: 'paste', place}`,
  * `{type: 'field', key, value}`, `{type: 'reveal', line}`,
- * `{type: 'openText'}`.
+ * `{type: 'choices', line, path}`, `{type: 'set', line, path, kind,
+ * value}`, `{type: 'catalog', kind, place}`, `{type: 'new', place, kind,
+ * name}`, `{type: 'openText'}`.
  */
 
 // @ts-ignore: provided by VS Code
@@ -33,7 +43,7 @@ const vscode = acquireVsCodeApi()
 
 const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id))
 
-/** @typedef {string | {r: string, s: Span[]}} Span */
+/** @typedef {string | {r: string, p: string, s: Span[]}} Span */
 /** @typedef {{label: string, group: number, kind: number, nodes: Node[]}} Block */
 /** @typedef {{line: number, kind: number, enabled: boolean, name: string, known: boolean, icon: string, hint: string, text: Span[], blocks: Block[]}} Node */
 /** @typedef {{line: number, name: string, type: string, type_name: string, array: boolean, size: number, initial: string | null}} Variable */
@@ -153,6 +163,10 @@ function drawSpans(into, spans) {
         }
         const el = document.createElement('span')
         el.className = `v v-${s.r}`
+        if (s.p) {
+            el.dataset.path = s.p
+            el.classList.add('link')
+        }
         drawSpans(el, s.s)
         into.appendChild(el)
     }
@@ -286,6 +300,7 @@ function updateTools() {
     set('up', !!node && node.index > 0)
     set('down', !!node && node.index < node.count - 1)
     set('paste', !!view && view.trigger)
+    set('new', !!view && view.trigger && !!row && row.kind >= 0)
 }
 
 /** @param {'toggle' | 'delete' | 'copy' | 'cut' | 'up' | 'down' | 'paste'} what */
@@ -303,6 +318,8 @@ function act(what) {
     vscode.postMessage({type: what, line})
 }
 
+$('new').addEventListener('click', () => newLine())
+
 for (const id of ['toggle', 'delete', 'copy', 'cut', 'up', 'down', 'paste']) {
     $(id).addEventListener('click', () => {
         act(/** @type {any} */ (id))
@@ -315,6 +332,14 @@ for (const id of ['toggle', 'delete', 'copy', 'cut', 'up', 'down', 'paste']) {
 tree.addEventListener('mousedown', e => {
     const el = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('.row'))
     if (el && el.dataset.path) select(el.dataset.path)
+})
+
+tree.addEventListener('click', e => {
+    const link = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('.link'))
+    const el = link && /** @type {HTMLElement | null} */ (link.closest('.row'))
+    const row = el && rows.find(r => r.path === el.dataset.path)
+    if (!link || !row || !row.node || !link.dataset.path) return
+    vscode.postMessage({type: 'choices', line: row.node.line, path: link.dataset.path})
 })
 
 tree.addEventListener('dblclick', e => {
@@ -356,6 +381,7 @@ tree.addEventListener('keydown', e => {
     else if (mod && key.toLowerCase() === 'x') act('cut')
     else if (mod && key.toLowerCase() === 'v') act('paste')
     else if (mod && key.toLowerCase() === 'e') act('toggle')
+    else if (mod && e.shiftKey && key.toLowerCase() === 'n') newLine()
     else handled = false
     if (handled) e.preventDefault()
 })
@@ -478,6 +504,192 @@ function showFields(v) {
     notice.textContent = notes.join(' ')
 }
 
+// ---------------------------------------------------------------- dialogs
+
+const overlay = $('dialog')
+const box = /** @type {HTMLFormElement} */ ($('dialog-box'))
+
+/** @param {string} tag @param {Record<string, any>} [props] @param {(Node | string)[]} [children] */
+function h(tag, props = {}, children = []) {
+    const el = /** @type {any} */ (document.createElement(tag))
+    for (const [k, v] of Object.entries(props)) {
+        if (k === 'class') el.className = v
+        else if (k.startsWith('on')) el.addEventListener(k.slice(2), v)
+        else if (k in el) el[k] = v
+        else el.setAttribute(k, v)
+    }
+    el.append(...children)
+    return el
+}
+
+function closeDialog() {
+    overlay.hidden = true
+    box.replaceChildren()
+    box.onsubmit = null
+    tree.focus()
+}
+
+/**
+ * Shows the dialog with `body`; `ok` runs on OK (Enter), and closes it
+ * unless it returns false.
+ * @param {string} title @param {HTMLElement[]} body @param {() => boolean | void} ok
+ */
+function openDialog(title, body, ok) {
+    box.replaceChildren(
+        h('div', {class: 'dialog-title'}, [title]),
+        ...body,
+        h('div', {class: 'dialog-buttons'}, [
+            h('button', {type: 'button', class: 'text-button', onclick: closeDialog}, ['Cancel']),
+            h('button', {type: 'submit', class: 'primary-button'}, ['OK']),
+        ]),
+    )
+    box.onsubmit = e => {
+        e.preventDefault()
+        if (ok() !== false) closeDialog()
+    }
+    overlay.hidden = false
+}
+
+overlay.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+        e.preventDefault()
+        closeDialog()
+    }
+})
+overlay.addEventListener('mousedown', e => {
+    if (e.target === overlay) closeDialog()
+})
+
+/**
+ * A list to pick from, filtered by what's typed: `items` are [value, label].
+ * @param {[string, string][]} items @param {string} current @param {() => void} onPick
+ */
+function pickList(items, current, onPick) {
+    const filter = h('input', {type: 'search', class: 'filter', placeholder: 'Filter', spellcheck: false})
+    const list = /** @type {HTMLSelectElement} */ (h('select', {size: 10, class: 'list'}))
+    const fill = () => {
+        const q = filter.value.trim().toLowerCase()
+        const keep = list.value || current
+        list.replaceChildren(...items
+            .filter(([v, l]) => !q || l.toLowerCase().includes(q) || v.toLowerCase().includes(q))
+            .map(([v, l]) => h('option', {value: v, title: v}, [l])))
+        if ([...list.options].some(o => o.value === keep)) list.value = keep
+        else if (list.options.length) list.selectedIndex = 0
+    }
+    filter.addEventListener('input', fill)
+    filter.addEventListener('keydown', e => {
+        if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            list.focus()
+        }
+    })
+    list.addEventListener('dblclick', onPick)
+    fill()
+    return {filter, list}
+}
+
+/**
+ * The dialog of a parameter, as World Editor's: preset, variable,
+ * function or value, whichever its type has.
+ * @param {number} line @param {string} path
+ * @param {{type: string, type_name: string, current: {kind: string, value: string}, presets: [string, string][],
+ *   variables: [string, string, boolean][], calls: [string, string, string][], value: boolean}} c
+ */
+function paramDialog(line, path, c) {
+    /** @type {{kind: string, radio: HTMLInputElement, get: () => [string, string] | null}[]} */
+    const options = []
+    const body = []
+    const option = (/** @type {string} */ kind, /** @type {string} */ label, /** @type {HTMLElement[]} */ controls, /** @type {() => [string, string] | null} */ get) => {
+        const radio = /** @type {HTMLInputElement} */ (h('input', {type: 'radio', name: 'choice', value: kind}))
+        radio.checked = c.current.kind === kind || (kind === 'variable' && c.current.kind === 'array')
+        const section = h('div', {class: 'choice'}, [h('label', {class: 'choice-label'}, [radio, label]), ...controls])
+        for (const el of controls) el.addEventListener('focusin', () => { radio.checked = true })
+        options.push({kind, radio, get})
+        body.push(section)
+    }
+    const submit = () => box.requestSubmit()
+    if (c.presets.length) {
+        const select = /** @type {HTMLSelectElement} */ (h('select', {class: 'wide'}, c.presets.map(([k, d]) => h('option', {value: k}, [d]))))
+        if (c.current.kind === 'preset') select.value = c.current.value
+        option('preset', 'Preset', [select], () => ['preset', select.value])
+    }
+    if (c.variables.length) {
+        const select = /** @type {HTMLSelectElement} */ (h('select', {class: 'wide'},
+            c.variables.map(([n, t, a]) => h('option', {value: n}, [`${n}${a ? '[]' : ''} : ${t}`]))))
+        if (c.current.kind === 'variable') select.value = c.current.value
+        option('variable', 'Variable', [select], () => {
+            const v = c.variables.find(x => x[0] === select.value)
+            return v ? [v[2] ? 'array' : 'variable', v[0]] : null
+        })
+    }
+    if (c.calls.length) {
+        const {filter, list} = pickList(c.calls.map(([n, t, cat]) => [n, cat ? `${cat} - ${t}` : t]),
+            c.current.kind === 'call' ? c.current.value : '', submit)
+        option('call', 'Function', [filter, list], () => list.value ? ['call', list.value] : null)
+    }
+    if (c.value) {
+        const input = /** @type {HTMLInputElement} */ (h('input', {type: 'text', class: 'wide', spellcheck: false}))
+        if (c.current.kind === 'value') input.value = c.current.value
+        option('value', 'Value', [input], () => ['value', input.value])
+    }
+    if (!options.length) {
+        body.push(h('div', {class: 'empty'}, [`Nothing of type ${c.type_name || c.type || '?'} to pick: open the text to write it.`]))
+    }
+    if (options.length && !options.some(o => o.radio.checked)) options[0].radio.checked = true
+    openDialog(c.type_name || c.type || 'Parameter', body, () => {
+        const chosen = options.find(o => o.radio.checked)
+        const got = chosen && chosen.get()
+        if (!got) return false
+        vscode.postMessage({type: 'set', line, path, kind: got[0], value: got[1]})
+    })
+    const focus = options.find(o => o.radio.checked)
+    const target = focus && /** @type {HTMLElement | null} */ (focus.radio.closest('.choice')?.querySelector('select, input:not([type=radio])'))
+    if (target) target.focus()
+}
+
+/** New: asks the server for the functions of the selected row's kind. */
+function newLine() {
+    const row = selectedRow()
+    if (!view || !view.trigger || !row || row.kind < 0) return
+    vscode.postMessage({type: 'catalog', kind: row.kind, place: pastePlace()})
+}
+
+/**
+ * The dialog of a new line: a category, then a function in it.
+ * @param {number} kind @param {string} place @param {[string, string, string, string, boolean][]} items
+ */
+function newDialog(kind, place, items) {
+    const categories = [...new Set(items.map(i => i[2]))]
+    const category = /** @type {HTMLSelectElement} */ (h('select', {class: 'wide'},
+        [h('option', {value: '\u0000'}, ['- All -']), ...categories.map(cat => h('option', {value: cat}, [cat || '(none)']))]))
+    const hint = h('div', {class: 'hint'})
+    let picker = pickList([], '', () => box.requestSubmit())
+    const holder = h('div', {class: 'picker'})
+    const fill = () => {
+        const all = category.value === '\u0000'
+        const shown = items.filter(i => all || i[2] === category.value)
+        const q = picker.filter.value
+        picker = pickList(shown.map(([n, t, cat, , show]) => [n, all && cat && show ? `${cat} - ${t}` : t]), '', () => box.requestSubmit())
+        picker.filter.value = q
+        picker.filter.dispatchEvent(new Event('input'))
+        picker.list.addEventListener('change', showHint)
+        holder.replaceChildren(picker.filter, picker.list)
+        showHint()
+    }
+    const showHint = () => {
+        const it = items.find(i => i[0] === picker.list.value)
+        hint.textContent = it ? it[3] : ''
+    }
+    category.addEventListener('change', fill)
+    fill()
+    const title = ['New Event', 'New Condition', 'New Action'][kind] || 'New'
+    openDialog(title, [h('div', {class: 'choice'}, [h('label', {class: 'choice-label'}, ['Category']), category]), holder, hint], () => {
+        if (!picker.list.value) return false
+        vscode.postMessage({type: 'new', place, kind, name: picker.list.value})
+    })
+    picker.filter.focus()
+}
+
 // ---------------------------------------------------------------- messages
 
 window.addEventListener('message', e => {
@@ -487,6 +699,10 @@ window.addEventListener('message', e => {
         if (msg.select) selectLine = msg.select
         showFields(msg.view)
         draw()
+    } else if (msg.type === 'choices') {
+        paramDialog(msg.line, msg.path, msg.choices)
+    } else if (msg.type === 'catalog') {
+        newDialog(msg.kind, msg.place, msg.items)
     } else if (msg.type === 'select') {
         const r = rows.find(r => r.type === 'node' && r.node && r.node.line === msg.line)
         if (r) select(r.path)

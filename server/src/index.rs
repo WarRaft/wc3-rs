@@ -75,6 +75,13 @@ pub enum QueryKind {
     /// In the text form of triggers (`.wtg`): every trigger as a file of
     /// its own, as JSON in the text (`triggers::extract`).
     TriggerExtract,
+    /// In a trigger of its own: what the parameter at the query text's
+    /// path of the ECA at line `line` can be, as JSON in the text
+    /// (`triggers::choices`).
+    TriggerChoices,
+    /// In a trigger of its own: the functions a new ECA of kind
+    /// `character` can be, as JSON in the text (`triggers::catalog`).
+    TriggerCatalog,
 }
 
 /// Path completion and links in a manifest; nothing for any other file.
@@ -203,13 +210,31 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             };
             return Answer { locations: Vec::new(), text };
         }
+        QueryKind::TriggerChoices | QueryKind::TriggerCatalog => {
+            let Some((doc, names, _)) = ws.names_text(id).filter(|(d, _, _)| d.path.as_deref().is_some_and(crate::triggers::is_trg_file)) else {
+                return Answer::default();
+            };
+            let text = if kind == QueryKind::TriggerCatalog {
+                crate::triggers::catalog(pos.character, &names.trigger_ui)
+            } else {
+                // The global variables every trigger file of the project
+                // declares.
+                let variables: Vec<wtg_rs::Variable> = ws
+                    .scope(id)
+                    .filter(|(_, d, _)| d.path.as_deref().is_some_and(crate::triggers::is_trg_file))
+                    .flat_map(|(_, d, _)| wtg_rs::text::trigger_from_text(&d.text, None).variables)
+                    .collect();
+                crate::triggers::choices(&doc.text, pos.line as usize, query, &names.trigger_ui, &variables)
+            };
+            return Answer { locations: Vec::new(), text };
+        }
         QueryKind::TriggerView | QueryKind::TriggerEdit => {
             let Some((doc, names, _)) = ws.names_text(id).filter(|(d, _, _)| d.path.as_deref().is_some_and(crate::triggers::is_trg_file)) else {
                 return Answer::default();
             };
             let text = match kind {
                 QueryKind::TriggerView => crate::triggers::view(&doc.text, names),
-                _ => crate::triggers::edit(&doc.text, pos.character, pos.line as usize, query),
+                _ => crate::triggers::edit(&doc.text, pos.character, pos.line as usize, query, &names.trigger_ui),
             };
             return Answer { locations: Vec::new(), text };
         }

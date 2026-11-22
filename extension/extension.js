@@ -1350,6 +1350,7 @@ function registerTrigger(context) {
   <label class="check" title="Is the trigger on at all?"><input id="enabled" type="checkbox">Enabled</label>
   <label class="check" title="Does the trigger start on? Off, something must turn it on"><input id="initially-on" type="checkbox">Initially On</label>
   <div class="tools">
+    <button id="new" title="New event, condition or action (Ctrl+Shift+N)"><i class="fa-solid fa-plus"></i></button>
     <button id="toggle" title="Enable or disable (Ctrl+E)"><i class="fa-solid fa-power-off"></i></button>
     <button id="up" title="Move up (Alt+Up)"><i class="fa-solid fa-arrow-up"></i></button>
     <button id="down" title="Move down (Alt+Down)"><i class="fa-solid fa-arrow-down"></i></button>
@@ -1366,6 +1367,7 @@ function registerTrigger(context) {
 <div id="notice" class="notice" hidden></div>
 <div id="tree" class="tree" tabindex="0" role="tree"></div>
 <div id="loading" class="message">Reading the trigger…</div>
+<div id="dialog" class="overlay" hidden><form id="dialog-box" class="dialog"></form></div>
 <script nonce="${nonce}" src="${asset('trg.js')}"></script>
 </body></html>`
     }
@@ -1414,7 +1416,7 @@ function registerTrigger(context) {
                 }
                 return result
             }
-            const OP = {TOGGLE: 0, DELETE: 1, MOVE: 2, PASTE: 3, COPY: 4, FIELD: 5}
+            const OP = {TOGGLE: 0, DELETE: 1, MOVE: 2, PASTE: 3, COPY: 4, FIELD: 5, SET_PARAM: 6, NEW: 7}
             const reveal = async line => {
                 const at = new Position(Math.max(0, line - 1), 0)
                 const shown = window.visibleTextEditors.find(e => e.document === document)
@@ -1443,6 +1445,20 @@ function registerTrigger(context) {
                     if (!text.trim()) return window.showWarningMessage('WC3: the clipboard is empty.')
                     return run(OP.PASTE, 0, `${msg.place}\n${text}`)
                 }
+                case 'choices': {
+                    const answer = await query(QUERY.TRIGGER_CHOICES, id, {line: msg.line, character: 0}, msg.path)
+                    if (!answer || !answer.text) return
+                    const choices = JSON.parse(answer.text)
+                    if (choices.error) return window.showWarningMessage(`WC3: ${choices.error}`)
+                    return webview.postMessage({type: 'choices', line: msg.line, path: msg.path, choices})
+                }
+                case 'set': return run(OP.SET_PARAM, msg.line, `${msg.path}\n${msg.kind}\n${msg.value}`)
+                case 'catalog': {
+                    const answer = await query(QUERY.TRIGGER_CATALOG, id, {line: 0, character: msg.kind}, '')
+                    if (answer && answer.text) webview.postMessage({type: 'catalog', kind: msg.kind, place: msg.place, items: JSON.parse(answer.text)})
+                    return
+                }
+                case 'new': return run(OP.NEW, 0, `${msg.place}\n${msg.kind} ${msg.name}`)
                 case 'reveal': return reveal(msg.line)
                 case 'openText': return commands.executeCommand('vscode.openWith', document.uri, 'default', panel.viewColumn)
                 }

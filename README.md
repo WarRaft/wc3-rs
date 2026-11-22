@@ -729,6 +729,16 @@ dirty mark are the text's. In the view:
   what's inside them, through the clipboard as lines of the text (so
   they paste into a text editor too, and back): after the selected line,
   or at the end of the selected heading or block;
+- a click on a parameter opens World Editor's dialog for it, of the
+  parameter's type: a **Preset**, a **Variable** (the globals the
+  project's `.trg` files declare), a **Function** (a call, filtered as
+  you type; it comes with its default parameters, which are links in
+  turn) or a **Value**, whichever the type has; an empty value shows its
+  name (`Value`) so it can be clicked;
+- **New** (+, **Ctrl+Shift+N**) adds an event, condition or action
+  after the selected line or at the end of the selected heading or
+  block: a category, then a function, its hint below; it comes with its
+  default parameters (`UI\TriggerData.txt`'s `_Defaults`);
 - arrows move and fold, a double click or **Enter** shows the line in
   the text, and the problems count goes to the first one.
 

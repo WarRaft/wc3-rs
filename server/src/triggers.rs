@@ -125,8 +125,9 @@ pub fn extract(text: &str) -> String {
 /// "known": true, "icon": "ReplaceableTextures\\...", "hint": "...",
 /// "text": [span], "blocks": [{"label": "Then - Actions", "group": 1,
 /// "kind": 2, "nodes": [...]}]}`; a span a string, or a value
-/// `{"r": "p", "s": [span]}` (`p` preset, `v` variable, `l` a value typed
-/// in, `c` a call, `u` unknown). `data` is whether the editor's files
+/// `{"r": "p", "p": "2.0", "s": [span]}` (`r`: `p` preset, `v` variable,
+/// `l` a value typed in, `c` a call, `u` unknown; `p` its path, see
+/// `wtg_rs::ui::Span::Value`). `data` is whether the editor's files
 /// were found; the errors are checked against them when they were, but
 /// the tree isn't: a function they don't have shows, as unknown.
 pub fn view(text: &str, names: &crate::names::Names) -> String {
@@ -213,7 +214,7 @@ fn spans_json(spans: &[wtg_rs::ui::Span]) -> String {
         .iter()
         .map(|s| match s {
             Span::Text(t) => crate::objects::json_string(t),
-            Span::Value { role, spans } => {
+            Span::Value { role, path, spans } => {
                 let r = match role {
                     Role::Preset => "p",
                     Role::Variable => "v",
@@ -221,7 +222,7 @@ fn spans_json(spans: &[wtg_rs::ui::Span]) -> String {
                     Role::Call => "c",
                     Role::Unknown => "u",
                 };
-                format!("{{\"r\":\"{r}\",\"s\":{}}}", spans_json(spans))
+                format!("{{\"r\":\"{r}\",\"p\":{},\"s\":{}}}", crate::objects::json_string(path), spans_json(spans))
             }
         })
         .collect();
@@ -248,6 +249,16 @@ pub mod op {
     /// its value (`name` and `description` as typed; the flags a number).
     /// A flag set to its default goes.
     pub const FIELD: u32 = 5;
+    /// Set a parameter of the ECA at the line: the argument is its path
+    /// (`wtg_rs::ui::Span::Value`), a line break, what it becomes
+    /// (`preset`, `variable`, `array` for an array variable, `call`,
+    /// `value`), a line break, its key, name or value. A call gets its
+    /// default parameters, an array variable index 0.
+    pub const SET_PARAM: u32 = 6;
+    /// A new ECA: the argument is a place (as for `MOVE`), a line break,
+    /// its kind (0 event, 1 condition, 2 action) and function name; its
+    /// parameters are the function's defaults.
+    pub const NEW: u32 = 7;
 }
 
 const KINDS: [&str; 3] = ["event", "condition", "action"];
@@ -503,9 +514,9 @@ fn fits(kinds: &[u32], kind: u32) -> Result<(), String> {
 /// where what was moved, pasted or turned on or off is after them (from
 /// 1; 0 for none); `{"text": "..."}` for `COPY`; `{"error": "..."}` when
 /// it can't be done.
-pub fn edit(text: &str, op: u32, line: usize, arg: &str) -> String {
+pub fn edit(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> String {
     let js = crate::objects::json_string;
-    match apply(text, op, line, arg) {
+    match apply(text, op, line, arg, ui) {
         Ok(Done::Text(t)) => format!("{{\"text\":{}}}", js(&t)),
         Ok(Done::Lines(new, at)) => {
             let old: Vec<&str> = text.split_inclusive('\n').collect();
@@ -525,7 +536,7 @@ enum Done {
     Lines(Vec<String>, Option<usize>),
 }
 
-fn apply(text: &str, op: u32, line: usize, arg: &str) -> Result<Done, String> {
+fn apply(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> Result<Done, String> {
     let mut doc = Doc::new(text);
     let mut shown = None;
     match op {
@@ -619,9 +630,185 @@ fn apply(text: &str, op: u32, line: usize, arg: &str) -> Result<Done, String> {
                 (None, None) => {}
             }
         }
+        op::SET_PARAM => {
+            let (i, _) = doc.at(line)?;
+            let mut parts = arg.splitn(3, '\n');
+            let (path, what, value) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+            let new = match what {
+                "preset" => value.to_string(),
+                "variable" => format!("${value}"),
+                "array" => format!("${value}[\"0\"]"),
+                "call" => ui.new_call(wtg_rs::FunctionKind::Call, value),
+                "value" => wtg_rs::text::jass_string(value),
+                _ => return Err(format!("a parameter can't become {what:?}")),
+            };
+            let new = wtg_rs::text::read_param(&new)?;
+            let old = &doc.lines[i];
+            let (key, rest) = old.split_once('=').expect("an ECA's line");
+            let eol = &rest[rest.trim_end_matches(['\n', '\r']).len()..];
+            let (name, mut params) = wtg_rs::text::read_call(rest.trim_end_matches(['\n', '\r']))?;
+            *param_at(&mut params, path)? = new;
+            doc.lines[i] = format!("{key}={}{eol}", wtg_rs::text::call_text(&name, &params)?);
+            shown = Some(i);
+        }
+        op::NEW => {
+            let (place, what) = arg.split_once('\n').unwrap_or((arg, ""));
+            let (kind, name) = what.split_once(' ').ok_or("a new line: its kind and function")?;
+            let kind: u32 = kind.parse().map_err(|_| format!("no kind {kind:?}"))?;
+            let fk = wtg_rs::FunctionKind::of(kind).filter(|_| kind < 3).ok_or(format!("no kind {kind}"))?;
+            let (at, depth, group, wanted) = doc.place(Place::parse(place)?)?;
+            fits(&[kind], wanted)?;
+            let line = format!("{}={}", KINDS[kind as usize], ui.new_call(fk, name));
+            doc.insert(at, &[line], depth, group);
+            shown = Some(at);
+        }
         _ => return Err(format!("unknown operation {op}")),
     }
     Ok(Done::Lines(doc.lines, shown))
+}
+
+/// What the parameter at `path` (see `wtg_rs::ui::Span::Value`) of the
+/// ECA at `line` can be, for the editor's dialog, as JSON:
+///
+/// ```json
+/// {"type": "player", "type_name": "Player",
+///  "current": {"kind": "preset", "value": "Player00"},
+///  "presets": [["Player00", "Player 1 (Red)"], ...],
+///  "variables": [["hero", "Unit", true], ...],
+///  "calls": [["GetOwningPlayer", "Owner Of Unit", "Unit"], ...],
+///  "value": false}
+/// ```
+///
+/// The type is the function's parameter's (`UI\TriggerData.txt`); an
+/// array's index is an integer; `AnyGlobal` takes any variable, and
+/// `Null` (the value `SetVariable` sets) the type of the variable before
+/// it. `variables` are the global variables `.trg` files declare
+/// (`[variable]`): name, type's name, is it an array. `current.kind` is
+/// `preset`, `variable`, `call`, `value` or `other`. `{"error": "..."}`
+/// when there's no such parameter.
+pub fn choices(text: &str, line: usize, path: &str, ui: &wtg_rs::ui::Ui, variables: &[wtg_rs::Variable]) -> String {
+    let js = crate::objects::json_string;
+    match choices_of(text, line, path, ui, variables) {
+        Ok(c) => c,
+        Err(e) => format!("{{\"error\":{}}}", js(&e)),
+    }
+}
+
+fn choices_of(text: &str, line: usize, path: &str, ui: &wtg_rs::ui::Ui, variables: &[wtg_rs::Variable]) -> Result<String, String> {
+    use wtg_rs::FunctionKind;
+    let js = crate::objects::json_string;
+    let doc = Doc::new(text);
+    let (i, key) = doc.at(line)?;
+    let (_, rest) = doc.lines[i].split_once('=').expect("an ECA's line");
+    let (name, params) = wtg_rs::text::read_call(rest.trim_end_matches(['\n', '\r']))?;
+    // The type, step by step: the function's parameter's, a call's
+    // parameter's, an index's.
+    let mut function = ui.function(FunctionKind::of(key.kind).unwrap_or(FunctionKind::Action), &name);
+    let mut list: &[wtg_rs::Param] = &params;
+    let mut ty = String::new();
+    let mut current: Option<&wtg_rs::Param> = None;
+    for step in path.split('.') {
+        if step == "i" {
+            let p = current.ok_or("no parameter")?;
+            current = Some(p.index.as_deref().ok_or_else(|| format!("no parameter {path}"))?);
+            ty = "integer".into();
+            continue;
+        }
+        if let Some(p) = current {
+            let call = p.call.as_ref().ok_or_else(|| format!("no parameter {path}"))?;
+            function = ui.function(FunctionKind::of(call.kind).unwrap_or(FunctionKind::Call), &call.name);
+            list = &call.params;
+        }
+        let j: usize = step.parse().map_err(|_| format!("no parameter {path}"))?;
+        // `Null`: the type of the variable before it (`SetVariable`).
+        ty = function.and_then(|f| f.args.get(j)).cloned().unwrap_or_default();
+        if ty == "Null" {
+            let before = j.checked_sub(1).and_then(|k| list.get(k)).filter(|p| p.kind == 1);
+            ty = before.and_then(|p| variables.iter().find(|v| v.name == p.value)).map_or(String::new(), |v| v.kind.clone());
+        }
+        current = Some(list.get(j).ok_or_else(|| format!("no parameter {path}"))?);
+    }
+    let p = current.ok_or("no parameter")?;
+    let (kind, value) = match (p.kind, &p.call) {
+        (0, _) => ("preset", p.value.clone()),
+        (1, _) => ("variable", p.value.clone()),
+        (2, Some(c)) => ("call", c.name.clone()),
+        (3, _) => ("value", p.value.clone()),
+        _ => ("other", p.value.clone()),
+    };
+    let any = ty == "AnyGlobal";
+    let type_name = |t: &str| ui.types.get(t).cloned().unwrap_or_else(|| t.to_string());
+    let presets: Vec<String> =
+        if any { Vec::new() } else { ui.presets_of(&ty).iter().map(|(k, p)| format!("[{},{}]", js(k), js(&p.display))).collect() };
+    let vars: Vec<String> = variables
+        .iter()
+        .filter(|v| any || (!ty.is_empty() && v.kind == ty))
+        .map(|v| format!("[{},{},{}]", js(&v.name), js(&type_name(&v.kind)), v.is_array != 0))
+        .collect();
+    let calls: Vec<String> = if any || ty.is_empty() {
+        Vec::new()
+    } else {
+        ui.calls_returning(&ty)
+            .iter()
+            .map(|(n, f)| {
+                // As the editor lists them: a category whose name it hides
+                // (`TC_NOTHING`) shows none.
+                let category = ui.categories.get(&f.category).filter(|c| c.show_name).map_or("", |c| c.name.as_str());
+                format!("[{},{},{}]", js(n), js(if f.title.is_empty() { n } else { &f.title }), js(category))
+            })
+            .collect()
+    };
+    let value_ok = !any && (ty.is_empty() || ui.takes_value(&ty));
+    Ok(format!(
+        "{{\"type\":{},\"type_name\":{},\"current\":{{\"kind\":\"{kind}\",\"value\":{}}},\"presets\":[{}],\"variables\":[{}],\"calls\":[{}],\"value\":{value_ok}}}",
+        js(&ty),
+        js(&if any { "Any variable".into() } else { type_name(&ty) }),
+        js(&value),
+        presets.join(","),
+        vars.join(","),
+        calls.join(","),
+    ))
+}
+
+/// The functions a new ECA of `kind` (0 event, 1 condition, 2 action)
+/// can be, as World Editor lists them, as JSON: `[["CreateNUnitsAtLoc",
+/// "Create Units Facing Angle", "Unit", "hint", true], ...]`, by
+/// category's name, then title; the last is whether the editor shows the
+/// category's name before the title (not for `If/Then/Else` ...).
+pub fn catalog(kind: u32, ui: &wtg_rs::ui::Ui) -> String {
+    let js = crate::objects::json_string;
+    let Some(fk) = wtg_rs::FunctionKind::of(kind).filter(|_| kind < 3) else { return "[]".into() };
+    let mut items: Vec<(String, String, &str, &str, bool)> = ui
+        .functions(fk)
+        .into_iter()
+        .map(|(n, f)| {
+            let c = ui.categories.get(&f.category);
+            let category = c.map_or(String::new(), |c| c.name.clone());
+            let title = if f.title.is_empty() { n.to_string() } else { f.title.clone() };
+            (category, title, n, f.hint.as_str(), c.is_some_and(|c| c.show_name))
+        })
+        .collect();
+    items.sort_by_key(|a| (a.0.to_lowercase(), a.1.to_lowercase()));
+    let out: Vec<String> =
+        items.iter().map(|(c, t, n, h, show)| format!("[{},{},{},{},{show}]", js(n), js(t), js(c), js(h))).collect();
+    format!("[{}]", out.join(","))
+}
+
+/// The parameter at `path` (see `wtg_rs::ui::Span::Value`) of `params`.
+fn param_at<'a>(params: &'a mut [wtg_rs::Param], path: &str) -> Result<&'a mut wtg_rs::Param, String> {
+    let missing = || format!("no parameter {path}");
+    let mut steps = path.split('.');
+    let first: usize = steps.next().and_then(|s| s.parse().ok()).ok_or_else(missing)?;
+    let mut p = params.get_mut(first).ok_or_else(missing)?;
+    for step in steps {
+        p = if step == "i" {
+            p.index.as_deref_mut().ok_or_else(missing)?
+        } else {
+            let j: usize = step.parse().map_err(|_| missing())?;
+            p.call.as_mut().and_then(|c| c.params.get_mut(j)).ok_or_else(missing)?
+        };
+    }
+    Ok(p)
 }
 
 /// The one edit, of whole lines, that turns `old` (the lines of `text`)
