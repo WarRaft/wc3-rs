@@ -43,6 +43,8 @@ name=debug
 
 [build]
 name=release
+out=release/map.w3x
+uglify=1
 
 [jass]
 dialect=vjass
@@ -56,7 +58,7 @@ dialect=vjass
 | `[map]`     | `root`    | one path per line, absolute or relative to the project root: a folder or a map (`.w3x`, `.w3m`) | a layer of the map: its top is the map's top; repeat for more, each over the ones before |
 | `[build]`   | `name`    | a name, unique in the project            | a build scenario (debug, release ...): see [Building a map](#building-a-map) |
 | `[build]`   | `out`     | a path, relative to the project root     | where the map is written; `build/<name>.w3x` without it |
-| `[build]`   | `uglify`  | `true` or `false`                        | the script's names made short (see "Shorter names" below); `false` without it |
+| `[build]`   | `uglify`  | `1` or `0`                               | the script's names made short (see "Shorter names" below); `0` without it |
 | `[jass]`    | `dialect` | `jass` or `vjass` (case-insensitive)     | the dialect of `.j` files that don't declare one in a `// @dialect` header |
 | `[lint]`    | a rule or group id | `off`, `warning` or `error`     | turn a lint rule (or every rule of a group) off or on, at that level (see [Lint](#lint)) |
 
@@ -335,8 +337,8 @@ Problems panel shows the whole project's errors without opening anything.
 ## Building a map
 
 A build makes the map's script and the map out of everything a project
-has: `wc3 build [name] [--project <path>]`, or `wc3-mcp`'s
-`project_build` (`server/src/build.rs`). What follows is the plan, what's
+has: `wc3 build [name] [--project <path>]`, **WC3: Build Map…** in the
+editor, or `wc3-mcp`'s `project_build` (`server/src/build.rs`). What follows is the plan, what's
 decided about it, and how far it's come.
 
 ### One model, several outputs
@@ -487,8 +489,18 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    file for file, its script too. Not yet: a copy keeps the space of the
    files it replaces (no compacting: it would lose the unnamed ones); a
    build from `.trg` files leaves the map's `war3map.wtg` and
-   `war3map.wct` as they were (World Editor would open the old triggers);
-   no command in the editor yet.
+   `war3map.wct` as they were (World Editor would open the old triggers).
+
+**In the editor**: **WC3: Build Map…** (the command palette: the project
+of the active file, else the workspace's; the Explorer's menu of a
+`wc3.bni`), the ▶ button over an open `wc3.bni`, and a lens over each of
+its `[build]`s (**Build debug**). Several builds and none named: it asks
+which. The project's files open with changes are saved first (the build
+reads the disk); the build runs as a process of its own (`wc3 build`,
+the binary the extension ships), so the editor goes on answering, and
+what it says goes to the output **WC3 Build** (shown when it fails; a
+map built offers to reveal it). For AI assistants: `wc3-mcp`'s
+`project_build`.
 
 **Shorter names (uglify).** The finished tree knows every name and every
 reference to it, so a build can rename everything that isn't the game's

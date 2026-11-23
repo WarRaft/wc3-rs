@@ -139,6 +139,8 @@ const {
     env,
     lm,
     McpStdioServerDefinition,
+    CodeLens,
+    ProgressLocation,
 } = require('vscode')
 const {encode, decode, FrameReader, QUERY, FS_OP, FS_FLAG, OBJECTS_OP} = require('./protocol.js')
 
@@ -1936,6 +1938,139 @@ function registerTxt2Preview(context) {
     )
 }
 
+/**
+ * The `[build]`s of a `wc3.bni`'s text: each one's name and the line of
+ * its `[build]` (a build without a name left out; the server reports it).
+ *
+ * @param {string} text
+ * @returns {{name: string, line: number}[]}
+ */
+function manifestBuilds(text) {
+    const out = []
+    let current = null
+    text.split(/\r?\n/).forEach((raw, line) => {
+        const t = raw.replace(/\/\/.*$/, '').trim()
+        const section = /^\[([^\]]*)\]/.exec(t)
+        if (section) {
+            current = section[1].trim() === 'build' ? {line, name: null} : null
+            if (current) out.push(current)
+            return
+        }
+        const name = /^name\s*=\s*(.*)$/.exec(t)
+        if (current && name && current.name === null) current.name = name[1].trim().replace(/^"(.*)"$/, '$1')
+    })
+    return out.filter(b => b.name)
+}
+
+/**
+ * The `wc3.bni` of a file or folder: the nearest in it or above it.
+ *
+ * @param {string} start
+ * @returns {string | null}
+ */
+function manifestOf(start) {
+    let dir = fs.existsSync(start) && fs.statSync(start).isDirectory() ? start : path.dirname(start)
+    for (;;) {
+        const candidate = path.join(dir, 'wc3.bni')
+        if (fs.existsSync(candidate)) return candidate
+        const up = path.dirname(dir)
+        if (up === dir) return null
+        dir = up
+    }
+}
+
+/**
+ * Building a project's map (`wc3.build`): from the command palette (the
+ * project of the active file, else of the workspace), the Explorer's
+ * menu of a `wc3.bni`, the button over an open `wc3.bni`, and a lens over
+ * each of its `[build]`s. The build runs in a process of its own (`wc3
+ * build`, the binary the extension ships), so the language server goes
+ * on answering; what it says goes to the output "WC3 Build". The
+ * project's files open with changes are saved first: the build reads
+ * the disk.
+ *
+ * @param {import('vscode').ExtensionContext} context
+ * @param {string} binary
+ */
+function registerBuild(context, binary) {
+    const output = window.createOutputChannel('WC3 Build')
+    let running = false
+
+    /** The manifest a command is about: its argument, the active editor's project, the workspace's. */
+    const pickManifest = async arg => {
+        if (arg instanceof Uri && arg.scheme === 'file') return manifestOf(arg.fsPath)
+        const active = window.activeTextEditor?.document.uri
+        if (active?.scheme === 'file') {
+            const m = manifestOf(active.fsPath)
+            if (m) return m
+        }
+        const found = await workspace.findFiles('**/wc3.bni', '**/node_modules/**', 50)
+        if (found.length <= 1) return found[0]?.fsPath ?? null
+        const picked = await window.showQuickPick(found.map(u => ({label: workspace.asRelativePath(u), uri: u})), {title: 'Build the map of which project?'})
+        return picked?.uri.fsPath ?? null
+    }
+
+    const run = async (arg, name) => {
+        if (running) return window.showWarningMessage('WC3: a build is running.')
+        const manifest = await pickManifest(arg)
+        if (!manifest) return window.showWarningMessage('WC3: no wc3.bni in the workspace or above the active file.')
+        const root = path.dirname(manifest)
+        const open = workspace.textDocuments.find(d => d.uri.scheme === 'file' && d.uri.fsPath === manifest)
+        const builds = manifestBuilds(open ? open.getText() : fs.readFileSync(manifest, 'utf8'))
+        if (name === undefined && builds.length > 1) {
+            const picked = await window.showQuickPick(builds.map(b => b.name), {title: `Build which of ${path.basename(root)}?`})
+            if (!picked) return
+            name = picked
+        }
+        // The build reads the disk: the project's files open with changes saved.
+        for (const d of workspace.textDocuments) if (d.isDirty && d.uri.scheme === 'file' && d.uri.fsPath.startsWith(root + path.sep)) await d.save()
+
+        running = true
+        output.clear()
+        const args = ['build', '--project', root, ...(name ? [name] : [])]
+        output.appendLine(`> wc3 ${args.join(' ')}`)
+        const result = await window.withProgress(
+            {location: ProgressLocation.Notification, title: `WC3: building ${name || path.basename(root)}…`},
+            () => new Promise(resolve => {
+                const child = spawn(binary, args, {cwd: root})
+                let out = ''
+                child.stdout.on('data', d => { out += d; output.append(d.toString()) })
+                child.stderr.on('data', d => output.append(d.toString()))
+                child.on('error', e => resolve({code: -1, out: e.message}))
+                child.on('close', code => resolve({code, out}))
+            }),
+        ).finally(() => { running = false })
+        if (result.code === 0) {
+            const built = /^[^:]+: (.+?) \(/.exec(result.out.trim())
+            const done = built ? built[1] : root
+            const go = await window.showInformationMessage(`WC3: built ${done}`, 'Reveal', 'Show Output')
+            if (go === 'Reveal') commands.executeCommand('revealFileInOS', Uri.file(done))
+            if (go === 'Show Output') output.show(true)
+        } else {
+            output.show(true)
+            window.showErrorMessage('WC3: the build failed; see the output "WC3 Build".')
+        }
+    }
+
+    const lenses = new EventEmitter()
+    context.subscriptions.push(
+        output,
+        lenses,
+        commands.registerCommand('wc3.build', (arg, name) => run(arg, name).catch(e => window.showErrorMessage(`WC3: ${e.message}`))),
+        workspace.onDidChangeTextDocument(e => { if (path.basename(e.document.uri.fsPath) === 'wc3.bni') lenses.fire() }),
+        languages.registerCodeLensProvider({language: 'bni', pattern: '**/wc3.bni'}, {
+            onDidChangeCodeLenses: lenses.event,
+            provideCodeLenses(doc) {
+                return manifestBuilds(doc.getText()).map(b => new CodeLens(new Range(b.line, 0, b.line, 0), {
+                    title: `$(play) Build ${b.name}`,
+                    command: 'wc3.build',
+                    arguments: [doc.uri, b.name],
+                }))
+            },
+        }),
+    )
+}
+
 module.exports = {
     /** @param {import('vscode').ExtensionContext} context */
     activate(context) {
@@ -1957,6 +2092,7 @@ module.exports = {
         registerTrigger(context)
         registerTriggerExtract(context)
         registerTriggerJass(context)
+        registerBuild(context, command)
         registerTxt2Preview(context)
 
         sendRoots()

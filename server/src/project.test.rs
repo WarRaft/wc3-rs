@@ -412,9 +412,9 @@ fn exclude_is_for_code_and_leaves_the_roots_alone() {
 
 #[test]
 fn a_build_says_where_and_how() {
-    let src = "[build]\nname=release\nout=out/map.w3x\nuglify=true\n[build]\nname=debug\nuglify=maybe\n";
+    let src = "[build]\nname=release\nout=out/map.w3x\nuglify=1\n[build]\nname=debug\nuglify=true\n";
     let (project, issues) = load(Path::new("/p"), src);
     assert_eq!(project.builds[0], Build { name: "release".into(), out: Some(PathBuf::from("/p/out/map.w3x")), uglify: true });
     assert_eq!(project.builds[1].out(Path::new("/p")), PathBuf::from("/p/build/debug.w3x"));
-    assert_eq!(issues.iter().map(|i| i.message.as_str()).collect::<Vec<_>>(), ["'uglify' is true or false"]);
+    assert_eq!(issues.iter().map(|i| i.message.as_str()).collect::<Vec<_>>(), ["'uglify' is 1 or 0"]);
 }

@@ -93,7 +93,7 @@ pub struct Build {
     /// `out=`: where the map is written, resolved against the project's
     /// root; `build/<name>.w3x` when left out.
     pub out: Option<PathBuf>,
-    /// `uglify=true`: the script's names made short.
+    /// `uglify=1`: the script's names made short.
     pub uglify: bool,
 }
 
@@ -515,9 +515,9 @@ fn read_build(section: &bni_rs::ast::Section, project: &mut Project, issues: &mu
             Some("uglify") => {
                 let key = item.key.as_ref().expect("key_of returned a key");
                 match item.fields.as_slice() {
-                    [field] if field.text().trim().eq_ignore_ascii_case("true") => build.uglify = true,
-                    [field] if field.text().trim().eq_ignore_ascii_case("false") => build.uglify = false,
-                    _ => issues.push(at_name(key, Level::Error, "'uglify' is true or false".into())),
+                    [field] if field.text().trim() == "1" => build.uglify = true,
+                    [field] if field.text().trim() == "0" => build.uglify = false,
+                    _ => issues.push(at_name(key, Level::Error, "'uglify' is 1 or 0".into())),
                 }
             }
             Some("name") => {

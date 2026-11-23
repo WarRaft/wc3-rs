@@ -91,6 +91,12 @@
         "icon": "$(file-symlink-directory)"
       },
       {
+        "command": "wc3.build",
+        "title": "Build Map…",
+        "category": "WC3",
+        "icon": "$(play)"
+      },
+      {
         "command": "wc3.txt2.preview",
         "title": "Open Preview",
         "category": "txt2",
@@ -385,6 +391,11 @@
       ],
       "explorer/context": [
         {
+          "command": "wc3.build",
+          "when": "resourceFilename == wc3.bni",
+          "group": "navigation"
+        },
+        {
           "command": "wc3.openMapAsFolder",
           "when": "resourceScheme == file && resourceExtname =~ /^\\.(w3x|w3m)$/i",
           "group": "navigation"
@@ -416,6 +427,11 @@
         }
       ],
       "editor/title": [
+        {
+          "command": "wc3.build",
+          "when": "resourceFilename == wc3.bni",
+          "group": "navigation"
+        },
         {
           "command": "wc3.slk.openTable",
           "when": "editorLangId == slk && !activeCustomEditorId",
