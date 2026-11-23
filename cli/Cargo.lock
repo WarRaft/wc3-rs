@@ -994,6 +994,7 @@ dependencies = [
  "w3r-rs",
  "w3s-rs",
  "wtg-rs",
+ "zinc-rs",
 ]
 
 [[package]]

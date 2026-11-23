@@ -426,10 +426,27 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    Checked against the `war3map.j` of real maps by what each part does
    (its calls), not byte for byte; taking a file out of a map into a
    folder doesn't change what's built.
-3. **vJASS and Zinc into the IR**, the most used first.
+3. **vJASS and Zinc into the IR**, the most used first. Done: the IR has
+   libraries and scopes, structs, interfaces, modules, function
+   interfaces and who owns each item; `jass-rs` reads vJASS's grammar
+   (libraries, scopes, structs, methods and operators, interfaces with
+   `defaults`, modules, `a.b`, `.x`, `this`, `thistype`, `super`,
+   `static if`), and its lint, names and the editor's tree know it;
+   `wc3-build` reads it and Zinc into the IR (Zinc's loops, `+=` and
+   anonymous functions into JASS's forms). Not read yet: JassHelper's
+   preprocessor (`//! textmacro` ...: an error, not code lost), `hook`,
+   Zinc's arrays of two dimensions.
 4. **Their objects in JASS**: structs as arrays and an allocator,
    interfaces through `TriggerEvaluate`, libraries in the order of
-   `requires`.
+   `requires`. Done so far (`wc3-build`'s `lower` and `structs`):
+   libraries and scopes (order, private and public names, initializers),
+   `static if`, `%`, structs with fields, static members, methods,
+   `create`/`allocate`/`destroy`/`onDestroy`, `onInit`, modules, casts;
+   interfaces, a struct extending another, `stub` (by the instance's
+   type, through a trigger of each type, the arguments in globals),
+   `super`, `typeid`, `.evaluate`/`.execute` through triggers;
+   what's built checks clean as the game's JASS. Next: function
+   interfaces, operators, `delegate`.
 5. **AngelScript and Lua** past their stubs.
 6. **The map**: `[build]` scenarios, the roots' layers, the `.w3x`
    written (`storm-rs`); optimizations (dead code) after.
