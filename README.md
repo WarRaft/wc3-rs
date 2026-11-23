@@ -446,8 +446,9 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    type, through a trigger of each type, the arguments in globals),
    `super`, `typeid`, `.evaluate`/`.execute` through triggers;
    function interfaces (`I.f` a number, run through a trigger of
-   each); what's built checks clean as the game's JASS. Next:
-   operators, `delegate`.
+   each), operators (`x`, `x=`, `[]`, `[]=`, `<`), `delegate`; what's
+   built checks clean as the game's JASS. Not yet: operators of
+   interfaces, structs of more than 8190 instances.
 5. **AngelScript and Lua** past their stubs.
 6. **The map**: `[build]` scenarios, the roots' layers, the `.w3x`
    written (`storm-rs`); optimizations (dead code) after.
