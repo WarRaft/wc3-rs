@@ -54,7 +54,9 @@ dialect=vjass
 | `[code]`    | `sources` | masks (a plain path too), comma-separated, relative to the project root | the project's code |
 | `[code]`    | `exclude` | masks, comma-separated, relative to the project root | what isn't code, even inside `sources`; the roots aren't touched |
 | `[map]`     | `root`    | one path per line, absolute or relative to the project root: a folder or a map (`.w3x`, `.w3m`) | a layer of the map: its top is the map's top; repeat for more, each over the ones before |
-| `[build]`   | `name`    | a name, unique in the project            | a build scenario (debug, release ...); what it does comes with the builder |
+| `[build]`   | `name`    | a name, unique in the project            | a build scenario (debug, release ...): see [Building a map](#building-a-map) |
+| `[build]`   | `out`     | a path, relative to the project root     | where the map is written; `build/<name>.w3x` without it |
+| `[build]`   | `uglify`  | `true` or `false`                        | the script's names made short (see "Shorter names" below); `false` without it |
 | `[jass]`    | `dialect` | `jass` or `vjass` (case-insensitive)     | the dialect of `.j` files that don't declare one in a `// @dialect` header |
 | `[lint]`    | a rule or group id | `off`, `warning` or `error`     | turn a lint rule (or every rule of a group) off or on, at that level (see [Lint](#lint)) |
 
@@ -124,10 +126,10 @@ dialect=vjass
   several: a base map, a folder shared by projects, the project's own
   icons and scripts. Each `root=` goes over the ones
   before. What's in a root is part of the project, so `[code] sources`
-  is needed only for files outside the map (scripts the build compiles). A build will put the roots' files together into
-  the map in a place of its own; how is each `[build]`'s to say (a
-  release built from the files, a test that copies a map and writes the
-  scripts in). Campaigns, several maps at once, will be a project above
+  is needed only for files outside the map (scripts the build compiles). A build puts the roots' files together into
+  the map in a place of its own (`[build] out=`): a copy of the first
+  root when it's a map, with the rest and the script written in, else a
+  map made of the files (see [Building a map](#building-a-map)). Campaigns, several maps at once, will be a project above
   projects.
 - **Finding a file.** Every file the server reads for a project
   (`UI\WorldEditStrings.txt`, `TerrainArt\Weather.slk`, the metadata
@@ -332,8 +334,10 @@ Problems panel shows the whole project's errors without opening anything.
 
 ## Building a map
 
-Not built yet: this is the plan, and what's decided about it. A build
-makes the map's script and the map out of everything a project has.
+A build makes the map's script and the map out of everything a project
+has: `wc3 build [name] [--project <path>]`, or `wc3-mcp`'s
+`project_build` (`server/src/build.rs`). What follows is the plan, what's
+decided about it, and how far it's come.
 
 ### One model, several outputs
 
@@ -451,7 +455,40 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    interfaces, structs of more than 8190 instances.
 5. **AngelScript and Lua** past their stubs.
 6. **The map**: `[build]` scenarios, the roots' layers, the `.w3x`
-   written (`storm-rs`); optimizations (dead code) after.
+   written (`storm-rs`); optimizations (dead code) after. Done
+   (`server/src/build.rs`, `wc3-build`'s `whole`):
+   - a `[build]` says where the map goes (`out=`) and whether its names
+     are short (`uglify=`); `wc3 build` builds the first without a
+     name, and a project without a `[build]` as `build/map.w3x`;
+   - **the map's files** are the roots', the last that has a file
+     winning, less what's the project's: the patches (`X.patch.txt`),
+     `.trg` files, the project's code, `wc3.bni`, maps inside a root
+     folder, and the script, made anew (`war3map.j`, and a
+     `Scripts\war3map.j` dropped: the game would take it first);
+   - **the script**: the map's part of the files the lookup finds; the
+     triggers, the project's `.trg` files when it has any (in the order
+     of their paths; the map's globals declared by `InitGlobals`, a
+     file's private ones by the file), else the roots' `war3map.wtg`; the
+     map's custom script (`war3map.wct`: its header, and a custom text
+     trigger's code found by the trigger's name in the roots'
+     `war3map.wtg`), vJASS unless `[jass] dialect=jass`; the project's
+     code (`.j`, `.vj`, `.zn`) in the project's dialect;
+   - **the archive**: when the first root is a map, a copy of it with the
+     rest written in, so the files of a protected map nobody knows the
+     names of stay; else a new one, behind a map's header (`HM3W`: its
+     name, flags and players from `war3map.w3i`). Written beside `out`
+     first, so a build that fails leaves the last map as it was.
+   Diablo III beta (238 `.trg`), The Castle (753 `.trg`) and
+   CruiserCommand (its `war3map.wtg`, a root of JNGP's patches) build;
+   their scripts have no problem their own `war3map.j` hasn't, and every
+   file of their maps comes out the same (`build`'s test
+   `a_real_project_built`, `WC3_PROJECT`). Diablo's map built from a
+   copy of it and from its files taken out into a folder is the same,
+   file for file, its script too. Not yet: a copy keeps the space of the
+   files it replaces (no compacting: it would lose the unnamed ones); a
+   build from `.trg` files leaves the map's `war3map.wtg` and
+   `war3map.wct` as they were (World Editor would open the old triggers);
+   no command in the editor yet.
 
 **Shorter names (uglify).** The finished tree knows every name and every
 reference to it, so a build can rename everything that isn't the game's

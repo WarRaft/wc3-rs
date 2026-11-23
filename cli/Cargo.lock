@@ -1054,6 +1054,7 @@ dependencies = [
  "w3o-rs",
  "w3r-rs",
  "w3s-rs",
+ "wc3-build",
  "wct-rs",
  "wpm-rs",
  "wtg-rs",

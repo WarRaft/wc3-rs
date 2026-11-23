@@ -371,14 +371,14 @@ fn reads_the_map_roots_in_order_and_they_are_sources() {
 fn builds_have_unique_names() {
     let src = "[build]\nname=debug\n[build]\nname=release\nname=x\n[build]\nname=debug\n[build]\nfast=1\n";
     let (project, issues) = load(Path::new("/p"), src);
-    assert_eq!(project.builds, ["debug", "release"]);
+    assert_eq!(project.builds.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["debug", "release"]);
     let got: Vec<(usize, &str)> = issues.iter().map(|i| (i.line, i.message.as_str())).collect();
     assert_eq!(
         got,
         vec![
             (5, "a build has one 'name'"),
             (7, "there's already a build named 'debug'"),
-            (9, "unknown setting 'fast' in [build] (expected 'name')"),
+            (9, "unknown setting 'fast' in [build] (expected 'name', 'out' or 'uglify')"),
             (8, "a [build] needs a 'name'"),
         ]
     );
@@ -408,4 +408,13 @@ fn exclude_is_for_code_and_leaves_the_roots_alone() {
     assert!(!project.contains(Path::new("/p/src/old/a.j")));
     assert!(project.contains(Path::new("/p/map/old/a.j")));
     assert!(!project.contains(Path::new("/p/maps/Kept.w3x/war3map.j")), "a map neither code nor root isn't the project's");
+}
+
+#[test]
+fn a_build_says_where_and_how() {
+    let src = "[build]\nname=release\nout=out/map.w3x\nuglify=true\n[build]\nname=debug\nuglify=maybe\n";
+    let (project, issues) = load(Path::new("/p"), src);
+    assert_eq!(project.builds[0], Build { name: "release".into(), out: Some(PathBuf::from("/p/out/map.w3x")), uglify: true });
+    assert_eq!(project.builds[1].out(Path::new("/p")), PathBuf::from("/p/build/debug.w3x"));
+    assert_eq!(issues.iter().map(|i| i.message.as_str()).collect::<Vec<_>>(), ["'uglify' is true or false"]);
 }

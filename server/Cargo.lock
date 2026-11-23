@@ -946,6 +946,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
+name = "wc3-build"
+version = "0.1.0"
+dependencies = [
+ "doo-rs",
+ "jass-rs",
+ "parser-rs",
+ "slk-rs",
+ "w3abdhqtu-rs",
+ "w3c-rs",
+ "w3i-rs",
+ "w3r-rs",
+ "w3s-rs",
+ "wtg-rs",
+ "zinc-rs",
+]
+
+[[package]]
 name = "wc3-server"
 version = "0.1.0"
 dependencies = [
@@ -971,6 +988,7 @@ dependencies = [
  "w3o-rs",
  "w3r-rs",
  "w3s-rs",
+ "wc3-build",
  "wct-rs",
  "wpm-rs",
  "wtg-rs",

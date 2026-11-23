@@ -74,9 +74,8 @@ pub struct Project {
     /// game's folders: see `game::Lookup`. A project is one map.
     /// Everything in a root is the project's, as code is.
     pub roots: Vec<PathBuf>,
-    /// `[build] name=`: the names of the build scenarios, in order. What
-    /// a build does comes with the builder.
-    pub builds: Vec<String>,
+    /// `[build]`: the build scenarios, in order (see `crate::build`).
+    pub builds: Vec<Build>,
     /// `[lint] <rule>=off|warning|error`: rules switched or re-levelled
     /// from their defaults (`parser_rs::RULES`), by rule id.
     pub lint: HashMap<String, LintSetting>,
@@ -84,6 +83,25 @@ pub struct Project {
     /// (`parser_rs::GROUPS`), by group id. A rule set by name wins over
     /// its groups.
     pub lint_groups: HashMap<String, LintSetting>,
+}
+
+/// A `[build]`: a scenario of building the project's map.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Build {
+    /// `name=`: unique in the project.
+    pub name: String,
+    /// `out=`: where the map is written, resolved against the project's
+    /// root; `build/<name>.w3x` when left out.
+    pub out: Option<PathBuf>,
+    /// `uglify=true`: the script's names made short.
+    pub uglify: bool,
+}
+
+impl Build {
+    /// Where the map is written.
+    pub fn out(&self, root: &Path) -> PathBuf {
+        self.out.clone().unwrap_or_else(|| root.join("build").join(format!("{}.w3x", self.name)))
+    }
 }
 
 /// What a project does with a lint rule.
@@ -343,7 +361,7 @@ fn unknown_key(item: &Item, section: &str, issues: &mut Vec<Issue>) {
         "project" => "game",
         "code" => "sources' or 'exclude",
         "map" => "root",
-        "build" => "name",
+        "build" => "name', 'out' or 'uglify",
         _ => "dialect",
     };
     issues.push(at_name(
@@ -479,8 +497,29 @@ fn read_root(root: &Path, item: &Item, project: &mut Project, issues: &mut Vec<I
 /// `[build]`: one build scenario, named by `name=`, unique.
 fn read_build(section: &bni_rs::ast::Section, project: &mut Project, issues: &mut Vec<Issue>) {
     let mut name: Option<String> = None;
+    let mut build = Build::default();
     for item in &section.items {
         match key_of(item, issues) {
+            Some("out") => {
+                let key = item.key.as_ref().expect("key_of returned a key");
+                match item.fields.as_slice() {
+                    [field] if !field.text().trim().is_empty() => {
+                        if build.out.is_some() {
+                            issues.push(at_name(key, Level::Warning, "'out' set twice; the last one is used".into()));
+                        }
+                        build.out = Some(resolve(&project.root, field.text().trim()));
+                    }
+                    _ => issues.push(at_name(key, Level::Error, "'out' needs a single path".into())),
+                }
+            }
+            Some("uglify") => {
+                let key = item.key.as_ref().expect("key_of returned a key");
+                match item.fields.as_slice() {
+                    [field] if field.text().trim().eq_ignore_ascii_case("true") => build.uglify = true,
+                    [field] if field.text().trim().eq_ignore_ascii_case("false") => build.uglify = false,
+                    _ => issues.push(at_name(key, Level::Error, "'uglify' is true or false".into())),
+                }
+            }
             Some("name") => {
                 let key = item.key.as_ref().expect("key_of returned a key");
                 if name.is_some() {
@@ -494,11 +533,10 @@ fn read_build(section: &bni_rs::ast::Section, project: &mut Project, issues: &mu
                 let text = field.text().trim().to_string();
                 if text.is_empty() {
                     issues.push(at_field(field, Level::Error, "'name' needs a value".into()));
-                } else if project.builds.contains(&text) {
+                } else if project.builds.iter().any(|b| b.name == text) {
                     issues.push(at_field(field, Level::Error, format!("there's already a build named '{text}'")));
                     name = Some(text);
                 } else {
-                    project.builds.push(text.clone());
                     name = Some(text);
                 }
             }
@@ -506,8 +544,10 @@ fn read_build(section: &bni_rs::ast::Section, project: &mut Project, issues: &mu
             None => {}
         }
     }
-    if name.is_none() {
-        issues.push(at_name(&section.name, Level::Error, "a [build] needs a 'name'".into()));
+    match name {
+        Some(n) if !project.builds.iter().any(|b| b.name == n) => project.builds.push(Build { name: n, ..build }),
+        Some(_) => {}
+        None => issues.push(at_name(&section.name, Level::Error, "a [build] needs a 'name'".into())),
     }
 }
 

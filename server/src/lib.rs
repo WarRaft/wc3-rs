@@ -36,6 +36,7 @@
 //!   project's model.
 
 pub mod analysis;
+pub mod build;
 pub mod cameras;
 pub mod terrain;
 pub mod mapinfo;
