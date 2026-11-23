@@ -42,3 +42,16 @@ fn marker_errors_and_trigger_hints() {
     assert_eq!(hints(text, 0, 10), r#"[[2,20,"trigger 1"],[3,15,"trigger 2"]]"#);
     assert_eq!(hints(text, 3, 10), r#"[[3,15,"trigger 2"]]"#);
 }
+
+#[test]
+fn pieces_by_markers_and_put_in_a_new_order() {
+    let text = "// @wct version=1\n// @wct header\nfunction H takes nothing returns nothing\nendfunction\n// @wct trigger none\n// @wct trigger\nfunction A takes nothing returns nothing\nendfunction\n// @wct trigger none\n";
+    let p = pieces(text);
+    assert_eq!(p.header, Some((1, 4)));
+    assert_eq!(p.triggers, vec![(4, 5, true), (5, 8, false), (8, 9, true)]);
+    // The custom one first, a new one after it, the last gone.
+    let r = reorder(text, &[Some(1), None, Some(0)]).unwrap();
+    assert_eq!(r, "// @wct version=1\n// @wct header\nfunction H takes nothing returns nothing\nendfunction\n// @wct trigger\nfunction A takes nothing returns nothing\nendfunction\n// @wct trigger none\n// @wct trigger none\n");
+    assert_eq!(reorder(text, &[Some(3)]), None);
+    assert_eq!(pieces("-- @wct trigger none\n").comment, "--");
+}

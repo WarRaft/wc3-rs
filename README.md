@@ -958,6 +958,30 @@ when it's worth it, and no step is one that can't be taken back.
   private global there). The triggers' order hardly matters to them,
   so little is lost going either way.
 
+**A map's triggers and its custom script go together.** The code of a
+trigger of custom text isn't in `war3map.wtg` but in `war3map.wct`, and
+by the trigger's place, not its name (each trigger has a piece there,
+`// @wct trigger`, most of them `none`). So the two are one thing to
+edit, kept as the two files they are (each keeps its own text form, and
+the code stays JASS, with everything the editor does for JASS):
+
+- **Opening either opens the triggers**: `war3map.wtg` or
+  `war3map.wct` (when a `war3map.wtg` is beside it) opens the trigger
+  editor with the tree. The custom script is opened beside it as a
+  document, so what's edited and not saved in it counts.
+- **The code is the custom script's text**: **Map Script** at the top of
+  the tree, and a trigger of custom text picked (or double clicked),
+  show its code in `war3map.wct`'s text editor, beside. **Open as
+  Triggers** over that text goes back to the tree.
+- **The tree's changes move the code with the triggers**: a new trigger
+  gets an empty piece in its place, deleting one (or a category) takes
+  its piece out, moving one moves its piece; one edit of both files,
+  undone as one (`triggers::wtg_edit`'s `wct`,
+  `customtext::reorder`). A custom script whose pieces don't go with the
+  triggers (as many as there are) is said so once, and left alone.
+- **Saved together**: saving one saves the other, so the files on disk
+  never put code to the wrong trigger.
+
 Of this, the view of `.trg` files, Extract, and editing a map's
 `war3map.wtg` in place (its tree: new, renamed and deleted categories,
 triggers and variables; a trigger picked in it edited as a `.trg`;

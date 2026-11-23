@@ -128,6 +128,7 @@ body.wtg.empty .main > :not(#loading) {
 .map-row .map-icon.comment { color: var(--vscode-descriptionForeground); }
 .map-row .map-icon.category { color: var(--vscode-symbolIcon-folderForeground, #C09553); }
 .map-row .map-icon.variable { color: var(--vscode-symbolIcon-variableForeground, #75BEFF); }
+.map-row .map-icon.script { color: var(--vscode-symbolIcon-functionForeground, #B180D7); }
 
 .map-row .map-label {
     overflow: hidden;

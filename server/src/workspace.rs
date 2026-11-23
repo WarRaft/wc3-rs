@@ -587,6 +587,24 @@ impl Workspace {
         self.map_of(id).is_some_and(|m| !self.root_maps.contains(m) && is_script_in(m, id))
     }
 
+    /// The text form of the custom script (`war3map.wct`) beside the
+    /// file `id` (a map's `war3map.wtg`): its id and text, the model's (the
+    /// editor's, when it's open), else read from the disk or the map.
+    /// `None` when there's none.
+    pub fn custom_script_beside(&self, id: &str) -> Option<(String, String)> {
+        let dir = self.files.get(id)?.doc.path.as_ref()?.parent()?.to_path_buf();
+        let found = self.files.iter().find(|(_, e)| {
+            e.doc.path.as_deref().is_some_and(|p| p.parent() == Some(dir.as_path()) && p.file_name().is_some_and(|n| n.eq_ignore_ascii_case("war3map.wct")))
+        });
+        if let Some((fid, e)) = found {
+            return Some((fid.clone(), e.doc.text.clone()));
+        }
+        let path = dir.join("war3map.wct");
+        let bytes = if path.is_file() { std::fs::read(&path).ok()? } else { crate::map::bytes(&path)? };
+        let doc = crate::customtext::document(&path, &bytes)?;
+        Some((path_id(&path), doc.text))
+    }
+
     /// One file's text and symbols.
     pub fn file(&self, id: &str) -> Option<(&Document, &[Occurrence])> {
         self.files.get(id).map(|e| (&e.doc, e.symbols.as_slice()))

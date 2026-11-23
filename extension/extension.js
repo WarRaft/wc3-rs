@@ -1122,7 +1122,13 @@ function registerObjects(context) {
             try {
                 const doc = await workspace.openTextDocument(text)
                 // A map's triggers: as World Editor shows them (Open as Text for the text).
+                // Its custom script too, with its triggers beside it: the code of
+                // custom text is theirs (Map Script in the tree opens the text).
+                const triggers = /^war3map\.wct$/i.test(path.basename(document.uri.fsPath))
+                    ? await workspace.openTextDocument(sibling(text, 'war3map.wtg')).then(d => d, () => null)
+                    : null
                 if (doc.languageId === 'wtg') await commands.executeCommand('vscode.openWith', text, 'wc3.wtgTriggers', {viewColumn: panel.viewColumn, preview: false})
+                else if (triggers) await commands.executeCommand('vscode.openWith', triggers.uri, 'wc3.wtgTriggers', {viewColumn: panel.viewColumn, preview: false})
                 else await window.showTextDocument(doc, {viewColumn: panel.viewColumn, preview: false})
                 panel.dispose()
             } catch (e) {
@@ -1405,7 +1411,25 @@ function registerSlk(context) {
 const wtgPicked = new Map()
 let onWtgPicked = (/** @type {import('vscode').Uri} */ _uri) => {}
 
+/** The file named `name` beside `uri`, in its scheme. @param {import('vscode').Uri} uri @param {string} name */
+function sibling(uri, name) {
+    return uri.with({path: path.posix.join(path.posix.dirname(uri.path), name)})
+}
+
+/** A map's triggers and its custom script, each the other's (by file name). */
+const PAIRED = {'war3map.wtg': 'war3map.wct', 'war3map.wct': 'war3map.wtg'}
+
 function registerTrigger(context) {
+    // A map's triggers and its custom script are saved together: the code
+    // of its triggers of custom text is in the one by their places in the
+    // other, so one without the other would put code to the wrong trigger.
+    context.subscriptions.push(workspace.onDidSaveTextDocument(doc => {
+        const other = PAIRED[path.posix.basename(doc.uri.path).toLowerCase()]
+        if (!other || doc.uri.scheme !== OBJECTS_SCHEME) return
+        const twin = sibling(doc.uri, other).toString().toLowerCase()
+        const open = workspace.textDocuments.find(d => d.isDirty && d.uri.toString().toLowerCase() === twin)
+        if (open) open.save()
+    }))
     const media = Uri.joinPath(context.extensionUri, 'webview')
     /** The page; `wtg`: a map's triggers, with their tree beside it. */
     const html = (webview, wtg) => {
@@ -1478,6 +1502,13 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
             webview.options = {enableScripts: true, localResourceRoots: [media]}
             webview.html = html(webview, wtg)
             const id = idOf(document)
+            // A map's custom script beside its triggers (`war3map.wct`): the
+            // code of its triggers of custom text, by their places. Open as
+            // a text document, so what's edited and not saved counts.
+            const wct = wtg ? await workspace.openTextDocument(sibling(document.uri, 'war3map.wct')).then(d => d, () => null) : null
+            /** The last tree, for the code of its triggers. */
+            let last = null
+            let warned = false
             /** A map's triggers: which is picked (from 1; 0: the first), and the text's line of each of its lines. */
             let picked = 0
             /** @type {number[]} */
@@ -1490,8 +1521,13 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
                 if (!answer || !answer.text) return
                 if (!wtg) return webview.postMessage({type: 'view', view: JSON.parse(answer.text), select, file: path.basename(document.uri.path).replace(/\.trg$/i, '')})
                 const map = JSON.parse(answer.text)
+                last = map
                 picked = map.picked
                 at = map.at
+                if (map.wct?.problem && !warned) {
+                    warned = true
+                    window.showWarningMessage(`WC3: ${map.wct.problem}.`)
+                }
                 if (wtgPicked.get(document.uri.toString()) !== picked) {
                     wtgPicked.set(document.uri.toString(), picked)
                     onWtgPicked(document.uri)
@@ -1529,6 +1565,9 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
                     }
                     const edit = new WorkspaceEdit()
                     for (const [l, c, el, ec, t] of result.edits) edit.replace(document.uri, new Range(l, c, el, ec), t)
+                    // The custom script's pieces, moved with the triggers: one edit of both.
+                    if (wct) for (const [l, c, el, ec, t] of result.wct ?? []) edit.replace(wct.uri, new Range(l, c, el, ec), t)
+                    if (result.warning) window.showWarningMessage(`WC3: ${result.warning}`)
                     // A variable renamed: its uses in other files too.
                     for (const [file, l, c, el, ec, t] of result.files ?? []) edit.replace(uriOf(file), new Range(l, c, el, ec), t)
                     select = result.line || 0
@@ -1539,6 +1578,23 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
             const OP = {TOGGLE: 0, DELETE: 1, MOVE: 2, PASTE: 3, COPY: 4, FIELD: 5, SET_PARAM: 6, NEW: 7, NEW_VARIABLE: 8, REPLACE: 9, SET_VARIABLE: 10, CHECK_VARIABLE: 11, RENAMED: 12,
                 // A map's tree (`triggers::map_op`).
                 NEW_TRIGGER: 20, NEW_CATEGORY: 21, DELETE_TRIGGER: 22, DELETE_CATEGORY: 23, RENAME_CATEGORY: 24, DELETE_VARIABLE: 25, MOVE_TRIGGER: 26}
+            /**
+             * Shows the code of the `nth` trigger (from 1; 0: the map's
+             * custom script) in `war3map.wct`, beside: its text editor, so
+             * the code is edited as the JASS it is.
+             */
+            const openCode = async (nth, preserveFocus = false) => {
+                if (!wct) return window.showWarningMessage('WC3: the map has no custom script (war3map.wct) beside its triggers.')
+                const piece = nth === 0 ? last?.wct?.header : last?.wct?.code[nth - 1]
+                if (!piece) return window.showWarningMessage(`WC3: war3map.wct has no code of ${nth === 0 ? 'the map' : 'this trigger'}.`)
+                const [marker, end] = piece
+                const from = new Position(Math.min(marker + 1, wct.lineCount - 1), 0)
+                const to = new Position(Math.max(marker + 1, end), 0)
+                const shown = window.visibleTextEditors.find(e => e.document === wct)
+                const ed = await window.showTextDocument(wct, {viewColumn: shown?.viewColumn ?? ViewColumn.Beside, preserveFocus, preview: false})
+                ed.selection = new Selection(from, from)
+                ed.revealRange(new Range(from, to), TextEditorRevealType.AtTop)
+            }
             /** Shows the text at `line`: of the picked trigger's section, or (`own`) the text's. */
             const reveal = async (line, own = false) => {
                 if (wtg && !own) line = at[line - 1] ?? at[0] ?? 1
@@ -1650,7 +1706,11 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
                 case 'revealText': return reveal(msg.line, true)
                 case 'pick':
                     picked = msg.nth
-                    return post(0)
+                    await post(0)
+                    // Custom text: its code, beside.
+                    if (last?.triggers[picked - 1]?.custom) await openCode(picked, true)
+                    return
+                case 'openCode': return openCode(msg.nth)
                 case 'extract': return commands.executeCommand('wc3.wtg.extract', document.uri)
                 case 'newCategory': return run(OP.NEW_CATEGORY, 0, msg.name)
                 case 'newTrigger': return run(OP.NEW_TRIGGER, 0, `${msg.category}\n${msg.name}`)
@@ -1675,7 +1735,7 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
             let queue = Promise.resolve()
             const subscriptions = [
                 workspace.onDidChangeTextDocument(e => {
-                    if (e.document.uri.toString() === document.uri.toString()) refresh()
+                    if (e.document.uri.toString() === document.uri.toString() || (wct && e.document === wct)) refresh()
                 }),
                 // One at a time: each edit is worked out on the text the one
                 // before left (typing a name sends one after another).
@@ -1707,8 +1767,11 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
             webviewOptions: {retainContextWhenHidden: true},
         }),
         commands.registerCommand('wc3.wtg.openVisual', uri => {
-            const file = target(uri)
-            if (file) commands.executeCommand('vscode.openWith', Uri.file(file.fsPath).with({scheme: OBJECTS_SCHEME}), 'wc3.wtgTriggers')
+            let file = target(uri)
+            if (!file) return
+            // From the custom script: the triggers beside it.
+            if (/\.wct$/i.test(file.path)) file = sibling(file, 'war3map.wtg')
+            commands.executeCommand('vscode.openWith', Uri.file(file.fsPath).with({scheme: OBJECTS_SCHEME}), 'wc3.wtgTriggers')
         }),
         commands.registerCommand('wc3.trg.openVisual', uri => {
             const file = target(uri)

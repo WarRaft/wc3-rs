@@ -45,11 +45,17 @@ const mapApi = vscode
 /** @typedef {{line: number, name: string, category: number, enabled: number, comment: number, custom: number}} MapTrigger */
 /** @typedef {{line: number, scope: string, name: string, type: string, type_name: string, array: boolean, size: number, initial: string | null}} MapVariable */
 /** `picked`: which trigger, from 1 (0: none). */
-/** @typedef {{categories: MapCategory[], triggers: MapTrigger[], variables: MapVariable[], picked: number}} MapTree */
+/**
+ * The map's custom script beside the triggers (`war3map.wct`): where its
+ * header and each trigger's code are in its text, what's wrong.
+ * @typedef {{header: [number, number] | null, code: [number, number, boolean][], problem: string | null}} MapScript
+ */
+/** @typedef {{categories: MapCategory[], triggers: MapTrigger[], variables: MapVariable[], picked: number, wct: MapScript | null}} MapTree */
 /**
  * A row selected: a trigger by its place (from 1), a category by its
- * index, a variable by its line, the variables' heading.
- * @typedef {{kind: 'trigger' | 'category' | 'variable' | 'variables', key: number}} MapSelection
+ * index, a variable by its line, the variables' heading, the map's
+ * custom script.
+ * @typedef {{kind: 'trigger' | 'category' | 'variable' | 'variables' | 'script', key: number}} MapSelection
  */
 
 const mapTree = /** @type {HTMLElement} */ (document.getElementById('map-tree'))
@@ -188,6 +194,8 @@ function triggerRow(t, depth) {
     dropTarget(el, t.category, nth)
     if (!t.enabled) el.classList.add('off')
     if (t.comment) el.classList.add('comment')
+    // Custom text: its code is in war3map.wct (double click: open it).
+    if (t.custom) el.addEventListener('dblclick', () => mapApi.postMessage({type: 'openCode', nth}))
     el.title = [t.name, t.comment ? 'a comment' : '', t.enabled ? '' : 'disabled', t.custom ? 'custom script (war3map.wct)' : ''].filter(Boolean).join(' — ')
     return el
 }
@@ -198,6 +206,12 @@ function drawTree() {
     if (!mapData) return
     const data = mapData
     const frag = document.createDocumentFragment()
+    // The map's custom script, at the top as World Editor has it.
+    if (data.wct && data.wct.header) {
+        const row = rowEl({kind: 'script', key: 0}, 0, null, iconEl('', 'fa-scroll', 'script'), 'Map Script', 'war3map.wct')
+        row.title = "The map's custom script: code before every trigger's (opens war3map.wct)"
+        frag.append(row)
+    }
     const known = new Set(data.categories.map(c => c.index))
     for (const t of data.triggers.filter(t => !known.has(t.category))) frag.append(triggerRow(t, 0))
     for (const c of data.categories) {
@@ -236,6 +250,7 @@ function drawTree() {
 function choose(sel) {
     if (!mapData) return
     mapSelected = sel
+    if (sel.kind === 'script') mapApi.postMessage({type: 'openCode', nth: 0})
     if (sel.kind === 'trigger' && sel.key !== mapData.picked) {
         mapData.picked = sel.key
         mapApi.postMessage({type: 'pick', nth: sel.key})
@@ -364,6 +379,8 @@ mapTree.addEventListener('keydown', e => {
         e.preventDefault()
         if (mapSelected.kind === 'category' || mapSelected.kind === 'variables') toggle(mapSelected)
         else if (mapSelected.kind === 'variable') mapActions.rename()
+        else if (mapSelected.kind === 'script') mapApi.postMessage({type: 'openCode', nth: 0})
+        else if (mapSelected.kind === 'trigger' && mapData?.triggers[mapSelected.key - 1]?.custom) mapApi.postMessage({type: 'openCode', nth: mapSelected.key})
         return
     }
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return

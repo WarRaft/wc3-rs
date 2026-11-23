@@ -266,9 +266,11 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
                 return Answer::default();
             };
             let ui = &names.trigger_ui;
+            // The map's custom script beside it: the code of its triggers of custom text.
+            let wct = ws.custom_script_beside(id);
             let text = match kind {
-                QueryKind::TriggerView => crate::triggers::wtg_view(&doc.text, pos.line as usize, names),
-                QueryKind::TriggerEdit => crate::triggers::wtg_edit(&doc.text, pos.character, pos.line as usize, query, ui),
+                QueryKind::TriggerView => crate::triggers::wtg_view(&doc.text, pos.line as usize, names, wct.as_ref().map(|(_, t)| t.as_str())),
+                QueryKind::TriggerEdit => crate::triggers::wtg_edit(&doc.text, pos.character, pos.line as usize, query, ui, wct.as_ref().map(|(_, t)| t.as_str())),
                 QueryKind::TriggerChoices => crate::triggers::wtg_choices(&doc.text, pos.line as usize, query, ui),
                 _ => crate::triggers::catalog(pos.character, ui),
             };

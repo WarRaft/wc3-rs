@@ -360,7 +360,7 @@
         },
         {
           "command": "wc3.wtg.openVisual",
-          "when": "editorLangId == wtg && !activeCustomEditorId"
+          "when": "(editorLangId == wtg || editorLangId == wct && resourceFilename =~ /^war3map\\.wct$/i) && !activeCustomEditorId"
         },
         {
           "command": "wc3.wtg.extract",
@@ -459,7 +459,7 @@
         },
         {
           "command": "wc3.wtg.openVisual",
-          "when": "editorLangId == wtg && !activeCustomEditorId",
+          "when": "(editorLangId == wtg || editorLangId == wct && resourceFilename =~ /^war3map\\.wct$/i) && !activeCustomEditorId",
           "group": "navigation"
         },
         {

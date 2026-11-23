@@ -2031,7 +2031,15 @@ fn wtg_variables(text: &str, doc: &bni_rs::ast::Document) -> Vec<(usize, Declare
 /// one), and `at` the text's line of each (`at[k - 1]` for its line `k`).
 /// A trigger is picked by its place among the triggers, not by its line:
 /// typing in the text above it doesn't pick another.
-pub fn wtg_view(text: &str, nth: usize, names: &crate::names::Names) -> String {
+///
+/// With the text form of the map's custom script beside it (`wct`, the
+/// `war3map.wct` the triggers' code of custom text is in, by the
+/// triggers' places): `"wct": {"header": [from, to], "code": [[from, to,
+/// none], ...], "problem": ...}`, where in it the map's custom script and
+/// each trigger's piece are (lines from 0: the marker's, and the end of
+/// its code; `none` a piece that stores none), and what's wrong when the
+/// two don't go together (`null` when they do).
+pub fn wtg_view(text: &str, nth: usize, names: &crate::names::Names, wct: Option<&str>) -> String {
     let js = crate::objects::json_string;
     let doc = wtg_rs::text::parse_bni(text);
     let get = |s: &bni_rs::ast::Section, k: &str| s.items.iter().find(|i| i.key.as_ref().is_some_and(|n| n.text.trim() == k)).map(|i| i.value_text());
@@ -2089,12 +2097,28 @@ pub fn wtg_view(text: &str, nth: usize, names: &crate::names::Names) -> String {
             (at.join(","), view(&slice.text, names, &visible, &wtg_triggers(&doc, n)))
         }
     };
+    let wct_json = match wct {
+        None => "null".to_string(),
+        Some(w) => {
+            let p = crate::customtext::pieces(w);
+            let header = p.header.map_or("null".into(), |(a, b)| format!("[{a},{b}]"));
+            let code: Vec<String> = p.triggers.iter().map(|(a, b, none)| format!("[{a},{b},{none}]")).collect();
+            let problem = wct_problem(&p, map.triggers.len()).map_or("null".into(), |e| js(&e));
+            format!("{{\"header\":{header},\"code\":[{}],\"problem\":{problem}}}", code.join(","))
+        }
+    };
     format!(
-        "{{\"categories\":[{}],\"triggers\":[{}],\"variables\":[{}],\"picked\":{picked},\"at\":[{at}],\"view\":{view_json}}}",
+        "{{\"categories\":[{}],\"triggers\":[{}],\"variables\":[{}],\"picked\":{picked},\"at\":[{at}],\"view\":{view_json},\"wct\":{wct_json}}}",
         categories.join(","),
         triggers.join(","),
         variables.join(","),
     )
+}
+
+/// What's wrong when the custom script's pieces `p` don't go with the
+/// map's `triggers` triggers: each trigger has one, in the same order.
+fn wct_problem(p: &crate::customtext::Pieces, triggers: usize) -> Option<String> {
+    (p.triggers.len() != triggers).then(|| format!("war3map.wct has the code of {} triggers, war3map.wtg has {triggers}: the code of custom text can't be told whose", p.triggers.len()))
 }
 
 /// The triggers of the text of a `.wtg` (`doc`), looked at from its `me`th
@@ -2166,26 +2190,48 @@ pub mod map_op {
 /// after it. The triggers are a project of trigger files to each other:
 /// renaming one retargets the others' references to it, and a variable's
 /// change renames its uses in all of them.
-pub fn wtg_edit(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) -> String {
+///
+/// With the text form of the map's custom script beside it (`wct`, see
+/// [`wtg_view`]), an operation that adds, deletes or moves triggers moves
+/// their pieces of it with them: the answer's `wct` is its edits (as
+/// `edits` are the text's), or `warning` says why it couldn't be.
+pub fn wtg_edit(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui, wct: Option<&str>) -> String {
     let js = crate::objects::json_string;
     let (nth, arg) = arg.split_once('\n').unwrap_or((arg, ""));
     let map = Map::of(text);
+    let count = map.triggers.len();
     let nth = map.pick(nth.trim().parse().unwrap_or(0));
+    let mut order = None;
     let answer = match op {
         op::NEW_VARIABLE | op::SET_VARIABLE | op::CHECK_VARIABLE | map_op::DELETE_VARIABLE => wtg_variable(map, op, line, arg, ui),
-        map_op::NEW_TRIGGER..=map_op::RENAME_CATEGORY | map_op::MOVE_TRIGGER => wtg_tree(map, op, nth, arg),
+        map_op::NEW_TRIGGER..=map_op::RENAME_CATEGORY | map_op::MOVE_TRIGGER => wtg_tree(map, op, nth, arg).map(|(a, o)| {
+            order = o;
+            a
+        }),
         _ if nth == 0 => Err("no trigger to edit: the file has none".into()),
         _ => wtg_trigger(map, op, nth, line, arg, ui),
+    };
+    let edit = |text: &str, new: &[String]| {
+        let old: Vec<&str> = text.split_inclusive('\n').collect();
+        diff(text, &old, new).map_or("[]".into(), |(r, t)| format!("[[{},{},{},{},{}]]", r.start.line, r.start.character, r.end.line, r.end.character, js(&t)))
     };
     match answer {
         Ok(Answer::Json(t)) => t,
         Ok(Answer::Lines(lines, at, pick)) => {
-            let old: Vec<&str> = text.split_inclusive('\n').collect();
-            let edits = diff(text, &old, &lines).map_or("[]".into(), |(r, t)| {
-                format!("[[{},{},{},{},{}]]", r.start.line, r.start.character, r.end.line, r.end.character, js(&t))
-            });
+            let edits = edit(text, &lines);
             let pick = pick.map_or(String::new(), |p| format!(",\"pick\":{p}"));
-            format!("{{\"edits\":{edits},\"line\":{at}{pick}}}")
+            // The custom script's pieces with the triggers.
+            let custom = match (order, wct) {
+                (Some(order), Some(w)) => match wct_problem(&crate::customtext::pieces(w), count) {
+                    Some(problem) => format!(",\"warning\":{}", js(&format!("{problem}; war3map.wct is left as it was"))),
+                    None => match crate::customtext::reorder(w, &order) {
+                        Some(new) => format!(",\"wct\":{}", edit(w, &new.split_inclusive('\n').map(String::from).collect::<Vec<_>>())),
+                        None => String::new(),
+                    },
+                },
+                _ => String::new(),
+            };
+            format!("{{\"edits\":{edits},\"line\":{at}{pick}{custom}}}")
         }
         Err(e) => format!("{{\"error\":{}}}", js(&e)),
     }
@@ -2302,8 +2348,15 @@ fn wtg_variable(map: Map, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui) 
     Ok(Answer::Lines(lines, 0, None))
 }
 
-/// One of the tree's own operations ([`map_op`]); `nth` the picked trigger.
-fn wtg_tree(mut map: Map, op: u32, nth: usize, arg: &str) -> Result<Answer, String> {
+/// The triggers after a change, each the one it was (from 0) or a new
+/// one (`None`).
+type Order = Vec<Option<usize>>;
+
+/// One of the tree's own operations ([`map_op`]); `nth` the picked
+/// trigger. And the triggers' order after it, when it changes.
+fn wtg_tree(mut map: Map, op: u32, nth: usize, arg: &str) -> Result<(Answer, Option<Order>), String> {
+    let count = map.triggers.len();
+    let all = || (0..count).map(Some).collect::<Order>();
     let categories = map.categories();
     let index_arg = |s: &str| s.trim().parse::<i32>().map_err(|_| format!("not a category's index: {s:?}"));
     match op {
@@ -2321,7 +2374,9 @@ fn wtg_tree(mut map: Map, op: u32, nth: usize, arg: &str) -> Result<Answer, Stri
             let (at, pick) = map.end_of_category(index);
             let section = format!("[{}]\nname={}\ndescription=\"\"\ncategory={index}\n", wtg_rs::text::TRIGGER, wtg_rs::text::jass_string(name));
             map.insert(at, &section);
-            Ok(Answer::Lines(map.lines, 0, Some(pick)))
+            let mut order = all();
+            order.insert(pick - 1, None);
+            Ok((Answer::Lines(map.lines, 0, Some(pick)), Some(order)))
         }
         map_op::NEW_CATEGORY => {
             let name = arg.trim();
@@ -2331,14 +2386,16 @@ fn wtg_tree(mut map: Map, op: u32, nth: usize, arg: &str) -> Result<Answer, Stri
             let index = categories.iter().map(|c| c.0).max().map_or(0, |m| m + 1);
             let at = map.after_last(&["category", "wtg"]);
             map.insert(at, &format!("[category]\nindex={index}\nname={}\n", wtg_rs::text::jass_string(name)));
-            Ok(Answer::Lines(map.lines, 0, Some(nth)))
+            Ok((Answer::Lines(map.lines, 0, Some(nth)), None))
         }
         map_op::DELETE_TRIGGER => {
             let t = map.triggers.get(nth.wrapping_sub(1)).ok_or("no trigger to delete")?;
             let pick = nth.min(map.triggers.len() - 1);
             let range = t.range.clone();
             map.remove(range);
-            Ok(Answer::Lines(map.lines, 0, Some(pick)))
+            let mut order = all();
+            order.remove(nth - 1);
+            Ok((Answer::Lines(map.lines, 0, Some(pick)), Some(order)))
         }
         map_op::DELETE_CATEGORY => {
             let index = index_arg(arg)?;
@@ -2346,12 +2403,13 @@ fn wtg_tree(mut map: Map, op: u32, nth: usize, arg: &str) -> Result<Answer, Stri
             let mut ranges: Vec<std::ops::Range<usize>> = map.triggers.iter().filter(|t| map.category_of(t) == index).map(|t| t.range.clone()).collect();
             let gone_before = map.triggers.iter().take(nth).filter(|t| map.category_of(t) == index).count();
             let left = map.triggers.len() - ranges.len();
+            let order: Order = map.triggers.iter().enumerate().filter(|(_, t)| map.category_of(t) != index).map(|(k, _)| Some(k)).collect();
             ranges.push(range);
             ranges.sort_by_key(|r| std::cmp::Reverse(r.start));
             for r in ranges {
                 map.remove(r);
             }
-            Ok(Answer::Lines(map.lines, 0, Some(nth.saturating_sub(gone_before).max(1).min(left))))
+            Ok((Answer::Lines(map.lines, 0, Some(nth.saturating_sub(gone_before).max(1).min(left))), Some(order)))
         }
         map_op::RENAME_CATEGORY => {
             let (index, name) = arg.split_once('\n').unwrap_or((arg, ""));
@@ -2362,7 +2420,7 @@ fn wtg_tree(mut map: Map, op: u32, nth: usize, arg: &str) -> Result<Answer, Stri
                 Some((i, _)) => map.lines[i] = line,
                 None => map.lines.insert(range.start + 1, line),
             }
-            Ok(Answer::Lines(map.lines, 0, Some(nth)))
+            Ok((Answer::Lines(map.lines, 0, Some(nth)), None))
         }
         map_op::MOVE_TRIGGER => {
             let mut parts = arg.split('\n');
@@ -2372,7 +2430,7 @@ fn wtg_tree(mut map: Map, op: u32, nth: usize, arg: &str) -> Result<Answer, Stri
             let before = number("before which")? as usize;
             let t = map.triggers.get(moved.wrapping_sub(1)).ok_or(format!("no trigger {moved}"))?;
             if before == moved {
-                return Ok(Answer::Lines(map.lines, 0, Some(moved)));
+                return Ok((Answer::Lines(map.lines, 0, Some(moved)), None));
             }
             if before > map.triggers.len() {
                 return Err(format!("no trigger {before}"));
@@ -2403,7 +2461,10 @@ fn wtg_tree(mut map: Map, op: u32, nth: usize, arg: &str) -> Result<Answer, Stri
                 b => (map.triggers[b - 1].range.start, b),
             };
             map.insert(at, &section.concat());
-            Ok(Answer::Lines(map.lines, 0, Some(pick)))
+            let mut order = all();
+            order.remove(moved - 1);
+            order.insert(pick - 1, Some(moved - 1));
+            Ok((Answer::Lines(map.lines, 0, Some(pick)), Some(order)))
         }
         _ => Err(format!("unknown operation {op}")),
     }

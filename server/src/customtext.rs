@@ -123,6 +123,75 @@ pub fn hints(text: &str, first: u32, last: u32) -> String {
     format!("[{}]", out.join(","))
 }
 
+/// The pieces of a custom script's text form, by its markers: the map's
+/// custom script (`header`) and each trigger's, in the trigger editor's
+/// order. Lines from 0; a piece's code runs from the line after its
+/// marker to the line before the next.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Pieces {
+    /// The `header` marker's line and the end of its code.
+    pub header: Option<(usize, usize)>,
+    /// Each trigger's: its marker's line, the end of its code, and
+    /// whether it stores none (`trigger none`).
+    pub triggers: Vec<(usize, usize, bool)>,
+    /// The markers' comment (`//`, `--`).
+    pub comment: &'static str,
+}
+
+/// The pieces of the text form `text`.
+pub fn pieces(text: &str) -> Pieces {
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    let markers: Vec<(usize, Vec<&str>)> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| wct_rs::text::is_marker(l))
+        .map(|(i, l)| (i, l.split_whitespace().skip(2).collect()))
+        .collect();
+    let mut out = Pieces { comment: if markers.first().is_some_and(|(i, _)| lines[*i].trim_start().starts_with("--")) { "--" } else { "//" }, ..Default::default() };
+    for (k, (i, words)) in markers.iter().enumerate() {
+        let end = markers.get(k + 1).map_or(lines.len(), |(j, _)| *j);
+        match words.first().copied() {
+            Some("header") => out.header = Some((*i, end)),
+            Some("trigger") => out.triggers.push((*i, end, words.get(1) == Some(&"none"))),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The text form `text` with its triggers' pieces in a new order: `order`
+/// is the triggers after a change, each the old one it is (from 0) or a
+/// new one (`None`: a trigger of World Editor's, which stores no code).
+/// The text before the first trigger's piece stays. `None` when the text
+/// has no piece for some trigger `order` names.
+pub fn reorder(text: &str, order: &[Option<usize>]) -> Option<String> {
+    let p = pieces(text);
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    let start = p.triggers.first().map_or(lines.len(), |t| t.0);
+    let mut out: String = lines[..start].concat();
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    for o in order {
+        match o {
+            Some(k) => {
+                let (from, to, _) = *p.triggers.get(*k)?;
+                let piece = lines[from..to].concat();
+                out.push_str(&piece);
+                if !piece.ends_with('\n') {
+                    out.push('\n');
+                }
+            }
+            None => out.push_str(&format!("{} @wct trigger none\n", p.comment)),
+        }
+    }
+    // The text's own end: no line break added where it had none.
+    if !text.ends_with('\n') && out.ends_with('\n') {
+        out.pop();
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 #[path = "customtext.test.rs"]
 mod tests;
