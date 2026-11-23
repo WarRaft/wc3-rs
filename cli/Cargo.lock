@@ -984,8 +984,16 @@ dependencies = [
 name = "wc3-build"
 version = "0.1.0"
 dependencies = [
+ "doo-rs",
  "jass-rs",
  "parser-rs",
+ "slk-rs",
+ "w3abdhqtu-rs",
+ "w3c-rs",
+ "w3i-rs",
+ "w3r-rs",
+ "w3s-rs",
+ "wtg-rs",
 ]
 
 [[package]]

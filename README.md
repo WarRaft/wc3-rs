@@ -414,12 +414,16 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    so far (`wc3-build`'s `map`, made as the IR's nodes): `config`, the
    players and forces, the setting up in `main`, the sounds (how long
    each plays worked out as World Editor does), regions, cameras,
-   `InitGlobals` and the triggers of map initialization, World Editor's
-   call for call on two maps; what's placed next, after shorter names.
-   saving a `.w3x` makes its `war3map.j` again, and so does a build.
-   Checked against the `war3map.j` of real maps by what each part does
-   (its calls), not byte for byte; taking a file out of a map into a
-   folder doesn't change what's built.
+   `InitGlobals`, the triggers of map initialization, and what's placed
+   (destructables, items, units and buildings, what each drops when it
+   dies; `wc3-build`'s `placed`, the types read by `objects` from the
+   game's tables and the map's object data). World Editor's call for
+   call on two maps; The Castle's whole `main`, 1475 calls. Next: random
+   groups and item tables, upgrades and the tech tree. Saving a `.w3x`
+   makes its `war3map.j` again, and so does a build. Checked against the
+   `war3map.j` of real maps by what each part does (its calls), not byte
+   for byte; taking a file out of a map into a folder doesn't change
+   what's built.
 3. **vJASS and Zinc into the IR**, the most used first.
 4. **Their objects in JASS**: structs as arrays and an allocator,
    interfaces through `TriggerEvaluate`, libraries in the order of
