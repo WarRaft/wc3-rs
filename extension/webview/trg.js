@@ -134,7 +134,7 @@ let selectLine = 0
 let mapVariables = null
 
 const tree = $('tree')
-const save = () => vscode.setState({collapsed: [...collapsed], selected})
+const save = () => vscode.setState({...(vscode.getState() || {}), collapsed: [...collapsed], selected})
 
 // ---------------------------------------------------------------- rows
 

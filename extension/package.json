@@ -1,7 +1,7 @@
 {
   "name": "wc3",
   "displayName": "WC3",
-    "description": "A Warcraft III map editor in VS Code, on its way to replacing World Editor (not everything is there yet): JASS/vJASS, Zinc, Lua, AngelScript and BNI with semantic highlighting, live diagnostics and wc3.bni projects; maps as folders; GUI triggers (.trg) as World Editor shows them; SLK tables as a grid; BLP textures and pathing maps (.wpm) as pictures; object data (.w3a .w3u ...), cameras, regions, sounds, the terrain's header, map info, the custom script, imports and placed units and doodads as editable text.",
+  "description": "A Warcraft III map editor in VS Code, on its way to replacing World Editor (not everything is there yet): JASS/vJASS, Zinc, Lua, AngelScript and BNI with semantic highlighting, live diagnostics and wc3.bni projects; maps as folders; GUI triggers (.trg) as World Editor shows them; SLK tables as a grid; BLP textures and pathing maps (.wpm) as pictures; object data (.w3a .w3u ...), cameras, regions, sounds, the terrain's header, map info, the custom script, imports and placed units and doodads as editable text.",
   "version": "0.0.8",
   "publisher": "WarRaft",
   "icon": "images/logo.png",
@@ -119,16 +119,10 @@
         "displayName": "Warcraft III Map",
         "selector": [
           {
-            "filenamePattern": "*.w3x"
+            "filenamePattern": "*.{w3x,W3X}"
           },
           {
-            "filenamePattern": "*.w3m"
-          },
-          {
-            "filenamePattern": "*.W3X"
-          },
-          {
-            "filenamePattern": "*.W3M"
+            "filenamePattern": "*.{w3m,W3M}"
           }
         ],
         "priority": "default"
@@ -138,28 +132,16 @@
         "displayName": "BLP and TGA Image, Pathing and Shadow Map",
         "selector": [
           {
-            "filenamePattern": "*.blp"
+            "filenamePattern": "*.{blp,BLP}"
           },
           {
-            "filenamePattern": "*.BLP"
+            "filenamePattern": "*.{tga,TGA}"
           },
           {
-            "filenamePattern": "*.tga"
+            "filenamePattern": "*.{wpm,WPM}"
           },
           {
-            "filenamePattern": "*.TGA"
-          },
-          {
-            "filenamePattern": "*.wpm"
-          },
-          {
-            "filenamePattern": "*.WPM"
-          },
-          {
-            "filenamePattern": "*.shd"
-          },
-          {
-            "filenamePattern": "*.SHD"
+            "filenamePattern": "*.{shd,SHD}"
           }
         ],
         "priority": "default"
@@ -169,112 +151,58 @@
         "displayName": "Object Data, Cameras, Regions, Sounds, Terrain, Map Info and Custom Script as Text",
         "selector": [
           {
-            "filenamePattern": "*.w3a"
+            "filenamePattern": "*.{w3a,W3A}"
           },
           {
-            "filenamePattern": "*.w3b"
+            "filenamePattern": "*.{w3b,W3B}"
           },
           {
-            "filenamePattern": "*.w3d"
+            "filenamePattern": "*.{w3d,W3D}"
           },
           {
-            "filenamePattern": "*.w3h"
+            "filenamePattern": "*.{w3h,W3H}"
           },
           {
-            "filenamePattern": "*.w3q"
+            "filenamePattern": "*.{w3q,W3Q}"
           },
           {
-            "filenamePattern": "*.w3t"
+            "filenamePattern": "*.{w3t,W3T}"
           },
           {
-            "filenamePattern": "*.w3u"
+            "filenamePattern": "*.{w3u,W3U}"
           },
           {
-            "filenamePattern": "*.W3A"
+            "filenamePattern": "*.{w3c,W3C}"
           },
           {
-            "filenamePattern": "*.W3B"
+            "filenamePattern": "*.{w3e,W3E}"
           },
           {
-            "filenamePattern": "*.W3D"
+            "filenamePattern": "*.{w3i,W3I}"
           },
           {
-            "filenamePattern": "*.W3H"
+            "filenamePattern": "*.{w3r,W3R}"
           },
           {
-            "filenamePattern": "*.W3Q"
+            "filenamePattern": "*.{w3s,W3S}"
           },
           {
-            "filenamePattern": "*.W3T"
+            "filenamePattern": "*.{wct,WCT}"
           },
           {
-            "filenamePattern": "*.W3U"
+            "filenamePattern": "*.{imp,IMP}"
           },
           {
-            "filenamePattern": "*.w3c"
+            "filenamePattern": "*.{mmp,MMP}"
           },
           {
-            "filenamePattern": "*.W3C"
+            "filenamePattern": "*.{doo,DOO}"
           },
           {
-            "filenamePattern": "*.w3e"
+            "filenamePattern": "*.{wtg,WTG}"
           },
           {
-            "filenamePattern": "*.W3E"
-          },
-          {
-            "filenamePattern": "*.w3i"
-          },
-          {
-            "filenamePattern": "*.W3I"
-          },
-          {
-            "filenamePattern": "*.w3r"
-          },
-          {
-            "filenamePattern": "*.W3R"
-          },
-          {
-            "filenamePattern": "*.w3s"
-          },
-          {
-            "filenamePattern": "*.W3S"
-          },
-          {
-            "filenamePattern": "*.wct"
-          },
-          {
-            "filenamePattern": "*.WCT"
-          },
-          {
-            "filenamePattern": "*.imp"
-          },
-          {
-            "filenamePattern": "*.IMP"
-          },
-          {
-            "filenamePattern": "*.mmp"
-          },
-          {
-            "filenamePattern": "*.MMP"
-          },
-          {
-            "filenamePattern": "*.doo"
-          },
-          {
-            "filenamePattern": "*.DOO"
-          },
-          {
-            "filenamePattern": "*.wtg"
-          },
-          {
-            "filenamePattern": "*.WTG"
-          },
-          {
-            "filenamePattern": "*.w3o"
-          },
-          {
-            "filenamePattern": "*.W3O"
+            "filenamePattern": "*.{w3o,W3O}"
           }
         ],
         "priority": "default"
@@ -284,10 +212,7 @@
         "displayName": "SLK Table",
         "selector": [
           {
-            "filenamePattern": "*.slk"
-          },
-          {
-            "filenamePattern": "*.SLK"
+            "filenamePattern": "*.{slk,SLK}"
           }
         ],
         "priority": "default"
@@ -297,10 +222,7 @@
         "displayName": "Warcraft III Triggers",
         "selector": [
           {
-            "filenamePattern": "*.wtg"
-          },
-          {
-            "filenamePattern": "*.WTG"
+            "filenamePattern": "*.{wtg,WTG}"
           }
         ],
         "priority": "option"
@@ -310,10 +232,7 @@
         "displayName": "Warcraft III Trigger",
         "selector": [
           {
-            "filenamePattern": "*.trg"
-          },
-          {
-            "filenamePattern": "*.TRG"
+            "filenamePattern": "*.{trg,TRG}"
           }
         ],
         "priority": "default"

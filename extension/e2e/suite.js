@@ -63,6 +63,8 @@ async function steps() {
     const ext = vscode.extensions.all.find(e => e.packageJSON.name === 'wc3' && e.packageJSON.publisher === 'WarRaft')
     const api = (await ext.activate()).test
     await vscode.commands.executeCommand('workbench.action.closeAllEditors')
+    // "Extensions are disabled" (the others are, on purpose): not in the screenshots.
+    await vscode.commands.executeCommand('notifications.clearAll')
 
     log('the custom script opened as the Explorer opens it: the triggers come up')
     await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(map, 'war3map.wct')).with({scheme: 'wc3map'}))

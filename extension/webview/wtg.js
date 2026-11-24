@@ -102,21 +102,14 @@ const same = (a, b) => a.kind === b.kind && a.key === b.key
  * @param {string} label
  * @param {string} [detail]
  */
-function rowEl(sel, depth, twisty, icon, label, detail) {
+function rowEl(sel, depth, icon, label, detail) {
     const el = document.createElement('div')
     el.className = 'map-row'
-    el.style.paddingLeft = `${4 + depth * 16}px`
-    const t = document.createElement('span')
-    t.className = 'map-twisty'
-    t.textContent = twisty || ''
-    if (twisty) t.addEventListener('click', e => {
-        e.stopPropagation()
-        toggle(sel)
-    })
+    el.style.paddingLeft = `${8 + depth * 16}px`
     const l = document.createElement('span')
     l.className = 'map-label'
     l.textContent = label
-    el.append(t, icon, l)
+    el.append(icon, l)
     if (detail) {
         const d = document.createElement('span')
         d.className = 'map-detail'
@@ -177,7 +170,7 @@ function triggerRow(t, depth) {
     // A comment is set apart: its own icon, its text muted.
     const art = t.comment ? '' : t.enabled ? 'SEIcon_Trigger' : 'SEIcon_TriggerDisabled'
     const icon = iconEl(art, t.comment ? 'fa-comment' : 'fa-bolt', t.comment ? 'comment' : 'trigger')
-    const el = rowEl({kind: 'trigger', key: nth}, depth, null, icon, t.name || '(no name)', t.custom ? 'custom script' : '')
+    const el = rowEl({kind: 'trigger', key: nth}, depth, icon, t.name || '(no name)', t.custom ? 'custom script' : '')
     el.draggable = true
     el.addEventListener('dragstart', e => {
         dragging = nth
@@ -206,9 +199,24 @@ function drawTree() {
     if (!mapData) return
     const data = mapData
     const frag = document.createDocumentFragment()
+    // The variables first, then the map's custom script, then the categories.
+    const varsOpen = !shut.has('vars')
+    const vars = /** @type {MapSelection} */ ({kind: 'variables', key: 0})
+    const heading = rowEl(vars, 0, iconEl('ToolBarIcon_SE_Variables', 'fa-cube', 'variable'), 'Variables', String(data.variables.length))
+    heading.addEventListener('dblclick', () => toggle(vars))
+    frag.append(heading)
+    if (varsOpen) {
+        for (const v of data.variables) {
+            const type = v.array ? `${v.type_name} array` : v.type_name
+            const row = rowEl({kind: 'variable', key: v.line}, 1, iconEl('', 'fa-cube', 'variable'), v.name, type)
+            row.title = `${v.name}: ${type}${v.initial !== null ? ` = ${v.initial}` : ''} (double click: edit)`
+            row.addEventListener('dblclick', () => mapApi.postMessage({type: 'types', line: v.line}))
+            frag.append(row)
+        }
+    }
     // The map's custom script, at the top as World Editor has it.
     if (data.wct && data.wct.header) {
-        const row = rowEl({kind: 'script', key: 0}, 0, null, iconEl('', 'fa-scroll', 'script'), 'Map Script', 'war3map.wct')
+        const row = rowEl({kind: 'script', key: 0}, 0, iconEl('', 'fa-scroll', 'script'), 'Map Script', 'war3map.wct')
         row.title = "The map's custom script: code before every trigger's (opens war3map.wct)"
         frag.append(row)
     }
@@ -217,29 +225,14 @@ function drawTree() {
     for (const c of data.categories) {
         const open = !shut.has(c.index)
         const art = open ? 'SEIcon_TriggerCategoryOpen' : 'SEIcon_TriggerCategory'
-        const inside = data.triggers.filter(t => t.category === c.index)
         const sel = /** @type {MapSelection} */ ({kind: 'category', key: c.index})
-        const el = rowEl(sel, 0, inside.length ? (open ? '▾' : '▸') : null, iconEl(art, open ? 'fa-folder-open' : 'fa-folder', 'category'), c.name || '(no name)')
+        // Open or shut by double click (or Enter), its folder showing which.
+        const el = rowEl(sel, 0, iconEl(art, open ? 'fa-folder-open' : 'fa-folder', 'category'), c.name || '(no name)')
         if (c.comment) el.classList.add('comment')
         el.addEventListener('dblclick', () => toggle(sel))
         dropTarget(el, c.index, 0)
         frag.append(el)
-        if (open) for (const t of inside) frag.append(triggerRow(t, 1))
-    }
-    const open = !shut.has('vars')
-    const vars = /** @type {MapSelection} */ ({kind: 'variables', key: 0})
-    const heading = rowEl(vars, 0, data.variables.length ? (open ? '▾' : '▸') : null,
-        iconEl('ToolBarIcon_SE_Variables', 'fa-cube', 'variable'), 'Variables', String(data.variables.length))
-    heading.addEventListener('dblclick', () => toggle(vars))
-    frag.append(heading)
-    if (open) {
-        for (const v of data.variables) {
-            const type = v.array ? `${v.type_name} array` : v.type_name
-            const row = rowEl({kind: 'variable', key: v.line}, 1, null, iconEl('', 'fa-cube', 'variable'), v.name, type)
-            row.title = `${v.name}: ${type}${v.initial !== null ? ` = ${v.initial}` : ''} (double click: edit)`
-            row.addEventListener('dblclick', () => mapApi.postMessage({type: 'types', line: v.line}))
-            frag.append(row)
-        }
+        if (open) for (const t of data.triggers.filter(t => t.category === c.index)) frag.append(triggerRow(t, 1))
     }
     mapTree.append(frag)
     mapTree.querySelector('.map-row.picked')?.scrollIntoView({block: 'nearest'})
@@ -433,3 +426,40 @@ window.addEventListener('message', e => {
         drawTree()
     }
 })
+
+// The line between the tree and the trigger sizes the tree, as it's
+// dragged; the width is kept with the page's state.
+{
+    const side = /** @type {HTMLElement} */ (document.querySelector('.map-side'))
+    const splitter = document.getElementById('map-splitter')
+    const kept = (mapApi.getState() || {}).treeWidth
+    if (side && kept) side.style.width = `${kept}px`
+    splitter?.addEventListener('pointerdown', e => {
+        if (!side) return
+        e.preventDefault()
+        splitter.setPointerCapture(e.pointerId)
+        splitter.classList.add('dragging')
+        document.body.classList.add('resizing')
+        const start = e.clientX
+        const width = side.getBoundingClientRect().width
+        const move = (/** @type {PointerEvent} */ m) => {
+            const w = Math.max(140, Math.min(window.innerWidth * 0.6, width + m.clientX - start))
+            side.style.width = `${w}px`
+        }
+        const up = () => {
+            splitter.removeEventListener('pointermove', move)
+            splitter.removeEventListener('pointerup', up)
+            splitter.classList.remove('dragging')
+            document.body.classList.remove('resizing')
+            mapApi.setState({...(mapApi.getState() || {}), treeWidth: Math.round(side.getBoundingClientRect().width)})
+        }
+        splitter.addEventListener('pointermove', move)
+        splitter.addEventListener('pointerup', up)
+    })
+    // Double click: back to its width at first.
+    splitter?.addEventListener('dblclick', () => {
+        if (!side) return
+        side.style.width = ''
+        mapApi.setState({...(mapApi.getState() || {}), treeWidth: undefined})
+    })
+}

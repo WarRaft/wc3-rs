@@ -29,9 +29,7 @@ body.wtg.empty .main > :not(#loading) {
     width: 260px;
     min-width: 140px;
     max-width: 60vw;
-    resize: horizontal;
     overflow: hidden;
-    border-right: 1px solid var(--vscode-panel-border, transparent);
     background: var(--vscode-sideBar-background, var(--vscode-editor-background));
 }
 
@@ -108,12 +106,26 @@ body.wtg.empty .main > :not(#loading) {
     outline-offset: -1px;
 }
 
-.map-row .map-twisty {
+/* The line between the tree and the trigger: dragged, it sizes the tree
+   (as VS Code's sashes). */
+.map-splitter {
     flex: none;
-    width: 14px;
-    text-align: center;
-    font-size: 10px;
-    color: var(--vscode-icon-foreground, var(--vscode-foreground));
+    width: 4px;
+    margin: 0 -2px;
+    z-index: 1;
+    cursor: col-resize;
+    background: linear-gradient(to right, transparent 1.5px, var(--vscode-panel-border, transparent) 1.5px, var(--vscode-panel-border, transparent) 2.5px, transparent 2.5px);
+    transition: background-color 0.1s 0.3s;
+}
+
+.map-splitter:hover,
+.map-splitter.dragging {
+    background: var(--vscode-sash-hoverBorder, var(--vscode-focusBorder));
+}
+
+body.resizing {
+    cursor: col-resize;
+    user-select: none;
 }
 
 .map-row .map-icon {

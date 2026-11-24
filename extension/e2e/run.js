@@ -33,10 +33,22 @@ fs.rmSync(path.join(out, 'log.txt'), {force: true})
 
 // The profile's socket path must be short (macOS: 103 characters).
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'wc3e2e-'))
+// A window filling the screen, with nothing but the editor in it.
+fs.mkdirSync(path.join(profile, 'u', 'User'), {recursive: true})
+fs.writeFileSync(path.join(profile, 'u', 'User', 'settings.json'), JSON.stringify({
+    'window.newWindowDimensions': 'maximized',
+    'window.restoreWindows': 'none',
+    'workbench.startupEditor': 'none',
+    'workbench.secondarySideBar.defaultVisibility': 'hidden',
+    'workbench.tips.enabled': false,
+    'chat.disableAIFeatures': true,
+    'extensions.ignoreRecommendations': true,
+    'security.workspace.trust.enabled': false,
+}, null, 2))
 const args = [
     workspace,
     `--extensionDevelopmentPath=${ext}`,
-    `--extensionTestsPath=${path.join(__dirname, 'suite.js')}`,
+    `--extensionTestsPath=${path.join(__dirname, process.env.E2E_SUITE || 'suite.js')}`,
     `--user-data-dir=${path.join(profile, 'u')}`,
     `--extensions-dir=${path.join(profile, 'x')}`,
     '--disable-extensions',

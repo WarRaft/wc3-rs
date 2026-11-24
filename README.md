@@ -1529,7 +1529,10 @@ first), on a copy of a map (Diablo III beta by default) in a folder with
 a `wc3.bni` naming the game (`WC3_GAME`). `e2e/suite.js` drives it as a
 user would: the trigger editors take the page's messages through the
 extension's `test` export (`triggerEditors`), and each step is checked
-on the documents, diagnostics and the map on disk; what it says goes to
+on the documents, diagnostics and the map on disk (the window fills the
+screen, with no chat or tips: its profile's settings); `E2E_SUITE=probe.js
+E2E_OPEN='wc3map://{map}/war3map.w3i|...'` only opens each and takes a
+screenshot, to look at something; what it says goes to
 `<out>/log.txt` (`E2E_OUT`, else a temporary folder), printed at the
 end, and screenshots of the screen to `<out>/*.png` (`run.js` takes them,
 with macOS's `screencapture`: the terminal needs Screen Recording).

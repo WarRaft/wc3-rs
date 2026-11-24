@@ -1758,6 +1758,7 @@ ${wtg ? `<div class="map-side">
 </div>
 <nav id="map-tree" class="map-tree" tabindex="0" role="tree"></nav>
 </div>
+<div id="map-splitter" class="map-splitter" title="Drag to size the tree"></div>
 <div class="main">` : ''}
 <div class="bar">
   <span id="title-icon" class="title-icon"><i class="fa-solid fa-bolt"></i></span>
