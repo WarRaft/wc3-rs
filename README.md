@@ -429,10 +429,27 @@ each output is made from it:
   returns nothing` are written; locals go to the top of their function,
   globals into `globals`. What it makes passes the rules of the group
   `pure`.
-- **AngelScript, for UjAPI.** Classes for structs. A stub to begin
-  with: what matters now is that the IR leaves room for it.
-- **Lua.** The lowest priority: a stub, which may well translate the
-  JASS, and doesn't have to run yet.
+- **Which one: `[build] script=jass|lua|as`** (`jass` without it). Every
+  source (JASS, vJASS, Zinc, the triggers) goes through the IR to the
+  one asked for: all of a map's JASS is transpiled, nothing is written
+  twice. A map built as `lua` gets `war3map.lua` and the Lua flag of its
+  `war3map.w3i`.
+- **AngelScript, for UjAPI** (decided with UjAPI's author, 2026-11-24):
+  the natives of `common.j` are in the namespace `Jass` (`Jass::CreateUnit`);
+  every type extending `handle` is a global type of its own and is a
+  `uint` (a number, not a reference), its empty value `nil` (not
+  `null`); `'hfoo'` is written as in JASS. UjAPI ships no `Blizzard.j`,
+  so the build takes the functions and globals of it the code uses (and
+  what they use: tree-shaking) and writes them in AngelScript too.
+  Classes for structs.
+- **Lua** (UjAPI runs it too): the natives and `Blizzard.j`'s functions
+  as the game gives them (its own Lua has `Blizzard.j`, so it isn't
+  written again: its `bj_` globals are the game's state).
+- **A project of code alone** (no `[map] root`): a build writes the
+  script only, `build/war3map.j` (`.lua`, `.as` by `script`), with no
+  map's part: `main` and `config` are the code's.
+- **A trigger in each**: beside Show JASS, Show Lua and Show
+  AngelScript, live from the text as it is (not saved).
 
 ### vJASS and Zinc
 
@@ -502,7 +519,10 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    each), operators (`x`, `x=`, `[]`, `[]=`, `<`), `delegate`; what's
    built checks clean as the game's JASS. Not yet: operators of
    interfaces, structs of more than 8190 instances.
-5. **AngelScript and Lua** past their stubs.
+5. **AngelScript and Lua** past their stubs (see Outputs above for
+   what's decided): the build of code alone and `script=` first, then
+   Lua, then AngelScript with `Blizzard.j` tree-shaken, then Show Lua and
+   Show AngelScript for a trigger.
 6. **The map**: `[build]` scenarios, the roots' layers, the `.w3x`
    written (`storm-rs`); optimizations (dead code) after. Done
    (`server/src/build.rs`, `wc3-build`'s `whole`):
