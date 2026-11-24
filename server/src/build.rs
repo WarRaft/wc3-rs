@@ -8,7 +8,9 @@
 //!   map's script (made anew) and the archive's own files.
 //! - **The script** (`war3map.j`) is `wc3_build::whole`'s: the map's part
 //!   made of its files (through the project's lookup), the triggers, the
-//!   map's custom script, the project's code. The triggers are the
+//!   map's custom script, the project's code, JassHelper's preprocessor
+//!   run over all of it (`//! import "path"` found beside the importing
+//!   file, else in the project's folder, else in its layers). The triggers are the
 //!   project's `.trg` files when it has any (in the order of their paths),
 //!   else the `war3map.wtg` of the roots; the code of a trigger of custom
 //!   text is in the roots' `war3map.wct`, found by the trigger's name in
@@ -82,7 +84,18 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
     let (code, variables, initialization, triggers) = code(project, &game, &names)?;
     let read = |n: &str| game.read(n).map(|(b, _)| b);
     let read_patched = |n: &str| game.read_patched(n);
-    let input = Input { read: &read, read_patched: &read_patched, variables, initialization, code, uglify: b.uglify };
+    // JassHelper's `//! import "path"`: beside the file importing it, else
+    // in the project's folder, else in the project's layers (the map's
+    // roots, the game) as a file of the map.
+    let import = |from: &str, path: &str| -> Option<(String, String)> {
+        let rel = path.replace('\\', "/");
+        let candidates = [Path::new(from).parent().map(|d| d.join(&rel)), Some(project.root.join(&rel))];
+        if let Some(p) = candidates.into_iter().flatten().find(|p| p.is_file()) {
+            return std::fs::read(&p).ok().map(|b| (p.to_string_lossy().into_owned(), crate::document::decode(b)));
+        }
+        game.read(&path.replace('/', "\\")).map(|(b, _)| (path.to_string(), crate::document::decode(b)))
+    };
+    let input = Input { read: &read, read_patched: &read_patched, variables, initialization, code, uglify: b.uglify, import: &import };
     let script = wc3_build::whole::script(&input).map_err(|e| e.into_iter().map(|e| if e.origin.line > 0 { format!("{}:{}: {}", e.origin.file, e.origin.line, e.message) } else { format!("{}: {}", e.origin.file, e.message) }).collect::<Vec<_>>())?;
     notes.extend(script.notes);
 

@@ -443,9 +443,14 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    `defaults`, modules, `a.b`, `.x`, `this`, `thistype`, `super`,
    `static if`), and its lint, names and the editor's tree know it;
    `wc3-build` reads it and Zinc into the IR (Zinc's loops, `+=` and
-   anonymous functions into JASS's forms). Not read yet: JassHelper's
-   preprocessor (`//! textmacro` ...: an error, not code lost), `hook`,
-   Zinc's arrays of two dimensions.
+   anonymous functions into JASS's forms). JassHelper's preprocessor
+   is run over all the code first (`wc3-build`'s `preprocess`:
+   `textmacro`/`runtextmacro`, `novjass`, `import`), what's said of the
+   code said of the lines written; `hook` (`h__Name`, the game's
+   natives' signatures from `common.j` and `Blizzard.j`); Zinc's arrays
+   of several dimensions (one array). In the editor a textmacro's body
+   and `novjass` are a comment. Not run yet: `//! inject`,
+   `dovjassinit`, `loaddata`, `external` (an error each, not code lost).
 4. **Their objects in JASS**: structs as arrays and an allocator,
    interfaces through `TriggerEvaluate`, libraries in the order of
    `requires`. Done so far (`wc3-build`'s `lower` and `structs`):
