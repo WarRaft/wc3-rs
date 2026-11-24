@@ -457,3 +457,23 @@ body.comment-trigger .description {
     background: var(--vscode-textBlockQuote-background, var(--vscode-editor-background));
     font-style: italic;
 }
+
+/* Custom text (custom_text=1): the trigger is its code, in an editor of
+   its own; an explanation, not a warning, and no events, conditions or
+   actions. */
+
+body.custom-trigger .tools,
+body.custom-trigger #tree {
+    display: none;
+}
+
+body.custom-trigger .notice {
+    color: var(--vscode-foreground);
+    background: var(--vscode-textBlockQuote-background, transparent);
+    border-bottom-color: var(--vscode-panel-border, transparent);
+    border-left: 3px solid var(--vscode-textLink-foreground, var(--vscode-focusBorder));
+}
+
+body.custom-trigger .notice .text-button {
+    margin-left: 4px;
+}

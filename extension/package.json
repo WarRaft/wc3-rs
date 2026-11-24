@@ -23,6 +23,7 @@
   "activationEvents": [
     "onFileSystem:wc3obj",
     "onFileSystem:wc3map",
+    "onFileSystem:wc3code",
     "onMcpCollection:wc3"
   ],
   "contributes": {

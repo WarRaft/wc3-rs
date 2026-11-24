@@ -969,10 +969,20 @@ the code stays JASS, with everything the editor does for JASS):
   `war3map.wct` (when a `war3map.wtg` is beside it) opens the trigger
   editor with the tree. The custom script is opened beside it as a
   document, so what's edited and not saved in it counts.
-- **The code is the custom script's text**: **Map Script** at the top of
-  the tree, and a trigger of custom text picked (or double clicked),
-  show its code in `war3map.wct`'s text editor, beside. **Open as
-  Triggers** over that text goes back to the tree.
+- **The code is the custom script's text, a piece at a time**: **Map
+  Script** at the top of the tree, and a trigger of custom text picked
+  (or double clicked, or **Open Code**), open that code alone beside, as
+  a document of its own (`wc3code:…/war3map.wct/<trigger>.j`), so the
+  other triggers' code is out of reach. It's a view of those lines of
+  `war3map.wct`, not a file: typing in it changes the custom script's
+  text at once (a piece that stored none gets its marker's `none`
+  dropped), a change there comes back to it, and saving it saves the
+  custom script (and with it the triggers). The server never gets it (its
+  functions would be declared twice): its diagnostics, highlighting,
+  hover, go to definition, references, outline and rename are the custom
+  script's, their lines moved. A trigger of custom text shows no events,
+  conditions or actions, only a line saying where its code is. **Open as
+  Triggers** over the custom script's whole text goes back to the tree.
 - **The tree's changes move the code with the triggers**: a new trigger
   gets an empty piece in its place, deleting one (or a category) takes
   its piece out, moving one moves its piece; one edit of both files,

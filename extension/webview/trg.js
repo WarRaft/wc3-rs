@@ -708,6 +708,11 @@ function showFields(v) {
     // set apart (no events, conditions or actions, no switches).
     const comment = !!v.comment
     document.body.classList.toggle('comment-trigger', comment)
+    // Custom text: the trigger is its code, which is the custom script's
+    // (war3map.wct) and opens in an editor of its own; no events,
+    // conditions or actions.
+    const custom = !comment && !!v.custom_text
+    document.body.classList.toggle('custom-trigger', custom)
     description.placeholder = comment ? 'The comment' : 'Comment'
     const art = icons[v.enabled !== 0 ? 'SEIcon_Trigger' : 'SEIcon_TriggerDisabled']
     $('title-icon').innerHTML = comment ? '<i class="fa-solid fa-comment"></i>'
@@ -725,11 +730,25 @@ function showFields(v) {
     problems.title = v.errors.slice(0, 10).map(([line, m]) => `Line ${line}: ${m}`).join('\n')
     const notes = []
     if (!v.data) notes.push('No UI\\TriggerData.txt in the project\'s game folders or map roots: functions show as calls, without their phrases.')
-    if (v.custom_text) notes.push('Custom text: the trigger is its code (custom_text=1); what\'s below is what it was before.')
     if (v.comment) notes.push('A comment (comment=1): text between triggers, nothing of it is in the map\'s script.')
     const notice = $('notice')
-    notice.hidden = !notes.length
+    notice.hidden = !notes.length && !custom
     notice.textContent = notes.join(' ')
+    if (custom) {
+        // A map's: its code opens beside; a trigger file's is in the map's custom script.
+        const wtg = document.body.classList.contains('wtg')
+        const text = wtg
+            ? 'Custom text: this trigger is its code, which is the map\'s custom script\'s (war3map.wct) and opens in an editor of its own, beside. '
+            : 'Custom text: this trigger is its code, which is in the map\'s custom script (war3map.wct). '
+        notice.append(notes.length ? ' ' : '', text)
+        if (wtg) {
+            const open = document.createElement('button')
+            open.className = 'text-button'
+            open.textContent = 'Open Code'
+            open.addEventListener('click', () => vscode.postMessage({type: 'openCode', nth: 0, picked: true}))
+            notice.append(open)
+        }
+    }
 }
 
 // ---------------------------------------------------------------- dialogs

@@ -155,6 +155,8 @@ const MAP_NAME = /\.(w3[xm]|mpq)$/i
 const OBJECTS_SCHEME = 'wc3obj'
 /** A trigger's JASS, read-only (`registerTriggerJass`). */
 const JASS_SCHEME = 'wc3jass'
+/** A piece of a map's custom script, as a document of its own (`registerPieces`). */
+const PIECE_SCHEME = 'wc3code'
 
 /** The languages of object-data files (`package.json`), one per type, of
  * camera files (`w3c`), terrain (`w3e`), map info (`w3i`), regions
@@ -456,6 +458,9 @@ function onFile(msg) {
         return diagnostic
     }))
 
+    // A custom script's pieces open: theirs.
+    if (/\.wct$/i.test(msg.id)) showPieceDiagnostics(Uri.file(msg.id))
+
     // Highlighting only matters for what's open.
     if (!tracked.has(msg.id)) return
     tokens.set(msg.id, {version: msg.version, data: msg.tokens})
@@ -517,10 +522,235 @@ function toSymbol(l) {
  * @param {string} [newName]
  */
 async function askRename(kind, doc, pos, newName = '') {
-    const answer = await query(kind, idOf(doc), pos, newName)
+    const answer = await query(kind, ...target(doc, pos), newName)
     if (!answer) throw new Error('WC3: the language server did not answer.')
     if (answer.text) throw new Error(answer.text)
     return answer.locations
+}
+
+// ------------------------------------------------- the custom script's pieces
+
+/**
+ * A piece of a map's custom script (`war3map.wct`) open as a document of
+ * its own, `wc3code:<the custom script's path>/<name>.j`: one trigger's
+ * code of custom text (`?trigger`, by the trigger's name), or the map's
+ * custom script (`?header`). So a trigger's code is edited without the
+ * others' in reach. It's a view of those lines, not a file: the server
+ * never gets it (the code would be declared twice); what it says of the
+ * custom script's lines (diagnostics, highlighting, hover, go to
+ * definition ...) is shown here, its lines moved. Typing in it changes
+ * the custom script's text at once, and a change there (elsewhere) comes
+ * here; saving it saves the custom script (and with it the triggers).
+ */
+
+/** The custom script a piece is of (its `wc3obj:` URI). @param {import('vscode').Uri} uri */
+function pieceScript(uri) {
+    return Uri.file(path.dirname(uri.path)).with({scheme: OBJECTS_SCHEME})
+}
+
+/** The piece of the custom script `script` (a `wc3obj:` URI) of the trigger `name`, or (`null`) the map's. */
+function pieceUri(script, name) {
+    const file = (name === null ? 'Map Script' : name).replace(/[\\/:*?"<>|]/g, '_') + '.j'
+    return Uri.file(path.join(script.fsPath, file)).with({scheme: PIECE_SCHEME, query: name === null ? 'header' : `trigger=${encodeURIComponent(name)}`})
+}
+
+/** The open custom script's document of `uri` (a `wc3obj:` URI), if open. @param {import('vscode').Uri} uri */
+function openDoc(uri) {
+    const key = uri.toString().toLowerCase()
+    return workspace.textDocuments.find(d => d.uri.toString().toLowerCase() === key) ?? null
+}
+
+/** A JASS string's text (`"a\"b"`), as the trigger texts write names. @param {string} s */
+function jassString(s) {
+    const m = /^"((?:[^"\\]|\\.)*)"/.exec(s.trim())
+    if (!m) return s.trim()
+    return m[1].replace(/\\(.)/g, (_, c) => ({n: '\n', r: '\r', t: '\t'})[c] ?? c)
+}
+
+/** The triggers' names in a map's triggers' text, in order. @param {string} text */
+function triggerNames(text) {
+    const out = []
+    let inTrigger = false
+    for (const line of text.split(/\r?\n/)) {
+        const t = line.trim()
+        if (t.startsWith('[')) {
+            inTrigger = t === '[trigger]'
+            if (inTrigger) out.push('')
+        } else if (inTrigger && /^name\s*=/.test(t)) out[out.length - 1] = jassString(t.slice(t.indexOf('=') + 1))
+    }
+    return out
+}
+
+/**
+ * Where the piece `uri` is in its custom script `script` (a document):
+ * its code's lines `[from, to)`, its marker's line, whether it stores
+ * none; `null` when it isn't there (a trigger renamed or deleted).
+ */
+function pieceLines(uri, script) {
+    const lines = script.getText().split('\n')
+    const markers = []
+    lines.forEach((l, i) => {
+        const m = /^\s*(?:\/\/|--)\s*@wct\s+(\S+)(?:\s+(\S+))?/.exec(l)
+        if (m) markers.push({line: i, word: m[1], none: m[2] === 'none'})
+    })
+    const end = k => (markers[k + 1] ? markers[k + 1].line : lines.length)
+    let k = -1
+    if (uri.query === 'header') k = markers.findIndex(m => m.word === 'header')
+    else {
+        const name = decodeURIComponent(uri.query.replace(/^trigger=/, ''))
+        const triggers = openDoc(sibling(script.uri, 'war3map.wtg'))
+        const nth = triggers ? triggerNames(triggers.getText()).indexOf(name) : -1
+        if (nth < 0) return null
+        k = markers.map((m, i) => (m.word === 'trigger' ? i : -1)).filter(i => i >= 0)[nth] ?? -1
+    }
+    if (k < 0) return null
+    return {marker: markers[k].line, from: markers[k].line + 1, to: end(k), none: markers[k].none}
+}
+
+/** The piece's text in its custom script: its code, without the last line break. */
+function pieceText(uri, script) {
+    const at = pieceLines(uri, script)
+    if (!at) return null
+    return script.getText().split('\n').slice(at.from, at.to).join('\n').replace(/\n$/, '')
+}
+
+/** Open pieces: URI → the custom script's `wc3obj:` URI. */
+const pieces = new Map()
+
+/** A piece's document and its custom script's, when `doc` is a piece. @param {import('vscode').TextDocument} doc */
+function asPiece(doc) {
+    if (doc.uri.scheme !== PIECE_SCHEME) return null
+    const script = openDoc(pieceScript(doc.uri))
+    const at = script && pieceLines(doc.uri, script)
+    return at ? {script, at} : null
+}
+
+/** What a query at `pos` in `doc` asks the server: the custom script's id and line for a piece. */
+function target(doc, pos) {
+    const p = asPiece(doc)
+    if (!p) return [idOf(doc), pos]
+    return [idOf(p.script), {line: pos.line + p.at.from, character: pos.character}]
+}
+
+/** A location the server gave, in the piece `doc` when it's in its lines. */
+function backTo(doc, loc) {
+    const p = asPiece(doc)
+    if (!p || loc.uri.fsPath.toLowerCase() !== p.script.uri.fsPath.toLowerCase()) return loc
+    const {start, end} = loc.range
+    if (start.line < p.at.from || end.line >= p.at.to) return loc
+    return new Location(doc.uri, new Range(start.line - p.at.from, start.character, end.line - p.at.from, end.character))
+}
+
+/**
+ * The pieces: their file system (read from the custom script, saved by
+ * saving it), and the text going both ways.
+ *
+ * @param {import('vscode').ExtensionContext} context
+ */
+function registerPieces(context) {
+    const changed = new EventEmitter()
+    const stamps = new Map()
+    const scriptOf = async uri => {
+        const script = await workspace.openTextDocument(pieceScript(uri))
+        // Its triggers, for the triggers' places by their names.
+        await workspace.openTextDocument(sibling(script.uri, 'war3map.wtg')).then(undefined, () => null)
+        return script
+    }
+    /** Puts the piece's `text` into its custom script, when it differs. */
+    const putBack = async (uri, text) => {
+        const script = await scriptOf(uri)
+        const at = pieceLines(uri, script)
+        if (!at) throw FileSystemError.FileNotFound(uri)
+        const now = script.getText().split('\n').slice(at.from, at.to).join('\n').replace(/\n$/, '')
+        const body = text.replace(/\r\n/g, '\n').replace(/\n$/, '')
+        if (now === body) return script
+        const edit = new WorkspaceEdit()
+        const code = body ? body + '\n' : ''
+        if (at.none && body) {
+            // Code where there was none: the marker says it has some now.
+            const marker = script.lineAt(at.marker).text.replace(/\s+none\s*$/, '')
+            edit.replace(script.uri, new Range(at.marker, 0, at.to, 0), marker + '\n' + code)
+        } else edit.replace(script.uri, new Range(at.from, 0, at.to, 0), code)
+        await workspace.applyEdit(edit)
+        return script
+    }
+    const provider = {
+        onDidChangeFile: changed.event,
+        watch: () => new Disposable(() => {}),
+        stat: async uri => {
+            const text = pieceText(uri, await scriptOf(uri))
+            if (text === null) throw FileSystemError.FileNotFound(uri)
+            return {type: FileType.File, ctime: 0, mtime: stamps.get(uri.toString()) ?? 0, size: Buffer.byteLength(text)}
+        },
+        readFile: async uri => {
+            const text = pieceText(uri, await scriptOf(uri))
+            if (text === null) throw FileSystemError.FileNotFound(uri)
+            return Buffer.from(text, 'utf8')
+        },
+        // Saving a piece saves the custom script it's of.
+        writeFile: async (uri, content) => {
+            const script = await putBack(uri, Buffer.from(content).toString('utf8'))
+            if (script.isDirty) await script.save()
+            stamps.set(uri.toString(), Date.now())
+        },
+        readDirectory: () => [],
+        createDirectory: uri => { throw FileSystemError.NoPermissions(uri) },
+        delete: uri => { throw FileSystemError.NoPermissions(uri) },
+        rename: uri => { throw FileSystemError.NoPermissions(uri) },
+    }
+    let syncing = false
+    context.subscriptions.push(
+        changed,
+        workspace.registerFileSystemProvider(PIECE_SCHEME, provider, {isCaseSensitive: process.platform === 'linux'}),
+        workspace.onDidOpenTextDocument(doc => {
+            if (doc.uri.scheme === PIECE_SCHEME) pieces.set(doc.uri.toString(), pieceScript(doc.uri))
+        }),
+        workspace.onDidCloseTextDocument(doc => pieces.delete(doc.uri.toString())),
+        workspace.onDidChangeTextDocument(async e => {
+            if (syncing || !e.contentChanges.length) return
+            const doc = e.document
+            // Typed in a piece: into the custom script.
+            if (doc.uri.scheme === PIECE_SCHEME) {
+                syncing = true
+                try { await putBack(doc.uri, doc.getText()) } catch { /* gone: the piece stays as it is */ } finally { syncing = false }
+                return
+            }
+            // The custom script changed elsewhere: its pieces open follow.
+            const key = doc.uri.toString().toLowerCase()
+            const triggers = /war3map\.wtg$/i.test(doc.uri.path)
+            for (const piece of workspace.textDocuments.filter(d => d.uri.scheme === PIECE_SCHEME)) {
+                const script = pieceScript(piece.uri)
+                const mine = script.toString().toLowerCase() === key || (triggers && sibling(script, 'war3map.wtg').toString().toLowerCase() === key)
+                if (!mine) continue
+                const open = openDoc(script)
+                const text = open && pieceText(piece.uri, open)
+                if (text === null || text === undefined || text === piece.getText().replace(/\r\n/g, '\n').replace(/\n$/, '')) continue
+                const edit = new WorkspaceEdit()
+                edit.replace(piece.uri, new Range(0, 0, piece.lineCount, 0), text)
+                syncing = true
+                try { await workspace.applyEdit(edit) } finally { syncing = false }
+            }
+            // Its diagnostics and colors moved with it.
+            if (!triggers) showPieceDiagnostics(doc.uri)
+        }),
+    )
+}
+
+/** The diagnostics of the custom script `script` (a URI) in its open pieces, their lines moved. */
+function showPieceDiagnostics(script) {
+    const key = script.fsPath.toLowerCase()
+    for (const piece of workspace.textDocuments.filter(d => d.uri.scheme === PIECE_SCHEME && pieceScript(d.uri).fsPath.toLowerCase() === key)) {
+        const p = asPiece(piece)
+        if (!p) continue
+        const all = diagnostics.get(Uri.file(script.fsPath).with({scheme: MAP_SCHEME})) ?? diagnostics.get(Uri.file(script.fsPath)) ?? []
+        const own = all.filter(d => d.range.start.line >= p.at.from && d.range.end.line < p.at.to).map(d => {
+            const moved = new Diagnostic(new Range(d.range.start.line - p.at.from, d.range.start.character, d.range.end.line - p.at.from, d.range.end.character), d.message, d.severity)
+            moved.source = d.source
+            moved.code = d.code
+            return moved
+        })
+        diagnostics.set(piece.uri, own)
+    }
 }
 
 /**
@@ -531,22 +761,23 @@ async function askRename(kind, doc, pos, newName = '') {
  */
 function registerQueries(context) {
     const selector = [...LANGUAGES].map(language => ({language}))
-    const ask = async (kind, doc, pos) => (await query(kind, idOf(doc), pos))?.locations ?? []
+    const ask = async (kind, doc, pos) => (await query(kind, ...target(doc, pos)))?.locations ?? []
+    const located = (doc, list) => list.map(toLocation).map(l => backTo(doc, l))
     context.subscriptions.push(
         languages.registerDefinitionProvider(selector, {
-            provideDefinition: async (doc, pos) => (await ask(QUERY.DEFINITION, doc, pos)).map(toLocation),
+            provideDefinition: async (doc, pos) => located(doc, await ask(QUERY.DEFINITION, doc, pos)),
         }),
         languages.registerReferenceProvider(selector, {
             provideReferences: async (doc, pos, ctx) => {
-                const found = (await ask(QUERY.REFERENCES, doc, pos)).map(toLocation)
+                const found = located(doc, await ask(QUERY.REFERENCES, doc, pos))
                 if (ctx.includeDeclaration) return found
-                const decls = (await ask(QUERY.DEFINITION, doc, pos)).map(toLocation)
+                const decls = located(doc, await ask(QUERY.DEFINITION, doc, pos))
                 return found.filter(r => !decls.some(d => d.uri.toString() === r.uri.toString() && d.range.isEqual(r.range)))
             },
         }),
         languages.registerHoverProvider(selector, {
             provideHover: async (doc, pos) => {
-                const answer = await query(QUERY.HOVER, idOf(doc), pos)
+                const answer = await query(QUERY.HOVER, ...target(doc, pos))
                 if (!answer || !answer.text) return null
                 const text = new MarkdownString(answer.text)
                 // A string table's colors come as <span style="color:...">.
@@ -555,16 +786,22 @@ function registerQueries(context) {
             },
         }),
         languages.registerDocumentSymbolProvider(selector, {
-            provideDocumentSymbols: async doc => (await ask(QUERY.DOCUMENT_SYMBOLS, doc, {line: 0, character: 0})).map(toSymbol),
+            provideDocumentSymbols: async doc => {
+                const all = (await ask(QUERY.DOCUMENT_SYMBOLS, doc, {line: 0, character: 0})).map(toSymbol)
+                if (doc.uri.scheme !== PIECE_SCHEME) return all
+                // A piece's own, in its lines.
+                return all.map(s => ({s, l: backTo(doc, s.location)})).filter(x => x.l.uri.scheme === PIECE_SCHEME)
+                    .map(({s, l}) => new SymbolInformation(s.name, s.kind, s.containerName, l))
+            },
         }),
         languages.registerRenameProvider(selector, {
             prepareRename: async (doc, pos) => {
                 const [here] = await askRename(QUERY.PREPARE_RENAME, doc, pos)
                 if (!here) throw new Error('There\'s no symbol here to rename.')
-                return {range: toLocation(here).range, placeholder: here.name}
+                return {range: backTo(doc, toLocation(here)).range, placeholder: here.name}
             },
             provideRenameEdits: async (doc, pos, newName) => {
-                let locations = (await askRename(QUERY.RENAME, doc, pos, newName)).map(toLocation)
+                let locations = (await askRename(QUERY.RENAME, doc, pos, newName)).map(toLocation).map(l => backTo(doc, l))
                 // Changing a file inside a map rewrites the map: ask first.
                 const maps = new Set(locations.filter(l => l.uri.scheme === MAP_SCHEME).map(l => mapOf(l.uri.fsPath)))
                 if (maps.size) {
@@ -1200,6 +1437,33 @@ h2 { font-size: 1.2em; font-weight: 600; } p { color: var(--vscode-errorForegrou
  * @param {import('./protocol.js').ServerMessage & {kind: 'legend'}} msg
  * @param {import('vscode').ExtensionContext} context
  */
+/**
+ * The tokens (VS Code's encoding: five numbers each, the line and start
+ * relative to the one before) of lines `[from, to)`, those lines counted
+ * from 0.
+ *
+ * @param {ArrayLike<number>} data
+ * @param {number} from
+ * @param {number} to
+ */
+function sliceTokens(data, from, to) {
+    const out = []
+    let line = 0
+    let start = 0
+    let lastLine = 0
+    let lastStart = 0
+    for (let i = 0; i + 4 < data.length; i += 5) {
+        line += data[i]
+        start = data[i] === 0 ? start + data[i + 1] : data[i + 1]
+        if (line < from || line >= to) continue
+        const l = line - from
+        out.push(l - lastLine, l === lastLine ? start - lastStart : start, data[i + 2], data[i + 3], data[i + 4])
+        lastLine = l
+        lastStart = start
+    }
+    return new Uint32Array(out)
+}
+
 function registerTokens(msg, context) {
     const legend = new SemanticTokensLegend(msg.types, msg.modifiers)
     const provider = {
@@ -1207,6 +1471,12 @@ function registerTokens(msg, context) {
 
         /** @param {import('vscode').TextDocument} doc */
         provideDocumentSemanticTokens(doc) {
+            // A piece: its custom script's tokens of its lines.
+            if (doc.uri.scheme === PIECE_SCHEME) {
+                const p = asPiece(doc)
+                const t = p && tokens.get(idOf(p.script))
+                return t ? new SemanticTokens(sliceTokens(t.data, p.at.from, p.at.to)) : null
+            }
             const id = idOf(doc)
             const latest = () => {
                 const t = tokens.get(id)
@@ -1587,13 +1857,11 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
                 if (!wct) return window.showWarningMessage('WC3: the map has no custom script (war3map.wct) beside its triggers.')
                 const piece = nth === 0 ? last?.wct?.header : last?.wct?.code[nth - 1]
                 if (!piece) return window.showWarningMessage(`WC3: war3map.wct has no code of ${nth === 0 ? 'the map' : 'this trigger'}.`)
-                const [marker, end] = piece
-                const from = new Position(Math.min(marker + 1, wct.lineCount - 1), 0)
-                const to = new Position(Math.max(marker + 1, end), 0)
-                const shown = window.visibleTextEditors.find(e => e.document === wct)
-                const ed = await window.showTextDocument(wct, {viewColumn: shown?.viewColumn ?? ViewColumn.Beside, preserveFocus, preview: false})
-                ed.selection = new Selection(from, from)
-                ed.revealRange(new Range(from, to), TextEditorRevealType.AtTop)
+                // Its code alone, as a document of its own: the others' out of reach.
+                const name = nth === 0 ? null : last.triggers[nth - 1].name
+                const doc = await workspace.openTextDocument(pieceUri(wct.uri, name))
+                const shown = window.visibleTextEditors.find(e => e.document.uri.scheme === PIECE_SCHEME && pieceScript(e.document.uri).toString() === wct.uri.toString())
+                await window.showTextDocument(doc, {viewColumn: shown?.viewColumn ?? ViewColumn.Beside, preserveFocus, preview: true})
             }
             /** Shows the text at `line`: of the picked trigger's section, or (`own`) the text's. */
             const reveal = async (line, own = false) => {
@@ -1710,7 +1978,7 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
                     // Custom text: its code, beside.
                     if (last?.triggers[picked - 1]?.custom) await openCode(picked, true)
                     return
-                case 'openCode': return openCode(msg.nth)
+                case 'openCode': return openCode(msg.picked ? picked : msg.nth)
                 case 'extract': return commands.executeCommand('wc3.wtg.extract', document.uri)
                 case 'newCategory': return run(OP.NEW_CATEGORY, 0, msg.name)
                 case 'newTrigger': return run(OP.NEW_TRIGGER, 0, `${msg.category}\n${msg.name}`)
@@ -2153,6 +2421,7 @@ module.exports = {
         registerObjects(context)
         registerSlk(context)
         registerTrigger(context)
+        registerPieces(context)
         registerTriggerExtract(context)
         registerTriggerJass(context)
         registerBuild(context, command)
