@@ -157,8 +157,11 @@ pub struct Workspace {
     cleared: Vec<String>,
     /// The names each map's files declare (`map_names`), by the map's
     /// folder (or archive) and when its files last changed.
-    placed: std::sync::Mutex<HashMap<PathBuf, (Option<std::time::SystemTime>, Arc<Vec<(String, &'static str)>>)>>,
+    placed: std::sync::Mutex<HashMap<PathBuf, (Option<std::time::SystemTime>, Placed)>>,
 }
+
+/// What a map's files name in World Editor's script: each name and its type.
+type Placed = Arc<Vec<(String, &'static str)>>;
 
 /// The map's files that name what World Editor's script declares.
 const NAMING: [&str; 5] = ["war3map.w3r", "war3map.w3c", "war3map.w3s", "war3map.doo", "war3mapUnits.doo"];

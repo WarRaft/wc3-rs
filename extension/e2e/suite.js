@@ -148,6 +148,15 @@ async function steps() {
         check(piece.getText().startsWith('// e2e\n') && !piece.isClosed, 'the piece still shows its code')
     } else log('  (first in its category already)')
 
+    log('a trigger file of custom text: Open Code opens the .j beside it')
+    const trg = vscode.Uri.file(path.join(path.dirname(map), 'triggers', 'Setup.trg'))
+    await vscode.commands.executeCommand('vscode.openWith', trg, 'wc3.trigger')
+    const trgEditor = await until(() => api.triggerEditors.get(trg.toString()), 'the trigger editor of Setup.trg')
+    await trgEditor.receive({type: 'openCode', nth: 0, picked: true})
+    const code = await until(() => vscode.window.visibleTextEditors.find(e => e.document.uri.fsPath.endsWith('Setup.j'))?.document, 'Setup.j open')
+    check(code.getText().startsWith('// @dialect vjass'), 'Setup.j opened beside')
+    await shot('trg-code')
+
     log('saved from the piece: the map with both')
     const stamp = fs.statSync(map).mtimeMs
     await piece.save()

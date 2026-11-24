@@ -111,11 +111,20 @@ fn script_lines(text: &str) -> Vec<usize> {
 /// ["_variables.trg", "[variable]..."]]}` (`wtg_rs::text::to_files`: a
 /// folder per category, a `.trg` per trigger, the variables at the top),
 /// or `{"error": "..."}` when the text has errors.
-pub fn extract(text: &str) -> String {
+///
+/// With the map's custom script beside it (`wct`, its text form), each
+/// trigger of custom text's code goes with it, as code of the project:
+/// beside its `.trg` (`Spawn.j`), read as vJASS (a `// @dialect` line
+/// first), standing for its piece of `war3map.wct` in a build; a trigger
+/// that's off keeps its code commented out, as World Editor leaves it out
+/// of the map's script (it's often no code). The map's own custom script
+/// stays the map's, `war3map.wct` (a build reads it, wherever the
+/// triggers are).
+pub fn extract(text: &str, wct: Option<&str>) -> String {
     let js = crate::objects::json_string;
     let p = wtg_rs::text::from_text(text, None);
-    let result = match p.file {
-        Some(f) => wtg_rs::text::to_files(&f),
+    let result = match &p.file {
+        Some(f) => extract_files(f, wct),
         None => Err(p.errors.first().map_or("the text has errors".into(), |e| format!("line {}: {}", e.line, e.message))),
     };
     match result {
@@ -126,6 +135,38 @@ pub fn extract(text: &str) -> String {
         }
         Err(e) => format!("{{\"error\":{}}}", js(&format!("Can't extract the triggers: {e}"))),
     }
+}
+
+/// The files [`extract`] makes of the triggers `f` and the text form of
+/// the map's custom script beside them (`wct`).
+pub fn extract_files(f: &wtg_rs::Triggers, wct: Option<&str>) -> Result<wtg_rs::text::Files, String> {
+    let mut made = wtg_rs::text::to_files(f)?;
+    let Some(wct) = wct else { return Ok(made) };
+    let pieces = crate::customtext::pieces(wct);
+    if pieces.triggers.len() != f.triggers.len() {
+        return Err(format!("war3map.wct has the code of {} triggers, war3map.wtg has {}: the code of custom text can't be told whose", pieces.triggers.len(), f.triggers.len()));
+    }
+    let lines: Vec<&str> = wct.split_inclusive('\n').collect();
+    let code = |from: usize, to: usize| lines[from..to].concat();
+    let head = "// @dialect vjass\n";
+    let mut out = Vec::new();
+    // The triggers' files follow the variables', in their order.
+    let first = made.files.len() - f.triggers.len();
+    for (k, (t, (marker, end, _))) in f.triggers.iter().zip(&pieces.triggers).enumerate() {
+        if t.is_custom == 0 || t.is_comment != 0 {
+            continue;
+        }
+        let path = made.files[first + k].0.trim_end_matches(".trg").to_string() + ".j";
+        let body = code(marker + 1, *end);
+        let body = if t.enabled != 0 {
+            body
+        } else {
+            format!("// The trigger is off: its code is left out of the map's script.\n{}", body.lines().map(|l| format!("// {l}\n")).collect::<String>())
+        };
+        out.push((path, format!("{head}{body}")));
+    }
+    made.files.extend(out);
+    Ok(made)
 }
 
 // ---------------------------------------------------- a trigger of its own

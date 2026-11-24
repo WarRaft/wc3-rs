@@ -215,9 +215,9 @@ fn trg_line_breaks_kept() {
 
 #[test]
 fn extract_as_files() {
-    let answer = extract(TEXT);
+    let answer = extract(TEXT, None);
     assert_eq!(answer, "{\"folders\":[],\"files\":[[\"000_Init.trg\",\"[trigger]\\u000aname=\\\"Init\\\"\\u000adescription=\\\"\\\"\\u000aevent=MapInitializationEvent()\\u000aaction=DoNothing()\\u000a\"]]}");
-    assert!(extract("[wtg]\nversion=9\n").starts_with("{\"error\":\"Can't extract the triggers: line 2:"));
+    assert!(extract("[wtg]\nversion=9\n", None).starts_with("{\"error\":\"Can't extract the triggers: line 2:"));
 }
 
 #[test]

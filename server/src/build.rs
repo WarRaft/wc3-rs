@@ -8,13 +8,17 @@
 //!   map's script (made anew) and the archive's own files.
 //! - **The script** (`war3map.j`) is `wc3_build::whole`'s: the map's part
 //!   made of its files (through the project's lookup), the triggers, the
-//!   map's custom script, the project's code, JassHelper's preprocessor
+//!   map's custom script (the roots' `war3map.wct`, when they have one,
+//!   whatever the triggers are: a trigger file's code of custom text
+//!   beside it, `X.j`, over its piece there), the project's code,
+//!   JassHelper's preprocessor
 //!   run over all of it (`//! import "path"` found beside the importing
 //!   file, else in the project's folder, else in its layers). The triggers are the
 //!   project's `.trg` files when it has any (in the order of their paths),
 //!   else the `war3map.wtg` of the roots; the code of a trigger of custom
-//!   text is in the roots' `war3map.wct`, found by the trigger's name in
-//!   their `war3map.wtg`.
+//!   text is in the roots' `war3map.wct`, found by the trigger's name; a
+//!   trigger file's `.j` beside it (the project's code) stands for its
+//!   piece there.
 //! - **The archive**: when the first root is a map, a copy of it with the
 //!   rest written in (so a map's files nobody knows the names of, a
 //!   protected map's, stay); else a new one, with the header of a map
@@ -260,10 +264,20 @@ fn code(project: &Project, game: &Game, names: &crate::names::Names) -> Result<M
             let own: Vec<Declared> = p.variables.iter().filter(|d| d.scope != Scope::Global).cloned().collect();
             let stem = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
             code.push(Code { name: me.clone(), text: wtg_rs::jass::compile(p.trigger.as_ref(), &stem, &own, &visible, &names.trigger_ui), dialect: Dialect::Jass });
-            if let Some(t) = p.trigger.as_ref().filter(|t| t.is_custom != 0 && t.enabled != 0 && t.is_comment == 0) {
+            // Custom text: its code beside it (`X.j`, among the project's
+            // code: the project's file over the map's), else the map's
+            // `war3map.wct`'s by the trigger's name.
+            if let Some(t) = p.trigger.as_ref().filter(|t| t.is_custom != 0 && t.enabled != 0 && t.is_comment == 0)
+                && !path.with_extension("j").is_file()
+            {
                 match custom.get(&wtg_rs::jass::ident(&t.name)) {
                     Some(c) => code.push(Code { name: format!("{me} (custom text)"), text: c.clone(), dialect: script_dialect }),
-                    None => errors.push(format!("{}: the custom text of trigger '{}' isn't in the map's war3map.wct", path.display(), t.name)),
+                    None => errors.push(format!(
+                        "{}: trigger '{}' is custom text, and its code is neither beside it ({}) nor in the map's war3map.wct",
+                        path.display(),
+                        t.name,
+                        path.with_extension("j").display()
+                    )),
                 }
             }
         }
@@ -289,7 +303,9 @@ fn code(project: &Project, game: &Game, names: &crate::names::Names) -> Result<M
     } else {
         (Vec::new(), Vec::new(), "none".into())
     };
-    // The map's custom script, before the triggers' code of custom text.
+    // The map's custom script, before the triggers' code of custom text,
+    // wherever the triggers are: a map's binary files work beside the
+    // project's files (`war3map.wct` in the map, the triggers as `.trg`).
     if let Some(wct) = &wct {
         let header = crate::document::decode(wct.header.text().to_vec());
         if !header.trim().is_empty() {

@@ -1887,6 +1887,13 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
              * the code is edited as the JASS it is.
              */
             const openCode = async (nth, preserveFocus = false) => {
+                // A trigger file's: the `.j` of its name beside it.
+                if (!wtg) {
+                    const code = document.uri.with({path: document.uri.path.replace(/\.trg$/i, '.j')})
+                    const there = await workspace.fs.stat(code).then(() => true, () => false)
+                    if (!there) return window.showWarningMessage(`WC3: no ${path.basename(code.path)} beside the trigger: its code is still the map's (war3map.wct); Extract Triggers again to have it beside.`)
+                    return window.showTextDocument(code, {viewColumn: ViewColumn.Beside, preserveFocus, preview: true})
+                }
                 if (!wct) return window.showWarningMessage('WC3: the map has no custom script (war3map.wct) beside its triggers.')
                 const piece = nth === 0 ? last?.wct?.header : last?.wct?.code[nth - 1]
                 if (!piece) return window.showWarningMessage(`WC3: war3map.wct has no code of ${nth === 0 ? 'the map' : 'this trigger'}.`)
@@ -2132,9 +2139,10 @@ function registerTriggerExtract(context) {
         }
         for (const folder of result.folders) await workspace.fs.createDirectory(at(folder))
         for (const [rel, text] of result.files) await workspace.fs.writeFile(at(rel), Buffer.from(text, 'utf8'))
-        const triggers = result.files.filter(([rel]) => !rel.endsWith('_variables.trg')).length
+        const triggers = result.files.filter(([rel]) => rel.endsWith('.trg') && !rel.endsWith('_variables.trg')).length
+        const code = result.files.filter(([rel]) => rel.endsWith('.j')).length
         const reveal = await window.showInformationMessage(
-            `WC3: ${triggers} triggers in ${result.folders.length} folders extracted to ${root.fsPath}.`, 'Reveal')
+            `WC3: ${triggers} triggers in ${result.folders.length} folders extracted to ${root.fsPath}${code ? `, with the code of ${code} of custom text beside them (.j)` : ''}.`, 'Reveal')
         if (reveal) commands.executeCommand('revealInExplorer', root).then(undefined, () => commands.executeCommand('revealFileInOS', root))
     }
     context.subscriptions.push(commands.registerCommand('wc3.wtg.extract', uri => run(uri).catch(e => window.showErrorMessage(`WC3: ${e.message}`))))

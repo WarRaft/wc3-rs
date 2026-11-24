@@ -50,3 +50,63 @@ fn a_real_project_built() {
     }
     println!("{same} files of the base alike");
 }
+
+/// A map's triggers taken out with their code (`EXTRACT_MAP`, the game in
+/// `WC3_GAME`) into a project of its own (`EXTRACT_OUT`): it builds, and
+/// with no problem; `a_real_project_built` on it compares the rest.
+#[test]
+fn triggers_taken_out_with_their_code_build() {
+    let (Some(map), Some(out)) = (std::env::var_os("EXTRACT_MAP"), std::env::var_os("EXTRACT_OUT")) else { return };
+    let (map, out) = (PathBuf::from(map), PathBuf::from(out));
+    let game: Vec<PathBuf> = std::env::split_paths(&std::env::var_os("WC3_GAME").expect("WC3_GAME")).collect();
+    let names = crate::names::names(&Lookup { game: game.clone(), roots: vec![] });
+    let wtg = crate::map::bytes(&map.join("war3map.wtg")).unwrap();
+    let wtg_rs::File::Classic(f) = wtg_rs::parse_any(&wtg, &names.triggers).unwrap() else { panic!("1.31's layout") };
+    let script = map.join("war3map.wct");
+    let wct = crate::customtext::document(&script, &crate::map::bytes(&script).unwrap()).unwrap().text;
+    let made = crate::triggers::extract_files(&f, Some(&wct)).unwrap();
+    let _ = std::fs::remove_dir_all(&out);
+    for (p, t) in &made.files {
+        let path = out.join("triggers").join(p);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, t).unwrap();
+    }
+    let custom = made.files.iter().filter(|(p, _)| p.ends_with(".j")).count();
+    std::fs::write(out.join("wc3.bni"), format!("[project]\ngame={:?}\n[code]\nsources=triggers/\n[map]\nroot={:?}\n[build]\n", game[0], map)).unwrap();
+    let built = build_at(&out, None).unwrap_or_else(|e| panic!("{e:#?}"));
+    println!("{} files of code ({custom} .j), {} triggers: {built:#?}", made.files.len(), f.triggers.len());
+}
+
+/// The code of an extracted project's triggers put beside them, from the
+/// map they came from (`CODE_MAP`) into the project's triggers' folder
+/// (`CODE_DIR`, its `wc3.bni` above for the game): only `.j` files beside
+/// `.trg` files there, none replaced. For projects extracted before
+/// Extract took the code out too.
+#[test]
+fn code_put_beside_extracted_triggers() {
+    let (Some(map), Some(dir)) = (std::env::var_os("CODE_MAP"), std::env::var_os("CODE_DIR")) else { return };
+    let (map, dir) = (PathBuf::from(map), PathBuf::from(dir));
+    let manifest = crate::project::find_manifest(&dir.join("x")).unwrap();
+    let (project, _) = crate::project::load(manifest.parent().unwrap(), &std::fs::read_to_string(&manifest).unwrap());
+    let names = crate::names::names(&Lookup { game: project.game.clone(), roots: vec![map.clone()] });
+    let wtg = crate::map::bytes(&map.join("war3map.wtg")).unwrap();
+    let wtg_rs::File::Classic(f) = wtg_rs::parse_any(&wtg, &names.triggers).unwrap() else { panic!("1.31's layout") };
+    let script = map.join("war3map.wct");
+    let wct = crate::customtext::document(&script, &crate::map::bytes(&script).unwrap()).unwrap().text;
+    let made = crate::triggers::extract_files(&f, Some(&wct)).unwrap();
+    let (mut written, mut kept, mut missing) = (0, 0, Vec::new());
+    for (p, t) in made.files.iter().filter(|(p, _)| p.ends_with(".j")) {
+        let path = dir.join(p);
+        let beside = path.with_extension("trg").is_file();
+        if !beside {
+            missing.push(p.clone());
+        } else if path.exists() {
+            kept += 1;
+        } else {
+            std::fs::write(&path, t).unwrap();
+            written += 1;
+        }
+    }
+    println!("{written} written, {kept} there already, no .trg for: {missing:?}");
+    assert!(missing.is_empty());
+}

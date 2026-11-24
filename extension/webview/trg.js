@@ -739,15 +739,13 @@ function showFields(v) {
         const wtg = document.body.classList.contains('wtg')
         const text = wtg
             ? 'Custom text: this trigger is its code, which is the map\'s custom script\'s (war3map.wct) and opens in an editor of its own, beside. '
-            : 'Custom text: this trigger is its code, which is in the map\'s custom script (war3map.wct). '
+            : 'Custom text: this trigger is its code, in the .j file of its name beside it. '
         notice.append(notes.length ? ' ' : '', text)
-        if (wtg) {
-            const open = document.createElement('button')
-            open.className = 'text-button'
-            open.textContent = 'Open Code'
-            open.addEventListener('click', () => vscode.postMessage({type: 'openCode', nth: 0, picked: true}))
-            notice.append(open)
-        }
+        const open = document.createElement('button')
+        open.className = 'text-button'
+        open.textContent = 'Open Code'
+        open.addEventListener('click', () => vscode.postMessage({type: 'openCode', nth: 0, picked: true}))
+        notice.append(open)
     }
 }
 

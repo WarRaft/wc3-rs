@@ -30,6 +30,10 @@ fs.mkdirSync(workspace, {recursive: true})
 fs.copyFileSync(map, path.join(workspace, 'map.w3x'))
 fs.writeFileSync(path.join(workspace, 'wc3.bni'), `[project]\ngame=${JSON.stringify(game)}\n\n[map]\nroot=map.w3x\n\n[build]\n\n[build]\nname=release\nuglify=1\n`)
 fs.rmSync(path.join(out, 'log.txt'), {force: true})
+// A trigger of custom text taken out with its code.
+fs.mkdirSync(path.join(workspace, 'triggers'), {recursive: true})
+fs.writeFileSync(path.join(workspace, 'triggers', 'Setup.trg'), '[trigger]\nname="Setup"\ndescription=""\ncustom_text=1\n')
+fs.writeFileSync(path.join(workspace, 'triggers', 'Setup.j'), '// @dialect vjass\nfunction InitTrig_Setup takes nothing returns nothing\nendfunction\n')
 
 // The profile's socket path must be short (macOS: 103 characters).
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'wc3e2e-'))

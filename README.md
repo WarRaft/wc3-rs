@@ -954,12 +954,33 @@ when it's worth it, and no step is one that can't be taken back.
 - **In files, `.trg`: the triggers of their own.** **Extract
   Triggers…** takes all of the map's `war3map.wtg` out at once (not
   some triggers here and some there), a file per trigger and a folder
-  per category; from then on the files are the triggers, and
+  per category, and each trigger of custom text's code beside it, in a
+  `.j` of its name (one that's off: commented out, as World Editor
+  leaves it out of the script; it's often no code), read as vJASS
+  (`// @dialect vjass` first): the project's code, standing for that
+  trigger's piece of the map's `war3map.wct` (the project's file over
+  the map's, as everywhere). The map's own custom script stays in
+  `war3map.wct`, which a build reads while the map has it, whatever the
+  triggers are; a trigger of custom text with neither is an error. From
+  then on the files are the triggers, and
   everything this editor has beyond World Editor is theirs: local and
   private variables, custom script of many lines, and what comes next.
 - **A map open is a project of one layer**, the map itself (see
   "Projects": the project's own files win over the map's). Moving to folders is taking files out of the map into that
-  layer, one by one: the triggers, the object data, the rest. **Taking
+  layer, one by one: the triggers, the object data, the rest.
+- **Development is hybrid, and stays so as long as one likes**: a map's
+  binary files and the project's files of their own work together in
+  one project and one build. The triggers as `.trg` while `war3map.wct`,
+  the object data and the terrain are still the map's; a root folder
+  holding `war3map.w3u` as it is beside text files of other kinds; a
+  base `.w3x` under folders. Every file is read where it is, in the
+  layers' order, and none needs another to have moved first. Nothing
+  changes its meaning by what else is there (no file is a sign to read
+  others differently): what's in the project is what's built, and what
+  isn't needed is deleted by hand. A folder of extracted triggers that
+  isn't to be built (kept to look at, say) stays out of `[code]
+  sources`, or goes in `exclude`: then the map's `war3map.wtg` is the
+  triggers. **Taking
   a file out doesn't change the script a build makes**, byte for byte:
   the map's script and a project's are made by the same build, only
   the files come from different places. That's what makes each step

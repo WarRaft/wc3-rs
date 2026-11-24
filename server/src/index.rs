@@ -234,7 +234,7 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
         }
         QueryKind::TriggerExtract => {
             let text = match ws.file(id).filter(|(d, _)| d.path.as_deref().is_some_and(crate::triggers::is_trigger_file)) {
-                Some((doc, _)) => crate::triggers::extract(&doc.text),
+                Some((doc, _)) => crate::triggers::extract(&doc.text, ws.custom_script_beside(id).as_ref().map(|(_, t)| t.as_str())),
                 None => "{\"error\":\"not the text of triggers (.wtg)\"}".into(),
             };
             return Answer { locations: Vec::new(), text };
