@@ -110,3 +110,22 @@ fn code_put_beside_extracted_triggers() {
     println!("{written} written, {kept} there already, no .trg for: {missing:?}");
     assert!(missing.is_empty());
 }
+
+#[test]
+fn code_alone_builds_its_script_in_each_language() {
+    let tmp = crate::project::tests::TempDir::new("code-alone");
+    std::fs::create_dir_all(tmp.0.join("src")).unwrap();
+    std::fs::write(tmp.0.join("src/main.j"), "native BJDebugMsg takes string s returns nothing\nfunction Half takes integer i returns integer\n    return i / 2\nendfunction\nfunction main takes nothing returns nothing\n    call BJDebugMsg(\"half: \" + I2S(Half(-7)))\nendfunction\nfunction config takes nothing returns nothing\nendfunction\nnative I2S takes integer i returns string\n").unwrap();
+    std::fs::write(tmp.0.join("wc3.bni"), "[code]\nsources=src\n[build]\n[build]\nname=lua\nscript=lua\n").unwrap();
+    // JASS: build/war3map.j.
+    let j = build_at(&tmp.0, None).unwrap_or_else(|e| panic!("{e:#?}"));
+    assert_eq!(j.out, tmp.0.join("build").join("war3map.j"));
+    let text = std::fs::read_to_string(&j.out).unwrap();
+    assert!(text.contains("function main takes nothing returns nothing") && text.contains("function config"), "{text}");
+    // Lua: build/war3map.lua, as Lua reads it.
+    let l = build_at(&tmp.0, Some("lua")).unwrap_or_else(|e| panic!("{e:#?}"));
+    assert_eq!(l.out, tmp.0.join("build").join("war3map.lua"));
+    let text = std::fs::read_to_string(&l.out).unwrap();
+    assert!(text.contains("function Half(i)\n    do return wcb__div(i, 2) end\nend"), "{text}");
+    assert!(text.contains("BJDebugMsg(\"half: \" .. (I2S(Half(-7)) or \"\"))"), "{text}");
+}

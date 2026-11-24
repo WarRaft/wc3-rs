@@ -47,7 +47,8 @@ pub struct Built {
     pub base: Option<PathBuf>,
     /// The map's files (the script among them).
     pub files: usize,
-    /// The script's lines.
+    /// The script's name (`war3map.j`, `war3map.lua`) and lines.
+    pub script: String,
     pub script_lines: usize,
     /// Where the triggers came from: `.trg` files, `war3map.wtg`, none.
     pub triggers: String,
@@ -76,16 +77,12 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
     if let Some(problem) = project.out_problem(&b) {
         return Err(vec![problem]);
     }
-    let out = b.out(&project.root);
-    if project.roots.is_empty() {
-        return Err(vec!["the project has no map: [map] root= names its layers (a folder, or a map)".into()]);
-    }
+    let out = b.out(project);
     let lookup = Lookup::of(project);
     let (game, mut notes) = lookup.open();
     let names = crate::names::names(&lookup);
-
-    let (files, base) = map_files(project, &out)?;
-    let (code, variables, initialization, triggers) = code(project, &game, &names)?;
+    let alone = project.roots.is_empty();
+    let (code, variables, initialization, triggers) = code(project, &game, &names, alone)?;
     let read = |n: &str| game.read(n).map(|(b, _)| b);
     let read_patched = |n: &str| game.read_patched(n);
     // JassHelper's `//! import "path"`: beside the file importing it, else
@@ -99,12 +96,45 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
         }
         game.read(&path.replace('/', "\\")).map(|(b, _)| (path.to_string(), crate::document::decode(b)))
     };
-    let input = Input { read: &read, read_patched: &read_patched, variables, initialization, code, uglify: b.uglify, import: &import };
-    let script = wc3_build::whole::script(&input).map_err(|e| e.into_iter().map(|e| if e.origin.line > 0 { format!("{}:{}: {}", e.origin.file, e.origin.line, e.message) } else { format!("{}: {}", e.origin.file, e.message) }).collect::<Vec<_>>())?;
-    notes.extend(script.notes);
+    let said = |e: Vec<wc3_build::ir::Error>| e.into_iter().map(|e| if e.origin.line > 0 { format!("{}:{}: {}", e.origin.file, e.origin.line, e.message) } else { format!("{}: {}", e.origin.file, e.message) }).collect::<Vec<_>>();
+    // The game's natives and functions: what a hook of one takes, what
+    // Lua's of them give back.
+    let game_sigs = || -> Vec<wc3_build::ir::Signature> {
+        ["Scripts\\common.j", "Scripts\\Blizzard.j"].iter().filter_map(|n| read(n)).flat_map(|b| wc3_build::from_jass::signatures(&crate::document::decode(b))).collect()
+    };
 
-    let written = write(project, &files, base.as_deref(), &script.text, &game, &out).map_err(|e| vec![e])?;
-    Ok(Built { name: b.name, out, base, files: written, script_lines: script.text.lines().count(), triggers, notes })
+    // Code alone: its script, nothing of a map's.
+    if alone {
+        let sources: Vec<(wc3_build::from_jass::Source, Dialect)> = code.iter().map(|c| (wc3_build::from_jass::Source { name: &c.name, text: &c.text }, c.dialect)).collect();
+        let options = wc3_build::jass::Options { uglify: b.uglify, game: game_sigs(), script: b.script };
+        let built = wc3_build::from_jass::module_with(&sources, &import).and_then(|m| wc3_build::jass::build_with(&m, &options)).map_err(said)?;
+        notes.extend(built.notes);
+        if let Some(dir) = out.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| vec![format!("{}: {e}", dir.display())])?;
+        }
+        std::fs::write(&out, &built.script).map_err(|e| vec![format!("{}: {e}", out.display())])?;
+        return Ok(Built { name: b.name, out, base: None, files: 1, script: format!("war3map.{}", b.script.extension()), script_lines: built.script.lines().count(), triggers, notes });
+    }
+
+    let (files, base) = map_files(project, &out)?;
+    let input = Input { read: &read, read_patched: &read_patched, variables, initialization, code, uglify: b.uglify, script: b.script, import: &import };
+    let script = wc3_build::whole::script(&input).map_err(said)?;
+    notes.extend(script.notes);
+    let mut made = vec![(format!("war3map.{}", b.script.extension()), script.text.clone().into_bytes())];
+    // A map of Lua says so in its war3map.w3i (from 1.31's layout).
+    if b.script == wc3_build::jass::Script::Lua
+        && let Some(mut info) = read("war3map.w3i").and_then(|b| w3i_rs::parse(&b).ok())
+    {
+        if info.version >= 28 {
+            info.script = 1;
+            made.push(("war3map.w3i".into(), info.to_bytes().map_err(|e| vec![format!("war3map.w3i: {e}")])?));
+        } else {
+            notes.push(format!("war3map.w3i is of the layout before 1.31 (version {}), which has no script's language: the map says JASS, its script is war3map.lua", info.version));
+        }
+    }
+
+    let written = write(project, &files, base.as_deref(), &made, &game, &out).map_err(|e| vec![e])?;
+    Ok(Built { name: b.name, out, base, files: written, script: format!("war3map.{}", b.script.extension()), script_lines: script.text.lines().count(), triggers, notes })
 }
 
 /// The build `name` of the project of `path` (a file or folder in it:
@@ -137,7 +167,7 @@ fn is_code(project: &Project, path: &Path) -> bool {
 fn left_out(name: &str) -> bool {
     let lower = name.to_ascii_lowercase().replace('/', "\\");
     let file = lower.rsplit('\\').next().unwrap_or(&lower);
-    matches!(lower.as_str(), "(listfile)" | "(attributes)" | "(signature)" | "war3map.j" | "scripts\\war3map.j")
+    matches!(lower.as_str(), "(listfile)" | "(attributes)" | "(signature)" | "war3map.j" | "scripts\\war3map.j" | "war3map.lua" | "scripts\\war3map.lua" | "war3map.as")
         || file == crate::project::MANIFEST
         || file.ends_with(".trg")
         || file.contains(".patch.")
@@ -222,7 +252,7 @@ type Made = (Vec<Code>, Vec<wtg_rs::jass::MapVariable>, Vec<String>, String);
 /// The code: the triggers' JASS, the map's custom script and the
 /// project's code; the triggers' variables, the triggers run at map
 /// initialization, and where the triggers came from.
-fn code(project: &Project, game: &Game, names: &crate::names::Names) -> Result<Made, Vec<String>> {
+fn code(project: &Project, game: &Game, names: &crate::names::Names, alone: bool) -> Result<Made, Vec<String>> {
     let fallback = project.jass_dialect.unwrap_or(Dialect::Jass);
     // The map's custom script is JassHelper's (vJASS) unless the project
     // says it's plain JASS.
@@ -261,7 +291,8 @@ fn code(project: &Project, game: &Game, names: &crate::names::Names) -> Result<M
             let me = path.to_string_lossy().into_owned();
             // The map's globals are declared (and set) by the map's part
             // (`InitGlobals`); a file declares only its own private ones.
-            let own: Vec<Declared> = p.variables.iter().filter(|d| d.scope != Scope::Global).cloned().collect();
+            // Code alone has no map's part: each file declares its own.
+            let own: Vec<Declared> = p.variables.iter().filter(|d| alone || d.scope != Scope::Global).cloned().collect();
             let stem = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
             code.push(Code { name: me.clone(), text: wtg_rs::jass::compile(p.trigger.as_ref(), &stem, &own, &visible, &names.trigger_ui), dialect: Dialect::Jass });
             // Custom text: its code beside it (`X.j`, among the project's
@@ -287,9 +318,11 @@ fn code(project: &Project, game: &Game, names: &crate::names::Names) -> Result<M
     } else if let Some(wtg) = &wtg {
         let text = wtg_rs::text::to_text(wtg).map_err(|e| vec![format!("war3map.wtg: {e}")])?;
         let file = wtg_rs::text::from_text(&text, None).file.ok_or_else(|| vec!["war3map.wtg: its text doesn't read".to_string()])?;
-        for (nth, t) in file.triggers.iter().enumerate() {
+        // The map's variables, which every trigger sees: read once.
+        let visible: Vec<Declared> = file.variables.iter().map(|v| Declared { variable: v.clone(), scope: Scope::Global }).collect();
+        for t in &file.triggers {
             let name = format!("war3map.wtg: {}", t.name);
-            code.push(Code { name: name.clone(), text: crate::triggers::wtg_jass(&text, nth + 1, names), dialect: Dialect::Jass });
+            code.push(Code { name: name.clone(), text: wtg_rs::jass::compile(Some(t), &t.name, &[], &visible, &names.trigger_ui), dialect: Dialect::Jass });
             if t.is_custom != 0
                 && t.enabled != 0
                 && t.is_comment == 0
@@ -325,7 +358,11 @@ fn code(project: &Project, game: &Game, names: &crate::names::Names) -> Result<M
 
 /// Writes the map to `out` (through a file beside it, so a failed build
 /// leaves the last map as it was): the number of files written.
-fn write(project: &Project, files: &Files, base: Option<&Path>, script: &str, game: &Game, out: &Path) -> Result<usize, String> {
+fn write(project: &Project, files: &Files, base: Option<&Path>, made: &[(String, Vec<u8>)], game: &Game, out: &Path) -> Result<usize, String> {
+    // What the build made stands for the layers' files of its names.
+    let made_names: std::collections::HashSet<String> = made.iter().map(|(n, _)| n.to_ascii_lowercase()).collect();
+    let files: Files = files.iter().filter(|(k, _)| !made_names.contains(*k)).map(|(k, v)| (k.clone(), v.clone())).collect();
+    let files = &files;
     if let Some(dir) = out.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
@@ -366,25 +403,33 @@ fn write(project: &Project, files: &Files, base: Option<&Path>, script: &str, ga
                     }
                     w.add_file(name, &bytes(from)?, &AddFileOptions::default()).map_err(|e| format!("{name}: {e}"))?;
                 }
-                w.add_file("war3map.j", script.as_bytes(), &AddFileOptions::default()).map_err(|e| format!("war3map.j: {e}"))?;
+                for (name, bytes) in made {
+                    // (What isn't the map's is gone already.)
+                    if had.has_file(name) && !left_out(name) {
+                        w.remove_file(name).map_err(|e| format!("{name}: {e}"))?;
+                    }
+                    w.add_file(name, bytes, &AddFileOptions::default()).map_err(|e| format!("{name}: {e}"))?;
+                }
                 w.finish().map_err(|e| format!("{}: {e}", out.display()))?;
-                Ok(files.len() + 1)
+                Ok(files.len() + made.len())
             }
             None => {
                 let mpq = out.with_extension("w3x.mpq");
                 let _ = std::fs::remove_file(&mpq);
-                let mut b = MpqArchiveBuilder::new(&mpq).options(MpqCreateOptions::v1().create_attributes(true).max_files(((files.len() + 1) * 2).max(64) as u32));
+                let mut b = MpqArchiveBuilder::new(&mpq).options(MpqCreateOptions::v1().create_attributes(true).max_files(((files.len() + made.len()) * 2).max(64) as u32));
                 for (name, from) in files.values() {
                     b = b.add_file(name.clone(), bytes(from)?);
                 }
-                b = b.add_file("war3map.j", script.as_bytes().to_vec());
+                for (name, bytes) in made {
+                    b = b.add_file(name.clone(), bytes.clone());
+                }
                 b.build().map_err(|e| format!("{}: {e}", out.display()))?;
                 let archive = std::fs::read(&mpq).map_err(|e| format!("{}: {e}", mpq.display()));
                 let _ = std::fs::remove_file(&mpq);
                 let mut whole = header(game);
                 whole.extend(archive?);
                 std::fs::write(&tmp, whole).map_err(|e| format!("{}: {e}", tmp.display()))?;
-                Ok(files.len() + 1)
+                Ok(files.len() + made.len())
             }
         }
     })();

@@ -97,13 +97,22 @@ pub struct Build {
     pub out: Option<PathBuf>,
     /// `uglify=1`: the script's names made short.
     pub uglify: bool,
+    /// `script=jass|lua|as`: the language of the map's script.
+    pub script: wc3_build::jass::Script,
 }
 
 impl Build {
-    /// Where the map is written.
-    pub fn out(&self, root: &Path) -> PathBuf {
+    /// Where the map is written: `build/<name>.w3x`; for a project of
+    /// code alone (no `[map] root`), its script, `build/war3map.<ext>`.
+    pub fn out(&self, project: &Project) -> PathBuf {
+        if let Some(out) = &self.out {
+            return out.clone();
+        }
+        if project.roots.is_empty() {
+            return project.root.join("build").join(format!("war3map.{}", self.script.extension()));
+        }
         let name = if self.name.is_empty() { "map" } else { self.name.as_str() };
-        self.out.clone().unwrap_or_else(|| root.join("build").join(format!("{name}.w3x")))
+        project.root.join("build").join(format!("{name}.w3x"))
     }
 
     /// What this build is called to people: its name, or "the default build".
@@ -127,7 +136,7 @@ impl Project {
     /// of the map, or among the project's code, it would be read as the
     /// map's (or the code's) by the next build. `None` when it can.
     pub fn out_problem(&self, b: &Build) -> Option<String> {
-        let out = normalize(&b.out(&self.root));
+        let out = normalize(&b.out(self));
         if let Some(r) = self.roots.iter().find(|r| out == normalize(r) || (r.is_dir() && out.starts_with(normalize(r)))) {
             return Some(format!("{} writes {} inside the map's root {}: the next build would take it as one of the map's files; give it an 'out' elsewhere", b.title(), out.display(), r.display()));
         }
@@ -400,7 +409,7 @@ fn unknown_key(item: &Item, section: &str, issues: &mut Vec<Issue>) {
         "project" => "game",
         "code" => "sources' or 'exclude",
         "map" => "root",
-        "build" => "name', 'out' or 'uglify",
+        "build" => "name', 'out', 'script' or 'uglify",
         _ => "dialect",
     };
     issues.push(at_name(
@@ -553,6 +562,16 @@ fn read_build(section: &bni_rs::ast::Section, project: &mut Project, issues: &mu
                         place = (at.line, at.col, at.end_col);
                     }
                     _ => issues.push(at_name(key, Level::Error, "'out' needs a single path".into())),
+                }
+            }
+            Some("script") => {
+                let key = item.key.as_ref().expect("key_of returned a key");
+                match item.fields.as_slice() {
+                    [field] => match wc3_build::jass::Script::from_name(field.text().trim()) {
+                        Some(s) => build.script = s,
+                        None => issues.push(at_field(field, Level::Error, "'script' is jass, lua or as".into())),
+                    },
+                    _ => issues.push(at_name(key, Level::Error, "'script' is jass, lua or as".into())),
                 }
             }
             Some("uglify") => {

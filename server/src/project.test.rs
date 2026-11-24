@@ -379,7 +379,7 @@ fn builds_have_unique_names() {
         vec![
             (5, "a build has one 'name'"),
             (7, "there's already a build named 'debug'"),
-            (9, "unknown setting 'fast' in [build] (expected 'name', 'out' or 'uglify')"),
+            (9, "unknown setting 'fast' in [build] (expected 'name', 'out', 'script' or 'uglify')"),
             (10, "there's a default build already (a [build] without a 'name'): name this one"),
         ]
     );
@@ -387,7 +387,7 @@ fn builds_have_unique_names() {
     assert_eq!(project.build_named(None).unwrap().name, "");
     assert_eq!(project.build_named(Some("release")).unwrap().name, "release");
     assert!(project.build_named(Some("nope")).is_none());
-    assert_eq!(project.builds[2].out(Path::new("/p")), PathBuf::from("/p/build/map.w3x"));
+    assert_eq!(project.builds[2].out(&project), PathBuf::from("/p/build/war3map.j"));
     // No default: the first.
     let (two, _) = load(Path::new("/p"), "[build]\nname=a\n[build]\nname=b\n");
     assert_eq!(two.build_named(None).unwrap().name, "a");
@@ -440,7 +440,7 @@ fn exclude_is_for_code_and_leaves_the_roots_alone() {
 fn a_build_says_where_and_how() {
     let src = "[build]\nname=release\nout=out/map.w3x\nuglify=1\n[build]\nname=debug\nuglify=true\n";
     let (project, issues) = load(Path::new("/p"), src);
-    assert_eq!(project.builds[0], Build { name: "release".into(), out: Some(PathBuf::from("/p/out/map.w3x")), uglify: true });
-    assert_eq!(project.builds[1].out(Path::new("/p")), PathBuf::from("/p/build/debug.w3x"));
+    assert_eq!(project.builds[0], Build { name: "release".into(), out: Some(PathBuf::from("/p/out/map.w3x")), uglify: true, script: Default::default() });
+    assert_eq!(project.builds[1].out(&project), PathBuf::from("/p/build/war3map.j"));
     assert_eq!(issues.iter().map(|i| i.message.as_str()).collect::<Vec<_>>(), ["'uglify' is 1 or 0"]);
 }

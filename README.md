@@ -21,7 +21,9 @@ item's details are in its section below):
     `//! loaddata`, `//! external`: an error each.
   - An operator of an interface or a `stub` one; a struct of more than
     8190 instances.
-  - AngelScript (UjAPI) and Lua outputs: stubs.
+  - AngelScript (UjAPI) output (decided, not written: see Outputs);
+    Show Lua and Show AngelScript for a trigger. Lua isn't run in the
+    game yet (only `luac` and a test's `lua`).
   - A copy of a base map keeps the space of the files it replaces (no
     compacting: it would lose the files nobody knows the names of).
   - A build from `.trg` files leaves the map's `war3map.wtg` and
@@ -522,7 +524,17 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
 5. **AngelScript and Lua** past their stubs (see Outputs above for
    what's decided): the build of code alone and `script=` first, then
    Lua, then AngelScript with `Blizzard.j` tree-shaken, then Show Lua and
-   Show AngelScript for a trigger.
+   Show AngelScript for a trigger. Done: `script=` (`wc3_build::jass::Script`,
+   `jass::Options::script`); a project of code alone builds
+   `build/war3map.<ext>`; Lua (`wc3-build`'s `lua`, after the same steps
+   as JASS, the types told by the declarations: integer division cut
+   toward zero, strings' `+` as `..` with a null one empty, `and`/`or`
+   in parentheses where they bind otherwise, arrays as tables with their
+   empty value, `'hfoo'` a number, `return` as `do return ... end`):
+   Diablo III beta's whole map builds as Lua that `luac -p` reads, and a
+   test runs a script in `lua` to see it does what the JASS did. A map
+   built as Lua gets `war3map.lua` and its `war3map.w3i` the Lua flag
+   (from 1.31's layout; an older one is told so).
 6. **The map**: `[build]` scenarios, the roots' layers, the `.w3x`
    written (`storm-rs`); optimizations (dead code) after. Done
    (`server/src/build.rs`, `wc3-build`'s `whole`):
