@@ -155,14 +155,15 @@ pub struct Workspace {
     dirty: HashSet<String>,
     /// Files the editor should forget: they left the model.
     cleared: Vec<String>,
+    /// The names each map's files declare (`map_names`), by the map's
+    /// folder (or archive) and when its files last changed.
+    placed: std::sync::Mutex<HashMap<PathBuf, (Option<std::time::SystemTime>, Arc<Vec<(String, &'static str)>>)>>,
 }
 
-/// The id of a file on disk.
-/// What the map's files (not its triggers) name in World Editor's script:
-/// placed units, items and destructables, regions, cameras, sounds. Not
-/// read from those files yet, so a map's custom script may name any.
-const PLACED: &[&str] = &["gg_unit_", "gg_item_", "gg_dest_", "gg_rct_", "gg_cam_", "gg_snd_"];
+/// The map's files that name what World Editor's script declares.
+const NAMING: [&str; 5] = ["war3map.w3r", "war3map.w3c", "war3map.w3s", "war3map.doo", "war3mapUnits.doo"];
 
+/// The id of a file on disk.
 pub fn path_id(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
@@ -471,19 +472,16 @@ impl Workspace {
             if let Some(d) = &map {
                 env.push(d);
             }
-            let mut found = analysis::names(&e.doc, e.settings.as_deref(), program, &env);
-            if map.is_some() {
-                found.retain(|d| !PLACED.iter().any(|p| d.message.contains(&format!("'{p}"))));
-            }
-            ((*id).clone(), found)
+            ((*id).clone(), analysis::names(&e.doc, e.settings.as_deref(), program, &env))
         })
     }
 
     /// What World Editor's script of a map declares for its custom script
-    /// `id` (`war3map.wct`), of the map's triggers beside it
-    /// (`war3map.wtg`, in the model): each trigger's `gg_trg_` and the
-    /// triggers' variables (`udg_`). `None` for any other file, or without
-    /// the triggers.
+    /// `id` (`war3map.wct`): of the map's triggers beside it
+    /// (`war3map.wtg`, in the model), each trigger's `gg_trg_` and the
+    /// triggers' variables (`udg_`); of its other files, what they place
+    /// and name ([`Workspace::map_names`]). `None` for any other file, or
+    /// without the triggers.
     fn map_declarations(&self, id: &str) -> Option<jass_rs::names::Declarations> {
         let path = self.files.get(id)?.doc.path.as_deref().filter(|p| crate::customtext::is_custom_text_file(p))?;
         let dir = path.parent()?;
@@ -498,8 +496,41 @@ impl Workspace {
             let m = wtg_rs::jass::map_variable(&wtg_rs::text::Declared { variable: v.clone(), scope: wtg_rs::text::Scope::Global }, &ui);
             text += &format!("{} {}{}\n", m.ty, if m.array.is_some() { "array " } else { "" }, m.name);
         }
+        for (name, ty) in self.map_names(dir).iter() {
+            text += &format!("{ty} {name}\n");
+        }
         text += "endglobals\n";
         Some(jass_rs::names::Declarations::of(&jass_rs::parse(&text).ok()?))
+    }
+
+    /// What the files of the map `dir` (a folder, or a map's archive) name
+    /// in World Editor's script ([`wc3_build::map::declared_names`]): read
+    /// again only when they've changed.
+    fn map_names(&self, dir: &Path) -> Arc<Vec<(String, &'static str)>> {
+        let folder = dir.is_dir();
+        let stamp = if folder {
+            NAMING.iter().filter_map(|n| std::fs::metadata(dir.join(n)).and_then(|m| m.modified()).ok()).max()
+        } else {
+            crate::map::split(&dir.join("x")).and_then(|(map, _)| std::fs::metadata(map).and_then(|m| m.modified()).ok())
+        };
+        if let Some((s, names)) = self.placed.lock().ok().and_then(|c| c.get(dir).cloned())
+            && s == stamp
+        {
+            return names;
+        }
+        let read = |n: &str| if folder { std::fs::read(dir.join(n)).ok() } else { crate::map::bytes(&dir.join(n)) };
+        let info = read("war3map.w3i").and_then(|b| w3i_rs::parse(&b).ok());
+        let regions = read("war3map.w3r").and_then(|b| w3r_rs::parse(&b).ok());
+        let layout = w3c_rs::Layout::from_w3i_version(info.as_ref().map_or(25, |i| i.version));
+        let cameras = read("war3map.w3c").and_then(|b| w3c_rs::parse(&b, layout).ok());
+        let sounds = read("war3map.w3s").and_then(|b| w3s_rs::parse(&b).ok());
+        let doodads = read("war3map.doo").and_then(|b| doo_rs::parse_doodads_any(&b).ok());
+        let units = read("war3mapUnits.doo").and_then(|b| doo_rs::parse_units_any(&b).ok());
+        let names = Arc::new(wc3_build::map::declared_names(regions.as_ref(), cameras.as_ref(), sounds.as_ref(), doodads.as_ref(), units.as_ref()));
+        if let Ok(mut c) = self.placed.lock() {
+            c.insert(dir.to_path_buf(), (stamp, names.clone()));
+        }
+        names
     }
 
     /// The set of game files read together with the game file `id` (or,

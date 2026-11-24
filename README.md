@@ -1007,9 +1007,13 @@ the code stays JASS, with everything the editor does for JASS):
   unless the project says `[jass] dialect=jass`; the code of a trigger
   that's off, or a comment, isn't code (often it's a readme), and its
   lines are read as empty; and it sees what World Editor's script
-  declares for it, the triggers' `gg_trg_` and the variables' `udg_`.
-  What the map's other files name (`gg_unit_`, `gg_rct_` ...) isn't read
-  from them yet: any such name passes.
+  declares for it, the triggers' `gg_trg_` and the variables' `udg_`,
+  and what the map's other files place and name, as a build names them
+  (`wc3_build::map::declared_names`: regions `gg_rct_`, cameras
+  `gg_cam_`, sounds `gg_snd_`, destructables `gg_dest_`, and for each
+  thing `war3mapUnits.doo` places both `gg_unit_` and `gg_item_`: which
+  it is takes the game's tables, not read here), read again when those
+  files change. A name the map hasn't is unknown, as any other.
 
 Of this, the view of `.trg` files, Extract, and editing a map's
 `war3map.wtg` in place (its tree: new, renamed and deleted categories,
