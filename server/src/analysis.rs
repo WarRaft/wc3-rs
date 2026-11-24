@@ -37,19 +37,16 @@ pub struct Fix {
 
 /// The dialect a JASS document is read in: whatever its own header
 /// declares (`// @dialect vjass`), else vJASS for a `.vj` file, else its
-/// project's default (`[jass] dialect=` in `wc3.bni`), else plain JASS.
-/// The header wins, so a project can still mix dialects.
+/// project's default (`[jass] dialect=` in `wc3.bni`), else plain JASS,
+/// but for a map's custom script (`.wct`): vJASS, as JassHelper's maps
+/// have it (and as a build reads it). The header wins, so a project can
+/// still mix dialects.
 pub fn jass_dialect(doc: &Document, project: Option<&Project>) -> jass_rs::Dialect {
-    let vj = doc
-        .path
-        .as_deref()
-        .and_then(|p| p.extension())
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("vj"));
+    let ext = |x: &str| doc.path.as_deref().and_then(|p| p.extension()).and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case(x));
     jass_rs::Dialect::declared(&doc.text)
-        .or(vj.then_some(jass_rs::Dialect::VJass))
+        .or(ext("vj").then_some(jass_rs::Dialect::VJass))
         .or_else(|| project.and_then(|p| p.jass_dialect))
-        .unwrap_or_default()
+        .unwrap_or(if ext("wct") { jass_rs::Dialect::VJass } else { jass_rs::Dialect::Jass })
 }
 
 /// Parse errors and lint warnings of `doc`, read with the settings of its

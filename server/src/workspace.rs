@@ -158,6 +158,11 @@ pub struct Workspace {
 }
 
 /// The id of a file on disk.
+/// What the map's files (not its triggers) name in World Editor's script:
+/// placed units, items and destructables, regions, cameras, sounds. Not
+/// read from those files yet, so a map's custom script may name any.
+const PLACED: &[&str] = &["gg_unit_", "gg_item_", "gg_dest_", "gg_rct_", "gg_cam_", "gg_snd_"];
+
 pub fn path_id(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
@@ -347,7 +352,12 @@ impl Workspace {
             .collect();
 
         let mut ids: Vec<String> = std::mem::take(&mut self.dirty).into_iter().collect();
+        // A map's triggers changed: its custom script is read again (the
+        // code of a trigger turned off isn't code).
+        let scripts: Vec<String> = ids.iter().filter_map(|id| self.custom_script_id_beside(id)).collect();
+        ids.extend(scripts);
         ids.sort();
+        ids.dedup();
         let settings: Vec<Settings> = ids
             .iter()
             .map(|id| {
@@ -372,8 +382,11 @@ impl Workspace {
                 jobs.push((id, entry, project, objects));
             }
         }
+        // A custom script, its code that isn't code left out (see `custom_script_read`).
+        let read: HashMap<String, Document> = jobs.iter().filter_map(|(id, _, _, _)| Some(((*id).clone(), self.custom_script_read(id)?))).collect();
         let results = parallel_map(&jobs, |(id, entry, project, objects)| {
-            let a = analysis::analyze(&entry.doc, project.as_deref(), entry.open, objects.as_deref());
+            let doc = read.get(*id).unwrap_or(&entry.doc);
+            let a = analysis::analyze(doc, project.as_deref(), entry.open, objects.as_deref());
             ((*id).clone(), entry.doc.version, a)
         });
         let quiet: HashSet<String> = ids.iter().filter(|id| self.is_map_script(id)).cloned().collect();
@@ -452,8 +465,41 @@ impl Workspace {
             if !common {
                 return ((*id).clone(), Vec::new());
             }
-            ((*id).clone(), analysis::names(&e.doc, e.settings.as_deref(), program, &env))
+            // A map's custom script: what World Editor's script declares
+            // for it too.
+            let map = self.map_declarations(id);
+            if let Some(d) = &map {
+                env.push(d);
+            }
+            let mut found = analysis::names(&e.doc, e.settings.as_deref(), program, &env);
+            if map.is_some() {
+                found.retain(|d| !PLACED.iter().any(|p| d.message.contains(&format!("'{p}"))));
+            }
+            ((*id).clone(), found)
         })
+    }
+
+    /// What World Editor's script of a map declares for its custom script
+    /// `id` (`war3map.wct`), of the map's triggers beside it
+    /// (`war3map.wtg`, in the model): each trigger's `gg_trg_` and the
+    /// triggers' variables (`udg_`). `None` for any other file, or without
+    /// the triggers.
+    fn map_declarations(&self, id: &str) -> Option<jass_rs::names::Declarations> {
+        let path = self.files.get(id)?.doc.path.as_deref().filter(|p| crate::customtext::is_custom_text_file(p))?;
+        let dir = path.parent()?;
+        let wtg = self.files.values().find(|e| e.doc.path.as_deref().is_some_and(|p| p.parent() == Some(dir) && p.file_name().is_some_and(|n| n.eq_ignore_ascii_case("war3map.wtg"))))?;
+        let file = wtg_rs::text::from_text(&wtg.doc.text, None).file?;
+        let ui = wtg.names.as_ref().map(|n| n.trigger_ui.clone()).unwrap_or_default();
+        let mut text = String::from("globals\n");
+        for t in file.triggers.iter().filter(|t| t.is_comment == 0) {
+            text += &format!("trigger gg_trg_{} = null\n", wtg_rs::jass::ident(&t.name));
+        }
+        for v in &file.variables {
+            let m = wtg_rs::jass::map_variable(&wtg_rs::text::Declared { variable: v.clone(), scope: wtg_rs::text::Scope::Global }, &ui);
+            text += &format!("{} {}{}\n", m.ty, if m.array.is_some() { "array " } else { "" }, m.name);
+        }
+        text += "endglobals\n";
+        Some(jass_rs::names::Declarations::of(&jass_rs::parse(&text).ok()?))
     }
 
     /// The set of game files read together with the game file `id` (or,
@@ -603,6 +649,47 @@ impl Workspace {
         let bytes = if path.is_file() { std::fs::read(&path).ok()? } else { crate::map::bytes(&path)? };
         let doc = crate::customtext::document(&path, &bytes)?;
         Some((path_id(&path), doc.text))
+    }
+
+    /// The id of the custom script (`war3map.wct`) in the model beside
+    /// the map's triggers `id` (a `war3map.wtg`).
+    fn custom_script_id_beside(&self, id: &str) -> Option<String> {
+        let path = self.files.get(id)?.doc.path.clone()?;
+        if !path.file_name().is_some_and(|n| n.eq_ignore_ascii_case("war3map.wtg")) {
+            return None;
+        }
+        let dir = path.parent()?;
+        self.files
+            .iter()
+            .find(|(_, e)| e.doc.path.as_deref().is_some_and(|p| p.parent() == Some(dir) && p.file_name().is_some_and(|n| n.eq_ignore_ascii_case("war3map.wct"))))
+            .map(|(fid, _)| fid.clone())
+    }
+
+    /// The custom script `id` (`war3map.wct`) as it's read as code: the
+    /// code of a trigger that's off or a comment, by the map's triggers
+    /// beside it (`war3map.wtg`, in the model), left out (its lines kept,
+    /// empty), as World Editor leaves it out of the map's script; a
+    /// trigger's text of custom text there is often no code at all.
+    /// `None` for any other file, or without the triggers.
+    fn custom_script_read(&self, id: &str) -> Option<Document> {
+        let doc = &self.files.get(id)?.doc;
+        let path = doc.path.as_deref().filter(|p| crate::customtext::is_custom_text_file(p))?;
+        let dir = path.parent()?;
+        let wtg = self.files.values().find(|e| e.doc.path.as_deref().is_some_and(|p| p.parent() == Some(dir) && p.file_name().is_some_and(|n| n.eq_ignore_ascii_case("war3map.wtg"))))?;
+        let triggers = wtg_rs::text::from_text(&wtg.doc.text, None).file?.triggers;
+        let pieces = crate::customtext::pieces(&doc.text);
+        if pieces.triggers.len() != triggers.len() {
+            return None;
+        }
+        let mut lines: Vec<String> = doc.text.split_inclusive('\n').map(String::from).collect();
+        for ((marker, end, _), t) in pieces.triggers.iter().zip(&triggers) {
+            if t.enabled == 0 || t.is_comment != 0 {
+                for line in &mut lines[marker + 1..*end] {
+                    *line = if line.ends_with('\n') { "\n".into() } else { String::new() };
+                }
+            }
+        }
+        Some(Document { text: lines.concat(), ..doc.clone() })
     }
 
     /// One file's text and symbols.

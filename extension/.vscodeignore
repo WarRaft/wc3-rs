@@ -6,3 +6,4 @@
 test/**
 icons/make.py
 .idea/**
+e2e/**

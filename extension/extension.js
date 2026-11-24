@@ -459,7 +459,7 @@ function onFile(msg) {
     }))
 
     // A custom script's pieces open: theirs.
-    if (/\.wct$/i.test(msg.id)) showPieceDiagnostics(Uri.file(msg.id))
+    if (/\.wct$/i.test(msg.id)) showPieceDiagnostics(uriOf(msg.id))
 
     // Highlighting only matters for what's open.
     if (!tracked.has(msg.id)) return
@@ -617,6 +617,25 @@ function pieceText(uri, script) {
 /** Open pieces: URI → the custom script's `wc3obj:` URI. */
 const pieces = new Map()
 
+/**
+ * An edit of a map's triggers and its custom script at once: the pieces
+ * wait until both are done (between the two, the triggers' order and the
+ * custom script's don't go together), then follow.
+ * @param {import('vscode').WorkspaceEdit} edit
+ */
+async function applyPaired(edit) {
+    pairedEdits++
+    try {
+        return await workspace.applyEdit(edit)
+    } finally {
+        pairedEdits--
+        await followPieces()
+    }
+}
+let pairedEdits = 0
+/** Brings every open piece in line with its custom script (`registerPieces` sets it). */
+let followPieces = async () => {}
+
 /** A piece's document and its custom script's, when `doc` is a piece. @param {import('vscode').TextDocument} doc */
 function asPiece(doc) {
     if (doc.uri.scheme !== PIECE_SCHEME) return null
@@ -699,6 +718,21 @@ function registerPieces(context) {
         rename: uri => { throw FileSystemError.NoPermissions(uri) },
     }
     let syncing = false
+    /** Each open piece of the custom script `key` (or every one) given its text there. */
+    const follow = async (key = null) => {
+        for (const piece of workspace.textDocuments.filter(d => d.uri.scheme === PIECE_SCHEME)) {
+            const script = pieceScript(piece.uri)
+            if (key && script.toString().toLowerCase() !== key && sibling(script, 'war3map.wtg').toString().toLowerCase() !== key) continue
+            const open = openDoc(script)
+            const text = open && pieceText(piece.uri, open)
+            if (text === null || text === undefined || text === piece.getText().replace(/\r\n/g, '\n').replace(/\n$/, '')) continue
+            const edit = new WorkspaceEdit()
+            edit.replace(piece.uri, new Range(0, 0, piece.lineCount, 0), text)
+            syncing = true
+            try { await workspace.applyEdit(edit) } finally { syncing = false }
+        }
+    }
+    followPieces = () => follow()
     context.subscriptions.push(
         changed,
         workspace.registerFileSystemProvider(PIECE_SCHEME, provider, {isCaseSensitive: process.platform === 'linux'}),
@@ -715,22 +749,12 @@ function registerPieces(context) {
                 try { await putBack(doc.uri, doc.getText()) } catch { /* gone: the piece stays as it is */ } finally { syncing = false }
                 return
             }
-            // The custom script changed elsewhere: its pieces open follow.
-            const key = doc.uri.toString().toLowerCase()
+            // The custom script (or its triggers) changed elsewhere: its
+            // pieces open follow, unless it's half of an edit of both.
             const triggers = /war3map\.wtg$/i.test(doc.uri.path)
-            for (const piece of workspace.textDocuments.filter(d => d.uri.scheme === PIECE_SCHEME)) {
-                const script = pieceScript(piece.uri)
-                const mine = script.toString().toLowerCase() === key || (triggers && sibling(script, 'war3map.wtg').toString().toLowerCase() === key)
-                if (!mine) continue
-                const open = openDoc(script)
-                const text = open && pieceText(piece.uri, open)
-                if (text === null || text === undefined || text === piece.getText().replace(/\r\n/g, '\n').replace(/\n$/, '')) continue
-                const edit = new WorkspaceEdit()
-                edit.replace(piece.uri, new Range(0, 0, piece.lineCount, 0), text)
-                syncing = true
-                try { await workspace.applyEdit(edit) } finally { syncing = false }
-            }
-            // Its diagnostics and colors moved with it.
+            if (!triggers && !/war3map\.wct$/i.test(doc.uri.path)) return
+            if (pairedEdits === 0) await follow(doc.uri.toString().toLowerCase())
+            // Its diagnostics moved with it.
             if (!triggers) showPieceDiagnostics(doc.uri)
         }),
     )
@@ -742,7 +766,8 @@ function showPieceDiagnostics(script) {
     for (const piece of workspace.textDocuments.filter(d => d.uri.scheme === PIECE_SCHEME && pieceScript(d.uri).fsPath.toLowerCase() === key)) {
         const p = asPiece(piece)
         if (!p) continue
-        const all = diagnostics.get(Uri.file(script.fsPath).with({scheme: MAP_SCHEME})) ?? diagnostics.get(Uri.file(script.fsPath)) ?? []
+        // The custom script's text (`wc3obj:`) is what the server analyzes.
+        const all = diagnostics.get(Uri.file(script.fsPath).with({scheme: OBJECTS_SCHEME})) ?? []
         const own = all.filter(d => d.range.start.line >= p.at.from && d.range.end.line < p.at.to).map(d => {
             const moved = new Diagnostic(new Range(d.range.start.line - p.at.from, d.range.start.character, d.range.end.line - p.at.from, d.range.end.character), d.message, d.severity)
             moved.source = d.source
@@ -1679,6 +1704,13 @@ function registerSlk(context) {
  * @type {Map<string, number>}
  */
 const wtgPicked = new Map()
+
+/**
+ * The trigger editors open, by their text's URI: what the tests in the
+ * editor (`e2e/`) drive them with, as the page would.
+ * @type {Map<string, {receive: (msg: any) => Promise<void>, state: () => any, wct: () => any, refresh: () => Promise<void>}>}
+ */
+const triggerEditors = new Map()
 let onWtgPicked = (/** @type {import('vscode').Uri} */ _uri) => {}
 
 /** The file named `name` beside `uri`, in its scheme. @param {import('vscode').Uri} uri @param {string} name */
@@ -1841,7 +1873,7 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
                     // A variable renamed: its uses in other files too.
                     for (const [file, l, c, el, ec, t] of result.files ?? []) edit.replace(uriOf(file), new Range(l, c, el, ec), t)
                     select = result.line || 0
-                    if (!(await workspace.applyEdit(edit))) refresh()
+                    if (!(await (result.wct ? applyPaired(edit) : workspace.applyEdit(edit)))) refresh()
                 }
                 return result
             }
@@ -2001,19 +2033,23 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
                 }
             }
             let queue = Promise.resolve()
+            /** A message as the page sends it, in its turn. */
+            const receive = msg => (queue = queue.then(() => handle(msg)).catch(e => window.showErrorMessage(`WC3: ${e.message}`)))
             const subscriptions = [
                 workspace.onDidChangeTextDocument(e => {
                     if (e.document.uri.toString() === document.uri.toString() || (wct && e.document === wct)) refresh()
                 }),
                 // One at a time: each edit is worked out on the text the one
                 // before left (typing a name sends one after another).
-                webview.onDidReceiveMessage(msg => {
-                    queue = queue.then(() => handle(msg)).catch(e => window.showErrorMessage(`WC3: ${e.message}`))
-                }),
+                webview.onDidReceiveMessage(receive),
             ]
+            // For the tests in the editor (`e2e/`): what the page would send, and what it was last sent.
+            const key = document.uri.toString()
+            triggerEditors.set(key, {receive, state: () => ({picked, tree: last}), wct: () => wct, refresh: () => post(0)})
             panel.onDidDispose(() => {
                 clearTimeout(timer)
                 subscriptions.forEach(d => d.dispose())
+                triggerEditors.delete(key)
             })
         },
     }
@@ -2435,6 +2471,8 @@ module.exports = {
             workspace.onDidChangeTextDocument(onChange),
         )
         for (const doc of workspace.textDocuments) onOpen(doc)
+        // What the tests in the editor (`e2e/`) reach.
+        return {test: {triggerEditors, PIECE_SCHEME, OBJECTS_SCHEME}}
     },
 
     deactivate() {

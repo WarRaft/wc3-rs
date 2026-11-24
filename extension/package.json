@@ -20,6 +20,9 @@
     "Other"
   ],
   "main": "./extension.js",
+  "scripts": {
+    "e2e": "node e2e/run.js"
+  },
   "activationEvents": [
     "onFileSystem:wc3obj",
     "onFileSystem:wc3map",

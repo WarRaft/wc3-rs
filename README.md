@@ -991,6 +991,13 @@ the code stays JASS, with everything the editor does for JASS):
   triggers (as many as there are) is said so once, and left alone.
 - **Saved together**: saving one saves the other, so the files on disk
   never put code to the wrong trigger.
+- **Read as code as World Editor builds it**: the custom script is vJASS
+  unless the project says `[jass] dialect=jass`; the code of a trigger
+  that's off, or a comment, isn't code (often it's a readme), and its
+  lines are read as empty; and it sees what World Editor's script
+  declares for it, the triggers' `gg_trg_` and the variables' `udg_`.
+  What the map's other files name (`gg_unit_`, `gg_rct_` ...) isn't read
+  from them yet: any such name passes.
 
 Of this, the view of `.trg` files, Extract, and editing a map's
 `war3map.wtg` in place (its tree: new, renamed and deleted categories,
@@ -1509,3 +1516,25 @@ Nothing is cached beyond the symbols themselves: a query scans what it
 needs. On the game's own `Scripts` folder (293 files: `common.j`,
 `Blizzard.j`, the AI and campaign scripts) loading takes about 80 ms and a
 query about 1 ms.
+
+## Tests in the editor
+
+`cd extension && npm run e2e [map.w3x]` (`e2e/run.js`) runs the
+extension in a VS Code of its own: the one installed (`VSCODE`, else
+`/Applications/Visual Studio Code.app`), with a profile and extensions
+folder of its own in a temporary folder (no other extension; it opens
+a window of its own for the seconds it runs), this extension from its
+folder (the language server is `extension/bin/`'s: `server/build-mac.sh`
+first), on a copy of a map (Diablo III beta by default) in a folder with
+a `wc3.bni` naming the game (`WC3_GAME`). `e2e/suite.js` drives it as a
+user would: the trigger editors take the page's messages through the
+extension's `test` export (`triggerEditors`), and each step is checked
+on the documents, diagnostics and the map on disk; what it says goes to
+`<out>/log.txt` (`E2E_OUT`, else a temporary folder), printed at the
+end, and screenshots of the screen to `<out>/*.png` (`run.js` takes them,
+with macOS's `screencapture`: the terminal needs Screen Recording).
+Now: opening `war3map.wct` brings up the triggers, its problems have
+none of World Editor's names, a trigger of custom text opens its code
+alone, typing there changes its piece of `war3map.wct` and no other,
+a diagnostic shows on its line in the piece, moving the trigger moves its
+code, saving the piece writes the map.
