@@ -2243,6 +2243,9 @@ pub fn wtg_edit(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui
     let count = map.triggers.len();
     let nth = map.pick(nth.trim().parse().unwrap_or(0));
     let mut order = None;
+    // A trigger renamed: its names in the script, before and after (the
+    // name field is set already; the argument is the name it had).
+    let renamed = (op == op::RENAMED && nth > 0).then(|| (wtg_rs::jass::ident(arg), wtg_rs::jass::ident(&map.triggers[nth - 1].name)));
     let answer = match op {
         op::NEW_VARIABLE | op::SET_VARIABLE | op::CHECK_VARIABLE | map_op::DELETE_VARIABLE => wtg_variable(map, op, line, arg, ui),
         map_op::NEW_TRIGGER..=map_op::RENAME_CATEGORY | map_op::MOVE_TRIGGER => wtg_tree(map, op, nth, arg).map(|(a, o)| {
@@ -2270,12 +2273,46 @@ pub fn wtg_edit(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui
                         None => String::new(),
                     },
                 },
+                // Renamed: the custom script's names of it follow (its code
+                // of custom text declares and sets them; any code may use
+                // them).
+                (None, Some(w)) => match renamed.as_ref().filter(|(old, new)| old != new) {
+                    Some((old, new)) => {
+                        let changed = rename_trigger_in_code(w, old, new);
+                        if changed == w { String::new() } else { format!(",\"wct\":{}", edit(w, &changed.split_inclusive('\n').map(String::from).collect::<Vec<_>>())) }
+                    }
+                    None => String::new(),
+                },
                 _ => String::new(),
             };
             format!("{{\"edits\":{edits},\"line\":{at}{pick}{custom}}}")
         }
         Err(e) => format!("{{\"error\":{}}}", js(&e)),
     }
+}
+
+/// `code` with a trigger's names in the script, `old` its name there
+/// before (`wtg_rs::jass::ident`), now `new`: `gg_trg_<old>` and
+/// `InitTrig_<old>`, whole names only, wherever they're written (a
+/// comment's or a string's too, as World Editor's own text has them).
+pub fn rename_trigger_in_code(code: &str, old: &str, new: &str) -> String {
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let mut out = String::with_capacity(code.len());
+    let mut rest = code;
+    'scan: while !rest.is_empty() {
+        for (from, to) in [(format!("gg_trg_{old}"), format!("gg_trg_{new}")), (format!("InitTrig_{old}"), format!("InitTrig_{new}"))] {
+            let before_ok = !out.chars().next_back().is_some_and(word);
+            if before_ok && rest.starts_with(&from) && !rest[from.len()..].chars().next().is_some_and(word) {
+                out.push_str(&to);
+                rest = &rest[from.len()..];
+                continue 'scan;
+            }
+        }
+        let c = rest.chars().next().expect("not empty");
+        out.push(c);
+        rest = &rest[c.len_utf8()..];
+    }
+    out
 }
 
 /// What an operation in a map's text comes to.

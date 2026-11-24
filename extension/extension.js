@@ -706,8 +706,12 @@ function registerPieces(context) {
             if (text === null) throw FileSystemError.FileNotFound(uri)
             return Buffer.from(text, 'utf8')
         },
-        // Saving a piece saves the custom script it's of.
+        // Saving a piece saves the custom script it's of. One that isn't
+        // found any more (its trigger renamed or gone) has nothing to put
+        // back: what was typed in it is there already.
         writeFile: async (uri, content) => {
+            const found = pieceLines(uri, await scriptOf(uri))
+            if (!found) return void stamps.set(uri.toString(), Date.now())
             const script = await putBack(uri, Buffer.from(content).toString('utf8'))
             if (script.isDirty) await script.save()
             stamps.set(uri.toString(), Date.now())
@@ -1862,7 +1866,7 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
                 if (result.edits) {
                     // A map's: the trigger to pick after it.
                     if (wtg && result.pick !== undefined) picked = result.pick
-                    if (!result.edits.length && !result.files?.length) {
+                    if (!result.edits.length && !result.files?.length && !result.wct?.length) {
                         if (result.line) webview.postMessage({type: 'select', line: result.line})
                         return result
                     }
@@ -1902,6 +1906,20 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
                 const doc = await workspace.openTextDocument(pieceUri(wct.uri, name))
                 const shown = window.visibleTextEditors.find(e => e.document.uri.scheme === PIECE_SCHEME && pieceScript(e.document.uri).toString() === wct.uri.toString())
                 await window.showTextDocument(doc, {viewColumn: shown?.viewColumn ?? ViewColumn.Beside, preserveFocus, preview: true})
+            }
+            /** A piece of the trigger named `old` open: reopened as its new name's. */
+            const followRename = async old => {
+                const was = pieceUri(wct.uri, old).toString()
+                const tab = window.tabGroups.all.flatMap(g => g.tabs).find(t => t.input?.uri?.toString() === was)
+                if (!tab) return
+                await post(0)
+                const name = last?.triggers[picked - 1]?.name
+                if (name === undefined || name === old) return
+                const doc = await workspace.openTextDocument(pieceUri(wct.uri, name))
+                await window.showTextDocument(doc, {viewColumn: tab.group.viewColumn, preserveFocus: true, preview: false})
+                const open = workspace.textDocuments.find(d => d.uri.toString() === was)
+                if (open?.isDirty) await open.save()
+                await window.tabGroups.close(tab, true)
             }
             /** Shows the text at `line`: of the picked trigger's section, or (`own`) the text's. */
             const reveal = async (line, own = false) => {
@@ -1970,7 +1988,12 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
                 case 'delete': return run(OP.DELETE, msg.line, msg.lines || '')
                 case 'move': return run(OP.MOVE, msg.line, msg.lines ? `${msg.place}\n${msg.lines}` : msg.place)
                 case 'field': return run(OP.FIELD, 0, `${msg.key}\n${msg.value}`)
-                case 'renamed': return run(OP.RENAMED, 0, msg.from)
+                case 'renamed': {
+                    const done = await run(OP.RENAMED, 0, msg.from)
+                    // Its code open: under its new name, where it was.
+                    if (done && wct) await followRename(msg.from)
+                    return done
+                }
                 case 'copy':
                 case 'cut': {
                     const copied = await run(OP.COPY, msg.line, msg.lines || '')

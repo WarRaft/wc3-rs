@@ -932,3 +932,21 @@ fn a_real_maps_custom_script_goes_with_its_triggers() {
     assert_eq!(deleted, before[1..].to_vec());
     println!("{n} triggers, {custom} of custom text: their code went with them");
 }
+
+#[test]
+fn a_renamed_trigger_s_names_in_the_custom_script_follow() {
+    let ui = wtg_rs::ui::Ui::default();
+    let wct = "// @wct version=1\n// @wct header\n// @wct trigger\nfunction InitTrig_A takes nothing returns nothing\n    set gg_trg_A = CreateTrigger() // gg_trg_AB stays\nendfunction\n// @wct trigger\ncall DisableTrigger(gg_trg_A)\nset InitTrig_AX = 1\n";
+    // A's name set to "Spawn Wave", then the renaming that follows it.
+    let named = wtg_applied(MAP, &wtg_edit(MAP, op::FIELD, 0, "1\nname\nSpawn Wave", &ui, None));
+    let a = wtg_edit(&named, op::RENAMED, 0, "1\nA", &ui, Some(wct));
+    let (_, edits) = a.split_once(",\"wct\":").unwrap_or_else(|| panic!("no wct edits: {a}"));
+    let after = answer_applied(wct, &format!("{{\"edits\":{},\"line\":0}}", edits.strip_suffix('}').unwrap())).unwrap();
+    assert_eq!(
+        after,
+        "// @wct version=1\n// @wct header\n// @wct trigger\nfunction InitTrig_Spawn_Wave takes nothing returns nothing\n    set gg_trg_Spawn_Wave = CreateTrigger() // gg_trg_AB stays\nendfunction\n// @wct trigger\ncall DisableTrigger(gg_trg_Spawn_Wave)\nset InitTrig_AX = 1\n"
+    );
+    // The same name in the script (a change of case only to its spaces): nothing.
+    assert!(!wtg_edit(MAP, op::RENAMED, 0, "1\nA", &ui, Some(wct)).contains("\"wct\""));
+    assert_eq!(rename_trigger_in_code("xgg_trg_A gg_trg_A_ gg_trg_A", "A", "B"), "xgg_trg_A gg_trg_A_ gg_trg_B");
+}

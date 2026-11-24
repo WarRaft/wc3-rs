@@ -110,7 +110,7 @@ async function steps() {
     const name = tree.triggers[nth - 1].name
     log(`a trigger of custom text picked: ${nth} ${name}`)
     await editor.receive({type: 'pick', nth})
-    const piece = await until(() => vscode.window.visibleTextEditors.find(e => e.document.uri.scheme === api.PIECE_SCHEME)?.document, 'its code opened')
+    let piece = await until(() => vscode.window.visibleTextEditors.find(e => e.document.uri.scheme === api.PIECE_SCHEME)?.document, 'its code opened')
     check(path.basename(piece.uri.fsPath) === `${name.replace(/[\\/:*?"<>|]/g, '_')}.j`, `opened as ${path.basename(piece.uri.fsPath)}`)
     const before = piecesOf(wct.getText())[nth - 1]
     check(piece.getText() === before.replace(/\n$/, ''), 'its text is its code, and only that')
@@ -148,6 +148,16 @@ async function steps() {
         check(piece.getText().startsWith('// e2e\n') && !piece.isClosed, 'the piece still shows its code')
     } else log('  (first in its category already)')
 
+    log('the trigger renamed: its names in its code follow, and its piece open with it')
+    await editor.receive({type: 'field', key: 'name', value: 'Setup Two'})
+    await editor.receive({type: 'renamed', from: name})
+    await until(() => wct.getText().includes('function InitTrig_Setup_Two') && wct.getText().includes('gg_trg_Setup_Two'), 'InitTrig_ and gg_trg_ renamed in war3map.wct')
+    check(!/\bInitTrig_Setup\b|\bgg_trg_Setup\b/.test(wct.getText()), 'no old name left in war3map.wct')
+    piece = await until(() => vscode.window.visibleTextEditors.find(e => e.document.uri.fsPath.endsWith('Setup Two.j'))?.document, 'its piece reopened as Setup Two.j')
+    check(piece.getText().startsWith('// e2e\n'), 'the piece reopened shows its code')
+    check(!vscode.window.tabGroups.all.flatMap(g => g.tabs).some(t => t.input?.uri?.fsPath?.endsWith('/Setup.j') && t.input.uri.scheme === api.PIECE_SCHEME), 'the old piece closed')
+    await shot('renamed')
+
     log('a trigger file of custom text: Open Code opens the .j beside it')
     const trg = vscode.Uri.file(path.join(path.dirname(map), 'triggers', 'Setup.trg'))
     await vscode.commands.executeCommand('vscode.openWith', trg, 'wc3.trigger')
@@ -159,6 +169,11 @@ async function steps() {
 
     log('saved from the piece: the map with both')
     const stamp = fs.statSync(map).mtimeMs
+    // Typed in, then saved (a piece just opened is clean: nothing to save).
+    edit = new vscode.WorkspaceEdit()
+    edit.insert(piece.uri, new vscode.Position(0, 0), '// saved\n')
+    await vscode.workspace.applyEdit(edit)
+    await until(() => wct.getText().includes('// saved\n'), 'the line in war3map.wct')
     await piece.save()
     await until(() => !wct.isDirty, 'war3map.wct saved')
     const triggers = vscode.workspace.textDocuments.find(x => /war3map\.wtg$/i.test(x.uri.path) && x.uri.scheme === api.OBJECTS_SCHEME)

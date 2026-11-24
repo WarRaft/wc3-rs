@@ -7,10 +7,6 @@ What's known to be next, so work can pick up where it stopped (each
 item's details are in its section below):
 
 - **Triggers (`.wtg` + `.wct`, `.trg`).**
-  - Renaming a trigger of custom text leaves the names in its code
-    (`InitTrig_<name>`, `gg_trg_<name>`) as they were, and a piece of its
-    code open (`wc3code:…/<name>.j`) stops following it (it's found by
-    the trigger's name): reopen it.
   - No **Convert to Custom Text** yet.
   - Maps of 1.31 and later: `war3map.wtg`'s layout has no text form, so
     their triggers don't open in the editor.
@@ -1064,6 +1060,15 @@ the code stays JASS, with everything the editor does for JASS):
   undone as one (`triggers::wtg_edit`'s `wct`,
   `customtext::reorder`). A custom script whose pieces don't go with the
   triggers (as many as there are) is said so once, and left alone.
+- **A trigger renamed, its names in the code follow**: what World
+  Editor's script makes of a trigger of custom text is its variable
+  (`gg_trg_<name>`) and the call of `InitTrig_<name>`; its functions
+  are its code's. So renaming one renames those two names wherever the
+  custom script writes them (whole names: `gg_trg_AB` isn't `gg_trg_A`'s;
+  `triggers::rename_trigger_in_code`), in the same edit, and a piece of
+  its code open is reopened as its new name's where it was. Its other
+  functions (`Trig_<name>_Actions` ...) are its code's own: they keep
+  their names.
 - **Saved together**: saving one saves the other, so the files on disk
   never put code to the wrong trigger.
 - **Read as code as World Editor builds it**: the custom script is vJASS
