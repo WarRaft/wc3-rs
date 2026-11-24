@@ -1,6 +1,48 @@
 # wc3-rs
 The ultimate high-performance Rust ecosystem for Warcraft III map development, modding, and asset parsing.
 
+## Open tasks
+
+What's known to be next, so work can pick up where it stopped (each
+item's details are in its section below):
+
+- **Triggers (`.wtg` + `.wct`, `.trg`).**
+  - Renaming a trigger of custom text leaves the names in its code
+    (`InitTrig_<name>`, `gg_trg_<name>`) as they were, and a piece of its
+    code open (`wc3code:…/<name>.j`) stops following it (it's found by
+    the trigger's name): reopen it.
+  - No **Convert to Custom Text** yet.
+  - Maps of 1.31 and later: `war3map.wtg`'s layout has no text form, so
+    their triggers don't open in the editor.
+  - The way back, `.trg` into a map's `war3map.wtg` (only what World
+    Editor has; what it hasn't is listed), isn't written yet.
+  - Names of objects for codes (`hfoo`), and pickers of objects in the
+    parameters' dialogs.
+  - What `war3mapUnits.doo` places is declared as both `gg_unit_` and
+    `gg_item_` to the custom script (which it is takes the game's tables).
+- **The build** (see [Building a map](#building-a-map)).
+  - JassHelper's `//! inject main/config`, `//! dovjassinit`,
+    `//! loaddata`, `//! external`: an error each.
+  - An operator of an interface or a `stub` one; a struct of more than
+    8190 instances.
+  - AngelScript (UjAPI) and Lua outputs: stubs.
+  - A copy of a base map keeps the space of the files it replaces (no
+    compacting: it would lose the files nobody knows the names of).
+  - A build from `.trg` files leaves the map's `war3map.wtg` and
+    `war3map.wct` as they were (World Editor would open the old
+    triggers).
+  - No optimizations (dead code) yet.
+- **MCP**: renaming (refactoring) JASS across a project.
+- **Tests in the editor** ([below](#tests-in-the-editor)): dragging the
+  line beside the trigger tree isn't driven (no mouse); every new piece
+  of the editor gets a step in `extension/e2e/suite.js`.
+- **Data**: the real maps tested are in `../maps` (Diablo III beta, The
+  Castle, CruiserCommand, LastGuards); none uses textmacros, hooks or
+  Zinc's arrays of several dimensions, which only tests cover. The
+  build's and the server's tests on real maps take their paths from
+  environment variables (`WC3_PROJECT`, `MAP`, `EXTRACT_MAP` ...: see
+  each test).
+
 ## Projects
 
 A folder with a **`wc3.bni`** file in it is a **project**, the way a folder
