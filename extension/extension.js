@@ -2395,6 +2395,7 @@ function registerBuild(context, binary) {
 
         running = true
         output.clear()
+        let logged = ''
         const args = ['build', '--project', root, ...(name ? [name] : [])]
         output.appendLine(`> wc3 ${args.join(' ')}`)
         const result = await window.withProgress(
@@ -2402,29 +2403,36 @@ function registerBuild(context, binary) {
             () => new Promise(resolve => {
                 const child = spawn(binary, args, {cwd: root})
                 let out = ''
-                child.stdout.on('data', d => { out += d; output.append(d.toString()) })
-                child.stderr.on('data', d => output.append(d.toString()))
+                child.stdout.on('data', d => { out += d; logged += d; output.append(d.toString()) })
+                child.stderr.on('data', d => { logged += d; output.append(d.toString()) })
                 child.on('error', e => resolve({code: -1, out: e.message}))
                 child.on('close', code => resolve({code, out}))
             }),
         ).finally(() => { running = false })
+        // Said, not waited for: the command is done when the build is.
         if (result.code === 0) {
             const built = /^[^:]+: (.+?) \(/.exec(result.out.trim())
             const done = built ? built[1] : root
-            const go = await window.showInformationMessage(`WC3: built ${done}`, 'Reveal', 'Show Output')
-            if (go === 'Reveal') commands.executeCommand('revealFileInOS', Uri.file(done))
-            if (go === 'Show Output') output.show(true)
+            window.showInformationMessage(`WC3: built ${done}`, 'Reveal', 'Show Output').then(go => {
+                if (go === 'Reveal') commands.executeCommand('revealFileInOS', Uri.file(done))
+                if (go === 'Show Output') output.show(true)
+            })
         } else {
             output.show(true)
             window.showErrorMessage('WC3: the build failed; see the output "WC3 Build".')
         }
+        return {code: result.code, output: logged}
     }
 
     const lenses = new EventEmitter()
     context.subscriptions.push(
         output,
         lenses,
-        commands.registerCommand('wc3.build', (arg, name) => run(arg, name).catch(e => window.showErrorMessage(`WC3: ${e.message}`))),
+        // A menu passes the file and what it was run from (the editor
+        // group's ids); a lens, the file and the build's name.
+        commands.registerCommand('wc3.build', (arg, name) => run(arg, typeof name === 'string' ? name : undefined).catch(e => {
+            window.showErrorMessage(`WC3: ${e.message}`)
+        })),
         workspace.onDidChangeTextDocument(e => { if (path.basename(e.document.uri.fsPath) === 'wc3.bni') lenses.fire() }),
         languages.registerCodeLensProvider({language: 'bni', pattern: '**/wc3.bni'}, {
             onDidChangeCodeLenses: lenses.event,

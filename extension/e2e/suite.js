@@ -66,6 +66,18 @@ async function steps() {
     // "Extensions are disabled" (the others are, on purpose): not in the screenshots.
     await vscode.commands.executeCommand('notifications.clearAll')
 
+    log('the map built from the button over wc3.bni (the file and the editor group, as a menu passes them)')
+    const manifest = vscode.Uri.file(path.join(path.dirname(map), 'wc3.bni'))
+    await vscode.window.showTextDocument(manifest)
+    const built = path.join(path.dirname(map), 'build', 'debug.w3x')
+    fs.rmSync(built, {force: true})
+    const result = await vscode.commands.executeCommand('wc3.build', manifest, {groupId: 1})
+    if (!result || result.code !== 0) log(`  the build said:\n${result?.output ?? '(nothing)'}`)
+    check(result && result.code === 0, 'the build succeeded')
+    check(fs.existsSync(built), 'build/debug.w3x written')
+    check(fs.statSync(built).size > 1000000, `build/debug.w3x (${Math.round(fs.statSync(built).size / 1024)} KB)`)
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors')
+
     log('the custom script opened as the Explorer opens it: the triggers come up')
     await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(map, 'war3map.wct')).with({scheme: 'wc3map'}))
     const editor = await until(() => [...api.triggerEditors.values()][0], 'a trigger editor')

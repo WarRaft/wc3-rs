@@ -28,7 +28,7 @@ fs.rmSync(path.join(out, 'workspace'), {recursive: true, force: true})
 const workspace = path.join(out, 'workspace')
 fs.mkdirSync(workspace, {recursive: true})
 fs.copyFileSync(map, path.join(workspace, 'map.w3x'))
-fs.writeFileSync(path.join(workspace, 'wc3.bni'), `[project]\ngame=${JSON.stringify(game)}\n`)
+fs.writeFileSync(path.join(workspace, 'wc3.bni'), `[project]\ngame=${JSON.stringify(game)}\n\n[map]\nroot=map.w3x\n\n[build]\nname=debug\n`)
 fs.rmSync(path.join(out, 'log.txt'), {force: true})
 
 // The profile's socket path must be short (macOS: 103 characters).
