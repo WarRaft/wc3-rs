@@ -85,10 +85,12 @@ pub struct Project {
     pub lint_groups: HashMap<String, LintSetting>,
 }
 
-/// A `[build]`: a scenario of building the project's map.
+/// A `[build]`: a scenario of building the project's map. Any number of
+/// them, each its own section; one without a name is the default (one at
+/// most), what a build asked for by no name builds.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Build {
-    /// `name=`: unique in the project.
+    /// `name=`: unique in the project; empty for the default build.
     pub name: String,
     /// `out=`: where the map is written, resolved against the project's
     /// root; `build/<name>.w3x` when left out.
@@ -100,7 +102,37 @@ pub struct Build {
 impl Build {
     /// Where the map is written.
     pub fn out(&self, root: &Path) -> PathBuf {
-        self.out.clone().unwrap_or_else(|| root.join("build").join(format!("{}.w3x", self.name)))
+        let name = if self.name.is_empty() { "map" } else { self.name.as_str() };
+        self.out.clone().unwrap_or_else(|| root.join("build").join(format!("{name}.w3x")))
+    }
+
+    /// What this build is called to people: its name, or "the default build".
+    pub fn title(&self) -> String {
+        if self.name.is_empty() { "the default build".into() } else { format!("build '{}'", self.name) }
+    }
+}
+
+impl Project {
+    /// The build asked for by `name`: that one; without a name, the
+    /// default (the `[build]` without one), else the first; without any
+    /// `[build]`, a default one.
+    pub fn build_named(&self, name: Option<&str>) -> Option<Build> {
+        match name.filter(|n| !n.is_empty()) {
+            Some(n) => self.builds.iter().find(|b| b.name == n).cloned(),
+            None => Some(self.builds.iter().find(|b| b.name.is_empty()).or(self.builds.first()).cloned().unwrap_or_default()),
+        }
+    }
+
+    /// Why the map of `b` can't be written where it goes: inside a root
+    /// of the map, or among the project's code, it would be read as the
+    /// map's (or the code's) by the next build. `None` when it can.
+    pub fn out_problem(&self, b: &Build) -> Option<String> {
+        let out = normalize(&b.out(&self.root));
+        if let Some(r) = self.roots.iter().find(|r| out == normalize(r) || (r.is_dir() && out.starts_with(normalize(r)))) {
+            return Some(format!("{} writes {} inside the map's root {}: the next build would take it as one of the map's files; give it an 'out' elsewhere", b.title(), out.display(), r.display()));
+        }
+        let code = self.sources.iter().any(|m| m.matches(&out)) && !self.exclude.iter().any(|m| m.matches(&out));
+        code.then(|| format!("{} writes {} among the project's code ([code] sources): give it an 'out' elsewhere, or exclude it", b.title(), out.display()))
     }
 }
 
@@ -246,6 +278,7 @@ pub fn is_manifest(path: &Path) -> bool {
 /// repeated here; those come from `bni-rs` itself.
 pub fn load(root: &Path, src: &str) -> (Project, Vec<Issue>) {
     let doc = bni_rs::parse(src);
+    let mut build_places: Vec<(usize, usize, usize)> = Vec::new();
     let mut project = Project {
         root: root.to_path_buf(),
         ..Project::default()
@@ -298,7 +331,7 @@ pub fn load(root: &Path, src: &str) -> (Project, Vec<Issue>) {
                     }
                 }
             }
-            "build" => read_build(section, &mut project, &mut issues),
+            "build" => read_build(section, &mut project, &mut issues, &mut build_places),
             "jass" => {
                 for item in items {
                     match key_of(item, &mut issues) {
@@ -333,6 +366,12 @@ pub fn load(root: &Path, src: &str) -> (Project, Vec<Issue>) {
                 Level::Warning,
                 format!("unknown section [{other}] (expected [project], [code], [map], [build], [jass] or [lint])"),
             )),
+        }
+    }
+    // Where each build writes its map, once the roots and the code are known.
+    for (b, (line, col, end_col)) in project.builds.iter().zip(&build_places) {
+        if let Some(message) = project.out_problem(b) {
+            issues.push(Issue { level: Level::Error, message, line: *line, col: *col, end_col: *end_col });
         }
     }
     (project, issues)
@@ -495,9 +534,11 @@ fn read_root(root: &Path, item: &Item, project: &mut Project, issues: &mut Vec<I
 }
 
 /// `[build]`: one build scenario, named by `name=`, unique.
-fn read_build(section: &bni_rs::ast::Section, project: &mut Project, issues: &mut Vec<Issue>) {
+fn read_build(section: &bni_rs::ast::Section, project: &mut Project, issues: &mut Vec<Issue>, places: &mut Vec<(usize, usize, usize)>) {
     let mut name: Option<String> = None;
     let mut build = Build::default();
+    // Where a problem of the build is shown: its `out=`, else its header.
+    let mut place = (section.name.span.start_line, section.name.span.start_col, section.name.span.end_col);
     for item in &section.items {
         match key_of(item, issues) {
             Some("out") => {
@@ -508,6 +549,8 @@ fn read_build(section: &bni_rs::ast::Section, project: &mut Project, issues: &mu
                             issues.push(at_name(key, Level::Warning, "'out' set twice; the last one is used".into()));
                         }
                         build.out = Some(resolve(&project.root, field.text().trim()));
+                        let at = at_field(field, Level::Error, String::new());
+                        place = (at.line, at.col, at.end_col);
                     }
                     _ => issues.push(at_name(key, Level::Error, "'out' needs a single path".into())),
                 }
@@ -545,9 +588,19 @@ fn read_build(section: &bni_rs::ast::Section, project: &mut Project, issues: &mu
         }
     }
     match name {
-        Some(n) if !project.builds.iter().any(|b| b.name == n) => project.builds.push(Build { name: n, ..build }),
+        Some(n) if !project.builds.iter().any(|b| b.name == n) => {
+            project.builds.push(Build { name: n, ..build });
+            places.push(place);
+        }
         Some(_) => {}
-        None => issues.push(at_name(&section.name, Level::Error, "a [build] needs a 'name'".into())),
+        // No name: the default build, one at most.
+        None if project.builds.iter().any(|b| b.name.is_empty()) => {
+            issues.push(at_name(&section.name, Level::Error, "there's a default build already (a [build] without a 'name'): name this one".into()))
+        }
+        None => {
+            project.builds.push(build);
+            places.push(place);
+        }
     }
 }
 

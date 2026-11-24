@@ -56,8 +56,8 @@ dialect=vjass
 | `[code]`    | `sources` | masks (a plain path too), comma-separated, relative to the project root | the project's code |
 | `[code]`    | `exclude` | masks, comma-separated, relative to the project root | what isn't code, even inside `sources`; the roots aren't touched |
 | `[map]`     | `root`    | one path per line, absolute or relative to the project root: a folder or a map (`.w3x`, `.w3m`) | a layer of the map: its top is the map's top; repeat for more, each over the ones before |
-| `[build]`   | `name`    | a name, unique in the project            | a build scenario (debug, release ...): see [Building a map](#building-a-map) |
-| `[build]`   | `out`     | a path, relative to the project root     | where the map is written; `build/<name>.w3x` without it |
+| `[build]`   | `name`    | a name, unique in the project            | a build scenario (debug, release ...), a `[build]` each: see [Building a map](#building-a-map); one without a name is the default (one at most), built when none is named, its map `build/map.w3x` |
+| `[build]`   | `out`     | a path, relative to the project root     | where the map is written; `build/<name>.w3x` without it; never inside a `[map]` root or the `[code] sources` (an error: the next build would read it) |
 | `[build]`   | `uglify`  | `1` or `0`                               | the script's names made short (see "Shorter names" below); `0` without it |
 | `[jass]`    | `dialect` | `jass` or `vjass` (case-insensitive)     | the dialect of `.j` files that don't declare one in a `// @dialect` header |
 | `[lint]`    | a rule or group id | `off`, `warning` or `error`     | turn a lint rule (or every rule of a group) off or on, at that level (see [Lint](#lint)) |
@@ -205,8 +205,12 @@ plus checks of its settings, at the exact name or value:
 - `root` with no value or several on one line (an error), a root that
   doesn't exist, is a file but not a map, or is listed twice (a
   warning), a second `[map]` (a warning: its roots are added);
-- a `[build]` without a `name`, with two, or with a name another build
-  has (an error);
+- a `[build]` with two `name`s, a name another build has, or a second
+  one without a name (the default is one) (an error); repeated
+  `[build]` sections are no problem, each is a build; a build whose map
+  would be written inside a `[map]` root or among the `[code] sources`
+  (an error, at its `out=` or its `[build]`; a build won't run either);
+  `uglify` that isn't `1` or `0` (an error);
 - an unknown lint rule or group (a warning), or a setting that isn't `off`,
   `warning` or `error` (an error). A rule set twice takes the last value.
 
@@ -460,8 +464,10 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    written (`storm-rs`); optimizations (dead code) after. Done
    (`server/src/build.rs`, `wc3-build`'s `whole`):
    - a `[build]` says where the map goes (`out=`) and whether its names
-     are short (`uglify=`); `wc3 build` builds the first without a
-     name, and a project without a `[build]` as `build/map.w3x`;
+     are short (`uglify=`); `wc3 build` without a name builds the
+     default (the `[build]` without a name), else the first, and a
+     project without a `[build]` as `build/map.w3x`; never into a root
+     or the code;
    - **the map's files** are the roots', the last that has a file
      winning, less what's the project's: the patches (`X.patch.txt`),
      `.trg` files, the project's code, `wc3.bni`, maps inside a root
@@ -494,8 +500,9 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
 **In the editor**: **WC3: Build Map…** (the command palette: the project
 of the active file, else the workspace's; the Explorer's menu of a
 `wc3.bni`), the ▶ button over an open `wc3.bni`, and a lens over each of
-its `[build]`s (**Build debug**). Several builds and none named: it asks
-which. The project's files open with changes are saved first (the build
+its `[build]`s (**Build debug**, **Build (default)**). Run with no
+build named (the palette, the button): the default; with several and no
+default, it asks which. The project's files open with changes are saved first (the build
 reads the disk); the build runs as a process of its own (`wc3 build`,
 the binary the extension ships), so the editor goes on answering, and
 what it says goes to the output **WC3 Build** (shown when it fails; a

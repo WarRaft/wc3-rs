@@ -2308,7 +2308,7 @@ function registerTxt2Preview(context) {
 
 /**
  * The `[build]`s of a `wc3.bni`'s text: each one's name and the line of
- * its `[build]` (a build without a name left out; the server reports it).
+ * its `[build]`; `''` for one without a name, the default build.
  *
  * @param {string} text
  * @returns {{name: string, line: number}[]}
@@ -2320,14 +2320,14 @@ function manifestBuilds(text) {
         const t = raw.replace(/\/\/.*$/, '').trim()
         const section = /^\[([^\]]*)\]/.exec(t)
         if (section) {
-            current = section[1].trim() === 'build' ? {line, name: null} : null
+            current = section[1].trim() === 'build' ? {line, name: ''} : null
             if (current) out.push(current)
             return
         }
         const name = /^name\s*=\s*(.*)$/.exec(t)
-        if (current && name && current.name === null) current.name = name[1].trim().replace(/^"(.*)"$/, '$1')
+        if (current && name && current.name === '') current.name = name[1].trim().replace(/^"(.*)"$/, '$1')
     })
-    return out.filter(b => b.name)
+    return out
 }
 
 /**
@@ -2385,10 +2385,12 @@ function registerBuild(context, binary) {
         const root = path.dirname(manifest)
         const open = workspace.textDocuments.find(d => d.uri.scheme === 'file' && d.uri.fsPath === manifest)
         const builds = manifestBuilds(open ? open.getText() : fs.readFileSync(manifest, 'utf8'))
-        if (name === undefined && builds.length > 1) {
-            const picked = await window.showQuickPick(builds.map(b => b.name), {title: `Build which of ${path.basename(root)}?`})
+        // No name: the default build ([build] without one); with none and
+        // several, which.
+        if (name === undefined && builds.length > 1 && !builds.some(b => b.name === '')) {
+            const picked = await window.showQuickPick(builds.map(b => ({label: b.name, name: b.name})), {title: `Build which of ${path.basename(root)}?`})
             if (!picked) return
-            name = picked
+            name = picked.name
         }
         // The build reads the disk: the project's files open with changes saved.
         for (const d of workspace.textDocuments) if (d.isDirty && d.uri.scheme === 'file' && d.uri.fsPath.startsWith(root + path.sep)) await d.save()
@@ -2397,9 +2399,10 @@ function registerBuild(context, binary) {
         output.clear()
         let logged = ''
         const args = ['build', '--project', root, ...(name ? [name] : [])]
+        const title = name || 'the default build'
         output.appendLine(`> wc3 ${args.join(' ')}`)
         const result = await window.withProgress(
-            {location: ProgressLocation.Notification, title: `WC3: building ${name || path.basename(root)}…`},
+            {location: ProgressLocation.Notification, title: `WC3: building ${title} of ${path.basename(root)}…`},
             () => new Promise(resolve => {
                 const child = spawn(binary, args, {cwd: root})
                 let out = ''
@@ -2438,7 +2441,7 @@ function registerBuild(context, binary) {
             onDidChangeCodeLenses: lenses.event,
             provideCodeLenses(doc) {
                 return manifestBuilds(doc.getText()).map(b => new CodeLens(new Range(b.line, 0, b.line, 0), {
-                    title: `$(play) Build ${b.name}`,
+                    title: b.name ? `$(play) Build ${b.name}` : '$(play) Build (default)',
                     command: 'wc3.build',
                     arguments: [doc.uri, b.name],
                 }))

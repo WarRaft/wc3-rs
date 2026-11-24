@@ -48,7 +48,8 @@ fn build(args: Vec<String>) {
                 eprintln!("note: {n}");
             }
             let base = b.base.map_or(String::new(), |p| format!(", a copy of {}", p.display()));
-            println!("{}: {} ({} files{base}; triggers: {}; war3map.j {} lines) in {:.1?}", b.name, b.out.display(), b.files, b.triggers, b.script_lines, start.elapsed());
+            let name = if b.name.is_empty() { "default" } else { b.name.as_str() };
+            println!("{name}: {} ({} files{base}; triggers: {}; war3map.j {} lines) in {:.1?}", b.out.display(), b.files, b.triggers, b.script_lines, start.elapsed());
         }
         Err(errors) => {
             for e in errors.iter().take(50) {

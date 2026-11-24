@@ -369,9 +369,10 @@ fn reads_the_map_roots_in_order_and_they_are_sources() {
 
 #[test]
 fn builds_have_unique_names() {
-    let src = "[build]\nname=debug\n[build]\nname=release\nname=x\n[build]\nname=debug\n[build]\nfast=1\n";
+    let src = "[build]\nname=debug\n[build]\nname=release\nname=x\n[build]\nname=debug\n[build]\nfast=1\n[build]\nuglify=1\n";
     let (project, issues) = load(Path::new("/p"), src);
-    assert_eq!(project.builds.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["debug", "release"]);
+    // The one without a name is the default; a second one is refused.
+    assert_eq!(project.builds.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["debug", "release", ""]);
     let got: Vec<(usize, &str)> = issues.iter().map(|i| (i.line, i.message.as_str())).collect();
     assert_eq!(
         got,
@@ -379,9 +380,34 @@ fn builds_have_unique_names() {
             (5, "a build has one 'name'"),
             (7, "there's already a build named 'debug'"),
             (9, "unknown setting 'fast' in [build] (expected 'name', 'out' or 'uglify')"),
-            (8, "a [build] needs a 'name'"),
+            (10, "there's a default build already (a [build] without a 'name'): name this one"),
         ]
     );
+    // Asked for by no name: the default; by its name, that one.
+    assert_eq!(project.build_named(None).unwrap().name, "");
+    assert_eq!(project.build_named(Some("release")).unwrap().name, "release");
+    assert!(project.build_named(Some("nope")).is_none());
+    assert_eq!(project.builds[2].out(Path::new("/p")), PathBuf::from("/p/build/map.w3x"));
+    // No default: the first.
+    let (two, _) = load(Path::new("/p"), "[build]\nname=a\n[build]\nname=b\n");
+    assert_eq!(two.build_named(None).unwrap().name, "a");
+}
+
+#[test]
+fn a_builds_map_is_written_outside_the_roots_and_the_code() {
+    let tmp = TempDir::new("build-out");
+    std::fs::create_dir_all(tmp.0.join("map")).unwrap();
+    std::fs::create_dir_all(tmp.0.join("src")).unwrap();
+    let (_, issues) = load(&tmp.0, "[map]\nroot=map\n[code]\nsources=src\n[build]\nname=a\nout=map/a.w3x\n[build]\nname=b\nout=src/b.w3x\n[build]\nname=c\n");
+    let errors: Vec<(usize, &str)> = issues.iter().filter(|i| i.level == Level::Error).map(|i| (i.line, i.message.as_str())).collect();
+    assert_eq!(errors.len(), 2, "{errors:?}");
+    assert_eq!(errors[0].0, 7);
+    assert!(errors[0].1.starts_with("build 'a' writes ") && errors[0].1.contains("inside the map's root"), "{errors:?}");
+    assert_eq!(errors[1].0, 10);
+    assert!(errors[1].1.contains("among the project's code"), "{errors:?}");
+    // The project's folder as a root: the default place is inside it.
+    let (_, issues) = load(&tmp.0, "[map]\nroot=.\n[build]\n");
+    assert!(issues.iter().any(|i| i.message.starts_with("the default build writes")), "{:?}", issues.iter().map(|i| &i.message).collect::<Vec<_>>());
 }
 
 #[test]

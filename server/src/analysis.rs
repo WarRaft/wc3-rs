@@ -138,7 +138,12 @@ fn bni(doc: &Document, project: Option<&Project>, objects: Option<&Metadata>, ou
     let text_form = doc.path.as_deref().is_some_and(|p| {
         p.extension().is_some_and(|e| !["ini", "txt", "bni", "fdf"].iter().any(|x| e.eq_ignore_ascii_case(x)))
     });
-    lint.extend(bni_rs::lint(&parsed).into_iter().filter(|d| !(text_form && d.rule == parser_rs::rule::DUPLICATE_SECTION)));
+    // A project's `wc3.bni` has a `[build]` per build (its own checks
+    // tell them apart by name).
+    let manifest = doc.path.as_deref().is_some_and(project::is_manifest);
+    lint.extend(bni_rs::lint(&parsed).into_iter().filter(|d| {
+        !(d.rule == parser_rs::rule::DUPLICATE_SECTION && (text_form || (manifest && d.message.starts_with("duplicate section [build]"))))
+    }));
     let lint = project::apply_lint(lint, project);
     diags.extend(lint.into_iter().map(|d| out.lint(d)));
     if let Some(path) = doc.path.as_deref().filter(|p| project::is_manifest(p)) {

@@ -260,3 +260,12 @@ fn txt2_is_highlighted_and_checked() {
     assert!(!tokens(Language::Txt2, "**bold** ++green++\n").is_empty());
     assert_eq!(Language::from_path(Path::new("/a/w3.txt2")), Some(Language::Txt2));
 }
+
+#[test]
+fn a_manifest_has_a_build_section_per_build() {
+    let doc = |text: &str| Document { language: Language::Bni, version: 0, text: text.into(), path: Some(std::path::PathBuf::from("/nowhere/wc3.bni")) };
+    let two_builds = diagnostics(&doc("[build]\nname=a\n\n[build]\nname=b\n"), None);
+    assert!(!two_builds.iter().any(|d| d.message.contains("duplicate section")), "{two_builds:?}");
+    let two_projects = diagnostics(&doc("[project]\n[project]\n"), None);
+    assert!(two_projects.iter().any(|d| d.message.contains("duplicate section [project]")), "{two_projects:?}");
+}

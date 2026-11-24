@@ -28,7 +28,7 @@ use wc3_build::whole::{Code, Input};
 use wtg_rs::text::{Declared, Scope};
 
 use crate::game::{Game, Lookup};
-use crate::project::{Build, Project};
+use crate::project::Project;
 
 /// What a build made.
 #[derive(Debug, Clone, PartialEq)]
@@ -66,10 +66,10 @@ enum From {
 /// The build `name` of `project` (its first without a name; a build of
 /// its own without a `[build]`), made.
 pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>> {
-    let b = match name {
-        Some(n) => project.builds.iter().find(|b| b.name == n).cloned().ok_or_else(|| vec![format!("the project has no build named '{n}' ({})", names(project))])?,
-        None => project.builds.first().cloned().unwrap_or_else(|| Build { name: "map".into(), ..Default::default() }),
-    };
+    let b = project.build_named(name).ok_or_else(|| vec![format!("the project has no build named '{}' ({})", name.unwrap_or(""), names(project))])?;
+    if let Some(problem) = project.out_problem(&b) {
+        return Err(vec![problem]);
+    }
     let out = b.out(&project.root);
     if project.roots.is_empty() {
         return Err(vec!["the project has no map: [map] root= names its layers (a folder, or a map)".into()]);
@@ -108,7 +108,7 @@ pub fn build_at(path: &Path, name: Option<&str>) -> Result<Built, Vec<String>> {
 }
 
 fn names(project: &Project) -> String {
-    if project.builds.is_empty() { "it has no [build]".into() } else { format!("it has {}", project.builds.iter().map(|b| b.name.as_str()).collect::<Vec<_>>().join(", ")) }
+    if project.builds.is_empty() { "it has no [build]".into() } else { format!("it has {}", project.builds.iter().map(|b| if b.name.is_empty() { "the default".to_string() } else { format!("'{}'", b.name) }).collect::<Vec<_>>().join(", ")) }
 }
 
 /// Is `path` the project's code (`[code] sources`, not `exclude`)?
