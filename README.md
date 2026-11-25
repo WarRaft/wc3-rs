@@ -604,7 +604,13 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    given back, the files nobody knows the names of kept (moved by the
    hash table, an encrypted one encrypted again for its place); one that
    can't be is left as it is, with a note. A build from `.trg` files
-   gives the map `war3map.wtg` and `war3map.wct` made of them.
+   gives the map `war3map.wtg` and `war3map.wct` made of them. A map
+   with no triggers (a protected one, its script only `Scripts\war3map.j`)
+   in a project with no code keeps its own script as it is: made of its
+   files alone it would have none of its code, and the game would run
+   that one first (LastGuards); with code, the script made replaces it,
+   and a note says so. CruiserCommand and LastGuards built so: 0
+   problems.
 
 **In the editor**: **WC3: Build Map…** (the command palette: the project
 of the active file, else the workspace's; the Explorer's menu of a

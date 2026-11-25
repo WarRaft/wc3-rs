@@ -215,3 +215,21 @@ fn a_base_maps_copy_is_compacted() {
     let a = storm_rs::archive::MpqArchive::open(&b.out).unwrap();
     assert!(String::from_utf8(a.read_file("war3map.j").unwrap()).unwrap().contains("function main takes nothing returns nothing"));
 }
+
+#[test]
+fn a_protected_maps_own_script_is_kept() {
+    let tmp = crate::project::tests::TempDir::new("protected");
+    let root = &tmp.0;
+    // A protected map: no triggers, its script in Scripts\war3map.j.
+    let info = w3i_rs::Info { version: 25, ..Default::default() }.to_bytes().unwrap();
+    let script = b"function main takes nothing returns nothing\n    call TheRealCode()\nendfunction\n".to_vec();
+    crate::map::tests::make_map_bytes(&root.join("base.w3x"), &[("war3map.w3i", info), ("Scripts\\war3map.j", script.clone())]);
+    std::fs::write(root.join("wc3.bni"), "[map]\nroot=base.w3x\n[build]\n").unwrap();
+    let b = build_at(root, None).unwrap_or_else(|e| panic!("{e:#?}"));
+    assert_eq!((b.script.as_str(), b.triggers.as_str()), ("Scripts\\war3map.j", "none"));
+    assert!(b.notes.iter().any(|n| n.contains("its own script (Scripts\\war3map.j) is kept as it is")), "{:?}", b.notes);
+    let a = storm_rs::archive::MpqArchive::open(&b.out).unwrap();
+    assert_eq!(a.read_file("Scripts\\war3map.j").unwrap(), script);
+    // None made in front of it: the game would run that one.
+    assert!(a.read_file("war3map.j").is_err());
+}

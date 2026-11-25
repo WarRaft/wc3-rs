@@ -128,6 +128,30 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
     }
 
     let (files, base) = map_files(project, &out)?;
+    // The map's own script (a protected map's is often only
+    // `Scripts\war3map.j`): what the game runs.
+    let own_script = ["war3map.j", "Scripts\\war3map.j"]
+        .iter()
+        .find_map(|n| read(n).filter(|b| !String::from_utf8_lossy(b).trim().is_empty()).map(|b| (n.to_string(), b)));
+    // Nothing to make it of but where things are (no triggers, no code):
+    // it's kept as it is. Made of the map's files alone, it would have none
+    // of its code, and the game would run that instead.
+    if triggers == "none"
+        && code.is_empty()
+        && let Some((name, bytes)) = &own_script
+    {
+        notes.push(format!("the map has no triggers and the project no code: its own script ({name}) is kept as it is"));
+        // Written as it is, under its name (a build's own made else).
+        let kept = [(name.clone(), bytes.clone())];
+        let written = write(project, &files, base.as_deref(), &kept, &game, &out, &mut notes).map_err(|e| vec![e])?;
+        let lines = String::from_utf8_lossy(bytes).lines().count();
+        return Ok(Built { name: b.name, out, base, files: written, script: name.clone(), script_lines: lines, triggers, notes, errors: Vec::new() });
+    }
+    if triggers == "none"
+        && let Some((name, _)) = &own_script
+    {
+        notes.push(format!("the map has no triggers: its own script ({name}) is replaced by one made of its files and the project's code, which has none of the map's own code"));
+    }
     let input = Input { read: &read, read_patched: &read_patched, variables, initialization, code, uglify: b.uglify, inline: b.inline, dead_code: b.dead_code, string_hash: b.string_hash, script: b.script, import: &import };
     let script = wc3_build::whole::script(&input).map_err(said)?;
     notes.extend(script.notes);
