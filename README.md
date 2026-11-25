@@ -1543,6 +1543,13 @@ without a packaged binary it takes the dev build,
 `cli/target/{release,debug}/wc3`. `wc3-server` and `wc3-mcp` still build
 alone, for tools and tests.
 
+**Releases.** `server/publish.sh` builds the binaries, publishes the
+extension (which bumps the version in `extension/package.json`), commits
+and pushes that bump as `v<version>`, and makes a GitHub release of that
+name on it with the same three binaries, for MCP clients
+without the extension: `wc3-<os> mcp` from
+`https://github.com/WarRaft/wc3-rs/releases/latest/download/wc3-{macos,linux,windows.exe}`.
+
 Its tools read the game's files (names, `UI\TriggerData.txt`, metadata)
 the way the editor does for the same file: through `game` and `roots`
 when a call gives them, else through the settings of the project the file
