@@ -2,6 +2,8 @@
 
 A Warcraft III map editor in VS Code.
 
+<a href="https://send.monobank.ua/jar/7uKvD6jK8T"><img src="https://raw.githubusercontent.com/WarRaft/wc3-rs/main/extension/images/donate.png" alt="Donate via monobank jar" width="200" height="52"></a>
+
 The goal is a full replacement for World Editor: a map is a project of
 plain files (scripts, triggers, object data, terrain, placed units and
 doodads, imports ...) that you open, edit and build into a `.w3x` here,

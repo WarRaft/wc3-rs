@@ -1,6 +1,8 @@
 # wc3-rs
 The ultimate high-performance Rust ecosystem for Warcraft III map development, modding, and asset parsing.
 
+<a href="https://send.monobank.ua/jar/7uKvD6jK8T"><img src="extension/images/donate.svg" alt="Donate via monobank jar" width="200" height="52"></a>
+
 ## Open tasks
 
 What's known to be next, so work can pick up where it stopped (each
