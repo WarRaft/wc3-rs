@@ -21,9 +21,9 @@ item's details are in its section below):
     `//! loaddata`, `//! external`: an error each.
   - An operator of an interface or a `stub` one; a struct of more than
     8190 instances.
-  - AngelScript (UjAPI) output (decided, not written: see Outputs);
-    Show Lua and Show AngelScript for a trigger. Lua isn't run in the
-    game yet (only `luac` and a test's `lua`).
+  - Show Lua and Show AngelScript for a trigger. AngelScript's structs
+    as classes (lowered into arrays for now). Neither Lua nor AngelScript
+    is run in the game yet (only `luac`, a test's `lua`, `as-rs`).
   - A copy of a base map keeps the space of the files it replaces (no
     compacting: it would lose the files nobody knows the names of).
   - A build from `.trg` files leaves the map's `war3map.wtg` and
@@ -443,7 +443,14 @@ each output is made from it:
   `null`); `'hfoo'` is written as in JASS. UjAPI ships no `Blizzard.j`,
   so the build takes the functions and globals of it the code uses (and
   what they use: tree-shaking) and writes them in AngelScript too.
-  Classes for structs.
+  Classes for structs. `integer`, `real`, `boolean`, `string` are `int`,
+  `float`, `bool`, `string`; `code` is UjAPI's funcdef, `function F`
+  `@F` (`TimerStart(t, 1.0f, false, @F)`, `Condition(@F)`). The map's
+  script is `war3map.as`, its entries `void main()` and `void config()`.
+  An array (AngelScript's `array<T>` has a size, a JASS one none) is a
+  class of the namespace `WC3` the build writes for each type of element
+  used (`WC3::int_array`), indexed as JASS's (`a[i] = x`): any index
+  read, what's never set its type's empty value, growing as it's set.
 - **Lua** (UjAPI runs it too): the natives and `Blizzard.j`'s functions
   as the game gives them (its own Lua has `Blizzard.j`, so it isn't
   written again: its `bj_` globals are the game's state).
@@ -534,7 +541,12 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    Diablo III beta's whole map builds as Lua that `luac -p` reads, and a
    test runs a script in `lua` to see it does what the JASS did. A map
    built as Lua gets `war3map.lua` and its `war3map.w3i` the Lua flag
-   (from 1.31's layout; an older one is told so).
+   (from 1.31's layout; an older one is told so). AngelScript
+   (`wc3-build`'s `angelscript`, as decided above; `Blizzard.j`
+   tree-shaken): Diablo III beta's whole map builds as 27064 lines that
+   `as-rs` reads, every call a function written or a native of `Jass::`.
+   Not yet: structs as classes (lowered into arrays as for JASS), Show
+   Lua and Show AngelScript.
 6. **The map**: `[build]` scenarios, the roots' layers, the `.w3x`
    written (`storm-rs`); optimizations (dead code) after. Done
    (`server/src/build.rs`, `wc3-build`'s `whole`):

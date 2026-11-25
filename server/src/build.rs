@@ -106,7 +106,10 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
     // Code alone: its script, nothing of a map's.
     if alone {
         let sources: Vec<(wc3_build::from_jass::Source, Dialect)> = code.iter().map(|c| (wc3_build::from_jass::Source { name: &c.name, text: &c.text }, c.dialect)).collect();
-        let options = wc3_build::jass::Options { uglify: b.uglify, game: game_sigs(), script: b.script };
+        let text = |n: &str| read(n).map(crate::document::decode).unwrap_or_default();
+        // AngelScript's: common.j's names in Jass::, what's used of Blizzard.j.
+        let (common_j, blizzard_j) = if b.script == wc3_build::jass::Script::AngelScript { (text("Scripts\\common.j"), text("Scripts\\Blizzard.j")) } else { Default::default() };
+        let options = wc3_build::jass::Options { uglify: b.uglify, game: game_sigs(), script: b.script, common_j, blizzard_j };
         let built = wc3_build::from_jass::module_with(&sources, &import).and_then(|m| wc3_build::jass::build_with(&m, &options)).map_err(said)?;
         notes.extend(built.notes);
         if let Some(dir) = out.parent() {
