@@ -17,7 +17,6 @@ item's details are in its section below):
   - What `war3mapUnits.doo` places is declared as both `gg_unit_` and
     `gg_item_` to the custom script (which it is takes the game's tables).
 - **The build** (see [Building a map](#building-a-map)).
-  - An operator of an interface or a `stub` one.
   - Of JassHelper's manual (its every example run by `wc3-build`'s
     `tests/manual.rs`): `//! external` (running another tool, an
     ObjectMerger) isn't run: an error. The rest is read and built; what
@@ -542,8 +541,10 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    `super`, `typeid`, `.evaluate`/`.execute` through triggers;
    function interfaces (`I.f` a number, run through a trigger of
    each), operators (`x`, `x=`, `[]`, `[]=`, `<`), `delegate`; what's
-   built checks clean as the game's JASS. Not yet: operators of
-   interfaces, structs of more than 8190 instances.
+   built checks clean as the game's JASS; operators of interfaces and
+   `stub` ones by the instance's type, and more index space than an array
+   (split into the game's arrays). Everything of JassHelper's manual but
+   `//! external` (`wc3-build`'s README).
 5. **AngelScript and Lua** past their stubs (see Outputs above for
    what's decided): the build of code alone and `script=` first, then
    Lua, then AngelScript with `Blizzard.j` tree-shaken, then Show Lua and
