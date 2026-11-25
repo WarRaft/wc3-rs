@@ -20,7 +20,7 @@ const path = require('path')
 
 const ext = path.resolve(__dirname, '..')
 const map = path.resolve(process.argv[2] || path.join(ext, '..', '..', 'maps', 'Diablo', 'Diablo-III-beta-Unprotected.w3x'))
-const game = process.env.WC3_GAME || '/Volumes/TrascendSSD/Warcraft III/Warcraft III 1.26a Full (EN)'
+const game = process.env.WC3_GAME || '/Volumes/TrascendSSD/Warcraft III (Vanilla)/Warcraft III 1.26a Full (EN)'
 const code = process.env.VSCODE || '/Applications/Visual Studio Code.app/Contents/MacOS/Code'
 const out = process.env.E2E_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'wc3-e2e-'))
 

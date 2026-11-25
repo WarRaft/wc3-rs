@@ -86,6 +86,8 @@ const QUERY = {
     TRIGGER_CATALOG: 19,
     TRIGGER_ICONS: 20,
     TRIGGER_JASS: 21,
+    TRIGGER_LUA: 22,
+    TRIGGER_ANGELSCRIPT: 23,
 }
 
 /** Symbol kinds, in wire order (`parser_rs::SymbolKind`). */

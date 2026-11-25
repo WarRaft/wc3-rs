@@ -117,6 +117,100 @@ body {
     background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
 }
 
+/* Show JASS, Lua, AngelScript: each language's icon, its tooltip styled
+   as the editor's hovers (the page's own, not the browser's). */
+
+.langs {
+    display: flex;
+    gap: 2px;
+}
+
+.lang-button {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 26px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.lang-button svg {
+    width: 18px;
+    height: 18px;
+    transition: transform .12s ease;
+}
+
+.lang-button:hover {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+.lang-button:hover svg {
+    transform: scale(1.1);
+}
+
+.lang-button:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.lang-button[data-tip]::after,
+.lang-button[data-tip]::before {
+    position: absolute;
+    top: calc(100% + 6px);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity .12s ease .35s, visibility 0s linear .47s;
+    z-index: 10;
+}
+
+/* The words: below the button, its right edge at the button's (the bar's
+   right end: no room on the right). */
+.lang-button[data-tip]::after {
+    content: attr(data-tip);
+    right: 0;
+    width: max-content;
+    max-width: 260px;
+    padding: 4px 8px;
+    color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground));
+    background: var(--vscode-editorHoverWidget-background, var(--vscode-editorWidget-background));
+    border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-widget-border, transparent));
+    border-radius: 4px;
+    box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, .36));
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: left;
+    white-space: normal;
+}
+
+/* Its arrow, at the button. */
+.lang-button[data-tip]::before {
+    content: "";
+    right: 9px;
+    margin-top: -5px;
+    width: 8px;
+    height: 8px;
+    background: var(--vscode-editorHoverWidget-background, var(--vscode-editorWidget-background));
+    border-left: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-widget-border, transparent));
+    border-top: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-widget-border, transparent));
+    transform: rotate(45deg);
+    z-index: 11;
+}
+
+.lang-button[data-tip]:hover::after,
+.lang-button[data-tip]:hover::before,
+.lang-button[data-tip]:focus-visible::after,
+.lang-button[data-tip]:focus-visible::before {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity .12s ease .35s, visibility 0s linear .35s;
+}
+
 .description {
     margin: 0;
     padding: 6px 12px;

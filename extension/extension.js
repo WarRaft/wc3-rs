@@ -155,6 +155,15 @@ const MAP_NAME = /\.(w3[xm]|mpq)$/i
 const OBJECTS_SCHEME = 'wc3obj'
 /** A trigger's JASS, read-only (`registerTriggerJass`). */
 const JASS_SCHEME = 'wc3jass'
+/**
+ * What a trigger is shown built into (`registerTriggerJass`): each
+ * language's scheme, file extension, query, command, name and icon.
+ */
+const SHOWN = [
+    {id: 'jass', scheme: JASS_SCHEME, ext: 'j', query: 'TRIGGER_JASS', command: 'wc3.trg.showJass', name: 'JASS', icon: 'jass.svg'},
+    {id: 'lua', scheme: 'wc3lua', ext: 'lua', query: 'TRIGGER_LUA', command: 'wc3.trg.showLua', name: 'Lua', icon: 'lua.svg'},
+    {id: 'angelscript', scheme: 'wc3as', ext: 'as', query: 'TRIGGER_ANGELSCRIPT', command: 'wc3.trg.showAngelScript', name: 'AngelScript', icon: 'as.svg'},
+]
 /** A piece of a map's custom script, as a document of its own (`registerPieces`). */
 const PIECE_SCHEME = 'wc3code'
 
@@ -382,7 +391,7 @@ function supported(doc) {
     if (OBJECT_LANGUAGES.has(doc.languageId)) return doc.uri.scheme === OBJECTS_SCHEME
     // A trigger's JASS (Show JASS): analyzed as any JASS without a file,
     // for its highlighting and diagnostics.
-    return hasPath(doc.uri) || doc.uri.scheme === 'untitled' || doc.uri.scheme === JASS_SCHEME
+    return hasPath(doc.uri) || doc.uri.scheme === 'untitled' || SHOWN.some(s => s.scheme === doc.uri.scheme)
 }
 
 function sendRoots() {
@@ -1783,7 +1792,7 @@ ${wtg ? `<div class="map-side">
   <div class="spacer"></div>
   <span id="problems" class="problems" hidden></span>
   ${wtg ? `<button id="extract" class="text-button" title="Every trigger as a file of its own (.trg), in a folder you pick">Extract Triggers…</button>` : ''}
-  <button id="show-jass" class="text-button" title="The JASS this trigger is built into, beside it">Show JASS</button>
+  <div class="langs">${SHOWN.map(s => `<button id="show-${s.id}" class="lang-button" data-tip="Show ${s.name}: what this trigger is built into, beside it" aria-label="Show ${s.name}">${languageIcon(s.icon)}</button>`).join('')}</div>
   <button id="open-text" class="text-button" title="Open the text of this file">Open as Text</button>
 </div>
 <textarea id="description" class="description" rows="2" spellcheck="false" placeholder="Comment"></textarea>
@@ -2060,7 +2069,10 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
                     // A map's: its text, which `default` would open here again.
                     if (wtg) return window.showTextDocument(document, {viewColumn: panel.viewColumn, preview: false})
                     return commands.executeCommand('vscode.openWith', document.uri, 'default', panel.viewColumn)
-                case 'showJass': return commands.executeCommand('wc3.trg.showJass', document.uri)
+                case 'show': {
+                    const shown = SHOWN.find(s => s.id === msg.language)
+                    return shown && commands.executeCommand(shown.command, document.uri)
+                }
                 }
             }
             let queue = Promise.resolve()
@@ -2172,33 +2184,60 @@ function registerTriggerExtract(context) {
 }
 
 /**
- * Show JASS (`wc3.trg.showJass`): the JASS a `.trg` is built into, beside
- * it, read-only, under the `wc3jass:` scheme (`<name>.j`, the trigger's
- * URI in the query). A map's triggers (`.wtg`) have one too
- * (`war3map.wtg.j`), of the trigger picked in their view, which follows
- * the picking. The server builds it from the text as it is
- * (`QUERY.TRIGGER_JASS`, `wtg_rs::jass`), and it follows the text as it
- * changes, saved or not. It isn't a file of the project, but the server analyzes it as
- * JASS without a file: its highlighting, its diagnostics (lint).
+ * A language's icon (`icons/`), as the page writes it: the SVG itself
+ * (the page's policy loads no images but `data:`), read once.
+ * @type {Map<string, string>}
+ */
+const languageIcons = new Map()
+/** @param {string} name */
+function languageIcon(name) {
+    if (!languageIcons.has(name)) {
+        let svg = ''
+        try {
+            svg = fs.readFileSync(path.join(__dirname, 'icons', name), 'utf8').replace(/<\?xml[^>]*>/, '').trim()
+        } catch { /* not shipped: the button keeps its label */ }
+        languageIcons.set(name, svg.replace('<svg ', '<svg aria-hidden="true" focusable="false" '))
+    }
+    return languageIcons.get(name)
+}
+
+/**
+ * Show JASS, Show Lua, Show AngelScript (`wc3.trg.showJass`,
+ * `wc3.trg.showLua`, `wc3.trg.showAngelScript`; [`SHOWN`]): what a
+ * `.trg` is built into, beside it, read-only, under each one's scheme
+ * (`<name>.j`, `.lua`, `.as`, the trigger's URI in the query). A map's
+ * triggers (`.wtg`) have them too (`war3map.wtg.j` ...), of the trigger
+ * picked in their view, which follows the picking. The server builds them
+ * from the text as it is (`QUERY.TRIGGER_JASS`, `wtg_rs::jass`; Lua and
+ * AngelScript that JASS made each by `wc3-build`, `QUERY.TRIGGER_LUA`,
+ * `QUERY.TRIGGER_ANGELSCRIPT`), and they follow the text as it changes,
+ * saved or not. They aren't files of the project, but the server analyzes
+ * each in its language without a file: its highlighting, its diagnostics.
  *
  * @param {import('vscode').ExtensionContext} context
  */
 function registerTriggerJass(context) {
-    const SCHEME = JASS_SCHEME
     const changed = new EventEmitter()
-    /** @param {import('vscode').Uri} trg */
-    const jassUri = trg => Uri.from({scheme: SCHEME, path: /\.wtg$/i.test(trg.path) ? `${trg.path}.j` : `${trg.path.replace(/\.trg$/i, '')}.j`, query: trg.toString()})
+    /** @param {typeof SHOWN[number]} shown @param {import('vscode').Uri} trg */
+    const shownUri = (shown, trg) => Uri.from({
+        scheme: shown.scheme,
+        path: /\.wtg$/i.test(trg.path) ? `${trg.path}.${shown.ext}` : `${trg.path.replace(/\.trg$/i, '')}.${shown.ext}`,
+        query: trg.toString(),
+    })
     /** @type {Map<string, NodeJS.Timeout>} */
     const timers = new Map()
-    /** Its JASS, if it's open, is told it changed. @param {import('vscode').Uri} src */
+    /** What's shown of it, if it's open, is told it changed. @param {import('vscode').Uri} src */
     const refresh = src => {
-        const uri = jassUri(src)
-        if (!workspace.textDocuments.some(d => d.uri.toString() === uri.toString())) return
-        clearTimeout(timers.get(uri.toString()))
-        timers.set(uri.toString(), setTimeout(() => changed.fire(uri), 150))
+        for (const shown of SHOWN) {
+            const uri = shownUri(shown, src)
+            if (!workspace.textDocuments.some(d => d.uri.toString() === uri.toString())) continue
+            clearTimeout(timers.get(uri.toString()))
+            timers.set(uri.toString(), setTimeout(() => changed.fire(uri), 150))
+        }
     }
     onWtgPicked = refresh
-    const provider = {
+    /** @param {typeof SHOWN[number]} shown */
+    const provider = shown => ({
         onDidChange: changed.event,
         /** @param {import('vscode').Uri} uri */
         async provideTextDocumentContent(uri) {
@@ -2206,10 +2245,11 @@ function registerTriggerJass(context) {
             const doc = workspace.textDocuments.find(d => d.uri.toString() === trg.toString()) ?? await workspace.openTextDocument(trg)
             // A map's: the trigger its view picks.
             const which = /\.wtg$/i.test(trg.path) ? String(wtgPicked.get(trg.toString()) ?? 0) : ''
-            const answer = await query(QUERY.TRIGGER_JASS, idOf(doc), {line: 0, character: 0}, which)
-            return answer ? answer.text : '// The language server did not answer.\n'
+            const answer = await query(QUERY[shown.query], idOf(doc), {line: 0, character: 0}, which)
+            const comment = shown.id === 'lua' ? '--' : '//'
+            return answer ? answer.text : `${comment} The language server did not answer.\n`
         },
-    }
+    })
     /** The `.trg` a command is about: the one it was run on, or the active one. */
     const target = uri => {
         if (uri instanceof Uri) return uri
@@ -2217,21 +2257,26 @@ function registerTriggerJass(context) {
         const input = tab && tab.input
         return input && input.uri instanceof Uri ? input.uri : window.activeTextEditor?.document.uri
     }
+    for (const shown of SHOWN) {
+        context.subscriptions.push(
+            workspace.registerTextDocumentContentProvider(shown.scheme, provider(shown)),
+            commands.registerCommand(shown.command, async uri => {
+                let trg = target(uri)
+                if (!trg || !/\.(trg|wtg)$/i.test(trg.path)) return window.showWarningMessage('WC3: open a trigger (.trg) or a map\'s triggers (war3map.wtg) first.')
+                // A map's triggers: their text's.
+                if (/\.wtg$/i.test(trg.path)) trg = Uri.file(trg.fsPath).with({scheme: OBJECTS_SCHEME})
+                const doc = await workspace.openTextDocument(shownUri(shown, trg))
+                await window.showTextDocument(doc, {viewColumn: ViewColumn.Beside, preview: true, preserveFocus: true})
+                return doc
+            }),
+        )
+    }
     context.subscriptions.push(
         changed,
-        workspace.registerTextDocumentContentProvider(SCHEME, provider),
-        commands.registerCommand('wc3.trg.showJass', async uri => {
-            let trg = target(uri)
-            if (!trg || !/\.(trg|wtg)$/i.test(trg.path)) return window.showWarningMessage('WC3: open a trigger (.trg) or a map\'s triggers (war3map.wtg) first.')
-            // A map's triggers: their text's.
-            if (/\.wtg$/i.test(trg.path)) trg = Uri.file(trg.fsPath).with({scheme: OBJECTS_SCHEME})
-            const doc = await workspace.openTextDocument(jassUri(trg))
-            await window.showTextDocument(doc, {viewColumn: ViewColumn.Beside, preview: true, preserveFocus: true})
-        }),
         // The text is the one truth, saved or not (the view is another way
-        // to edit it): the JASS follows it as it changes, whoever changes
-        // it. After the server has the change: the text is sent as it
-        // changes, and this waits.
+        // to edit it): what's shown follows it as it changes, whoever
+        // changes it. After the server has the change: the text is sent as
+        // it changes, and this waits.
         workspace.onDidChangeTextDocument(e => {
             if (/\.(trg|wtg)$/i.test(e.document.uri.path)) refresh(e.document.uri)
         }),
@@ -2444,7 +2489,12 @@ function registerBuild(context, binary) {
             }),
         ).finally(() => { running = false })
         // Said, not waited for: the command is done when the build is.
-        if (result.code === 0) {
+        // 2: written, with errors in its script (the output has them).
+        if (result.code === 2) {
+            output.show(true)
+            const errors = (logged.match(/^error: /gm) || []).length
+            window.showErrorMessage(`WC3: built, with ${errors} error${errors === 1 ? '' : 's'} in its script; see the output "WC3 Build".`)
+        } else if (result.code === 0) {
             const built = /^[^:]+: (.+?) \(/.exec(result.out.trim())
             const done = built ? built[1] : root
             window.showInformationMessage(`WC3: built ${done}`, 'Reveal', 'Show Output').then(go => {

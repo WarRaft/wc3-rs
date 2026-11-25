@@ -80,7 +80,28 @@
         "command": "wc3.trg.showJass",
         "title": "Show JASS",
         "category": "WC3",
-        "icon": "$(code)"
+        "icon": {
+          "light": "icons/jass.svg",
+          "dark": "icons/jass.svg"
+        }
+      },
+      {
+        "command": "wc3.trg.showLua",
+        "title": "Show Lua",
+        "category": "WC3",
+        "icon": {
+          "light": "icons/lua.svg",
+          "dark": "icons/lua.svg"
+        }
+      },
+      {
+        "command": "wc3.trg.showAngelScript",
+        "title": "Show AngelScript",
+        "category": "WC3",
+        "icon": {
+          "light": "icons/as.svg",
+          "dark": "icons/as.svg"
+        }
       },
       {
         "command": "wc3.wtg.openVisual",
@@ -292,6 +313,14 @@
         {
           "command": "wc3.trg.showJass",
           "when": "editorLangId == trg || activeCustomEditorId == wc3.trigger || activeCustomEditorId == wc3.wtgTriggers"
+        },
+        {
+          "command": "wc3.trg.showLua",
+          "when": "editorLangId == trg || activeCustomEditorId == wc3.trigger || activeCustomEditorId == wc3.wtgTriggers"
+        },
+        {
+          "command": "wc3.trg.showAngelScript",
+          "when": "editorLangId == trg || activeCustomEditorId == wc3.trigger || activeCustomEditorId == wc3.wtgTriggers"
         }
       ],
       "view/title": [
@@ -347,6 +376,16 @@
           "command": "wc3.trg.showJass",
           "when": "resourceExtname =~ /^\\.trg$/i",
           "group": "navigation"
+        },
+        {
+          "command": "wc3.trg.showLua",
+          "when": "resourceExtname =~ /^\\.trg$/i",
+          "group": "navigation"
+        },
+        {
+          "command": "wc3.trg.showAngelScript",
+          "when": "resourceExtname =~ /^\\.trg$/i",
+          "group": "navigation"
         }
       ],
       "editor/title": [
@@ -392,6 +431,16 @@
         },
         {
           "command": "wc3.trg.showJass",
+          "when": "editorLangId == trg || activeCustomEditorId == wc3.trigger || activeCustomEditorId == wc3.wtgTriggers",
+          "group": "navigation"
+        },
+        {
+          "command": "wc3.trg.showLua",
+          "when": "editorLangId == trg || activeCustomEditorId == wc3.trigger || activeCustomEditorId == wc3.wtgTriggers",
+          "group": "navigation"
+        },
+        {
+          "command": "wc3.trg.showAngelScript",
           "when": "editorLangId == trg || activeCustomEditorId == wc3.trigger || activeCustomEditorId == wc3.wtgTriggers",
           "group": "navigation"
         }

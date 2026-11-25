@@ -167,6 +167,23 @@ async function steps() {
     check(code.getText().startsWith('// @dialect vjass'), 'Setup.j opened beside')
     await shot('trg-code')
 
+    log("a GUI trigger of the map's: Show JASS, Show Lua, Show AngelScript, each beside, from its icon on the bar")
+    const gui = tree.triggers.findIndex(t => !t.custom) + 1
+    check(gui > 0, `trigger ${gui} (${tree.triggers[gui - 1]?.name}) is GUI`)
+    await editor.receive({type: 'pick', nth: gui})
+    const shownOf = {jass: ['wc3jass', '.j'], lua: ['wc3lua', '.lua'], angelscript: ['wc3as', '.as']}
+    for (const [language, [scheme, ext]] of Object.entries(shownOf)) {
+        await editor.receive({type: 'show', language})
+        const doc = await until(() => vscode.workspace.textDocuments.find(d => d.uri.scheme === scheme && d.uri.path.endsWith(`war3map.wtg${ext}`) && d.getText().length > 0), `its ${language} open`)
+        const text = doc.getText()
+        check(doc.languageId === (language === 'jass' ? 'jass' : language), `war3map.wtg${ext} is ${doc.languageId}`)
+        check(!/did not answer|can't be built/.test(text), `its ${language} is made${/did not answer|can't be built/.test(text) ? `: ${text.slice(0, 300)}` : ''}`)
+        check(/gg_trg_\w+ = /.test(text) && /CreateTrigger\(\)/.test(text), `${language}: its trigger made in it${/gg_trg_/.test(text) ? '' : `:\n${text.slice(0, 600)}`}`)
+        if (language === 'angelscript') check(/Jass::CreateTrigger\(\)/.test(text), "AngelScript: common.j's natives in Jass::")
+        if (language === 'lua') check(text.startsWith('-- Made by wc3-build'), 'Lua: made by wc3-build')
+    }
+    await shot('show-languages')
+
     log('saved from the piece: the map with both')
     const stamp = fs.statSync(map).mtimeMs
     // Typed in, then saved (a piece just opened is clean: nothing to save).

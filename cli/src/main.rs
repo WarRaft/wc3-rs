@@ -50,6 +50,13 @@ fn build(args: Vec<String>) {
             let base = b.base.map_or(String::new(), |p| format!(", a copy of {}", p.display()));
             let name = if b.name.is_empty() { "default" } else { b.name.as_str() };
             println!("{name}: {} ({} files{base}; triggers: {}; {} {} lines) in {:.1?}", b.out.display(), b.files, b.triggers, b.script, b.script_lines, start.elapsed());
+            // Written, with what's wrong in it: 2.
+            if !b.errors.is_empty() {
+                for e in &b.errors {
+                    eprintln!("error: {e}");
+                }
+                std::process::exit(2);
+            }
         }
         Err(errors) => {
             for e in errors.iter().take(50) {

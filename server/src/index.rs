@@ -93,6 +93,12 @@ pub enum QueryKind {
     /// (`triggers::jass`); in a map's triggers (`.wtg`), the trigger whose
     /// number (from 1) is the query text's (`triggers::wtg_jass`).
     TriggerJass,
+    /// [`QueryKind::TriggerJass`]'s JASS in the game's Lua
+    /// (`triggers::converted`).
+    TriggerLua,
+    /// [`QueryKind::TriggerJass`]'s JASS in UjAPI's AngelScript
+    /// (`triggers::converted`).
+    TriggerAngelScript,
 }
 
 /// The variables the trigger file `id` sees: every global its project's
@@ -239,15 +245,23 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             };
             return Answer { locations: Vec::new(), text };
         }
-        QueryKind::TriggerJass => {
+        QueryKind::TriggerJass | QueryKind::TriggerLua | QueryKind::TriggerAngelScript => {
             let Some((doc, names, _)) = ws.names_text(id).filter(|(d, _, _)| d.path.as_deref().is_some_and(crate::triggers::has_call_values)) else {
                 return Answer::default();
             };
-            let text = if doc.path.as_deref().is_some_and(crate::triggers::is_trigger_file) {
+            let jass = if doc.path.as_deref().is_some_and(crate::triggers::is_trigger_file) {
                 crate::triggers::wtg_jass(&doc.text, query.trim().parse().unwrap_or(0), names)
             } else {
                 crate::triggers::jass(&doc.text, id, names, &project_variables(ws, id))
             };
+            let script = match kind {
+                QueryKind::TriggerLua => wc3_build::jass::Script::Lua,
+                QueryKind::TriggerAngelScript => wc3_build::jass::Script::AngelScript,
+                _ => return Answer { locations: Vec::new(), text: jass },
+            };
+            // The game's scripts the trigger runs with, as its project sees them.
+            let game = |which: crate::game::Script| ws.scope(id).find(|(fid, _, _)| crate::game::Script::of(std::path::Path::new(fid)) == Some(which)).map(|(_, d, _)| d.text.as_str()).unwrap_or_default();
+            let text = crate::triggers::converted(&jass, script, game(crate::game::Script::Common), game(crate::game::Script::Blizzard));
             return Answer { locations: Vec::new(), text };
         }
         QueryKind::TriggerIcons => {

@@ -950,3 +950,20 @@ fn a_renamed_trigger_s_names_in_the_custom_script_follow() {
     assert!(!wtg_edit(MAP, op::RENAMED, 0, "1\nA", &ui, Some(wct)).contains("\"wct\""));
     assert_eq!(rename_trigger_in_code("xgg_trg_A gg_trg_A_ gg_trg_A", "A", "B"), "xgg_trg_A gg_trg_A_ gg_trg_B");
 }
+
+#[test]
+fn a_triggers_jass_in_lua_and_angelscript() {
+    use wc3_build::jass::Script;
+    let common = "type agent extends handle\ntype trigger extends agent\ntype triggeraction extends handle\nnative CreateTrigger takes nothing returns trigger\nnative TriggerAddAction takes trigger whichTrigger, code actionFunc returns triggeraction\nnative ExecuteFunc takes string funcName returns nothing\n";
+    let jass = "function Trig_A_Actions takes nothing returns nothing\n    call ExecuteFunc(\"Trig_A_Actions\")\n    call ExecuteFunc(udg_name)\nendfunction\nfunction InitTrig_A takes nothing returns nothing\n    set gg_trg_A = CreateTrigger()\n    call TriggerAddAction(gg_trg_A, function Trig_A_Actions)\nendfunction\n";
+    let lua = converted(jass, Script::Lua, common, "");
+    assert!(lua.contains("function InitTrig_A()\n    gg_trg_A = CreateTrigger()\n    TriggerAddAction(gg_trg_A, Trig_A_Actions)\nend"), "{lua}");
+    // Lua has ExecuteFunc: nothing to say.
+    assert!(!lua.contains("error(s)"), "{lua}");
+    let angel = converted(jass, Script::AngelScript, common, "");
+    assert!(angel.starts_with("// 1 error(s):\n//   line 3 of its JASS: ExecuteFunc of a name told only as the game runs"), "{angel}");
+    assert!(angel.contains("void Trig_A_Actions() {\n    Trig_A_Actions();\n    Jass::ExecuteFunc(udg_name);\n}"), "{angel}");
+    assert!(angel.contains("void InitTrig_A() {\n    gg_trg_A = Jass::CreateTrigger();\n    Jass::TriggerAddAction(gg_trg_A, @Trig_A_Actions);\n}"), "{angel}");
+    // Without common.j AngelScript can't be had: said, not code.
+    assert!(converted(jass, Script::AngelScript, "", "").starts_with("// It can't be built:"));
+}

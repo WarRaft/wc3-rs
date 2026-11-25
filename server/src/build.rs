@@ -55,6 +55,9 @@ pub struct Built {
     /// What it says about the build: layers that couldn't be read, names
     /// left long.
     pub notes: Vec<String>,
+    /// What's wrong with the script, which is written all the same
+    /// (AngelScript's `ExecuteFunc` of a name that can't be told).
+    pub errors: Vec<String>,
 }
 
 /// The map's files, by their names in lowercase: the name to write,
@@ -112,17 +115,19 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
         let options = wc3_build::jass::Options { uglify: b.uglify, game: game_sigs(), script: b.script, common_j, blizzard_j };
         let built = wc3_build::from_jass::module_with(&sources, &import).and_then(|m| wc3_build::jass::build_with(&m, &options)).map_err(said)?;
         notes.extend(built.notes);
+        let errors = said(built.problems);
         if let Some(dir) = out.parent() {
             std::fs::create_dir_all(dir).map_err(|e| vec![format!("{}: {e}", dir.display())])?;
         }
         std::fs::write(&out, &built.script).map_err(|e| vec![format!("{}: {e}", out.display())])?;
-        return Ok(Built { name: b.name, out, base: None, files: 1, script: format!("war3map.{}", b.script.extension()), script_lines: built.script.lines().count(), triggers, notes });
+        return Ok(Built { name: b.name, out, base: None, files: 1, script: format!("war3map.{}", b.script.extension()), script_lines: built.script.lines().count(), triggers, notes, errors });
     }
 
     let (files, base) = map_files(project, &out)?;
     let input = Input { read: &read, read_patched: &read_patched, variables, initialization, code, uglify: b.uglify, script: b.script, import: &import };
     let script = wc3_build::whole::script(&input).map_err(said)?;
     notes.extend(script.notes);
+    let errors = said(script.problems.clone());
     let mut made = vec![(format!("war3map.{}", b.script.extension()), script.text.clone().into_bytes())];
     // A map of Lua says so in its war3map.w3i (from 1.31's layout).
     if b.script == wc3_build::jass::Script::Lua
@@ -137,7 +142,7 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
     }
 
     let written = write(project, &files, base.as_deref(), &made, &game, &out).map_err(|e| vec![e])?;
-    Ok(Built { name: b.name, out, base, files: written, script: format!("war3map.{}", b.script.extension()), script_lines: script.text.lines().count(), triggers, notes })
+    Ok(Built { name: b.name, out, base, files: written, script: format!("war3map.{}", b.script.extension()), script_lines: script.text.lines().count(), triggers, notes, errors })
 }
 
 /// The build `name` of the project of `path` (a file or folder in it:

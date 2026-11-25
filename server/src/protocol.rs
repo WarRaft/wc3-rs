@@ -214,7 +214,7 @@ fn kind_code(kind: Kind) -> u8 {
     }
 }
 
-const QUERY_KINDS: [QueryKind; 22] = [
+const QUERY_KINDS: [QueryKind; 24] = [
     QueryKind::Definition,
     QueryKind::References,
     QueryKind::Hover,
@@ -237,6 +237,8 @@ const QUERY_KINDS: [QueryKind; 22] = [
     QueryKind::TriggerCatalog,
     QueryKind::TriggerIcons,
     QueryKind::TriggerJass,
+    QueryKind::TriggerLua,
+    QueryKind::TriggerAngelScript,
 ];
 
 const SYMBOL_KINDS: [SymbolKind; 17] = [

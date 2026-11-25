@@ -21,8 +21,8 @@ item's details are in its section below):
     `//! loaddata`, `//! external`: an error each.
   - An operator of an interface or a `stub` one; a struct of more than
     8190 instances.
-  - Show Lua and Show AngelScript for a trigger. AngelScript: a struct
-    `extends array`, `.execute` of an object's method. Neither Lua nor AngelScript
+  - AngelScript: a struct `extends array`, `.execute` of an object's
+    method. Neither Lua nor AngelScript
     is run in the game yet (only `luac`, a test's `lua`, `as-rs`).
   - A copy of a base map keeps the space of the files it replaces (no
     compacting: it would lose the files nobody knows the names of).
@@ -458,15 +458,20 @@ each output is made from it:
   where vJASS takes it as an integer (`SaveInteger(ht, k, 0, this)`,
   `S(LoadInteger(...))`) its number goes and comes back through its
   family's table, `0` is `null`, so instance 0 is no object
-  (`thistype(0).next` is an error).
+  (`thistype(0).next` is an error). AngelScript has no `ExecuteFunc`:
+  `ExecuteFunc(name)` is a call of the function named when the name can
+  be worked out before the game runs (literals, `+` of them, constants
+  made of them); else it's left as it is and is an error the build
+  reports, the map written all the same (`wc3 build` exits with 2; the
+  editor says so; `project_build`'s `errors`).
 - **Lua** (UjAPI runs it too): the natives and `Blizzard.j`'s functions
   as the game gives them (its own Lua has `Blizzard.j`, so it isn't
   written again: its `bj_` globals are the game's state).
 - **A project of code alone** (no `[map] root`): a build writes the
   script only, `build/war3map.j` (`.lua`, `.as` by `script`), with no
   map's part: `main` and `config` are the code's.
-- **A trigger in each**: beside Show JASS, Show Lua and Show
-  AngelScript, live from the text as it is (not saved).
+- **A trigger in each**: Show JASS, Show Lua and Show AngelScript, live
+  from the text as it is (not saved). Done: see Show JASS below.
 
 ### vJASS and Zinc
 
@@ -553,8 +558,8 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    (`wc3-build`'s `angelscript`, as decided above; `Blizzard.j`
    tree-shaken): Diablo III beta's whole map builds as 27064 lines that
    `as-rs` reads, every call a function written or a native of `Jass::`;
-   structs and interfaces as classes (`wc3-build`'s README). Not yet:
-   Show Lua and Show AngelScript.
+   structs and interfaces as classes (`wc3-build`'s README); Show Lua and
+   Show AngelScript of a trigger (below, Show JASS).
 6. **The map**: `[build]` scenarios, the roots' layers, the `.w3x`
    written (`storm-rs`); optimizations (dead code) after. Done
    (`server/src/build.rs`, `wc3-build`'s `whole`):
@@ -601,7 +606,9 @@ default, it asks which. The project's files open with changes are saved first (t
 reads the disk); the build runs as a process of its own (`wc3 build`,
 the binary the extension ships), so the editor goes on answering, and
 what it says goes to the output **WC3 Build** (shown when it fails; a
-map built offers to reveal it). For AI assistants: `wc3-mcp`'s
+map built offers to reveal it; one built with errors in its script, as
+an AngelScript `ExecuteFunc` that can't be worked out, says so: `wc3
+build` exits with 2). For AI assistants: `wc3-mcp`'s
 `project_build`.
 
 **Shorter names (uglify).** The finished tree knows every name and every
@@ -1333,8 +1340,17 @@ dirty mark are the text's. In the view:
   global;
 - arrows move and fold, and the problems count goes to the first one.
 
-**Show JASS** (the view's button, the editor's title, the Explorer's
-context menu of a `.trg`) shows the JASS the trigger is built into,
+**Show JASS**, **Show Lua**, **Show AngelScript** (the view's buttons,
+each its language's icon with a tooltip of the page's own, styled as the
+editor's hovers; the editor's title; the Explorer's context menu of a
+`.trg`) show what the trigger is built into, each beside it (`<name>.j`,
+`.lua`, `.as`; a map's `war3map.wtg.j` ... of the picked trigger),
+analyzed in its language. Lua and AngelScript are that JASS made by
+`wc3-build` as a build makes it (`triggers::converted`; AngelScript with
+the project's `common.j` in `Jass::`), the trigger's own code only (the
+`Blizzard.j` functions it calls a build writes once, for the whole map);
+what's wrong with it (an `ExecuteFunc` that can't be worked out) is said
+at its top. Show JASS shows the JASS the trigger is built into,
 beside it and read-only, following the text as it changes, saved or
 not (the text is the one truth; the view is only another way to edit it)
 (`wtg_rs::jass`). It's this toolchain's JASS, which the build makes the

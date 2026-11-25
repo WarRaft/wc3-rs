@@ -1786,6 +1786,43 @@ pub fn jass(text: &str, me: &str, names: &crate::names::Names, visible: &[Declar
     out + &wtg_rs::jass::compile(p.trigger.as_ref(), &stem, &p.variables, visible, &names.trigger_ui)
 }
 
+/// A trigger's JASS ([`jass`], [`wtg_jass`]) in `script` (Lua, UjAPI's
+/// AngelScript), as a build makes it (`wc3_build`): the game's natives and
+/// functions from `common_j` and `blizzard_j`, `common.j`'s names in
+/// AngelScript's `Jass::`. Only the trigger's own code is written:
+/// `Blizzard.j`'s functions it calls aren't (a build writes them once, for
+/// the whole map). What's wrong (an `ExecuteFunc` whose function can't be
+/// told) is said at the top, the JASS's lines with it; what can't be
+/// built, instead of the code.
+pub fn converted(jass: &str, script: wc3_build::jass::Script, common_j: &str, blizzard_j: &str) -> String {
+    use wc3_build::jass::Script;
+    let comment = if script == Script::Lua { "--" } else { "//" };
+    let said = |e: &wc3_build::ir::Error| if e.origin.line > 0 { format!("line {} of its JASS: {}", e.origin.line, e.message) } else { e.message.clone() };
+    let source = wc3_build::from_jass::Source { name: "trigger.j", text: jass };
+    let game: Vec<wc3_build::ir::Signature> = [common_j, blizzard_j].iter().flat_map(|t| wc3_build::from_jass::signatures(t)).collect();
+    let options = wc3_build::jass::Options { game, script, common_j: if script == Script::AngelScript { common_j.to_string() } else { String::new() }, ..Default::default() };
+    match wc3_build::from_jass::module(&[source]).and_then(|m| wc3_build::jass::build_with(&m, &options)) {
+        Ok(built) => {
+            let mut out = String::new();
+            if !built.problems.is_empty() {
+                out += &format!("{comment} {} error(s):\n", built.problems.len());
+                for e in &built.problems {
+                    out += &format!("{comment}   {}\n", said(e));
+                }
+                out += "\n";
+            }
+            out + &built.script
+        }
+        Err(errors) => {
+            let mut out = format!("{comment} It can't be built:\n");
+            for e in &errors {
+                out += &format!("{comment}   {}\n", said(e));
+            }
+            out
+        }
+    }
+}
+
 /// The trigger editor's icons, as JSON: `{"ReplaceableTextures\\WorldEditUI\\Actions-Unit":
 /// "data:image/png;base64,...", "SEIcon_Event": "data:...", ...}` (see
 /// `names::Names::trigger_icons`), by key in order.
