@@ -1522,7 +1522,7 @@ in each language) unless the table says it's off by default.
 
 **Names and types are checked across the project** (`unknown-name`,
 `argument-count`, `type-mismatch`, `array-access`,
-`constant-assignment`; `jass_rs::names`): each JASS file against what every
+`constant-assignment`, and `array-struct`'s calls; `jass_rs::names`): each JASS file against what every
 file it sees declares, its project's and the game's scripts it runs with
 (`common.j`, `Blizzard.j` or `common.ai`, through `game=` and the
 roots; see [Projects](#projects)), and the names other languages declare
@@ -1570,6 +1570,7 @@ aren't lint: they can't be turned off. The rules are defined in
 | `type-mismatch`                  | JASS                         | on      | a value of the wrong type: an argument, a value set or returned, a condition, an operator's side |
 | `array-access`                   | JASS                         | on      | an array used without its index, or an index of what isn't an array |
 | `constant-assignment`            | JASS                         | on      | a constant set |
+| `array-struct`                   | JASS                         | on      | what a struct `extends array` can't have or do (JassHelper's manual, Array structs): a member's default value, an array member, `onDestroy`; `allocate`, `create` not its own, `destroy`, `deallocate` (a method so named of its own or of a module it implements is allowed) |
 | `implicit-signature`             | JASS                         | **off** | a `function` or `native` without `takes` or `returns`, which the game requires (group `pure`) |
 | `implicit-keyword`               | JASS                         | **off** | an assignment without `set`, a call without `call` or a local without `local`, which the game requires (group `pure`) |
 | `merged-function`                | JASS                         | **off** | more than one `main` or `config`, which the build merges into one; the game reads one (group `pure`) |
