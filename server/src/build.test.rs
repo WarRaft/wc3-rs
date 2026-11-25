@@ -192,3 +192,26 @@ fn jasshelpers_externals_run_on_the_map_built() {
     let e = build_at(root, None).unwrap_err();
     assert!(e[0].ends_with("main.j:2: `//! external Other`: wc3.bni has no [external] Other= (the tool's program)"), "{e:?}");
 }
+
+#[test]
+fn a_base_maps_copy_is_compacted() {
+    let tmp = crate::project::tests::TempDir::new("compact");
+    let root = &tmp.0;
+    // The base: a big script the build replaces.
+    let mut x: u32 = 7;
+    let noise: Vec<u8> = (0..300_000).map(|_| { x ^= x << 13; x ^= x >> 17; x ^= x << 5; b'a' + (x % 26) as u8 }).collect();
+    let old = [b"// old\n".to_vec(), noise].concat();
+    let info = w3i_rs::Info { version: 25, ..Default::default() }.to_bytes().unwrap();
+    crate::map::tests::make_map_bytes(&root.join("base.w3x"), &[("war3map.w3i", info), ("war3map.j", old)]);
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src/main.j"), "function main takes nothing returns nothing\nendfunction\nfunction config takes nothing returns nothing\nendfunction\n").unwrap();
+    std::fs::write(root.join("wc3.bni"), "[map]\nroot=base.w3x\n[code]\nsources=src\n[build]\n").unwrap();
+    let b = build_at(root, None).unwrap_or_else(|e| panic!("{e:#?}"));
+    assert_eq!(b.base.as_deref(), Some(root.join("base.w3x").as_path()));
+    assert!(!b.notes.iter().any(|n| n.contains("isn't compacted")), "{:?}", b.notes);
+    // The old script's space given back: smaller than the base.
+    let (base, out) = (std::fs::metadata(root.join("base.w3x")).unwrap().len(), std::fs::metadata(&b.out).unwrap().len());
+    assert!(out < base, "{base} -> {out}");
+    let a = storm_rs::archive::MpqArchive::open(&b.out).unwrap();
+    assert!(String::from_utf8(a.read_file("war3map.j").unwrap()).unwrap().contains("function main takes nothing returns nothing"));
+}

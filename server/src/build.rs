@@ -148,7 +148,7 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
         }
     }
 
-    let written = write(project, &files, base.as_deref(), &made, &game, &out).map_err(|e| vec![e])?;
+    let written = write(project, &files, base.as_deref(), &made, &game, &out, &mut notes).map_err(|e| vec![e])?;
     // JassHelper's `//! external`s: the tools on the map written.
     run_externals(project, &script.externals, &out, &mut notes)?;
     Ok(Built { name: b.name, out, base, files: written, script: format!("war3map.{}", b.script.extension()), script_lines: script.text.lines().count(), triggers, notes, errors })
@@ -593,7 +593,7 @@ fn code(project: &Project, game: &Game, names: &crate::names::Names, alone: bool
 
 /// Writes the map to `out` (through a file beside it, so a failed build
 /// leaves the last map as it was): the number of files written.
-fn write(project: &Project, files: &Files, base: Option<&Path>, made: &[(String, Vec<u8>)], game: &Game, out: &Path) -> Result<usize, String> {
+fn write(project: &Project, files: &Files, base: Option<&Path>, made: &[(String, Vec<u8>)], game: &Game, out: &Path, notes: &mut Vec<String>) -> Result<usize, String> {
     // What the build made stands for the layers' files of its names.
     let made_names: std::collections::HashSet<String> = made.iter().map(|(n, _)| n.to_ascii_lowercase()).collect();
     let files: Files = files.iter().filter(|(k, _)| !made_names.contains(*k)).map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -646,6 +646,11 @@ fn write(project: &Project, files: &Files, base: Option<&Path>, made: &[(String,
                     w.add_file(name, bytes, &AddFileOptions::default()).map_err(|e| format!("{name}: {e}"))?;
                 }
                 w.finish().map_err(|e| format!("{}: {e}", out.display()))?;
+                // The space of the files replaced given back; the copy as
+                // it is when that can't be done (left as it was).
+                if let Err(e) = storm_rs::archive::compact::compact_archive(&tmp) {
+                    notes.push(format!("the copy of {} isn't compacted: {e}", base.display()));
+                }
                 Ok(files.len() + made.len())
             }
             None => {

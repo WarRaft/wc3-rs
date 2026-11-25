@@ -12,11 +12,10 @@ item's details are in its section below):
     its tool on the map: `[external]`); what its examples still fail on
     is the manual's own (typos, errors shown on purpose, fragments).
   - Neither Lua nor AngelScript is run in the game yet (only `luac`, a
-    test's `lua`, `as-rs`). JassHelper's own manual is in
+    test's `lua`, `as-rs`): the work is on macOS, where neither a game
+    of 1.31 and later is run from here nor UjAPI (Windows). JassHelper's own manual is in
     `../JassHelper-manual/Writerside/topics`: what's left of vJASS is
     checked against it.
-  - A copy of a base map keeps the space of the files it replaces (no
-    compacting: it would lose the files nobody knows the names of).
   - Optimizing (`optimize=1`) is inlining and dead code only: none of
     wc3mapoptimizer's others (constants folded, locals reused ...).
 - **Tests in the editor** ([below](#tests-in-the-editor)): dragging the
@@ -597,10 +596,12 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    file of their maps comes out the same (`build`'s test
    `a_real_project_built`, `WC3_PROJECT`). Diablo's map built from a
    copy of it and from its files taken out into a folder is the same,
-   file for file, its script too. Not yet: a copy keeps the space of the
-   files it replaces (no compacting: it would lose the unnamed ones); a
-   build from `.trg` files leaves the map's `war3map.wtg` and
-   `war3map.wct` as they were (World Editor would open the old triggers).
+   file for file, its script too. A copy is compacted after
+   (`storm_rs::archive::compact`): the space of the files it replaces
+   given back, the files nobody knows the names of kept (moved by the
+   hash table, an encrypted one encrypted again for its place); one that
+   can't be is left as it is, with a note. A build from `.trg` files
+   gives the map `war3map.wtg` and `war3map.wct` made of them.
 
 **In the editor**: **WC3: Build Map…** (the command palette: the project
 of the active file, else the workspace's; the Explorer's menu of a
