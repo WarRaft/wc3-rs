@@ -112,6 +112,10 @@ pub struct Names {
     /// data over them (`w3abdhqtu_rs::ObjectNames`). Read only with the
     /// trigger editor's data, which shows them.
     pub objects: w3abdhqtu_rs::ObjectNames,
+    /// What the types are as a build tells them (an item's, a building's,
+    /// a unit's: `wc3_build::objects::Objects`), the game's and the map's
+    /// object data's; read with the objects' names.
+    pub types: Option<wc3_build::objects::Objects>,
 }
 
 /// The trigger editor's types whose values are objects, and the kinds of
@@ -370,6 +374,7 @@ pub fn names(lookup: &Lookup) -> Names {
 /// kind's metadata (to read a map's object data with).
 struct GameObjects {
     names: w3abdhqtu_rs::ObjectNames,
+    types: wc3_build::objects::Objects,
     meta: Vec<(w3abdhqtu_rs::Kind, w3abdhqtu_rs::Metadata)>,
 }
 
@@ -392,6 +397,7 @@ fn read_game_objects(game: &Game, names: &Names) -> GameObjects {
     };
     GameObjects {
         names: w3abdhqtu_rs::ObjectNames::load(read, |k| names.resolve(k)),
+        types: wc3_build::objects::Objects::of_game(&read),
         meta: w3abdhqtu_rs::Kind::ALL.into_iter().map(|k| (k, w3abdhqtu_rs::Metadata::load(k, read))).collect(),
     }
 }
@@ -415,16 +421,19 @@ fn add_objects(names: &mut Names, lookup: &Lookup, game: &Game) {
         })
     };
     let mut objects = base.names.clone();
+    let mut types = base.types.clone();
     let wts = game.read("war3map.wts").map(|(b, _)| wts_rs::parse(&crate::document::decode(b)));
     let text = |s: &str| wts.as_ref().map_or(s.to_string(), |w| w.resolve(s));
     for (kind, meta) in &base.meta {
         let Some(data) = game.read(&format!("war3map.{}", kind.extension())).and_then(|(b, _)| w3abdhqtu_rs::parse(&b, *kind).ok()) else { continue };
         objects.add_object_data(&data, meta, text);
+        types.add_object_data(&data);
     }
     for (ty, kinds) in OBJECT_TYPES {
         names.trigger_ui.objects.insert(ty.to_string(), objects_of(&objects, ty, kinds));
     }
     names.objects = objects;
+    names.types = Some(types);
 }
 
 /// Names read so far, by lookup: hints are asked for on every scroll.

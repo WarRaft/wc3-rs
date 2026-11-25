@@ -127,12 +127,13 @@ async function steps() {
 
     log('an unknown function in the piece: its diagnostic is shown there')
     edit = new vscode.WorkspaceEdit()
-    edit.insert(piece.uri, new vscode.Position(piece.lineCount, 0), '\nfunction E2eProbe takes nothing returns nothing\n    call NoSuchE2eFunction()\n    call RemoveUnit(gg_unit_e001_9999)\nendfunction')
+    edit.insert(piece.uri, new vscode.Position(piece.lineCount, 0), '\nfunction E2eProbe takes nothing returns nothing\n    call NoSuchE2eFunction()\n    call RemoveUnit(gg_unit_e001_9999)\n    call RemoveUnit(gg_unit_n007_0225)\n    call RemoveItem(gg_item_n007_0225)\nendfunction')
     await vscode.workspace.applyEdit(edit)
     const diags = await until(() => vscode.languages.getDiagnostics(piece.uri).filter(d => d.message.includes('NoSuchE2eFunction')).length && vscode.languages.getDiagnostics(piece.uri), 'a diagnostic in the piece', 30000)
     const d = diags.find(d => d.message.includes('NoSuchE2eFunction'))
     check(piece.lineAt(d.range.start.line).text.includes('NoSuchE2eFunction'), `on its line in the piece (${d.range.start.line + 1}): ${d.message}`)
     check(diags.some(d => d.message.includes("'gg_unit_e001_9999'")), "a placed unit the map hasn't: unknown too")
+    check(!diags.some(d => d.message.includes("'gg_unit_n007_0225'")) && diags.some(d => d.message.includes("'gg_item_n007_0225'")), "a placed unit is gg_unit_, not gg_item_: as the game's tables and the map's object data say")
     await shot('diagnostic')
 
     log('the trigger moved to the top of its category: its code goes with it')

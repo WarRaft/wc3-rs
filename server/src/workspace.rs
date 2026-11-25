@@ -157,14 +157,14 @@ pub struct Workspace {
     cleared: Vec<String>,
     /// The names each map's files declare (`map_names`), by the map's
     /// folder (or archive) and when its files last changed.
-    placed: std::sync::Mutex<HashMap<PathBuf, (Option<std::time::SystemTime>, Placed)>>,
+    placed: std::sync::Mutex<HashMap<PathBuf, ((Option<std::time::SystemTime>, Option<wc3_build::objects::Objects>), Placed)>>,
 }
 
 /// What a map's files name in World Editor's script: each name and its type.
 type Placed = Arc<Vec<(String, &'static str)>>;
 
 /// The map's files that name what World Editor's script declares.
-const NAMING: [&str; 5] = ["war3map.w3r", "war3map.w3c", "war3map.w3s", "war3map.doo", "war3mapUnits.doo"];
+const NAMING: [&str; 8] = ["war3map.w3r", "war3map.w3c", "war3map.w3s", "war3map.doo", "war3mapUnits.doo", "war3map.w3u", "war3map.w3t", "war3map.w3a"];
 
 /// The id of a file on disk.
 pub fn path_id(path: &Path) -> String {
@@ -499,7 +499,8 @@ impl Workspace {
             let m = wtg_rs::jass::map_variable(&wtg_rs::text::Declared { variable: v.clone(), scope: wtg_rs::text::Scope::Global }, &ui);
             text += &format!("{} {}{}\n", m.ty, if m.array.is_some() { "array " } else { "" }, m.name);
         }
-        for (name, ty) in self.map_names(dir).iter() {
+        let types = wtg.names.as_ref().and_then(|n| n.types.as_ref());
+        for (name, ty) in self.map_names(dir, types).iter() {
             text += &format!("{ty} {name}\n");
         }
         text += "endglobals\n";
@@ -509,13 +510,15 @@ impl Workspace {
     /// What the files of the map `dir` (a folder, or a map's archive) name
     /// in World Editor's script ([`wc3_build::map::declared_names`]): read
     /// again only when they've changed.
-    fn map_names(&self, dir: &Path) -> Arc<Vec<(String, &'static str)>> {
+    fn map_names(&self, dir: &Path, types: Option<&wc3_build::objects::Objects>) -> Arc<Vec<(String, &'static str)>> {
         let folder = dir.is_dir();
         let stamp = if folder {
             NAMING.iter().filter_map(|n| std::fs::metadata(dir.join(n)).and_then(|m| m.modified()).ok()).max()
         } else {
             crate::map::split(&dir.join("x")).and_then(|(map, _)| std::fs::metadata(map).and_then(|m| m.modified()).ok())
         };
+        // Read again when the files change, or what the types are.
+        let stamp = (stamp, types.cloned());
         if let Some((s, names)) = self.placed.lock().ok().and_then(|c| c.get(dir).cloned())
             && s == stamp
         {
@@ -529,7 +532,7 @@ impl Workspace {
         let sounds = read("war3map.w3s").and_then(|b| w3s_rs::parse(&b).ok());
         let doodads = read("war3map.doo").and_then(|b| doo_rs::parse_doodads_any(&b).ok());
         let units = read("war3mapUnits.doo").and_then(|b| doo_rs::parse_units_any(&b).ok());
-        let names = Arc::new(wc3_build::map::declared_names(regions.as_ref(), cameras.as_ref(), sounds.as_ref(), doodads.as_ref(), units.as_ref()));
+        let names = Arc::new(wc3_build::map::declared_names(regions.as_ref(), cameras.as_ref(), sounds.as_ref(), doodads.as_ref(), units.as_ref(), stamp.1.as_ref()));
         if let Ok(mut c) = self.placed.lock() {
             c.insert(dir.to_path_buf(), (stamp, names.clone()));
         }

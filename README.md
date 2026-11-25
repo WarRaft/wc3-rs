@@ -6,9 +6,6 @@ The ultimate high-performance Rust ecosystem for Warcraft III map development, m
 What's known to be next, so work can pick up where it stopped (each
 item's details are in its section below):
 
-- **Triggers (`.wtg` + `.wct`, `.trg`).**
-  - What `war3mapUnits.doo` places is declared as both `gg_unit_` and
-    `gg_item_` to the custom script (which it is takes the game's tables).
 - **The build** (see [Building a map](#building-a-map)).
   - Of JassHelper's manual (its every example run by `wc3-build`'s
     `tests/manual.rs`): `//! external` (running another tool, an
@@ -1157,9 +1154,11 @@ the code stays JASS, with everything the editor does for JASS):
   declares for it, the triggers' `gg_trg_` and the variables' `udg_`,
   and what the map's other files place and name, as a build names them
   (`wc3_build::map::declared_names`: regions `gg_rct_`, cameras
-  `gg_cam_`, sounds `gg_snd_`, destructables `gg_dest_`, and for each
-  thing `war3mapUnits.doo` places both `gg_unit_` and `gg_item_`: which
-  it is takes the game's tables, not read here), read again when those
+  `gg_cam_`, sounds `gg_snd_`, destructables `gg_dest_`, and what
+  `war3mapUnits.doo` places as `gg_unit_` or `gg_item_`, which it is as
+  a build tells (`wc3_build::objects::Objects`: the game's tables, an
+  item's in `Units\ItemData.slk`, and the map's object data over them;
+  both names only without the game's files), read again when those
   files change. A name the map hasn't is unknown, as any other.
 
 Of this, the view of `.trg` files, Extract, and editing a map's
