@@ -97,6 +97,9 @@ pub struct Build {
     pub out: Option<PathBuf>,
     /// `uglify=1`: the script's names made short.
     pub uglify: bool,
+    /// `optimize=1`: inlining, and dead code left out
+    /// (`wc3_build::optimize`).
+    pub optimize: bool,
     /// `script=jass|lua|as`: the language of the map's script.
     pub script: wc3_build::jass::Script,
 }
@@ -409,7 +412,7 @@ fn unknown_key(item: &Item, section: &str, issues: &mut Vec<Issue>) {
         "project" => "game",
         "code" => "sources' or 'exclude",
         "map" => "root",
-        "build" => "name', 'out', 'script' or 'uglify",
+        "build" => "name', 'out', 'script', 'uglify' or 'optimize",
         _ => "dialect",
     };
     issues.push(at_name(
@@ -580,6 +583,14 @@ fn read_build(section: &bni_rs::ast::Section, project: &mut Project, issues: &mu
                     [field] if field.text().trim() == "1" => build.uglify = true,
                     [field] if field.text().trim() == "0" => build.uglify = false,
                     _ => issues.push(at_name(key, Level::Error, "'uglify' is 1 or 0".into())),
+                }
+            }
+            Some("optimize") => {
+                let key = item.key.as_ref().expect("key_of returned a key");
+                match item.fields.as_slice() {
+                    [field] if field.text().trim() == "1" => build.optimize = true,
+                    [field] if field.text().trim() == "0" => build.optimize = false,
+                    _ => issues.push(at_name(key, Level::Error, "'optimize' is 1 or 0".into())),
                 }
             }
             Some("name") => {

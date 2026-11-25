@@ -31,7 +31,8 @@ item's details are in its section below):
   - A build from `.trg` files leaves the map's `war3map.wtg` and
     `war3map.wct` as they were (World Editor would open the old
     triggers).
-  - No optimizations (dead code) yet.
+  - Optimizing (`optimize=1`) is inlining and dead code only: none of
+    wc3mapoptimizer's others (constants folded, locals reused ...).
 - **MCP**: renaming (refactoring) JASS across a project.
 - **Tests in the editor** ([below](#tests-in-the-editor)): dragging the
   line beside the trigger tree isn't driven (no mouse); every new piece
@@ -101,6 +102,7 @@ dialect=vjass
 | `[build]`   | `name`    | a name, unique in the project            | a build scenario (debug, release ...), a `[build]` each: see [Building a map](#building-a-map); one without a name is the default (one at most), built when none is named, its map `build/map.w3x` |
 | `[build]`   | `out`     | a path, relative to the project root     | where the map is written; `build/<name>.w3x` without it; never inside a `[map]` root or the `[code] sources` (an error: the next build would read it) |
 | `[build]`   | `uglify`  | `1` or `0`                               | the script's names made short (see "Shorter names" below); `0` without it |
+| `[build]`   | `optimize` | `1` or `0`                              | the script optimized (see "Optimizing" below): inlining, dead code left out; `0` without it |
 | `[jass]`    | `dialect` | `jass` or `vjass` (case-insensitive)     | the dialect of `.j` files that don't declare one in a `// @dialect` header |
 | `[lint]`    | a rule or group id | `off`, `warning` or `error`     | turn a lint rule (or every rule of a group) off or on, at that level (see [Lint](#lint)) |
 
@@ -614,6 +616,19 @@ map built offers to reveal it; one built with errors in its script, as
 an AngelScript `ExecuteFunc` that can't be worked out, says so: `wc3
 build` exits with 2). For AI assistants: `wc3-mcp`'s
 `project_build`.
+
+**Optimizing (`optimize=1`).** As JassHelper's (its manual, Script
+optimization), before names are shortened, for every output
+(`wc3-build`'s `optimize`): a call of a one-line function is what its
+line does, only where nothing can change (each parameter read once, in
+order, any call after them; not a `set` of a parameter; not where the
+caller has a local named as a name the line reads); then the functions
+nothing reachable from `main`, `config`, `ExecuteFunc("name")` (any of a
+name told only as the game runs keeps them all) or a class's methods
+calls or names as code, and the globals nothing reachable reads or sets,
+are left out. The build says how much in a note. Diablo III beta: 53
+functions and 66 globals of its JASS left out, its script checking clean
+as before.
 
 **Shorter names (uglify).** The finished tree knows every name and every
 reference to it, so a build can rename everything that isn't the game's
