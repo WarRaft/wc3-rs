@@ -379,7 +379,7 @@ fn builds_have_unique_names() {
         vec![
             (5, "a build has one 'name'"),
             (7, "there's already a build named 'debug'"),
-            (9, "unknown setting 'fast' in [build] (expected 'name', 'out', 'script', 'uglify' or 'optimize')"),
+            (9, "unknown setting 'fast' in [build] (expected 'name', 'out', 'script', 'uglify', 'inline', 'dead_code' or 'string_hash')"),
             (10, "there's a default build already (a [build] without a 'name'): name this one"),
         ]
     );
@@ -438,11 +438,11 @@ fn exclude_is_for_code_and_leaves_the_roots_alone() {
 
 #[test]
 fn a_build_says_where_and_how() {
-    let src = "[build]\nname=release\nout=out/map.w3x\nuglify=1\noptimize=1\n[build]\nname=debug\nuglify=true\noptimize=yes\n";
+    let src = "[build]\nname=release\nout=out/map.w3x\nuglify=1\ninline=1\ndead_code=1\nstring_hash=1\n[build]\nname=debug\nuglify=true\ninline=yes\noptimize=1\n";
     let (project, issues) = load(Path::new("/p"), src);
-    assert_eq!(project.builds[0], Build { name: "release".into(), out: Some(PathBuf::from("/p/out/map.w3x")), uglify: true, optimize: true, script: Default::default() });
+    assert_eq!(project.builds[0], Build { name: "release".into(), out: Some(PathBuf::from("/p/out/map.w3x")), uglify: true, inline: true, dead_code: true, string_hash: true, script: Default::default() });
     assert_eq!(project.builds[1].out(&project), PathBuf::from("/p/build/war3map.j"));
-    assert_eq!(issues.iter().map(|i| i.message.as_str()).collect::<Vec<_>>(), ["'uglify' is 1 or 0", "'optimize' is 1 or 0"]);
+    assert_eq!(issues.iter().map(|i| i.message.as_str()).collect::<Vec<_>>(), ["'uglify' is 1 or 0", "'inline' is 1 or 0", "'optimize' is each by its name now: inline=1, dead_code=1 (and string_hash=1)"]);
 }
 
 #[test]

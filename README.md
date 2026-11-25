@@ -16,8 +16,6 @@ item's details are in its section below):
     of 1.31 and later is run from here nor UjAPI (Windows). JassHelper's own manual is in
     `../JassHelper-manual/Writerside/topics`: what's left of vJASS is
     checked against it.
-  - Optimizing (`optimize=1`) is inlining and dead code only: none of
-    wc3mapoptimizer's others (constants folded, locals reused ...).
 - **Tests in the editor** ([below](#tests-in-the-editor)): dragging the
   line beside the trigger tree isn't driven (no mouse); every new piece
   of the editor gets a step in `extension/e2e/suite.js`.
@@ -86,7 +84,9 @@ dialect=vjass
 | `[build]`   | `name`    | a name, unique in the project            | a build scenario (debug, release ...), a `[build]` each: see [Building a map](#building-a-map); one without a name is the default (one at most), built when none is named, its map `build/map.w3x` |
 | `[build]`   | `out`     | a path, relative to the project root     | where the map is written; `build/<name>.w3x` without it; never inside a `[map]` root or the `[code] sources` (an error: the next build would read it) |
 | `[build]`   | `uglify`  | `1` or `0`                               | the script's names made short (see "Shorter names" below); `0` without it |
-| `[build]`   | `optimize` | `1` or `0`                              | the script optimized (see "Optimizing" below): inlining, dead code left out; `0` without it |
+| `[build]`   | `inline`  | `1` or `0`                               | one-line functions' calls inlined, as JassHelper does (see "What a build does to the script" below); `0` without it |
+| `[build]`   | `dead_code` | `1` or `0`                             | the functions and globals nothing reachable uses left out; `0` without it |
+| `[build]`   | `string_hash` | `1` or `0`                           | `StringHash("text")` of a literal worked out as the game does; `0` without it |
 | `[jass]`    | `dialect` | `jass` or `vjass` (case-insensitive)     | the dialect of `.j` files that don't declare one in a `// @dialect` header |
 | `[lint]`    | a rule or group id | `off`, `warning` or `error`     | turn a lint rule (or every rule of a group) off or on, at that level (see [Lint](#lint)) |
 | `[external]` | a tool's name | its program and first arguments, comma-separated BNI strings (`"wine","tools/ObjectMerger.exe"`; a program with a `/` relative to the project root) | the tool JassHelper's `//! external NAME` runs on the map built (see below) |
@@ -617,18 +617,30 @@ an AngelScript `ExecuteFunc` that can't be worked out, says so: `wc3
 build` exits with 2). For AI assistants: `wc3-mcp`'s
 `project_build`.
 
-**Optimizing (`optimize=1`).** As JassHelper's (its manual, Script
-optimization), before names are shortened, for every output
-(`wc3-build`'s `optimize`): a call of a one-line function is what its
-line does, only where nothing can change (each parameter read once, in
-order, any call after them; not a `set` of a parameter; not where the
-caller has a local named as a name the line reads); then the functions
-nothing reachable from `main`, `config`, `ExecuteFunc("name")` (any of a
-name told only as the game runs keeps them all) or a class's methods
-calls or names as code, and the globals nothing reachable reads or sets,
-are left out. The build says how much in a note. Diablo III beta: 53
-functions and 66 globals of its JASS left out, its script checking clean
-as before.
+**What a build does to the script**, each by its own name in `[build]`
+(none without it), in this order, before names are shortened, for every
+output (`wc3-build`'s modules of the same names); the build says how
+much of each in a note. There's no `optimize` (a project that still
+says it is warned with these names):
+
+- `string_hash=1`: `StringHash("text")` of a literal is the number the
+  game gives, worked out as the game's `SStrHash2` does (pjass's
+  `sstrhash.c`, taken from the game: Jenkins' lookup2, seed 0, `a`-`z` as
+  `A`-`Z`, `/` as `\`), so the game hashes nothing as it runs. Only an
+  ASCII literal shorter than 1024 bytes (the game's hashing of what isn't
+  ASCII changed with versions); `StringHash` of anything else is the
+  game's to work out.
+- `inline=1`: as JassHelper's (its manual, Script optimization), a call
+  of a one-line function is what its line does, only where nothing can
+  change (each parameter read once, in order, any call after them; not a
+  `set` of a parameter; not where the caller has a local named as a name
+  the line reads).
+- `dead_code=1`: the functions nothing reachable from `main`, `config`,
+  `ExecuteFunc("name")` (any of a name told only as the game runs keeps
+  them all) or a class's methods calls or names as code, and the globals
+  nothing reachable reads or sets, are left out. Diablo III beta with
+  `inline=1` and `dead_code=1`: 53 functions and 66 globals of its JASS
+  left out, its script checking clean as before.
 
 **Shorter names (uglify).** The finished tree knows every name and every
 reference to it, so a build can rename everything that isn't the game's

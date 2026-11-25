@@ -103,9 +103,14 @@ pub struct Build {
     pub out: Option<PathBuf>,
     /// `uglify=1`: the script's names made short.
     pub uglify: bool,
-    /// `optimize=1`: inlining, and dead code left out
-    /// (`wc3_build::optimize`).
-    pub optimize: bool,
+    /// `inline=1`: one-line functions' calls inlined (`wc3_build::inline`).
+    pub inline: bool,
+    /// `dead_code=1`: what nothing reachable uses left out
+    /// (`wc3_build::dead_code`).
+    pub dead_code: bool,
+    /// `string_hash=1`: `StringHash` of a literal worked out
+    /// (`wc3_build::string_hash`).
+    pub string_hash: bool,
     /// `script=jass|lua|as`: the language of the map's script.
     pub script: wc3_build::jass::Script,
 }
@@ -436,7 +441,7 @@ fn unknown_key(item: &Item, section: &str, issues: &mut Vec<Issue>) {
         "project" => "game",
         "code" => "sources' or 'exclude",
         "map" => "root",
-        "build" => "name', 'out', 'script', 'uglify' or 'optimize",
+        "build" => "name', 'out', 'script', 'uglify', 'inline', 'dead_code' or 'string_hash",
         _ => "dialect",
     };
     issues.push(at_name(
@@ -609,14 +614,27 @@ fn read_build(section: &bni_rs::ast::Section, project: &mut Project, issues: &mu
                     _ => issues.push(at_name(key, Level::Error, "'uglify' is 1 or 0".into())),
                 }
             }
-            Some("optimize") => {
+            Some(flag @ ("inline" | "dead_code" | "string_hash")) => {
                 let key = item.key.as_ref().expect("key_of returned a key");
-                match item.fields.as_slice() {
-                    [field] if field.text().trim() == "1" => build.optimize = true,
-                    [field] if field.text().trim() == "0" => build.optimize = false,
-                    _ => issues.push(at_name(key, Level::Error, "'optimize' is 1 or 0".into())),
+                let on = match item.fields.as_slice() {
+                    [field] if field.text().trim() == "1" => true,
+                    [field] if field.text().trim() == "0" => false,
+                    _ => {
+                        issues.push(at_name(key, Level::Error, format!("'{flag}' is 1 or 0")));
+                        continue;
+                    }
+                };
+                match flag {
+                    "inline" => build.inline = on,
+                    "dead_code" => build.dead_code = on,
+                    _ => build.string_hash = on,
                 }
             }
+            Some("optimize") => issues.push(at_name(
+                item.key.as_ref().expect("key_of returned a key"),
+                Level::Warning,
+                "'optimize' is each by its name now: inline=1, dead_code=1 (and string_hash=1)".into(),
+            )),
             Some("name") => {
                 let key = item.key.as_ref().expect("key_of returned a key");
                 if name.is_some() {

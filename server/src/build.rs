@@ -112,7 +112,7 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
         let text = |n: &str| read(n).map(crate::document::decode).unwrap_or_default();
         // AngelScript's: common.j's names in Jass::, what's used of Blizzard.j.
         let (common_j, blizzard_j) = if b.script == wc3_build::jass::Script::AngelScript { (text("Scripts\\common.j"), text("Scripts\\Blizzard.j")) } else { Default::default() };
-        let options = wc3_build::jass::Options { uglify: b.uglify, optimize: b.optimize, game: game_sigs(), script: b.script, common_j, blizzard_j };
+        let options = wc3_build::jass::Options { uglify: b.uglify, inline: b.inline, dead_code: b.dead_code, string_hash: b.string_hash, game: game_sigs(), script: b.script, common_j, blizzard_j };
         let module = wc3_build::from_jass::module_with(&sources, &import).map_err(said)?;
         if let Some(e) = module.externals.first() {
             return Err(vec![format!("{}:{}: `//! external {}` runs a tool on the map, and code alone makes no map: give the project a [map] root=", e.origin.file, e.origin.line, e.tool)]);
@@ -128,7 +128,7 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
     }
 
     let (files, base) = map_files(project, &out)?;
-    let input = Input { read: &read, read_patched: &read_patched, variables, initialization, code, uglify: b.uglify, optimize: b.optimize, script: b.script, import: &import };
+    let input = Input { read: &read, read_patched: &read_patched, variables, initialization, code, uglify: b.uglify, inline: b.inline, dead_code: b.dead_code, string_hash: b.string_hash, script: b.script, import: &import };
     let script = wc3_build::whole::script(&input).map_err(said)?;
     notes.extend(script.notes);
     let errors = said(script.problems.clone());
