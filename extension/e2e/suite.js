@@ -184,6 +184,25 @@ async function steps() {
     }
     await shot('show-languages')
 
+    log("an object's id shows as its object's name, and its parameter's dialog offers the objects: the game's and the map's")
+    const assault = editor.state().tree.triggers.findIndex(t => t.name === 'Main Chamber Assault') + 1
+    check(assault > 0, `trigger ${assault} is Main Chamber Assault`)
+    await editor.receive({type: 'pick', nth: assault})
+    const seen = await until(() => editor.state().picked === assault && editor.state().tree?.view && editor.state().tree, 'its view')
+    const allNodes = nodes => nodes.flatMap(n => [n, ...n.blocks.flatMap(b => allNodes(b.nodes))])
+    const flat = spans => spans.map(x => typeof x === 'string' ? x : flat(x.s)).join('')
+    const create = allNodes(seen.view.actions).find(n => n.name === 'CreateNUnitsAtLoc')
+    check(!!create, 'it creates units')
+    const unit = flat(create.text.find(x => typeof x !== 'string' && x.p === '1').s)
+    await editor.receive({type: 'choices', line: create.line, path: '1'})
+    const offered = await until(() => editor.state().choices?.objects?.length && editor.state().choices, "the parameter's choices")
+    const id = offered.current.value
+    const named = id => offered.objects.find(o => o[0] === id)?.[1]
+    check(/^[a-zA-Z0-9]{4}$/.test(id) && unit === named(id) && unit !== id, `its unit ${id} shows as "${unit}", its name`)
+    check(named('n00Q') && named('n00Q') !== 'n00Q' && named('hfoo') === 'Footman', `${offered.objects.length} units offered: the map's n00Q (${named('n00Q')}), the game's hfoo (${named('hfoo')})`)
+    await shot('object-picker')
+    await editor.receive({type: 'pick', nth: gui})
+
     log("Convert to Custom Text of that GUI trigger: custom text, its code in war3map.wct")
     const convertedName = editor.state().tree.triggers[gui - 1].name
     await editor.receive({type: 'convert', confirmed: true})

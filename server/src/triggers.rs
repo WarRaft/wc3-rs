@@ -1458,8 +1458,11 @@ fn variable_arg(arg: &str, text: &str, except: Option<&str>) -> Result<Declared,
 ///  "presets": [["Player00", "Player 1 (Red)"], ...],
 ///  "variables": [["hero", "Unit", true], ...],
 ///  "calls": [["GetOwningPlayer", "Owner Of Unit", "Unit"], ...],
-///  "value": false}
+///  "value": false, "objects": [["hfoo", "Footman"], ...]}
 /// ```
+///
+/// `objects`: for a type whose values are objects (`unitcode` ...:
+/// `names::OBJECT_TYPES`), each with its name, by name.
 ///
 /// The type is the function's parameter's (`UI\TriggerData.txt`); an
 /// array's index is an integer; `AnyGlobal` takes any variable, and
@@ -1548,14 +1551,19 @@ fn choices_of(text: &str, line: usize, path: &str, ui: &wtg_rs::ui::Ui, declared
             .collect()
     };
     let value_ok = !any && (ty.is_empty() || ui.takes_value(&ty));
+    // A value of an object type: its objects, by name, to pick.
+    let mut objects: Vec<(&String, &String)> = ui.objects.get(&ty).map(|o| o.iter().collect()).unwrap_or_default();
+    objects.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()).then(a.0.cmp(b.0)));
+    let objects: Vec<String> = objects.iter().map(|(id, name)| format!("[{},{}]", js(id), js(name))).collect();
     Ok(format!(
-        "{{\"type\":{},\"type_name\":{},\"current\":{{\"kind\":\"{kind}\",\"value\":{}}},\"presets\":[{}],\"variables\":[{}],\"calls\":[{}],\"value\":{value_ok}}}",
+        "{{\"type\":{},\"type_name\":{},\"current\":{{\"kind\":\"{kind}\",\"value\":{}}},\"presets\":[{}],\"variables\":[{}],\"calls\":[{}],\"value\":{value_ok},\"objects\":[{}]}}",
         js(&ty),
         js(&if any { "Any variable".into() } else { type_name(&ty) }),
         js(&value),
         presets.join(","),
         vars.join(","),
         calls.join(","),
+        objects.join(","),
     ))
 }
 

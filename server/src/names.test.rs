@@ -101,3 +101,25 @@ fn the_games_names() {
     assert_eq!(names.string("WESTRING_RACE_NIGHTELF").as_deref(), Some("Night Elf"));
 
 }
+
+#[test]
+fn names_without_markup() {
+    assert_eq!(plain("|cff804040Zombie|r"), "Zombie");
+    assert_eq!(plain("|CFF36544aGhoul|R (strong)"), "Ghoul (strong)");
+    assert_eq!(plain("a|nb || |cfz"), "a b || |cfz");
+}
+
+/// How long the names of a real game and map take (`WC3_GAME`, `MAP`).
+#[test]
+#[ignore]
+fn names_load_time() {
+    let lookup = crate::game::Lookup {
+        game: std::env::split_paths(&std::env::var_os("WC3_GAME").expect("WC3_GAME")).collect(),
+        roots: vec![std::path::PathBuf::from(std::env::var("MAP").expect("MAP"))],
+    };
+    for _ in 0..2 {
+        let t = std::time::Instant::now();
+        let n = names(&lookup);
+        println!("{:?}: {} unit names", t.elapsed(), n.objects.of.get(&w3abdhqtu_rs::Kind::Unit).map_or(0, |u| u.len()));
+    }
+}

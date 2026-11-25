@@ -1828,6 +1828,8 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
             let warned = false
             /** A map's triggers: which is picked (from 1; 0: the first), and the text's line of each of its lines. */
             let picked = 0
+            /** The last parameter's dialog's choices (for the tests in the editor). */
+            let lastChoices = null
             /** @type {number[]} */
             let at = []
             /** A query's text: in a map's triggers, after which is picked. */
@@ -2026,6 +2028,7 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
                     if (!answer || !answer.text) return
                     const choices = JSON.parse(answer.text)
                     if (choices.error) return window.showWarningMessage(`WC3: ${choices.error}`)
+                    lastChoices = choices
                     return webview.postMessage({type: 'choices', line: msg.line, path: msg.path, choices})
                 }
                 case 'set': return run(OP.SET_PARAM, msg.line, `${msg.path}\n${msg.kind}\n${msg.value}`)
@@ -2106,7 +2109,7 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
             ]
             // For the tests in the editor (`e2e/`): what the page would send, and what it was last sent.
             const key = document.uri.toString()
-            triggerEditors.set(key, {receive, state: () => ({picked, tree: last}), wct: () => wct, refresh: () => post(0)})
+            triggerEditors.set(key, {receive, state: () => ({picked, tree: last, choices: lastChoices}), wct: () => wct, refresh: () => post(0)})
             panel.onDidDispose(() => {
                 clearTimeout(timer)
                 subscriptions.forEach(d => d.dispose())

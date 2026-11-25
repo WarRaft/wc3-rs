@@ -7,8 +7,6 @@ What's known to be next, so work can pick up where it stopped (each
 item's details are in its section below):
 
 - **Triggers (`.wtg` + `.wct`, `.trg`).**
-  - Names of objects for codes (`hfoo`), and pickers of objects in the
-    parameters' dialogs.
   - What `war3mapUnits.doo` places is declared as both `gg_unit_` and
     `gg_item_` to the custom script (which it is takes the game's tables).
 - **The build** (see [Building a map](#building-a-map)).
@@ -1333,7 +1331,16 @@ dirty mark are the text's. In the view:
   project's `.trg` files declare), a **Function** (a call, filtered as
   you type; it comes with its default parameters, which are links in
   turn) or a **Value**, whichever the type has; an empty value shows its
-  name (`Value`) so it can be clicked. **Custom Script**'s value is lines
+  name (`Value`) so it can be clicked. A value of objects (a unit type,
+  an ability, an item ...: `unitcode`, `abilcode`, `heroskillcode` (a
+  hero's), `buffcode`, `destructablecode`, `doodadcode`, `itemcode`,
+  `techcode` (a unit or an upgrade); `names::OBJECT_TYPES`) shows as its
+  object's name (`hfoo`: Footman), and its **Value** is the objects to
+  pick, by name with the id beside, filtered as you type (an id typed
+  that none has is taken as it is). The names are World Editor's, from
+  the game's tables and profile (`w3abdhqtu_rs::ObjectNames`), with the
+  map's object data over them (its custom units by their names, a
+  `TRIGSTR_` from `war3map.wts`), colors left out. **Custom Script**'s value is lines
   of JASS (a box with Tab and **Ctrl+Enter** for OK): one line of the
   text still, the lines `\n` in its string, and a build writes each
   indented as the action is (World Editor's is one line; there's no way

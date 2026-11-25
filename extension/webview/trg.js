@@ -851,7 +851,8 @@ function pickList(items, current, onPick) {
  * function or value, whichever its type has.
  * @param {number} line @param {string} path
  * @param {{type: string, type_name: string, current: {kind: string, value: string}, presets: [string, string][],
- *   variables: [string, string, boolean, string][], calls: [string, string, string][], value: boolean}} c
+ *   variables: [string, string, boolean, string][], calls: [string, string, string][], value: boolean,
+ *   objects?: [string, string][]}} c
  */
 function paramDialog(line, path, c) {
     /** @type {{kind: string, radio: HTMLInputElement, get: () => [string, string] | null}[]} */
@@ -885,7 +886,17 @@ function paramDialog(line, path, c) {
             c.current.kind === 'call' ? c.current.value : '', submit)
         option('call', 'Function', [filter, list], () => list.value ? ['call', list.value] : null)
     }
-    if (c.value) {
+    if (c.value && c.objects && c.objects.length) {
+        // Objects (units, abilities ...): by name, the id beside it; an id
+        // the list doesn't have is typed into the filter.
+        const current = c.current.kind === 'value' ? c.current.value : ''
+        const {filter, list} = pickList(c.objects.map(([id, name]) => [id, `${name} [${id}]`]), current, submit)
+        option('value', 'Value', [filter, list], () => {
+            if (list.value) return ['value', list.value]
+            const typed = filter.value.trim()
+            return typed ? ['value', typed] : null
+        })
+    } else if (c.value) {
         // Custom script: lines, each a line of JASS (Ctrl+Enter is OK); in
         // a map's triggers one line, as World Editor's.
         const lines = c.type === 'scriptcode' && mapVariables === null

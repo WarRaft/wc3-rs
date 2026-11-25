@@ -282,10 +282,14 @@ fn trg_choices_and_catalog() {
         "{\"type\":\"player\",\"type_name\":\"WESTRING_TRIGTYPE_player\",\"current\":{\"kind\":\"preset\",\"value\":\"Player00\"},",
         "\"presets\":[[\"Player00\",\"WESTRING_PLAYER_00\"],[\"Player01\",\"WESTRING_PLAYER_01\"]],",
         "\"variables\":[[\"p\",\"WESTRING_TRIGTYPE_player\",false,\"\"],[\"ps\",\"WESTRING_TRIGTYPE_player\",true,\"\"]],",
-        "\"calls\":[[\"GetOwningPlayer\",\"GetOwningPlayer\",\"\"]],\"value\":false}"
+        "\"calls\":[[\"GetOwningPlayer\",\"GetOwningPlayer\",\"\"]],\"value\":false,\"objects\":[]}"
     ));
     // A type of the editor's own over integer takes a value.
-    assert!(choices(text, 2, "1", &ui, &vars).ends_with("\"value\":true}"));
+    assert!(choices(text, 2, "1", &ui, &vars).ends_with("\"value\":true,\"objects\":[]}"));
+    // One of objects: they're offered, by name.
+    let mut with = ui.clone();
+    with.objects.insert("unitcode".into(), [("hfoo".to_string(), "Footman".to_string()), ("hkni".to_string(), "Knight".to_string()), ("Hamg".to_string(), "Archmage".to_string())].into());
+    assert!(choices(text, 2, "1", &with, &vars).ends_with("\"value\":true,\"objects\":[[\"Hamg\",\"Archmage\"],[\"hfoo\",\"Footman\"],[\"hkni\",\"Knight\"]]}"));
     // SetVariable: any variable, then the variable's type.
     assert!(choices(text, 3, "0", &ui, &vars).contains("\"type_name\":\"Any variable\""));
     assert!(choices(text, 3, "1", &ui, &vars).starts_with("{\"type\":\"integer\""));

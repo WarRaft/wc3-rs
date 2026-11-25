@@ -26,6 +26,10 @@
 //!   `UI\TriggerStrings.txt` (their phrases), for triggers' text and
 //!   view, and its icons (each category's, and `UI\WorldEditData.txt`'s
 //!   `[WorldEditArt]` for the rest), decoded once.
+//! - objects (units, abilities, items ...): their names, World Editor's
+//!   (`w3abdhqtu_rs::ObjectNames`: each kind's table and the profile),
+//!   the map's object data over them, for the trigger editor to show an
+//!   id by its name and offer a type's objects ([`OBJECT_TYPES`]).
 //!
 //! The editor's data and strings (`UI\TriggerData.txt` and the rest of
 //! [`PATCHED`]) are read with their patches (`UI\TriggerData.patch.txt`
@@ -104,6 +108,81 @@ pub struct Names {
     /// editor's own by their keys in `UI\WorldEditData.txt`'s
     /// `[WorldEditArt]` ([`TRIGGER_ART`]).
     pub trigger_icons: HashMap<String, String>,
+    /// Each kind's objects with their names: the game's, the map's object
+    /// data over them (`w3abdhqtu_rs::ObjectNames`). Read only with the
+    /// trigger editor's data, which shows them.
+    pub objects: w3abdhqtu_rs::ObjectNames,
+}
+
+/// The trigger editor's types whose values are objects, and the kinds of
+/// objects they are, as World Editor offers them: a hero's skill is an
+/// ability heroes learn; a tech one is a unit or an upgrade.
+pub const OBJECT_TYPES: [(&str, &[w3abdhqtu_rs::Kind]); 9] = {
+    use w3abdhqtu_rs::Kind::*;
+    [
+        ("unitcode", &[Unit]),
+        ("itemcode", &[Item]),
+        ("abilcode", &[Ability]),
+        ("heroskillcode", &[Ability]),
+        ("buffcode", &[Buff]),
+        ("destructablecode", &[Destructable]),
+        ("doodadcode", &[Doodad]),
+        ("upgradecode", &[Upgrade]),
+        ("techcode", &[Unit, Upgrade]),
+    ]
+};
+
+/// The objects of the trigger editor's type `ty` (see [`OBJECT_TYPES`]),
+/// by id, with their names.
+fn objects_of(objects: &w3abdhqtu_rs::ObjectNames, ty: &str, kinds: &[w3abdhqtu_rs::Kind]) -> std::collections::BTreeMap<String, String> {
+    let mut out = std::collections::BTreeMap::new();
+    for kind in kinds {
+        for (id, o) in objects.of.get(kind).into_iter().flatten() {
+            if ty != "heroskillcode" || o.hero {
+                out.insert(id.clone(), plain(&o.shown()));
+            }
+        }
+    }
+    out
+}
+
+/// The game's text without its markup: colors (`|cffRRGGBB`, `|r`) out,
+/// a line break (`|n`) a space.
+pub fn plain(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(at) = rest.find('|') {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + 1..];
+        let code = after.chars().next().map(|c| c.to_ascii_lowercase());
+        rest = match code {
+            Some('c') if after.len() >= 9 && after.as_bytes()[1..9].iter().all(u8::is_ascii_hexdigit) => &after[9..],
+            Some('r') => &after[1..],
+            Some('n') => {
+                out.push(' ');
+                &after[1..]
+            }
+            _ => {
+                out.push('|');
+                after
+            }
+        };
+    }
+    out.push_str(rest);
+    out.trim().to_string()
+}
+
+/// Every file the objects' names come from: the game's tables and
+/// profile, a map's object data and strings.
+pub fn object_files() -> Vec<String> {
+    let mut out: Vec<String> = w3abdhqtu_rs::PROFILE_FILES.iter().map(|f| f.to_string()).collect();
+    for kind in w3abdhqtu_rs::Kind::ALL {
+        out.push(kind.table_file().into());
+        out.push(kind.metadata_file().into());
+        out.push(format!("war3map.{}", kind.extension()));
+    }
+    out.push("war3map.wts".into());
+    out
 }
 
 /// The trigger editor's own icons, keys of `UI\WorldEditData.txt`'s
@@ -278,7 +357,74 @@ pub fn names(lookup: &Lookup) -> Names {
     if lookup.is_empty() {
         return Names::default();
     }
-    Names::load(&lookup.open().0)
+    let (game, _) = lookup.open();
+    let mut names = Names::load(&game);
+    // The objects, with the trigger editor's data only (it shows them).
+    if !names.trigger_ui.is_empty() {
+        add_objects(&mut names, lookup, &game);
+    }
+    names
+}
+
+/// The game's part of the objects' names: its objects named, and each
+/// kind's metadata (to read a map's object data with).
+struct GameObjects {
+    names: w3abdhqtu_rs::ObjectNames,
+    meta: Vec<(w3abdhqtu_rs::Kind, w3abdhqtu_rs::Metadata)>,
+}
+
+/// The game's part, by game folders: read once (a map's every save drops
+/// the names, and reading the game's tables from its archives takes
+/// seconds), dropped when they change ([`Cache::disk_changed`]).
+static GAME_OBJECTS: std::sync::LazyLock<std::sync::Mutex<HashMap<Vec<PathBuf>, Arc<GameObjects>>>> = std::sync::LazyLock::new(Default::default);
+
+/// The files of the game's part: its tables, profile, metadata and the
+/// editor's strings.
+fn game_object_files() -> Vec<String> {
+    object_files().into_iter().filter(|f| !f.starts_with("war3map.")).chain(PATCHED.iter().chain(FILES.iter()).filter(|f| f.contains("Strings")).map(|f| f.to_string())).collect()
+}
+
+/// The game's part read through `game`, its strings resolved by `names`.
+fn read_game_objects(game: &Game, names: &Names) -> GameObjects {
+    let read = |name: &str| match PATCHED.contains(&name) {
+        true => game.read_patched(name),
+        false => game.read(name).map(|(bytes, _)| crate::document::decode(bytes)),
+    };
+    GameObjects {
+        names: w3abdhqtu_rs::ObjectNames::load(read, |k| names.resolve(k)),
+        meta: w3abdhqtu_rs::Kind::ALL.into_iter().map(|k| (k, w3abdhqtu_rs::Metadata::load(k, read))).collect(),
+    }
+}
+
+/// `names`' objects: the game's (read once per game folders, unless the
+/// map's roots replace one of their files: then through `game`, the whole
+/// lookup), the map's object data over them.
+fn add_objects(names: &mut Names, lookup: &Lookup, game: &Game) {
+    let roots = Lookup { game: Vec::new(), roots: lookup.roots.clone() }.open().0;
+    let replaced = !lookup.roots.is_empty() && game_object_files().iter().any(|f| roots.read(f).is_some());
+    let base = if replaced {
+        Arc::new(read_game_objects(game, names))
+    } else {
+        let cached = GAME_OBJECTS.lock().ok().and_then(|c| c.get(&lookup.game).cloned());
+        cached.unwrap_or_else(|| {
+            let read = Arc::new(read_game_objects(&Game::open(&lookup.game).0, names));
+            if let Ok(mut c) = GAME_OBJECTS.lock() {
+                c.insert(lookup.game.clone(), read.clone());
+            }
+            read
+        })
+    };
+    let mut objects = base.names.clone();
+    let wts = game.read("war3map.wts").map(|(b, _)| wts_rs::parse(&crate::document::decode(b)));
+    let text = |s: &str| wts.as_ref().map_or(s.to_string(), |w| w.resolve(s));
+    for (kind, meta) in &base.meta {
+        let Some(data) = game.read(&format!("war3map.{}", kind.extension())).and_then(|(b, _)| w3abdhqtu_rs::parse(&b, *kind).ok()) else { continue };
+        objects.add_object_data(&data, meta, text);
+    }
+    for (ty, kinds) in OBJECT_TYPES {
+        names.trigger_ui.objects.insert(ty.to_string(), objects_of(&objects, ty, kinds));
+    }
+    names.objects = objects;
 }
 
 /// Names read so far, by lookup: hints are asked for on every scroll.
@@ -300,12 +446,16 @@ impl Cache {
         let before = self.read.len();
         let in_game = |folder: &std::path::Path, path: &std::path::Path| {
             crate::game::is_archive_name(path) && path.parent() == Some(folder)
-                || FILES.iter().any(|f| {
+                || FILES.iter().map(|f| f.to_string()).chain(object_files()).any(|f| {
                     let rel = path.strip_prefix(folder).map(|r| r.to_string_lossy().replace('/', "\\"));
-                    rel.is_ok_and(|r| r.eq_ignore_ascii_case(f))
+                    rel.is_ok_and(|r| r.eq_ignore_ascii_case(&f))
                 })
         };
         self.read.retain(|lookup, _| !paths.iter().any(|p| lookup.affected_by(p, in_game)));
+        // The game's part of the objects: only the game folders' changes.
+        if let Ok(mut c) = GAME_OBJECTS.lock() {
+            c.retain(|folders, _| !paths.iter().any(|p| folders.iter().any(|f| in_game(f, p))));
+        }
         self.read.len() != before
     }
 }
