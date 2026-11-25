@@ -859,9 +859,14 @@ const WCT: &str = "// @wct version=1\n// @wct header\n// @wct trigger\nfunction 
 
 /// The custom script after the answer `a`'s edits of it.
 fn wct_applied(a: &str) -> String {
+    wct_applied_to(WCT, a)
+}
+
+/// The custom script `wct` after the answer `a`'s edits of it.
+fn wct_applied_to(wct: &str, a: &str) -> String {
     let (_, edits) = a.split_once(",\"wct\":").unwrap_or_else(|| panic!("no wct edits: {a}"));
     let edits = edits.strip_suffix('}').unwrap();
-    answer_applied(WCT, &format!("{{\"edits\":{edits},\"line\":0}}")).unwrap()
+    answer_applied(wct, &format!("{{\"edits\":{edits},\"line\":0}}")).unwrap()
 }
 
 #[test]
@@ -994,4 +999,68 @@ fn convert_to_custom_text() {
     assert!(a.contains("function Trig_T_Actions takes nothing returns nothing\\u000a    local integer n\\u000a    set n = 3\\u000aendfunction"), "{a}");
     // The local's declaration gone with the actions: the code has it.
     assert!(a.starts_with("{\"edits\":[[0,0,9,0,\"[trigger]\\u000aname=\\\"T\\\"\\u000adescription=\\\"\\\"\\u000acustom_text=1\\u000arun_on_init=1\\u000a\"]]"), "{a}");
+}
+
+/// 1.31's: the tree's order, ids, a category's parent.
+const TREE: &str = concat!(
+    "[wtg]\nversion=7\ngame=2\ntree=1\nmap=\"map.w3x\"\nmap_element=1,0,0,1,0\n\n",
+    "[category]\nindex=33554432\nname=\"Init\"\nopen=1\n\n",
+    "[trigger]\nname=\"A\"\ndescription=\"\"\ncategory=33554432\nid=50331648\nevent=MapInitializationEvent()\naction=DoNothing()\n\n",
+    "[variable]\nname=\"hero\"\ntype=\"unit\"\nid=201326592\nparent=33554432\n\n",
+    "[trigger]\nname=\"Read me\"\ndescription=\"\"\ncategory=0\nid=67108864\ncomment=1\n\n",
+    "[trigger]\nname=\"B\"\ncategory=33554432\nid=50331649\naction=TriggerExecute($gg_trg_A)\n",
+);
+
+#[test]
+fn wtg_view_of_a_131_tree() {
+    let names = crate::names::Names::default();
+    let v = wtg_view(TREE, 3, &names, None);
+    assert!(v.contains("\"errors\":[]"), "{v}");
+    assert!(v.contains("\"name\":\"hero\""), "{v}");
+    let v = wtg_view(TREE, 1, &names, None);
+    assert!(v.contains("\"errors\":[]"), "{v}");
+}
+
+/// [`TREE`]'s custom script, 1.31's: A's piece and B's, none for the comment.
+const TREE_WCT: &str = "// @wct version=1\n// @wct magic\n// @wct header\n// @wct trigger\n// A\n// @wct trigger\n// B\n";
+
+#[test]
+fn a_131_custom_script_goes_with_the_triggers() {
+    let ui = wtg_rs::ui::Ui::default();
+    let names = crate::names::Names::default();
+    // The comment's piece: none.
+    let v = wtg_view(TREE, 1, &names, Some(TREE_WCT));
+    assert!(v.ends_with("\"wct\":{\"header\":[2,3],\"code\":[[3,5,false],null,[5,7,false]],\"problem\":null}}"), "{v}");
+    // A deleted: its piece with it; a new one at its category's end (after
+    // B): a piece after B's.
+    let a = wtg_edit(TREE, map_op::DELETE_TRIGGER, 0, "1\n", &ui, Some(TREE_WCT));
+    assert_eq!(wct_applied_to(TREE_WCT, &a), "// @wct version=1\n// @wct magic\n// @wct header\n// @wct trigger\n// B\n");
+    let a = wtg_edit(TREE, map_op::NEW_TRIGGER, 0, "1\n33554432\nC", &ui, Some(TREE_WCT));
+    assert_eq!(wct_applied_to(TREE_WCT, &a), "// @wct version=1\n// @wct magic\n// @wct header\n// @wct trigger\n// A\n// @wct trigger\n// B\n// @wct trigger none\n", "{a}");
+    // A category new in a tree without one: a category's id.
+    let empty = "[wtg]\nversion=7\ngame=2\ntree=1\n";
+    assert!(applied_map(empty, map_op::NEW_CATEGORY, "Init", &ui).contains("[category]\nindex=33554432\n"));
+    // The classic count would be wrong: it says how many are wanted.
+    let v = wtg_view(TREE, 1, &names, Some("// @wct magic\n// @wct trigger\n// A\n"));
+    assert!(v.contains("\"problem\":\"war3map.wct has the code of 1 triggers, war3map.wtg has 2 that aren't comments"), "{v}");
+}
+
+#[test]
+fn a_131_tree_saved_and_read_back() {
+    let data = TriggerData::parse("[TriggerEvents]\nMapInitializationEvent=0,nothing\n[TriggerActions]\nDoNothing=0,nothing\nTriggerExecute=0,trigger\n");
+    let bytes = convert(TO_BYTES, "war3map.wtg", TREE.as_bytes(), &data).unwrap();
+    assert!(matches!(wtg_rs::parse_any(&bytes, &data), Ok(wtg_rs::File::Tree(_))));
+    let text = String::from_utf8(convert(TO_TEXT, "war3map.wtg", &bytes, &data).unwrap()).unwrap();
+    // As it was (the deleted ids' line the file has).
+    assert_eq!(convert(TO_BYTES, "war3map.wtg", text.as_bytes(), &data).unwrap(), bytes);
+    assert!(text.contains("[variable]\nname=\"hero\"") && text.contains("id=50331649\n"), "{text}");
+}
+
+#[test]
+fn a_131_tree_extracted() {
+    let e = extract(TREE, Some(TREE_WCT));
+    assert!(!e.contains("error"), "{e}");
+    // The category's triggers in its folder; the comment at the top (its
+    // parent the map) at the root.
+    assert!(e.contains("[\"000_Init/000_A.trg\",") && e.contains("[\"000_Init/001_B.trg\",") && e.contains("[\"000_Read me.trg\","), "{e}");
 }

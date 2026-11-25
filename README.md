@@ -7,8 +7,6 @@ What's known to be next, so work can pick up where it stopped (each
 item's details are in its section below):
 
 - **Triggers (`.wtg` + `.wct`, `.trg`).**
-  - Maps of 1.31 and later: `war3map.wtg`'s layout has no text form, so
-    their triggers don't open in the editor.
   - Names of objects for codes (`hfoo`), and pickers of objects in the
     parameters' dialogs.
   - What `war3mapUnits.doo` places is declared as both `gg_unit_` and
@@ -1132,6 +1130,17 @@ the code stays JASS, with everything the editor does for JASS):
   undone as one (`triggers::wtg_edit`'s `wct`,
   `customtext::reorder`). A custom script whose pieces don't go with the
   triggers (as many as there are) is said so once, and left alone.
+- **Maps of 1.31 and later** open the same: their `war3map.wtg` (a tree
+  of elements with ids) is the same text with the tree's own keys
+  (`tree=1`, each section's `id=`, a category's `parent=`; see wtg-rs),
+  its sections in the tree's order; a trigger's view leaves `id=` out as
+  it does `category=`, and a category new in it gets a category's id.
+  Saved, it's 1.31's again, the ids kept, new ones of their type. Its
+  `war3map.wct` (`@wct magic`) has a piece only for each trigger that
+  isn't a comment, and the pieces go with those
+  (`customtext::Pieces::of_triggers`, `order`). The MCP's `wtg_` tools
+  read and write it so too; the build reads its triggers as the classic
+  ones and writes World Editor's classic layout back.
 - **A trigger renamed, its names in the code follow**: what World
   Editor's script makes of a trigger of custom text is its variable
   (`gg_trg_<name>`) and the call of `InitTrig_<name>`; its functions

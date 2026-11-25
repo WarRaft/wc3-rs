@@ -200,15 +200,19 @@ fn triggers_back(project: &Project, game: &Game, names: &crate::names::Names, no
     let map_wct = game.read("war3map.wct").and_then(|(b, _)| wct_rs::parse(&b).ok());
     let map_wtg = game.read("war3map.wtg").and_then(|(b, _)| match wtg_rs::parse_any(&b, &names.triggers) {
         Ok(wtg_rs::File::Classic(f)) => Some(f),
-        _ => None,
+        // 1.31's: its tree as a classic file's triggers.
+        Ok(wtg_rs::File::Tree(t)) => wtg_rs::tree::split(&t).ok().map(|(f, _)| f),
+        Err(_) => None,
     });
     // The map's pieces by their triggers' names, each taken once, in order
     // (names may repeat).
     let mut map_pieces: Vec<(String, wct_rs::Code)> = Vec::new();
-    if let (Some(w), Some(c)) = (&map_wtg, &map_wct)
-        && w.triggers.len() == c.triggers.len()
-    {
-        map_pieces = w.triggers.iter().zip(&c.triggers).map(|(t, code)| (t.name.clone(), code.clone())).collect();
+    if let (Some(w), Some(c)) = (&map_wtg, &map_wct) {
+        // 1.31's: a piece for each trigger that isn't a comment.
+        let with_code: Vec<&wtg_rs::Trigger> = w.triggers.iter().filter(|t| !c.magic || t.is_comment == 0).collect();
+        if with_code.len() == c.triggers.len() {
+            map_pieces = with_code.iter().zip(&c.triggers).map(|(t, code)| (t.name.clone(), code.clone())).collect();
+        }
     }
     let mut take = |name: &str| -> Option<wct_rs::Code> {
         let at = map_pieces.iter().position(|(n, _)| n == name)?;
@@ -405,7 +409,9 @@ fn code(project: &Project, game: &Game, names: &crate::names::Names, alone: bool
     // its name in their `war3map.wtg`.
     let wtg = game.read("war3map.wtg").and_then(|(b, _)| match wtg_rs::parse_any(&b, &names.triggers) {
         Ok(wtg_rs::File::Classic(f)) => Some(f),
-        _ => None,
+        // 1.31's: its tree as a classic file's triggers.
+        Ok(wtg_rs::File::Tree(t)) => wtg_rs::tree::split(&t).ok().map(|(f, _)| f),
+        Err(_) => None,
     });
     let wct = game.read("war3map.wct").and_then(|(b, _)| wct_rs::parse(&b).ok());
     let mut custom: BTreeMap<String, String> = BTreeMap::new();

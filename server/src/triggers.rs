@@ -46,16 +46,14 @@ pub fn convert(op: u8, name: &str, bytes: &[u8], data: &TriggerData) -> Result<V
             if data.is_empty() {
                 return Err(format!("Can't read {file}: {NO_DATA}"));
             }
+            // Either layout: 1.31's tree as the same text and what it adds.
             let f = wtg_rs::parse_any(bytes, data).map_err(|e| format!("Can't read {file}: {e}"))?;
-            let wtg_rs::File::Classic(f) = f else {
-                return Err(format!("Can't show {file}: the layout of 1.31 and later has no text form yet"));
-            };
-            wtg_rs::text::to_text(&f).map(String::into_bytes).map_err(|e| format!("Can't show {file}: {e}"))
+            wtg_rs::text::to_text_any(&f).map(String::into_bytes).map_err(|e| format!("Can't show {file}: {e}"))
         }
         TO_BYTES => {
             let text = std::str::from_utf8(bytes).map_err(|_| "the text isn't UTF-8".to_string())?;
             let p = wtg_rs::text::from_text(text, (!data.is_empty()).then_some(data));
-            let Some(f) = p.file else {
+            let Some(f) = p.to_file() else {
                 let e = &p.errors[0];
                 return Err(format!("Can't save {file}: line {}: {}", e.line, e.message));
             };
@@ -142,17 +140,16 @@ pub fn extract(text: &str, wct: Option<&str>) -> String {
 pub fn extract_files(f: &wtg_rs::Triggers, wct: Option<&str>) -> Result<wtg_rs::text::Files, String> {
     let mut made = wtg_rs::text::to_files(f)?;
     let Some(wct) = wct else { return Ok(made) };
-    let pieces = crate::customtext::pieces(wct);
-    if pieces.triggers.len() != f.triggers.len() {
-        return Err(format!("war3map.wct has the code of {} triggers, war3map.wtg has {}: the code of custom text can't be told whose", pieces.triggers.len(), f.triggers.len()));
-    }
+    let comments: Vec<bool> = f.triggers.iter().map(|t| t.is_comment != 0).collect();
+    let pieces = crate::customtext::pieces(wct).of_triggers(&comments)?;
     let lines: Vec<&str> = wct.split_inclusive('\n').collect();
     let code = |from: usize, to: usize| lines[from..to].concat();
     let head = "// @dialect vjass\n";
     let mut out = Vec::new();
     // The triggers' files follow the variables', in their order.
     let first = made.files.len() - f.triggers.len();
-    for (k, (t, (marker, end, _))) in f.triggers.iter().zip(&pieces.triggers).enumerate() {
+    for (k, (t, piece)) in f.triggers.iter().zip(&pieces).enumerate() {
+        let Some((marker, end, _)) = piece else { continue };
         if t.is_custom == 0 || t.is_comment != 0 {
             continue;
         }
@@ -1858,6 +1855,9 @@ struct Slice {
     range: std::ops::Range<usize>,
     /// Its `category=` line, left out of `text`.
     category: Option<usize>,
+    /// The lines left out of `text` (`category=`; a 1.31 tree's `id=` and
+    /// `element=`, the file's, not a `.trg`'s), in order.
+    hidden: Vec<usize>,
     /// The section as a `.trg`'s text.
     text: String,
     /// Its name, as `name=` says.
@@ -1867,8 +1867,13 @@ struct Slice {
 impl Slice {
     /// The text's line (from 1) of the section's line `k` (from 1).
     fn line(&self, k: usize) -> usize {
-        let i = self.range.start + k - 1;
-        i + 1 + self.category.is_some_and(|c| i >= c) as usize
+        let mut i = self.range.start + k - 1;
+        for &h in &self.hidden {
+            if h <= i {
+                i += 1;
+            }
+        }
+        i + 1
     }
 
     /// The section's lines in `lines` (the text's) become `new` (as
@@ -1877,7 +1882,7 @@ impl Slice {
     fn put(&self, lines: &mut Vec<String>, new: Vec<String>, shown: Option<usize>) -> Option<usize> {
         let mut section = new;
         let mut shown = shown;
-        if let Some(c) = self.category {
+        for &c in &self.hidden {
             let first_eca = (1..section.len()).find(|&i| eca_line(&section[i]).is_some()).unwrap_or(section.len());
             let at = (c - self.range.start).min(first_eca).max(1).min(section.len());
             section.insert(at, lines[c].clone());
@@ -1939,9 +1944,10 @@ impl Map {
             .filter(|(n, _)| n == wtg_rs::text::TRIGGER)
             .map(|(_, r)| {
                 let category = field_in(&lines, r.start + 1..r.end, "category").map(|(i, _)| i);
-                let text = r.clone().filter(|&i| Some(i) != category).map(|i| lines[i].as_str()).collect();
+                let hidden: Vec<usize> = (r.start + 1..r.end).filter(|&i| matches!(field_key(&lines[i]), Some("category" | "id" | "element"))).collect();
+                let text = r.clone().filter(|i| !hidden.contains(i)).map(|i| lines[i].as_str()).collect();
                 let name = field_in(&lines, r.start + 1..r.end, "name").and_then(|(_, v)| wtg_rs::text::read_string(v)).unwrap_or_default();
-                Slice { range: r.clone(), category, text, name }
+                Slice { range: r.clone(), category, hidden, text, name }
             })
             .collect();
         Map { lines, eol, sections, triggers }
@@ -1949,6 +1955,19 @@ impl Map {
 
     /// Which trigger `nth` (from 1) picks: itself, or the first; from 1,
     /// 0 when there's none.
+    /// Whether it's 1.31's layout (`tree=1` in `[wtg]`).
+    fn is_tree(&self) -> bool {
+        self.sections.iter().find(|(n, _)| n == "wtg").is_some_and(|(_, r)| field_in(&self.lines, r.start + 1..r.end, "tree").is_some_and(|(_, v)| v != "0"))
+    }
+
+    /// Whether each trigger is a comment.
+    fn comments(&self) -> Vec<bool> {
+        self.triggers
+            .iter()
+            .map(|t| field_in(&self.lines, t.range.start + 1..t.range.end, "comment").is_some_and(|(_, v)| v != "0"))
+            .collect()
+    }
+
     fn pick(&self, nth: usize) -> usize {
         if (1..=self.triggers.len()).contains(&nth) { nth } else { (!self.triggers.is_empty()) as usize }
     }
@@ -2180,8 +2199,11 @@ pub fn wtg_view(text: &str, nth: usize, names: &crate::names::Names, wct: Option
         Some(w) => {
             let p = crate::customtext::pieces(w);
             let header = p.header.map_or("null".into(), |(a, b)| format!("[{a},{b}]"));
-            let code: Vec<String> = p.triggers.iter().map(|(a, b, none)| format!("[{a},{b},{none}]")).collect();
-            let problem = wct_problem(&p, map.triggers.len()).map_or("null".into(), |e| js(&e));
+            // Each trigger's (a 1.31 comment's: none, null).
+            let (code, problem): (Vec<String>, _) = match p.of_triggers(&map.comments()) {
+                Ok(each) => (each.iter().map(|x| x.map_or("null".into(), |(a, b, none)| format!("[{a},{b},{none}]"))).collect(), "null".into()),
+                Err(e) => (p.triggers.iter().map(|(a, b, none)| format!("[{a},{b},{none}]")).collect(), js(&e)),
+            };
             format!("{{\"header\":{header},\"code\":[{}],\"problem\":{problem}}}", code.join(","))
         }
     };
@@ -2194,9 +2216,10 @@ pub fn wtg_view(text: &str, nth: usize, names: &crate::names::Names, wct: Option
 }
 
 /// What's wrong when the custom script's pieces `p` don't go with the
-/// map's `triggers` triggers: each trigger has one, in the same order.
-fn wct_problem(p: &crate::customtext::Pieces, triggers: usize) -> Option<String> {
-    (p.triggers.len() != triggers).then(|| format!("war3map.wct has the code of {} triggers, war3map.wtg has {triggers}: the code of custom text can't be told whose", p.triggers.len()))
+/// map's triggers (`comments`, whether each is one): each has one, in the
+/// same order (in 1.31's layout, but comments).
+fn wct_problem(p: &crate::customtext::Pieces, comments: &[bool]) -> Option<String> {
+    p.of_triggers(comments).err()
 }
 
 /// The triggers of the text of a `.wtg` (`doc`), looked at from its `me`th
@@ -2344,14 +2367,11 @@ pub fn convert_wtg(text: &str, nth: usize, ui: &wtg_rs::ui::Ui, wct: Option<&str
     let js = crate::objects::json_string;
     let made = (|| {
         let map = Map::of(text);
-        let count = map.triggers.len();
         let nth = map.pick(nth);
         let slice = map.triggers.get(nth.wrapping_sub(1)).ok_or("no trigger picked")?;
         let wct = wct.ok_or("the map has no custom script (war3map.wct) beside its triggers: its code would have nowhere to go")?;
         let pieces = crate::customtext::pieces(wct);
-        if let Some(problem) = wct_problem(&pieces, count) {
-            return Err(problem);
-        }
+        let each = pieces.of_triggers(&map.comments())?;
         let p = wtg_rs::text::trigger_from_text(&slice.text, None);
         if let Some(e) = p.errors.first() {
             return Err(format!("line {}: {}", slice.line(e.line), e.message));
@@ -2374,7 +2394,7 @@ pub fn convert_wtg(text: &str, nth: usize, ui: &wtg_rs::ui::Ui, wct: Option<&str
         let mut lines = map.lines.clone();
         slice.put(&mut lines, new, None);
         // Its piece of the custom script: the code.
-        let (marker, end, _) = pieces.triggers[nth - 1];
+        let (marker, end, _) = each[nth - 1].ok_or("a comment has no code")?;
         let mut code_lines: Vec<String> = wct.split_inclusive('\n').map(String::from).collect();
         let piece = format!("{} @wct trigger\n{}\n", pieces.comment, code.trim_end_matches('\n'));
         code_lines.splice(marker..end, piece.split_inclusive('\n').map(String::from));
@@ -2410,7 +2430,7 @@ pub fn wtg_edit(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui
     let js = crate::objects::json_string;
     let (nth, arg) = arg.split_once('\n').unwrap_or((arg, ""));
     let map = Map::of(text);
-    let count = map.triggers.len();
+    let comments = map.comments();
     let nth = map.pick(nth.trim().parse().unwrap_or(0));
     let mut order = None;
     // A trigger renamed: its names in the script, before and after (the
@@ -2436,9 +2456,9 @@ pub fn wtg_edit(text: &str, op: u32, line: usize, arg: &str, ui: &wtg_rs::ui::Ui
             let pick = pick.map_or(String::new(), |p| format!(",\"pick\":{p}"));
             // The custom script's pieces with the triggers.
             let custom = match (order, wct) {
-                (Some(order), Some(w)) => match wct_problem(&crate::customtext::pieces(w), count) {
+                (Some(order), Some(w)) => match wct_problem(&crate::customtext::pieces(w), &comments) {
                     Some(problem) => format!(",\"warning\":{}", js(&format!("{problem}; war3map.wct is left as it was"))),
-                    None => match crate::customtext::reorder(w, &order) {
+                    None => match crate::customtext::reorder(w, &crate::customtext::pieces(w).order(&order, &comments)) {
                         Some(new) => format!(",\"wct\":{}", edit(w, &new.split_inclusive('\n').map(String::from).collect::<Vec<_>>())),
                         None => String::new(),
                     },
@@ -2631,7 +2651,10 @@ fn wtg_tree(mut map: Map, op: u32, nth: usize, arg: &str) -> Result<(Answer, Opt
             if name.is_empty() {
                 return Err("a category needs a name".into());
             }
-            let index = categories.iter().map(|c| c.0).max().map_or(0, |m| m + 1);
+            // 1.31's: an id of a category's type (0x02 its high byte), not
+            // the map's 0.
+            let first = if map.is_tree() { 0x0200_0000 } else { 0 };
+            let index = categories.iter().map(|c| c.0).max().map_or(first, |m| m + 1);
             let at = map.after_last(&["category", "wtg"]);
             map.insert(at, &format!("[category]\nindex={index}\nname={}\n", wtg_rs::text::jass_string(name)));
             Ok((Answer::Lines(map.lines, 0, Some(nth)), None))

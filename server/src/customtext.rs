@@ -136,6 +136,45 @@ pub struct Pieces {
     pub triggers: Vec<(usize, usize, bool)>,
     /// The markers' comment (`//`, `--`).
     pub comment: &'static str,
+    /// 1.31's layout (`magic`): a piece for each trigger that isn't a
+    /// comment only.
+    pub magic: bool,
+}
+
+/// A trigger's piece: its marker's line, the end of its code, whether it
+/// stores none.
+pub type Piece = (usize, usize, bool);
+
+impl Pieces {
+    /// Each trigger's piece, the triggers' being comments `comments` (a
+    /// comment has none in 1.31's layout); an error when there are more or
+    /// fewer pieces than they have.
+    pub fn of_triggers(&self, comments: &[bool]) -> Result<Vec<Option<Piece>>, String> {
+        let having = if self.magic { comments.iter().filter(|c| !**c).count() } else { comments.len() };
+        if self.triggers.len() != having {
+            let whose = if self.magic { " that aren't comments" } else { "" };
+            return Err(format!(
+                "war3map.wct has the code of {} triggers, war3map.wtg has {having}{whose}: the code of custom text can't be told whose",
+                self.triggers.len()
+            ));
+        }
+        let mut next = self.triggers.iter();
+        Ok(comments.iter().map(|&c| if self.magic && c { None } else { next.next().copied() }).collect())
+    }
+
+    /// `order` (the triggers after a change, as [`reorder`] takes it) as
+    /// the pieces': without the comments' in 1.31's layout. `comments`
+    /// are the triggers' before; a new one is no comment.
+    pub fn order(&self, order: &[Option<usize>], comments: &[bool]) -> Vec<Option<usize>> {
+        if !self.magic {
+            return order.to_vec();
+        }
+        let piece = |k: usize| comments.get(k).is_some_and(|c| !c).then(|| comments[..k].iter().filter(|c| !**c).count());
+        order.iter().filter_map(|o| match o {
+            Some(k) => piece(*k).map(Some),
+            None => Some(None),
+        }).collect()
+    }
 }
 
 /// The pieces of the text form `text`.
@@ -152,6 +191,7 @@ pub fn pieces(text: &str) -> Pieces {
         let end = markers.get(k + 1).map_or(lines.len(), |(j, _)| *j);
         match words.first().copied() {
             Some("header") => out.header = Some((*i, end)),
+            Some("magic") => out.magic = true,
             Some("trigger") => out.triggers.push((*i, end, words.get(1) == Some(&"none"))),
             _ => {}
         }
