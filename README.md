@@ -7,7 +7,6 @@ What's known to be next, so work can pick up where it stopped (each
 item's details are in its section below):
 
 - **Triggers (`.wtg` + `.wct`, `.trg`).**
-  - No **Convert to Custom Text** yet.
   - Maps of 1.31 and later: `war3map.wtg`'s layout has no text form, so
     their triggers don't open in the editor.
   - Names of objects for codes (`hfoo`), and pickers of objects in the
@@ -1160,7 +1159,14 @@ Of this, the view of `.trg` files, Extract, and editing a map's
 `war3map.wtg` in place (its tree: new, renamed and deleted categories,
 triggers and variables; a trigger picked in it edited as a `.trg`;
 moved between categories; saved back), making `war3map.j` from a map's
-files, and the way back are done. The way back is the build's: a map
+files, **Convert to Custom Text**, and the way back are done. Convert to
+Custom Text (the trigger's tools, `</>`; asked first) makes the trigger
+custom text, its events, conditions and actions the game's JASS World
+Editor's script has of it (`triggers::custom_text_code`: the build's,
+`InitTrig_<name>` making `gg_trg_<name>`, a trigger run at map
+initialization `run_on_init=1`): a map's in its piece of
+`war3map.wct`, a `.trg`'s in the `.j` beside it (its locals and private
+variables declared in it); its code shown after. One undo takes it back. The way back is the build's: a map
 built from `.trg` files gets a `war3map.wtg` and a `war3map.wct` made of
 them (`wtg_rs::text::from_files`), so World Editor opens it with the
 triggers it runs: the custom script's header the map's, a trigger of

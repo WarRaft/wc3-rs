@@ -284,6 +284,10 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             let wct = ws.custom_script_beside(id);
             let text = match kind {
                 QueryKind::TriggerView => crate::triggers::wtg_view(&doc.text, pos.line as usize, names, wct.as_ref().map(|(_, t)| t.as_str())),
+                QueryKind::TriggerEdit if pos.character == crate::triggers::map_op::CONVERT => {
+                    let nth = query.split('\n').next().unwrap_or("").trim().parse().unwrap_or(0);
+                    crate::triggers::convert_wtg(&doc.text, nth, ui, wct.as_ref().map(|(_, t)| t.as_str()))
+                }
                 QueryKind::TriggerEdit => crate::triggers::wtg_edit(&doc.text, pos.character, pos.line as usize, query, ui, wct.as_ref().map(|(_, t)| t.as_str())),
                 QueryKind::TriggerChoices => crate::triggers::wtg_choices(&doc.text, pos.line as usize, query, ui),
                 _ => crate::triggers::catalog(pos.character, ui),
@@ -310,6 +314,10 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
                     let others: Vec<(&str, &str)> = ws.scope(id).filter(|(fid, _, _)| *fid != id).map(|(fid, d, _)| (fid, d.text.as_str())).collect();
                     let triggers = crate::triggers::Triggers::of(id, &doc.text, &others);
                     crate::triggers::view(&doc.text, names, &project_variables(ws, id), &triggers)
+                }
+                _ if pos.character == crate::triggers::map_op::CONVERT => {
+                    let path = doc.path.as_deref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+                    crate::triggers::convert_trg(&doc.text, &path, &project_variables(ws, id), &names.trigger_ui)
                 }
                 _ => {
                     // The project's other files: a variable's uses, renamed or checked.

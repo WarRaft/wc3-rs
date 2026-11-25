@@ -184,6 +184,15 @@ async function steps() {
     }
     await shot('show-languages')
 
+    log("Convert to Custom Text of that GUI trigger: custom text, its code in war3map.wct")
+    const convertedName = editor.state().tree.triggers[gui - 1].name
+    await editor.receive({type: 'convert', confirmed: true})
+    const converted = await until(() => editor.state().tree?.triggers[gui - 1]?.custom, 'the trigger custom text')
+    check(converted, `${convertedName} is custom text`)
+    const ident = convertedName.replace(/[^A-Za-z0-9_]/g, '_').replace(/_$/, '_u')
+    check(new RegExp(`function InitTrig_${ident} takes nothing returns nothing\\n\\s*set gg_trg_${ident} = CreateTrigger\\(\\)`).test(wct.getText()), `war3map.wct has its InitTrig_${ident}`)
+    await shot('converted')
+
     log('saved from the piece: the map with both')
     const stamp = fs.statSync(map).mtimeMs
     // Typed in, then saved (a piece just opened is clean: nothing to save).

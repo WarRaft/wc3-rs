@@ -49,7 +49,7 @@
  * 0 for none), `{type: 'select', line}`, `{type: 'choices', line, path,
  * choices}`, `{type: 'catalog', kind, place, line, items}` (line: the
  * line edited, 0 for a new one), `{type: 'types', line, items}`.
- * Messages out: `{type: 'ready'}`, `{type: 'toggle' | 'delete' | 'copy' |
+ * Messages out: `{type: 'ready'}`, `{type: 'convert'}`, `{type: 'toggle' | 'delete' | 'copy' |
  * 'cut', line, lines}`, `{type: 'move', line, lines, place}`, `{type: 'paste', place}`,
  * `{type: 'field', key, value}`, `{type: 'reveal', line}`,
  * `{type: 'choices', line, path}`, `{type: 'set', line, path, kind,
@@ -481,6 +481,7 @@ function act(what) {
 
 $('new').addEventListener('click', () => newLine())
 $('new-variable').addEventListener('click', () => vscode.postMessage({type: 'types'}))
+$('convert')?.addEventListener('click', () => vscode.postMessage({type: 'convert'}))
 
 for (const id of ['toggle', 'delete', 'copy', 'cut', 'up', 'down', 'paste']) {
     $(id).addEventListener('click', () => {

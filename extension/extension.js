@@ -1788,6 +1788,7 @@ ${wtg ? `<div class="map-side">
     <button id="cut" title="Cut (Ctrl+X)"><i class="fa-solid fa-scissors"></i></button>
     <button id="paste" title="Paste (Ctrl+V)"><i class="fa-solid fa-paste"></i></button>
     <button id="delete" title="Delete (Delete)"><i class="fa-solid fa-trash"></i></button>
+    <button id="convert" title="Convert to Custom Text: the trigger's events, conditions and actions become its JASS"><i class="fa-solid fa-code"></i></button>
   </div>
   <div class="spacer"></div>
   <span id="problems" class="problems" hidden></span>
@@ -1886,6 +1887,8 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
                     if (result.warning) window.showWarningMessage(`WC3: ${result.warning}`)
                     // A variable renamed: its uses in other files too.
                     for (const [file, l, c, el, ec, t] of result.files ?? []) edit.replace(uriOf(file), new Range(l, c, el, ec), t)
+                    // A file made with it (a trigger's code beside it): one edit, one undo.
+                    if (result.create) edit.createFile(Uri.file(result.create[0]), {contents: Buffer.from(result.create[1], 'utf8'), overwrite: false})
                     select = result.line || 0
                     if (!(await (result.wct ? applyPaired(edit) : workspace.applyEdit(edit)))) refresh()
                 }
@@ -1893,7 +1896,9 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
             }
             const OP = {TOGGLE: 0, DELETE: 1, MOVE: 2, PASTE: 3, COPY: 4, FIELD: 5, SET_PARAM: 6, NEW: 7, NEW_VARIABLE: 8, REPLACE: 9, SET_VARIABLE: 10, CHECK_VARIABLE: 11, RENAMED: 12,
                 // A map's tree (`triggers::map_op`).
-                NEW_TRIGGER: 20, NEW_CATEGORY: 21, DELETE_TRIGGER: 22, DELETE_CATEGORY: 23, RENAME_CATEGORY: 24, DELETE_VARIABLE: 25, MOVE_TRIGGER: 26}
+                NEW_TRIGGER: 20, NEW_CATEGORY: 21, DELETE_TRIGGER: 22, DELETE_CATEGORY: 23, RENAME_CATEGORY: 24, DELETE_VARIABLE: 25, MOVE_TRIGGER: 26,
+                // Convert to Custom Text (`triggers::convert_trg`, `convert_wtg`).
+                CONVERT: 27}
             /**
              * Shows the code of the `nth` trigger (from 1; 0: the map's
              * custom script) in `war3map.wct`, beside: its text editor, so
@@ -2051,6 +2056,19 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
                     if (last?.triggers[picked - 1]?.custom) await openCode(picked, true)
                     return
                 case 'openCode': return openCode(msg.picked ? picked : msg.nth)
+                case 'convert': {
+                    const name = wtg ? last?.triggers[picked - 1]?.name : path.basename(document.uri.path, '.trg')
+                    const go = msg.confirmed ? 'Convert' : await window.showWarningMessage(
+                        `Convert ${name ?? 'the trigger'} to custom text? Its events, conditions and actions become its JASS, ${wtg ? "in the map's custom script (war3map.wct)" : 'in the .j file beside it'}.`, {modal: true}, 'Convert')
+                    if (go !== 'Convert') return
+                    const result = await run(OP.CONVERT, 0)
+                    // Its code shown, as World Editor shows it after converting.
+                    if (result && !result.error) {
+                        await post(0)
+                        return openCode(wtg ? picked : 0, true)
+                    }
+                    return
+                }
                 case 'extract': return commands.executeCommand('wc3.wtg.extract', document.uri)
                 case 'newCategory': return run(OP.NEW_CATEGORY, 0, msg.name)
                 case 'newTrigger': return run(OP.NEW_TRIGGER, 0, `${msg.category}\n${msg.name}`)

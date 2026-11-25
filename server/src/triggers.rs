@@ -2255,6 +2255,139 @@ pub mod map_op {
     /// before (from 1, counted before the move; 0: at the end of the
     /// category). The answer's `pick` is it, where it is then.
     pub const MOVE_TRIGGER: u32 = 26;
+    /// Convert to Custom Text: the trigger (a `.trg`, or the one picked in
+    /// a map's) made custom text, its code the JASS World Editor's script
+    /// has of it ([`convert_trg`], [`convert_wtg`]).
+    pub const CONVERT: u32 = 27;
+}
+
+// ------------------------------------------------ convert to custom text
+
+/// The code a trigger is when made custom text, as World Editor's Convert
+/// to Custom Text makes it: the game's JASS of its functions (as the
+/// build makes them: `wtg_rs::jass::compile`, then `wc3_build`), its set
+/// up an `InitTrig_<name>` that makes `gg_trg_<name>` first (which World
+/// Editor's script declares); a disabled one's as if it were on. `own` and
+/// `visible` as [`jass`]'s: a private variable of its file is declared in
+/// the code (vJASS's `globals`), a local is a local.
+pub fn custom_text_code(t: &wtg_rs::Trigger, stem: &str, own: &[Declared], visible: &[Declared], ui: &wtg_rs::ui::Ui) -> Result<String, String> {
+    if t.is_comment != 0 {
+        return Err("a comment isn't a trigger: it has no code".into());
+    }
+    if t.is_custom != 0 {
+        return Err("the trigger is custom text already".into());
+    }
+    let mut on = t.clone();
+    on.enabled = 1;
+    let jass = wtg_rs::jass::compile(Some(&on), stem, own, visible, ui);
+    let source = wc3_build::from_jass::Source { name: "trigger.j", text: &jass };
+    let mut m = wc3_build::from_jass::module(&[source]).map_err(|e| e.first().map_or("its JASS doesn't read".into(), |e| format!("its JASS: line {}: {}", e.origin.line, e.message)))?;
+    let id = wtg_rs::jass::ident(if t.name.is_empty() { stem } else { &t.name });
+    let trig = format!("gg_trg_{id}");
+    let create = m.globals.iter().find(|g| g.name == trig).and_then(|g| g.init.clone()).unwrap_or_else(|| wc3_build::ir::Expr::call("CreateTrigger", Vec::new()));
+    m.globals.retain(|g| g.name != trig);
+    for f in m.functions.iter_mut().filter(|f| f.sig.name == "main") {
+        f.sig.name = format!("InitTrig_{id}");
+        f.body.insert(0, wc3_build::ir::Stmt::set(trig.clone(), create.clone()));
+    }
+    // Its heading, as World Editor's: the comment lines before its code.
+    let heading: String = jass.lines().take_while(|l| l.starts_with("//")).map(|l| format!("{l}\n")).collect();
+    Ok(format!("{heading}{}", wc3_build::jass::print_code(&m)))
+}
+
+/// Convert to Custom Text of a `.trg` (`text`, its file `path`): its
+/// edits, the trigger custom text, its ECAs gone, the variables private or
+/// local to it gone (its code declares them), its globals kept; and its
+/// code as the file beside it (`X.j`, as Extract writes one: `"create":
+/// [path, text]`). `visible`: the project's globals and its own.
+pub fn convert_trg(text: &str, path: &str, visible: &[Declared], ui: &wtg_rs::ui::Ui) -> String {
+    let js = crate::objects::json_string;
+    let p = wtg_rs::text::trigger_from_text(text, None);
+    let made = (|| {
+        if let Some(e) = p.errors.first() {
+            return Err(format!("line {}: {}", e.line, e.message));
+        }
+        let t = p.trigger.as_ref().ok_or("the file has no trigger")?;
+        let code_path = Path::new(path).with_extension("j");
+        if code_path.exists() {
+            return Err(format!("{} is there already: its code would be lost", code_path.display()));
+        }
+        let stem = Path::new(path).file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
+        let own: Vec<Declared> = p.variables.iter().filter(|d| d.scope != Scope::Global).cloned().collect();
+        let code = custom_text_code(t, &stem, &own, visible, ui)?;
+        let mut t = t.clone();
+        // Run at map initialization: as custom text, by its flag.
+        if t.ecas.iter().any(|e| e.kind == 0 && e.enabled != 0 && e.name == "MapInitializationEvent") {
+            t.run_on_init = 1;
+        }
+        t.is_custom = 1;
+        t.ecas.clear();
+        let globals: Vec<Declared> = p.variables.iter().filter(|d| d.scope == Scope::Global).cloned().collect();
+        let head = if globals.is_empty() { String::new() } else { wtg_rs::text::declared_to_text(&globals)? + "\n" };
+        let new = head + &wtg_rs::text::trigger_to_text(&t)?;
+        Ok((new, code_path.to_string_lossy().into_owned(), format!("// @dialect vjass\n{code}")))
+    })();
+    match made {
+        Ok((new, code_path, code)) => {
+            let end = text.split_inclusive('\n').count();
+            format!("{{\"edits\":[[0,0,{end},0,{}]],\"line\":0,\"create\":[{},{}]}}", js(&new), js(&code_path), js(&code))
+        }
+        Err(e) => format!("{{\"error\":{}}}", js(&format!("Can't convert to custom text: {e}"))),
+    }
+}
+
+/// Convert to Custom Text of the trigger picked in a map's text (`text`,
+/// `nth` from 1), its custom script `wct` beside (the text form): the
+/// edits of both, its section custom text without ECAs, its piece of
+/// `war3map.wct` its code.
+pub fn convert_wtg(text: &str, nth: usize, ui: &wtg_rs::ui::Ui, wct: Option<&str>) -> String {
+    let js = crate::objects::json_string;
+    let made = (|| {
+        let map = Map::of(text);
+        let count = map.triggers.len();
+        let nth = map.pick(nth);
+        let slice = map.triggers.get(nth.wrapping_sub(1)).ok_or("no trigger picked")?;
+        let wct = wct.ok_or("the map has no custom script (war3map.wct) beside its triggers: its code would have nowhere to go")?;
+        let pieces = crate::customtext::pieces(wct);
+        if let Some(problem) = wct_problem(&pieces, count) {
+            return Err(problem);
+        }
+        let p = wtg_rs::text::trigger_from_text(&slice.text, None);
+        if let Some(e) = p.errors.first() {
+            return Err(format!("line {}: {}", slice.line(e.line), e.message));
+        }
+        let t = p.trigger.as_ref().ok_or("the section has no trigger")?;
+        let visible: Vec<Declared> = wtg_variables(text, &wtg_rs::text::parse_bni(text)).into_iter().map(|(_, d)| d).collect();
+        let code = custom_text_code(t, &slice.name, &[], &visible, ui)?;
+        let mut t = t.clone();
+        // Run at map initialization: as custom text, by its flag.
+        if t.ecas.iter().any(|e| e.kind == 0 && e.enabled != 0 && e.name == "MapInitializationEvent") {
+            t.run_on_init = 1;
+        }
+        t.is_custom = 1;
+        t.ecas.clear();
+        let mut new: Vec<String> = wtg_rs::text::trigger_to_text(&t)?.split_inclusive('\n').map(String::from).collect();
+        // The blank line after its section, as it had.
+        if slice.text.ends_with("\n\n") || slice.text.ends_with("\n\r\n") {
+            new.push("\n".into());
+        }
+        let mut lines = map.lines.clone();
+        slice.put(&mut lines, new, None);
+        // Its piece of the custom script: the code.
+        let (marker, end, _) = pieces.triggers[nth - 1];
+        let mut code_lines: Vec<String> = wct.split_inclusive('\n').map(String::from).collect();
+        let piece = format!("{} @wct trigger\n{}\n", pieces.comment, code.trim_end_matches('\n'));
+        code_lines.splice(marker..end, piece.split_inclusive('\n').map(String::from));
+        Ok((lines, wct.to_string(), code_lines, nth))
+    })();
+    let edit = |text: &str, new: &[String]| {
+        let old: Vec<&str> = text.split_inclusive('\n').collect();
+        diff(text, &old, new).map_or("[]".into(), |(r, t)| format!("[[{},{},{},{},{}]]", r.start.line, r.start.character, r.end.line, r.end.character, js(&t)))
+    };
+    match made {
+        Ok((lines, wct, code_lines, nth)) => format!("{{\"edits\":{},\"line\":0,\"pick\":{nth},\"wct\":{}}}", edit(text, &lines), edit(&wct, &code_lines)),
+        Err(e) => format!("{{\"error\":{}}}", js(&format!("Can't convert to custom text: {e}"))),
+    }
 }
 
 /// What the operations of [`edit`] do in a `.wtg`'s text: `arg` is which

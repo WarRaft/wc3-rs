@@ -967,3 +967,31 @@ fn a_triggers_jass_in_lua_and_angelscript() {
     // Without common.j AngelScript can't be had: said, not code.
     assert!(converted(jass, Script::AngelScript, "", "").starts_with("// It can't be built:"));
 }
+
+#[test]
+fn convert_to_custom_text() {
+    let ui = ui();
+    let wct = "// @wct version=1\n// @wct header\n// @wct trigger none\n// @wct trigger none\n";
+    let a = convert_wtg(MAP, 1, &ui, Some(wct));
+    // The trigger: custom text, run at map initialization by its flag, no ECAs.
+    let text = wtg_applied(MAP, &a);
+    assert!(text.contains("[trigger]\nname=\"A\"\ndescription=\"\"\ncategory=0\ncustom_text=1\nrun_on_init=1\n\n[trigger]\nname=\"B\""), "{text}");
+    // Its code in the custom script: the game's JASS, InitTrig_A making gg_trg_A.
+    let code = wct_applied(&a);
+    assert!(code.starts_with("// @wct version=1\n// @wct header\n// @wct trigger\n//===========================================================================\n// Trigger: A\n"), "{code}");
+    assert!(code.contains("function Trig_A_Actions takes nothing returns nothing\n    call DoNothing()\nendfunction\n"), "{code}");
+    assert!(code.contains("function InitTrig_A takes nothing returns nothing\n    set gg_trg_A = CreateTrigger()\n"), "{code}");
+    assert!(code.ends_with("endfunction\n// @wct trigger none\n"), "{code}");
+    // What can't be: a map without its custom script, a trigger custom already.
+    assert!(convert_wtg(MAP, 1, &ui, None).contains("has no custom script"));
+    let custom = convert_wtg(&wtg_applied(MAP, &a), 1, &ui, Some(&code));
+    assert!(custom.contains("custom text already"), "{custom}");
+
+    // A .trg: its code as the file beside it (`create`).
+    let trg = "[variable]\nname=\"n\"\ntype=\"integer\"\nscope=local\n\n[trigger]\nname=\"T\"\nevent=MapInitializationEvent()\naction=SetVariable($n, \"3\")\n";
+    let a = convert_trg(trg, "/nowhere/T.trg", &[], &ui);
+    assert!(a.contains("\"create\":[\"/nowhere/T.j\",\"// @dialect vjass\\u000a//==="), "{a}");
+    assert!(a.contains("function Trig_T_Actions takes nothing returns nothing\\u000a    local integer n\\u000a    set n = 3\\u000aendfunction"), "{a}");
+    // The local's declaration gone with the actions: the code has it.
+    assert!(a.starts_with("{\"edits\":[[0,0,9,0,\"[trigger]\\u000aname=\\\"T\\\"\\u000adescription=\\\"\\\"\\u000acustom_text=1\\u000arun_on_init=1\\u000a\"]]"), "{a}");
+}
