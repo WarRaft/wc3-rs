@@ -19,7 +19,7 @@ item's details are in its section below):
     `../JassHelper-manual/Writerside/topics`: what's left of vJASS is
     checked against it.
 - **The World Editor** (see [World Editor](#world-editor)): its steps,
-  in order; the first not done is next. Done: 1 (the shell), 2 (terrain).
+  in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs).
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1613,10 +1613,21 @@ step), this list updated.
    model there and leaves its ground out (`tile::CLIFF`,
    `RAMP_ENTRANCE` say where). MCP: `w3e_image`, the terrain from above
    (`editor/src/picture.rs`), in `wc3-mcp`.
-3. **Cliffs.** `../mdx-rs` reads geosets and textures (enough for a
+3. **Cliffs** (done). `../mdx-rs` reads geosets and textures (enough for a
    static mesh); `TerrainArt\CliffTypes.slk`; each cliff tile's model
    picked by its corners' layers (`Doodads\Terrain\Cliffs\Cliffs<ABCD><n>.mdx`,
    as HiveWE's `terrain.ixx`), ramps, the cliff texture per tile.
+   As built: `mdx-rs` reads every chunk (geosets, materials' layers,
+   textures, sequences; the rest as bytes) and writes each model back
+   byte for byte (all 3320 of 1.26a); `editor/src/cliffs.rs` places
+   ramps and cliffs as HiveWE's `update_cliff_meshes` does (column by
+   column, a ramp marking its tiles `tile::ROMP` first), each model in
+   its cliff type's folder (`cliffModelDir`, `rampModelDir`: `Cliffs`,
+   `CityCliffs` ...), a variation the game has (its files say which, no
+   table); the `Cliffs` message: the cliff types' textures, each
+   model's first geoset and where it stands; the page draws them
+   instanced (a quarter turn round, each vertex on the ground under it,
+   HiveWE's `cliff.vert`) and no ground under them. MCP: `mdx_info`.
 4. **Doodads and units.** `war3map.doo` and `war3mapUnits.doo`; their
    models from the game's tables with the map's object data
    (`.w3d`/`.w3b`/`.w3u`, the obj pipeline the server already has);

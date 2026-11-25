@@ -436,6 +436,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mdx-rs"
+version = "0.1.0"
+dependencies = [
+ "parser-rs",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1003,6 +1010,7 @@ name = "wc3-editor"
 version = "0.1.0"
 dependencies = [
  "bni-rs",
+ "mdx-rs",
  "parser-rs",
  "slk-rs",
  "w3e-rs",
@@ -1020,6 +1028,7 @@ dependencies = [
  "flate2",
  "imp-rs",
  "jass-rs",
+ "mdx-rs",
  "mmp-rs",
  "parser-rs",
  "serde_json",

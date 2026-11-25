@@ -8,7 +8,7 @@ use wc3_server::game::{Game, Lookup};
 use wc3_server::names::Names;
 use wc3_server::project::{self, Project};
 
-use crate::protocol::{GroundMsg, MapInfo, ServerMsg, WaterMsg};
+use crate::protocol::{CliffsMsg, GroundMsg, MapInfo, ServerMsg, WaterMsg};
 use crate::terrain::{Draw, Grounds};
 use crate::tileset::Tileset;
 
@@ -101,10 +101,36 @@ impl Session {
             }
             None => WaterMsg { error: "No water for this tileset in TerrainArt\\Water.slk.".into(), ..Default::default() },
         };
+        let cliffs = crate::cliffs::Cliffs::of(&self.game, &self.terrain, &self.tileset);
+        let cliff_paths: Vec<String> = self
+            .terrain
+            .cliffs
+            .iter()
+            .map(|c| {
+                let t = self.tileset.cliffs.as_ref();
+                let id = c.to_string();
+                match (t.and_then(|t| t.get(&id, "texDir")), t.and_then(|t| t.get(&id, "texFile"))) {
+                    (Some(dir), Some(file)) => format!("{dir}\\{file}.blp"),
+                    _ => format!("{id}: not in TerrainArt\\CliffTypes.slk"),
+                }
+            })
+            .collect();
+        let (cliff_layers, cliff_errors) = crate::textures::whole(&self.game, &cliff_paths);
+        let cliffs_msg = CliffsMsg {
+            textures: cliff_layers,
+            texture_paths: cliff_paths.into_iter().zip(cliff_errors).collect(),
+            meshes: crate::cliffs::meshes(&cliffs),
+            notes: cliffs.notes.clone(),
+        };
         let extended = |t: usize| textures.get(t).is_some_and(|g| g.extended);
         let height = self.tileset.water.as_ref().map_or(0.0, |w| w.height);
-        let draw = Draw::new(&self.terrain, &grounds, &extended, height);
-        vec![ServerMsg::Ground(GroundMsg { textures, layers }), ServerMsg::Water(water), ServerMsg::Terrain(draw)]
+        let draw = Draw::new(&self.terrain, &grounds, cliffs.tile_flags, &extended, height);
+        vec![
+            ServerMsg::Ground(GroundMsg { textures, layers }),
+            ServerMsg::Water(water),
+            ServerMsg::Cliffs(cliffs_msg),
+            ServerMsg::Terrain(draw),
+        ]
     }
 
     /// What the page is told of the map.

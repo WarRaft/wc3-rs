@@ -54,7 +54,9 @@ fn the_terrain_drawn_with_the_tables_of_the_roots() {
     dir.write("map/T/Dirt.blp", &testdir::tga(8, 4, |_, _| [9, 9, 9, 255]));
     let s = Session::open(dir.path()).unwrap();
     let msgs = s.draw();
-    let [ServerMsg::Ground(g), ServerMsg::Water(w), ServerMsg::Terrain(t)] = &msgs[..] else { panic!("{msgs:?}") };
+    let [ServerMsg::Ground(g), ServerMsg::Water(w), ServerMsg::Cliffs(c), ServerMsg::Terrain(t)] = &msgs[..] else { panic!("{} messages", msgs.len()) };
+    // No cliff on it; its one cliff texture isn't in the roots.
+    assert!(c.meshes.is_empty() && c.texture_paths.len() == 1 && !c.texture_paths[0].1.is_empty());
     assert_eq!(g.textures.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["Ldrt", "blight"]);
     assert!(g.textures[0].error.is_empty() && g.textures[0].extended);
     assert!(g.textures[1].error.contains("blight"), "{}", g.textures[1].error);
@@ -88,6 +90,11 @@ fn a_real_map_draws_with_its_textures() {
             ServerMsg::Water(w) => {
                 eprintln!("  water: {} frames of {}, {:?} {}", w.frames.count, w.frames.size, w.colors, w.error);
                 assert!(w.error.is_empty());
+            }
+            ServerMsg::Cliffs(c) => {
+                let placed: usize = c.meshes.iter().map(|m| m.instances.len() / 4).sum();
+                eprintln!("  cliffs: {} models, {placed} placed, textures {:?}, notes {:?}", c.meshes.len(), c.texture_paths, c.notes);
+                assert!(c.meshes.iter().all(|m| m.error.is_empty()) && c.texture_paths.iter().all(|(_, e)| e.is_empty()));
             }
             ServerMsg::Terrain(t) => eprintln!("  terrain {} x {}, {} cliff tiles", t.width, t.height, t.tile_flags.iter().filter(|f| **f & 1 != 0).count()),
             _ => {}

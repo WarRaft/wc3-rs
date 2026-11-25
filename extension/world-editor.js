@@ -32,7 +32,7 @@ const VIEW = 'wc3.editors'
  * @property {import('child_process').ChildProcess | null} child
  * @property {{name: string, width: number, height: number} | null} map  what the page last said of the map
  * @property {string | null} error  what the page last said went wrong
- * @property {{width: number, height: number, layers: number, water: number, error: number} | null} drawn  what the page drew of the terrain first
+ * @property {{width: number, height: number, layers: number, water: number, cliffs: number, error: number} | null} drawn  what the page drew of the terrain first
  */
 
 /**

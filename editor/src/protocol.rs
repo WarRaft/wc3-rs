@@ -33,9 +33,11 @@
 //! | 130 | `Terrain` | the terrain as it's drawn: see [`TerrainMsg`] |
 //! | 131 | `Ground` | the ground textures' layers: see [`GroundMsg`] |
 //! | 132 | `Water` | the water: see [`WaterMsg`] |
+//! | 133 | `Cliffs` | the cliffs and ramps: see [`CliffsMsg`] |
 //!
-//! `Hello` is answered by `Map`, then `Ground` and `Water` (the textures
-//! the terrain's layers index), then `Terrain`.
+//! `Hello` is answered by `Map`, then `Ground`, `Water` and `Cliffs`
+//! (what the terrain's layers index, and what stands on it), then
+//! `Terrain`.
 
 use std::io::{self, Read};
 
@@ -48,6 +50,7 @@ mod kind {
     pub const TERRAIN: u8 = 130;
     pub const GROUND: u8 = 131;
     pub const WATER: u8 = 132;
+    pub const CLIFFS: u8 = 133;
 }
 
 /// Page → editor.
@@ -104,6 +107,20 @@ pub struct WaterMsg {
     pub error: String,
 }
 
+/// Kind 133's body: the cliff textures, `u32` size, `u32` count, their
+/// RGBA (an array), a list of (path, error); then a list of the models:
+/// path, `f32` positions (three a vertex, the model's units), `f32`
+/// texture coordinates (two), `f32` normals (three), `u16` triangles
+/// (three indices each), `f32` where each stands (four: tile x, tile y,
+/// layer, texture), error; then notes (the models the game hasn't).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CliffsMsg {
+    pub textures: crate::textures::Layers,
+    pub texture_paths: Vec<(String, String)>,
+    pub meshes: Vec<crate::cliffs::Mesh>,
+    pub notes: Vec<String>,
+}
+
 /// Editor → page.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServerMsg {
@@ -117,6 +134,8 @@ pub enum ServerMsg {
     Ground(GroundMsg),
     /// Kind 132.
     Water(WaterMsg),
+    /// Kind 133.
+    Cliffs(CliffsMsg),
 }
 
 /// A frame's body was shorter than its fields, or not UTF-8.
@@ -213,6 +232,26 @@ impl ServerMsg {
                 w.string(&m.error);
                 kind::WATER
             }
+            ServerMsg::Cliffs(c) => {
+                w.u32(c.textures.size);
+                w.u32(c.textures.count);
+                w.bytes(&c.textures.rgba);
+                w.list(&c.texture_paths, |w, (path, error)| {
+                    w.string(path);
+                    w.string(error);
+                });
+                w.list(&c.meshes, |w, m| {
+                    w.string(&m.path);
+                    w.f32s(&m.positions);
+                    w.f32s(&m.uvs);
+                    w.f32s(&m.normals);
+                    w.u16s(&m.indices);
+                    w.f32s(&m.instances);
+                    w.string(&m.error);
+                });
+                w.list(&c.notes, |w, n| w.string(n));
+                kind::CLIFFS
+            }
         };
         w.frame(kind)
     }
@@ -271,6 +310,23 @@ impl ServerMsg {
                     error: r.string()?,
                 })
             }
+            kind::CLIFFS => {
+                let (size, count) = (r.u32()?, r.u32()?);
+                let textures = crate::textures::Layers { size, count, rgba: r.bytes()? };
+                let texture_paths = r.list(|r| Ok((r.string()?, r.string()?)))?;
+                let meshes = r.list(|r| {
+                    Ok(crate::cliffs::Mesh {
+                        path: r.string()?,
+                        positions: r.f32s()?,
+                        uvs: r.f32s()?,
+                        normals: r.f32s()?,
+                        indices: r.bytes()?.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect(),
+                        instances: r.f32s()?,
+                        error: r.string()?,
+                    })
+                })?;
+                ServerMsg::Cliffs(CliffsMsg { textures, texture_paths, meshes, notes: r.list(|r| r.string())? })
+            }
             _ => return Ok(None),
         }))
     }
@@ -300,6 +356,13 @@ impl Writer {
         self.u32((v.len() * 4) as u32);
         for x in v {
             self.f32(*x);
+        }
+    }
+
+    fn u16s(&mut self, v: &[u16]) {
+        self.u32((v.len() * 2) as u32);
+        for x in v {
+            self.buf.extend_from_slice(&x.to_le_bytes());
         }
     }
 

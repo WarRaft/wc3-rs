@@ -10,6 +10,7 @@
 //! - [`textures`]: the ground's and the water's pictures, decoded;
 //! - [`protocol`]: the frames.
 
+pub mod cliffs;
 pub mod lock;
 pub mod picture;
 pub mod protocol;

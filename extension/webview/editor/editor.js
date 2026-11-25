@@ -6,7 +6,8 @@
  * the map out itself. Frames come from the extension as `{type: 'frame',
  * kind, body}` and go to it as `{type: 'frame', data}` (see
  * `world-editor.js`); `{type: 'map'}` and `{type: 'error'}` tell the
- * extension what the page shows (its title, the tests).
+ * extension what the page shows (its title, the tests); `{type: 'look'}`
+ * from it points the camera.
  */
 (() => {
     'use strict'
@@ -134,6 +135,9 @@
             terrain.setWater(msg)
             if (msg.error) mapNotes.push(`Water: ${msg.error}`)
             showNotes()
+        } else if (msg.kind === 'cliffs' && terrain) {
+            terrain.setCliffs(msg)
+            showNotes()
         } else if (msg.kind === 'terrain' && terrain) {
             terrain.setTerrain(msg)
             if (!placed) {
@@ -145,7 +149,14 @@
                 drawnSaid = true
                 requestAnimationFrame(() => vscode.postMessage({
                     type: 'drawn',
-                    terrain: {width: msg.width, height: msg.height, layers: terrain.layers ? 1 : 0, water: terrain.water?.count ?? 0, error: gl.getError()},
+                    terrain: {
+                        width: msg.width,
+                        height: msg.height,
+                        layers: terrain.layers ? 1 : 0,
+                        water: terrain.water?.count ?? 0,
+                        cliffs: terrain.cliffs.reduce((n, c) => n + c.instances, 0),
+                        error: gl.getError(),
+                    },
                 }))
             }
         } else if (msg.kind === 'error') {
@@ -162,6 +173,12 @@
             if (msg.locked) say('Open in another window', msg.message)
             else say('The editor stopped', msg.message, true)
             vscode.postMessage({type: 'error', message: msg.message})
+        } else if (msg.type === 'look') {
+            // The camera to a point (cells), from a distance, at angles.
+            camera.position = [msg.x, msg.y, camera.heightAt(msg.x, msg.y)]
+            if (msg.distance) camera.distance = msg.distance
+            if (msg.horizontal !== undefined) camera.horizontal = msg.horizontal
+            if (msg.vertical !== undefined) camera.vertical = msg.vertical
         } else if (msg.type === 'restarted') {
             $('message').hidden = true
             send(encode.hello())

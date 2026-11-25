@@ -45,7 +45,7 @@ fn a_tile_of_two_textures_blends_the_upper_through_its_corners() {
     let v = w3e_rs::Version::of(11);
     // Grass (1) at the top right corner only.
     let t = terrain(2, 2, |x, y, p| p.set_texture(v, if (x, y) == (1, 1) { 1 } else { 0 }));
-    let d = Draw::new(&t, &grounds(), &|_| false, 0.0);
+    let d = Draw::new(&t, &grounds(), tile_flags(&t), &|_| false, 0.0);
     assert_eq!(d.tiles, [[0, 1 | 4 << 16, 0xFFFF, 0xFFFF]]);
     assert_eq!(d.tile_flags, [0]);
     assert!(d.heights.iter().all(|&h| h == 0.0));
@@ -57,7 +57,7 @@ fn heights_are_in_layers_with_the_cliff_layer() {
         p.height = 0x2000 + 512 * x as u16;
         p.layer = (p.layer & 0xF0) | 3;
     });
-    let d = Draw::new(&t, &grounds(), &|_| false, -0.7);
+    let d = Draw::new(&t, &grounds(), tile_flags(&t), &|_| false, -0.7);
     assert_eq!(d.ground, [0.0, 1.0, 0.0, 1.0]);
     assert_eq!(d.heights, [1.0, 2.0, 1.0, 2.0]);
     assert_eq!(d.water, [-0.7; 4]);
@@ -74,7 +74,7 @@ fn a_cliff_tile_and_the_ground_beside_it_take_the_cliffs_ground() {
             p.layer = (p.layer & 0xF0) | 3;
         }
     });
-    let d = Draw::new(&t, &grounds(), &|_| false, 0.0);
+    let d = Draw::new(&t, &grounds(), tile_flags(&t), &|_| false, 0.0);
     assert_eq!(d.tile_flags, [0, tile::CLIFF]);
     // The left tile's right corners are beside the cliff.
     assert_eq!(d.tiles[0][0] & 0xFFFF, 0);
@@ -89,7 +89,7 @@ fn blight_and_flags() {
         p.set_has_water(v, x == 1);
         p.set_boundary(v, y == 1);
     });
-    let d = Draw::new(&t, &grounds(), &|_| false, 0.0);
+    let d = Draw::new(&t, &grounds(), tile_flags(&t), &|_| false, 0.0);
     assert_eq!(d.tiles[0][0], 0);
     assert_eq!(d.tiles[0][1], 2 | 0b0010 << 16);
     assert_eq!(d.corners, [corner::BLIGHT, corner::WATER, corner::BOUNDARY, corner::WATER | corner::BOUNDARY]);
@@ -105,7 +105,7 @@ fn a_ramps_foot_is_half_a_layer_up() {
             p.layer = (p.layer & 0xF0) | 3;
         }
     });
-    let d = Draw::new(&t, &grounds(), &|_| false, 0.0);
+    let d = Draw::new(&t, &grounds(), tile_flags(&t), &|_| false, 0.0);
     assert_eq!(d.tile_flags, [tile::CLIFF | tile::RAMP_ENTRANCE]);
     assert_eq!(d.heights, [0.5, 0.5, 1.0, 1.0]);
 }

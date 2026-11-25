@@ -14,6 +14,7 @@ const EditorProtocol = (() => {
         TERRAIN: 130,
         GROUND: 131,
         WATER: 132,
+        CLIFFS: 133,
     }
 
     const utf8 = new TextDecoder()
@@ -61,6 +62,10 @@ const EditorProtocol = (() => {
 
         f32s() {
             return new Float32Array(this.bytes().buffer)
+        }
+
+        u16s() {
+            return new Uint16Array(this.bytes().buffer)
         }
 
         u32s() {
@@ -162,6 +167,22 @@ const EditorProtocol = (() => {
                 const size = r.u32()
                 const count = r.u32()
                 return {kind: 'water', rate, colors, size, count, rgba: r.bytes(), error: r.string()}
+            }
+            case KIND.CLIFFS: {
+                const size = r.u32()
+                const count = r.u32()
+                const rgba = r.bytes()
+                const textures = r.list(r => ({path: r.string(), error: r.string()}))
+                const meshes = r.list(r => ({
+                    path: r.string(),
+                    positions: r.f32s(),
+                    uvs: r.f32s(),
+                    normals: r.f32s(),
+                    indices: r.u16s(),
+                    instances: r.f32s(),
+                    error: r.string(),
+                }))
+                return {kind: 'cliffs', size, count, rgba, textures, meshes, notes: r.list(r => r.string())}
             }
             default:
                 return null

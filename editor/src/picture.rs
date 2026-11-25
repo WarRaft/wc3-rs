@@ -37,11 +37,11 @@ pub fn picture(game: &Game, t: &Terrain, scale: u32) -> Picture {
     // Each texture's colour: its full cell's average.
     let colors: Vec<[f32; 3]> = textures.iter().map(|g| average(&layers, g.first + 15.min(g.count - 1))).collect();
 
-    let flags = terrain::tile_flags(t);
+    let flags = crate::cliffs::Cliffs::of(game, t, &tileset).tile_flags;
     let real = terrain::corner_textures(t, &grounds, &flags);
     let water = tileset.water.as_ref();
     let water_height = water.map_or(0.0, |w| w.height);
-    let draw = terrain::Draw::new(t, &grounds, &|i| textures.get(i).is_some_and(|g| g.extended), water_height);
+    let draw = terrain::Draw::new(t, &grounds, flags.clone(), &|i| textures.get(i).is_some_and(|g| g.extended), water_height);
     let (w, h) = (t.width as usize, t.height as usize);
     let ground = |x: usize, y: usize| draw.ground[y.min(h - 1) * w + x.min(w - 1)];
     let light = [-0.3f32, -0.3, -0.25];

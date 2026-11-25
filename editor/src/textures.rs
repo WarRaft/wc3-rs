@@ -67,15 +67,43 @@ fn cell(rgba: &[u8], width: u32, col: u32, row: u32, size: u32) -> Vec<u8> {
 
 /// A square picture of `from` pixels to `to`, nearest.
 fn scale(rgba: &[u8], from: u32, to: u32) -> Vec<u8> {
+    stretch(rgba, from, from, to)
+}
+
+/// A picture `w` by `h` to a square of `to`, nearest.
+fn stretch(rgba: &[u8], w: u32, h: u32, to: u32) -> Vec<u8> {
     let mut out = Vec::with_capacity((to * to * 4) as usize);
     for y in 0..to {
         for x in 0..to {
-            let (sx, sy) = (x * from / to, y * from / to);
-            let at = ((sy * from + sx) * 4) as usize;
+            let (sx, sy) = (x * w / to, y * h / to);
+            let at = ((sy * w + sx) * 4) as usize;
             out.extend_from_slice(&rgba[at..at + 4]);
         }
     }
     out
+}
+
+/// Whole pictures as layers, each stretched to the biggest one's size
+/// (a square); one that can't be read is a grey checker, its error said.
+pub fn whole(game: &Game, paths: &[String]) -> (Layers, Vec<String>) {
+    let pictures: Vec<Result<Picture, String>> = paths.iter().map(|p| picture(game, p)).collect();
+    let size = pictures.iter().filter_map(|p| p.as_ref().ok()).map(|(w, h, _)| *w.max(h)).max().unwrap_or(64);
+    let mut layers = Layers { size, ..Default::default() };
+    let mut errors = Vec::new();
+    for pic in pictures {
+        match pic {
+            Ok((w, h, rgba)) => {
+                layers.rgba.extend(stretch(&rgba, w, h, size));
+                layers.count += 1;
+                errors.push(String::new());
+            }
+            Err(e) => {
+                layers.push(&checker(size), size);
+                errors.push(e);
+            }
+        }
+    }
+    (layers, errors)
 }
 
 /// The ground textures `paths` (id and path; `None` when the tables don't

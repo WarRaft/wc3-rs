@@ -6,6 +6,9 @@
  * quad per tile, its corners' heights fetched from a texture; its colour
  * the tile's up to four ground layers, each over the one before through
  * its blend mask (HiveWE's `terrain.frag`), lit by its ground's normal.
+ * No ground under a cliff or a ramp: their models (the process placed
+ * them) stand there, each vertex lifted by the ground under it (HiveWE's
+ * `cliff.vert`), in its cliff type's texture.
  * The water is a quad per tile with water at a corner, at the water's
  * level, its colour by depth between the tileset's shallow and deep
  * colours, its texture animated.
@@ -22,6 +25,7 @@ uniform sampler2D u_heights;
 uniform sampler2D u_ground;
 uniform usampler2D u_tiles;
 uniform usampler2D u_corners;
+uniform usampler2D u_tileFlags;
 out vec2 v_uv;
 flat out uvec4 v_tex;
 out vec3 v_normal;
@@ -44,7 +48,11 @@ void main() {
     v_pos = vec2(c);
     uint flags = texelFetch(u_corners, c, 0).r;
     v_boundary = (flags & 6u) != 0u ? 1.0 : 0.0;
-    gl_Position = u_mvp * vec4(vec2(c), z, 1.0);
+    // No ground under a cliff or a ramp, but at a ramp's foot
+    // (terrain::tile::has_ground).
+    uint tf = texelFetch(u_tileFlags, tile, 0).r;
+    bool ground = (tf & 5u) == 0u || (tf & 2u) != 0u;
+    gl_Position = ground ? u_mvp * vec4(vec2(c), z, 1.0) : vec4(2.0, 0.0, 0.0, 1.0);
 }`
 
     const GROUND_FS = `#version 300 es
@@ -79,6 +87,45 @@ void main() {
         float line = 1.0 - clamp(min(g.x, g.y), 0.0, 1.0);
         color.rgb = mix(color.rgb, vec3(1.0), line * 0.25);
     }
+    color.a = 1.0;
+}`
+
+    const CLIFF_VS = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+layout(location = 0) in vec3 a_pos;
+layout(location = 1) in vec2 a_uv;
+layout(location = 2) in vec3 a_normal;
+layout(location = 3) in vec4 a_inst;
+uniform mat4 u_mvp;
+uniform ivec2 u_size;
+uniform sampler2D u_ground;
+out vec3 v_uv;
+out vec3 v_normal;
+float ground(ivec2 c) { return texelFetch(u_ground, clamp(c, ivec2(0), u_size - 1), 0).r; }
+void main() {
+    // The models lie a quarter turn round (HiveWE's cliff.vert).
+    vec3 p = vec3(a_pos.y, -a_pos.x, a_pos.z) / 128.0 + a_inst.xyz;
+    ivec2 c = ivec2(p.xy);
+    vec3 terrain = normalize(vec3(ground(c - ivec2(1, 0)) - ground(c + ivec2(1, 0)), ground(c - ivec2(0, 1)) - ground(c + ivec2(0, 1)), 2.0));
+    vec3 n = vec3(a_normal.y, -a_normal.x, a_normal.z);
+    v_normal = normalize(vec3(n.xy + terrain.xy, n.z * terrain.z));
+    v_uv = vec3(a_uv, a_inst.w);
+    gl_Position = u_mvp * vec4(p.xy, p.z + ground(c), 1.0);
+}`
+
+    const CLIFF_FS = `#version 300 es
+precision highp float;
+precision highp sampler2DArray;
+uniform sampler2DArray u_cliffs;
+uniform vec3 u_light;
+in vec3 v_uv;
+in vec3 v_normal;
+out vec4 color;
+void main() {
+    color = texture(u_cliffs, v_uv);
+    color.rgb *= clamp((dot(-u_light, normalize(v_normal)) + 1.0) * 0.5, 0.0, 1.0);
     color.a = 1.0;
 }`
 
@@ -134,6 +181,9 @@ void main() {
     color = t * v_color;
 }`
 
+    /** The light's direction, the ground's and the cliffs'. */
+    const LIGHT = [-0.3, -0.3, -0.25].map(v => v / Math.hypot(0.3, 0.3, 0.25))
+
     function program(gl, vs, fs) {
         const shader = (type, src) => {
             const s = gl.createShader(type)
@@ -185,6 +235,10 @@ void main() {
             this.gl = gl
             this.ground = program(gl, GROUND_VS, GROUND_FS)
             this.waterProgram = program(gl, WATER_VS, WATER_FS)
+            this.cliffProgram = program(gl, CLIFF_VS, CLIFF_FS)
+            /** Each cliff model's vertex array, index count and instances. */
+            this.cliffs = []
+            this.cliffTextures = null
             this.vao = gl.createVertexArray()
             this.terrain = null
             this.layers = null
@@ -216,6 +270,48 @@ void main() {
             }
         }
 
+        setCliffs(msg) {
+            const gl = this.gl
+            for (const c of this.cliffs) {
+                gl.deleteVertexArray(c.vao)
+                c.buffers.forEach(b => gl.deleteBuffer(b))
+            }
+            if (this.cliffTextures) gl.deleteTexture(this.cliffTextures)
+            this.cliffTextures = msg.count ? arrayTexture(gl, msg.size, msg.count, msg.rgba, gl.REPEAT) : null
+            this.cliffs = []
+            for (const m of msg.meshes) {
+                if (m.error) {
+                    this.notes.push(m.error)
+                    continue
+                }
+                if (!m.instances.length || !m.indices.length) continue
+                const vao = gl.createVertexArray()
+                gl.bindVertexArray(vao)
+                const buffers = []
+                const attribute = (location, data, size, divisor) => {
+                    const b = gl.createBuffer()
+                    buffers.push(b)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, b)
+                    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW)
+                    gl.enableVertexAttribArray(location)
+                    gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0)
+                    gl.vertexAttribDivisor(location, divisor)
+                }
+                attribute(0, m.positions, 3, 0)
+                attribute(1, m.uvs, 2, 0)
+                attribute(2, m.normals, 3, 0)
+                attribute(3, m.instances, 4, 1)
+                const ib = gl.createBuffer()
+                buffers.push(ib)
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib)
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.indices, gl.STATIC_DRAW)
+                gl.bindVertexArray(null)
+                this.cliffs.push({vao, buffers, count: m.indices.length, instances: m.instances.length / 4})
+            }
+            for (const t of msg.textures) if (t.error) this.notes.push(`Cliff texture ${t.error}`)
+            this.notes.push(...msg.notes)
+        }
+
         setTerrain(msg) {
             const gl = this.gl
             if (this.terrain) for (const t of Object.values(this.terrain.textures)) gl.deleteTexture(t)
@@ -230,6 +326,7 @@ void main() {
                     water: dataTexture(gl, gl.R32F, gl.RED, gl.FLOAT, w, h, msg.water),
                     corners: dataTexture(gl, gl.R8UI, gl.RED_INTEGER, gl.UNSIGNED_BYTE, w, h, msg.corners),
                     tiles: dataTexture(gl, gl.RGBA32UI, gl.RGBA_INTEGER, gl.UNSIGNED_INT, w - 1, h - 1, msg.tiles),
+                    tileFlags: dataTexture(gl, gl.R8UI, gl.RED_INTEGER, gl.UNSIGNED_BYTE, w - 1, h - 1, msg.tileFlags),
                 },
             }
         }
@@ -275,14 +372,30 @@ void main() {
             gl.uniformMatrix4fv(g.uniforms.u_mvp, false, mvp)
             gl.uniform2i(g.uniforms.u_size, t.width, t.height)
             gl.uniform1uiv(g.uniforms.u_first, this.first)
-            gl.uniform3fv(g.uniforms.u_light, [-0.3, -0.3, -0.25].map(v => v / Math.hypot(0.3, 0.3, 0.25)))
+            gl.uniform3fv(g.uniforms.u_light, LIGHT)
             gl.uniform1i(g.uniforms.u_grid, this.grid ? 1 : 0)
             bind(0, gl.TEXTURE_2D, t.textures.heights, g.uniforms.u_heights)
             bind(1, gl.TEXTURE_2D, t.textures.ground, g.uniforms.u_ground)
             bind(2, gl.TEXTURE_2D, t.textures.tiles, g.uniforms.u_tiles)
             bind(3, gl.TEXTURE_2D, t.textures.corners, g.uniforms.u_corners)
             bind(4, gl.TEXTURE_2D_ARRAY, this.layers, g.uniforms.u_layers)
+            bind(5, gl.TEXTURE_2D, t.textures.tileFlags, g.uniforms.u_tileFlags)
             gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, tiles)
+
+            if (this.cliffs.length && this.cliffTextures) {
+                const c = this.cliffProgram
+                gl.useProgram(c.program)
+                gl.uniformMatrix4fv(c.uniforms.u_mvp, false, mvp)
+                gl.uniform2i(c.uniforms.u_size, t.width, t.height)
+                gl.uniform3fv(c.uniforms.u_light, LIGHT)
+                bind(0, gl.TEXTURE_2D, t.textures.ground, c.uniforms.u_ground)
+                bind(1, gl.TEXTURE_2D_ARRAY, this.cliffTextures, c.uniforms.u_cliffs)
+                for (const m of this.cliffs) {
+                    gl.bindVertexArray(m.vao)
+                    gl.drawElementsInstanced(gl.TRIANGLES, m.count, gl.UNSIGNED_SHORT, 0, m.instances)
+                }
+                gl.bindVertexArray(this.vao)
+            }
 
             if (!this.water) return
             const wp = this.waterProgram

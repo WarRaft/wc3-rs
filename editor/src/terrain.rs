@@ -34,6 +34,14 @@ pub mod tile {
     pub const CLIFF: u8 = 1;
     /// A ramp's foot: its ground is drawn though it's a cliff tile.
     pub const RAMP_ENTRANCE: u8 = 2;
+    /// Under a ramp's model (`crate::cliffs`): no ground of its own.
+    pub const ROMP: u8 = 4;
+
+    /// Is the ground of a tile of `flags` drawn? Not under a cliff or a
+    /// ramp, except at a ramp's foot.
+    pub fn has_ground(flags: u8) -> bool {
+        flags & (CLIFF | ROMP) == 0 || flags & RAMP_ENTRANCE != 0
+    }
 }
 
 /// The ground textures a terrain is drawn with, in the order its tiles
@@ -102,16 +110,15 @@ pub fn water_level(p: &Point) -> f32 {
 }
 
 impl Draw {
-    /// `extended(t)`: is ground texture `t` (in `grounds`) extended (twice
-    /// as wide as high, with 16 more variations)? `water_height`: the
-    /// tileset's, over the points' level.
-    pub fn new(t: &Terrain, grounds: &Grounds, extended: &dyn Fn(usize) -> bool, water_height: f32) -> Draw {
+    /// `tile_flags`: [`tile_flags`]'s, with the ramps' [`tile::ROMP`]
+    /// (`crate::cliffs`). `extended(t)`: is ground texture `t` (in
+    /// `grounds`) extended (twice as wide as high, with 16 more
+    /// variations)? `water_height`: the tileset's, over the points' level.
+    pub fn new(t: &Terrain, grounds: &Grounds, tile_flags: Vec<u8>, extended: &dyn Fn(usize) -> bool, water_height: f32) -> Draw {
         let (w, h) = (t.width as usize, t.height as usize);
         let v = t.flags_version();
         let at = |x: usize, y: usize| &t.points[y * w + x];
         let layer = |x: usize, y: usize| at(x, y).layer_height();
-
-        let tile_flags = tile_flags(t);
 
         let mut heights = Vec::with_capacity(w * h);
         let mut ground = Vec::with_capacity(w * h);
@@ -198,19 +205,26 @@ pub fn tile_flags(t: &Terrain) -> Vec<u8> {
 }
 
 /// Each corner's ground texture as it's drawn (an index into `grounds`):
-/// next to a cliff (and not on a ramp), the cliff's ground; else
-/// blight's, or its own (HiveWE's `real_tile_texture`).
+/// next to a ramp's model, or a cliff (and not on a ramp), the cliff's
+/// ground; else blight's, or its own (HiveWE's `real_tile_texture`).
 pub fn corner_textures(t: &Terrain, grounds: &Grounds, tile_flags: &[u8]) -> Vec<usize> {
     let (w, h) = (t.width as usize, t.height as usize);
     let v = t.flags_version();
-    let cliff_tile = |x: usize, y: usize| x < w - 1 && y < h - 1 && tile_flags[y * (w - 1) + x] & tile::CLIFF != 0;
+    let flag = |x: usize, y: usize| if x < w - 1 && y < h - 1 { tile_flags[y * (w - 1) + x] } else { 0 };
     let real = |x: usize, y: usize| -> usize {
         let p = &t.points[y * w + x];
-        let near_cliff = cliff_tile(x, y)
-            || (x > 0 && cliff_tile(x - 1, y))
-            || (y > 0 && cliff_tile(x, y - 1))
-            || (x > 0 && y > 0 && cliff_tile(x - 1, y - 1));
-        if near_cliff && !p.ramp(v) {
+        // The tile it's the bottom left of, and those left of and below.
+        let mut near = flag(x, y);
+        if x > 0 {
+            near |= flag(x - 1, y);
+        }
+        if y > 0 {
+            near |= flag(x, y - 1);
+        }
+        if x > 0 && y > 0 {
+            near |= flag(x - 1, y - 1);
+        }
+        if near & tile::ROMP != 0 || (near & tile::CLIFF != 0 && !p.ramp(v)) {
             let mut c = p.cliff_texture() as usize;
             // 15: what the game writes for some; HiveWE's reading.
             if c == 15 {
