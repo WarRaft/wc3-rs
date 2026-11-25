@@ -32,6 +32,7 @@ const VIEW = 'wc3.editors'
  * @property {import('child_process').ChildProcess | null} child
  * @property {{name: string, width: number, height: number} | null} map  what the page last said of the map
  * @property {string | null} error  what the page last said went wrong
+ * @property {{pathing: number, regions: number, cameras: number, bounds: number, minimap: number, region?: {name: string, x: number, y: number}} | undefined} overlays  what the page has of the overlays
  * @property {string | undefined} picked  what the last click picked, said ('' nothing)
  * @property {{width: number, height: number, layers: number, water: number, cliffs: number, objects: number, error: number} | null} drawn  what the page drew of the terrain first
  */
@@ -68,8 +69,8 @@ function registerWorldEditor(context, binary, pickManifest) {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'">
 <link rel="stylesheet" href="${asset('editor.css')}">
 </head><body>
-<div class="bar"><span id="name" class="name">Opening…</span><span id="meta" class="meta"></span><span class="spacer"></span><span class="hint">Click: pick · Right drag: move · Ctrl + right drag: turn · Wheel: zoom · WASD · G: grid · Home: all of it</span></div>
-<div class="stage"><canvas id="view"></canvas>
+<div class="bar"><span id="name" class="name">Opening…</span><span id="meta" class="meta"></span><span class="spacer"></span><span id="toggles" class="toggles"></span><span class="hint">Click: pick · Right drag: move · Ctrl + right drag: turn · Wheel: zoom · WASD · G: grid · Home: all of it</span></div>
+<div class="stage"><canvas id="view"></canvas><canvas id="minimap" class="minimap" hidden></canvas>
 <div id="message" class="message" hidden><h2 id="message-title"></h2><p id="message-text"></p><button id="reopen" hidden>Reopen</button></div>
 </div>
 <ul id="notes" class="notes" hidden></ul>
@@ -78,6 +79,7 @@ function registerWorldEditor(context, binary, pickManifest) {
 <script nonce="${nonce}" src="${asset('camera.js')}"></script>
 <script nonce="${nonce}" src="${asset('terrain.js')}"></script>
 <script nonce="${nonce}" src="${asset('objects.js')}"></script>
+<script nonce="${nonce}" src="${asset('overlays.js')}"></script>
 <script nonce="${nonce}" src="${asset('editor.js')}"></script>
 </body></html>`
     }
@@ -159,6 +161,8 @@ function registerWorldEditor(context, binary, pickManifest) {
                 editor.drawn = msg.terrain
             } else if (msg.type === 'picked') {
                 editor.picked = msg.text
+            } else if (msg.type === 'overlays') {
+                editor.overlays = msg.overlays
             } else if (msg.type === 'error') {
                 editor.error = msg.message
             } else if (msg.type === 'reopen') {

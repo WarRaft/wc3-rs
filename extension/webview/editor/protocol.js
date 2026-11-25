@@ -17,6 +17,7 @@ const EditorProtocol = (() => {
         CLIFFS: 133,
         OBJECTS: 134,
         PICKED: 135,
+        OVERLAYS: 136,
         PICK: 2,
     }
 
@@ -223,8 +224,26 @@ const EditorProtocol = (() => {
                 }))
                 return {kind: 'objects', textures, models, notes: r.list(r => r.string())}
             }
-            case KIND.PICKED:
-                return {kind: 'picked', found: r.u8() !== 0, model: r.u32(), instance: r.u32(), text: r.string()}
+            case KIND.PICKED: {
+                const m = {kind: 'picked', found: r.u8() !== 0, model: r.u32(), instance: r.u32(), text: r.string()}
+                const on = r.u8() !== 0
+                const p = [r.f32(), r.f32(), r.f32()]
+                return {...m, ground: on ? p : null}
+            }
+            case KIND.OVERLAYS: {
+                const grid = r => ({width: r.u32(), height: r.u32(), data: r.bytes()})
+                return {
+                    kind: 'overlays',
+                    pathing: grid(r),
+                    regionPicture: grid(r),
+                    regions: r.list(r => ({name: r.string(), bounds: [r.f32(), r.f32(), r.f32(), r.f32()], color: [r.u8(), r.u8(), r.u8()]})),
+                    bounds: r.f32s(),
+                    cameraLines: r.f32s(),
+                    cameras: r.list(r => ({name: r.string(), target: [r.f32(), r.f32(), r.f32()], eye: [r.f32(), r.f32(), r.f32()]})),
+                    minimap: grid(r),
+                    notes: r.list(r => r.string()),
+                }
+            }
             default:
                 return null
         }

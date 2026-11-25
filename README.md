@@ -19,7 +19,8 @@ item's details are in its section below):
     `../JassHelper-manual/Writerside/topics`: what's left of vJASS is
     checked against it.
 - **The World Editor** (see [World Editor](#world-editor)): its steps,
-  in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs), 4 (doodads and units).
+  in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs), 4 (doodads and units),
+  5 (overlays).
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1650,9 +1651,21 @@ step), this list updated.
    no model in the tables, said in a note. MCP: `doo_list` names each
    thing and its model with the game's files
    (`wc3_server::names::with_objects`).
-5. **Overlays.** Pathing (`war3map.wpm`), regions (`war3map.w3r`),
+5. **Overlays** (done). Pathing (`war3map.wpm`), regions (`war3map.w3r`),
    cameras (`war3map.w3c`), the map's bounds (`war3map.w3i`), a
    minimap.
+   As built: `editor/src/overlays.rs`: the pathing (`war3map.wpm`, a
+   byte a cell) and the regions (`war3map.w3r`, a picture of four
+   pixels a cell, filled and outlined) laid on the ground and the
+   cliffs by their shaders; the bounds (`war3map.w3i`: the camera's,
+   the playable area) and the cameras (`war3map.w3c`: from where each
+   is to where it looks) as lines on the ground; the minimap
+   (`picture::paint`, units in their owners' colours); `ground_hit`,
+   where a ray meets the ground: a click there says the point and its
+   regions, a thing picked says its regions too. The page's
+   `overlays.js` and buttons (and keys P, R, C, B, M), the minimap a
+   click moves the camera on. MCP: `w3e_image`'s `show` (regions,
+   units, bounds: `picture::mark`).
 6. **Editing.** Terrain brushes (raise, lower, plateau, smooth, noise;
    ground texture; cliff level; water), each applied in Rust, the
    changed rectangle sent back; undo and redo in Rust; save to the

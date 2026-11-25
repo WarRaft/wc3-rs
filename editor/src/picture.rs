@@ -9,7 +9,8 @@ use wc3_server::game::Game;
 use w3e_rs::Terrain;
 
 use crate::terrain::{self, Grounds, corner};
-use crate::tileset::Tileset;
+use crate::textures::{GroundTexture, Layers};
+use crate::tileset::{Tileset, Water};
 
 /// RGBA, rows top to bottom.
 #[derive(Debug, Clone, PartialEq)]
@@ -34,14 +35,33 @@ pub fn picture(game: &Game, t: &Terrain, scale: u32) -> Picture {
         .collect();
     let (textures, layers) = crate::textures::ground(game, &paths);
     notes.extend(textures.iter().filter(|g| !g.error.is_empty() && grounds.ids.get(grounds.blight) != Some(&g.id)).map(|g| g.error.clone()));
-    // Each texture's colour: its full cell's average.
-    let colors: Vec<[f32; 3]> = textures.iter().map(|g| average(&layers, g.first + 15.min(g.count - 1))).collect();
-
     let flags = crate::cliffs::Cliffs::of(game, t, &tileset).tile_flags;
-    let real = terrain::corner_textures(t, &grounds, &flags);
     let water = tileset.water.as_ref();
     let water_height = water.map_or(0.0, |w| w.height);
-    let draw = terrain::Draw::new(t, &grounds, flags.clone(), &|i| textures.get(i).is_some_and(|g| g.extended), water_height);
+    let draw = terrain::Draw::new(t, &grounds, flags, &|i| textures.get(i).is_some_and(|g| g.extended), water_height);
+    let (pw, ph, rgba) = paint(t, &grounds, &textures, &layers, &draw, water, scale);
+    if water.is_none() {
+        notes.push("No water for this tileset in TerrainArt\\Water.slk: its water isn't drawn.".into());
+    }
+    Picture { width: pw, height: ph, rgba, notes }
+}
+
+/// The picture of terrain `t` as `draw` has it, `scale` pixels a corner,
+/// its ground textures `textures` (in `layers`), its tileset's `water`:
+/// width, height, RGBA (north up).
+pub fn paint(
+    t: &Terrain,
+    grounds: &Grounds,
+    textures: &[GroundTexture],
+    layers: &Layers,
+    draw: &terrain::Draw,
+    water: Option<&Water>,
+    scale: u32,
+) -> (u32, u32, Vec<u8>) {
+    // Each texture's colour: its full cell's average.
+    let colors: Vec<[f32; 3]> = textures.iter().map(|g| average(layers, g.first + 15.min(g.count - 1))).collect();
+
+    let real = terrain::corner_textures(t, grounds, &draw.tile_flags);
     let (w, h) = (t.width as usize, t.height as usize);
     let ground = |x: usize, y: usize| draw.ground[y.min(h - 1) * w + x.min(w - 1)];
     let light = [-0.3f32, -0.3, -0.25];
@@ -83,10 +103,86 @@ pub fn picture(game: &Game, t: &Terrain, scale: u32) -> Picture {
             }
         }
     }
-    if water.is_none() {
-        notes.push("No water for this tileset in TerrainArt\\Water.slk: its water isn't drawn.".into());
+    (pw, ph, rgba)
+}
+
+/// What [`mark`] draws over a picture.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Marks {
+    /// The regions' outlines, in their colours.
+    pub regions: bool,
+    /// Units and items: a dot each, a unit in its owner's colour.
+    pub units: bool,
+    /// The camera's bounds (blue) and the playable area (yellow).
+    pub bounds: bool,
+}
+
+/// Draws `marks` over `p`, a picture of terrain `t` at `scale` pixels a
+/// corner, from the map's files through `game`.
+pub fn mark(game: &Game, t: &Terrain, p: &mut Picture, scale: u32, marks: Marks) {
+    let scale = scale.max(1) as f32;
+    let (w, h) = (p.width as i64, p.height as i64);
+    // A point in the game's units to a pixel (north up).
+    let px = |wx: f32, wy: f32| -> (i64, i64) {
+        let (cx, cy) = ((wx - t.offset_x) / 128.0, (wy - t.offset_y) / 128.0);
+        ((cx * scale).round() as i64, h - 1 - (cy * scale).round() as i64)
+    };
+    let mut put = |x: i64, y: i64, c: [u8; 3]| {
+        if x >= 0 && y >= 0 && x < w && y < h {
+            let at = ((y * w + x) * 4) as usize;
+            p.rgba[at..at + 3].copy_from_slice(&c);
+        }
+    };
+    let rect = |put: &mut dyn FnMut(i64, i64, [u8; 3]), (l, b): (i64, i64), (r, tp): (i64, i64), c: [u8; 3]| {
+        for x in l.min(r)..=l.max(r) {
+            put(x, b, c);
+            put(x, tp, c);
+        }
+        for y in tp.min(b)..=tp.max(b) {
+            put(l, y, c);
+            put(r, y, c);
+        }
+    };
+    let read = |name: &str| game.read(name).map(|(b, _)| b);
+    if marks.bounds
+        && let Some(Ok(info)) = read("war3map.w3i").map(|b| w3i_rs::parse(&b))
+    {
+        let c = info.camera_bounds;
+        rect(&mut put, px(c[0], c[1]), px(c[2], c[3]), [90, 150, 255]);
+        let k = info.camera_complements.map(|v| v as f32 * 128.0);
+        let (right, top) = (t.offset_x + (t.width as f32 - 1.0) * 128.0, t.offset_y + (t.height as f32 - 1.0) * 128.0);
+        rect(&mut put, px(t.offset_x + k[0], t.offset_y + k[2]), px(right - k[1], top - k[3]), [255, 215, 50]);
     }
-    Picture { width: pw, height: ph, rgba, notes }
+    if marks.regions
+        && let Some(Ok(rs)) = read("war3map.w3r").map(|b| w3r_rs::parse(&b))
+    {
+        for r in &rs.regions {
+            rect(&mut put, px(r.left, r.bottom), px(r.right, r.top), [r.red, r.green, r.blue]);
+        }
+    }
+    if marks.units
+        && let Some(Ok(units)) = read("war3mapUnits.doo").map(|b| doo_rs::parse_units_any(&b))
+    {
+        let mut colors = std::collections::HashMap::new();
+        let types = crate::types::Types::load(game);
+        for u in &units.units {
+            let id = u.placement.id.to_string();
+            let c = if types.has(w3abdhqtu_rs::Kind::Item, &id) {
+                [255, 255, 255]
+            } else {
+                *colors.entry(u.player).or_insert_with(|| {
+                    crate::textures::average(game, &format!("ReplaceableTextures\\TeamColor\\TeamColor{:02}.blp", u.player)).unwrap_or([255, 0, 255])
+                })
+            };
+            let (x, y) = px(u.placement.x, u.placement.y);
+            let r = (scale as i64 / 2).max(1);
+            for dy in -r..=r {
+                for dx in -r..=r {
+                    put(x + dx, y + dy, c);
+                }
+            }
+        }
+    }
 }
 
 /// Layer `n`'s average colour, 0-1.

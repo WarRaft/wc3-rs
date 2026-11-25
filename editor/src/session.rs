@@ -24,6 +24,9 @@ pub struct Session {
     pub tileset: Tileset,
     /// What's placed, once drawn ([`draw`](Self::draw)).
     pub objects: Option<crate::placed::Objects>,
+    /// The terrain as drawn, and what's over it, once drawn.
+    pub drawn: Option<Draw>,
+    pub overlays: Option<crate::overlays::Overlays>,
     /// What was read with a problem, gone past.
     pub notes: Vec<String>,
 }
@@ -69,7 +72,7 @@ impl Session {
         let names = wc3_server::names::with_objects(&Lookup::of(&project));
         let tileset = Tileset::load(&game, terrain.tileset as char);
         notes.extend(tileset.notes.iter().cloned());
-        Ok(Session { project, game, terrain, info, strings, names, tileset, objects: None, notes })
+        Ok(Session { project, game, terrain, info, strings, names, tileset, objects: None, drawn: None, overlays: None, notes })
     }
 
     /// `text` with its `TRIGSTR_`s replaced by the map's strings.
@@ -132,19 +135,35 @@ impl Session {
         let types = crate::types::Types::load(&self.game);
         let objects = crate::placed::Objects::load(&self.game, &types, &draw);
         let objects_msg = ObjectsMsg { textures: objects.textures.clone(), models: objects.models.clone(), notes: objects.notes.clone() };
+        let minimap = crate::picture::paint(&self.terrain, &grounds, &textures, &layers, &draw, self.tileset.water.as_ref(), 1);
+        let overlays = crate::overlays::Overlays::load(&self.game, &self.terrain, &draw, &objects, minimap);
         self.objects = Some(objects);
+        self.overlays = Some(overlays.clone());
+        self.drawn = Some(draw.clone());
         vec![
             ServerMsg::Ground(GroundMsg { textures, layers }),
             ServerMsg::Water(water),
             ServerMsg::Cliffs(cliffs_msg),
             ServerMsg::Terrain(draw),
             ServerMsg::Objects(objects_msg),
+            ServerMsg::Overlays(overlays),
         ]
     }
 
     /// What a ray from the camera meets first, said.
     pub fn pick(&self, origin: [f32; 3], dir: [f32; 3]) -> PickedMsg {
-        let Some(t) = self.objects.as_ref().and_then(|o| o.pick(origin, dir)) else { return PickedMsg::default() };
+        let ground = self.drawn.as_ref().and_then(|d| crate::overlays::ground_hit(d, origin, dir));
+        // ` · in Region A, Region B`, the regions over a point.
+        let in_regions = |x: f32, y: f32| {
+            let regions = self.overlays.as_ref().map(|o| o.regions_at(x, y)).unwrap_or_default();
+            if regions.is_empty() { String::new() } else { format!(" · in {}", regions.join(", ")) }
+        };
+        let Some(t) = self.objects.as_ref().and_then(|o| o.pick(origin, dir)) else {
+            // The ground: its point in the game's units, its regions.
+            let Some(([x, y, z], d)) = ground.zip(self.drawn.as_ref()) else { return PickedMsg::default() };
+            let (wx, wy, wz) = (d.offset[0] + x * 128.0, d.offset[1] + y * 128.0, z * 128.0);
+            return PickedMsg { text: format!("({wx:.0}, {wy:.0}, {wz:.0}){}", in_regions(wx, wy)), ground, ..Default::default() };
+        };
         let id = t.id.to_string();
         let name = self.names.objects.get(t.kind, &id).map(|n| n.shown()).unwrap_or_else(|| id.clone());
         let what = match t.kind {
@@ -158,7 +177,15 @@ impl Session {
             found: true,
             model: t.model as u32,
             instance: t.instance as u32,
-            text: format!("{name} ({id}) · {what} · ({:.0}, {:.0}, {:.0}) · {file} #{}", t.world[0], t.world[1], t.world[2], t.index),
+            text: format!(
+                "{name} ({id}) · {what} · ({:.0}, {:.0}, {:.0}) · {file} #{}{}",
+                t.world[0],
+                t.world[1],
+                t.world[2],
+                t.index,
+                in_regions(t.world[0], t.world[1])
+            ),
+            ground,
         }
     }
 

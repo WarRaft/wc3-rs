@@ -12,6 +12,7 @@
 
 pub mod cliffs;
 pub mod lock;
+pub mod overlays;
 pub mod picture;
 pub mod placed;
 pub mod protocol;

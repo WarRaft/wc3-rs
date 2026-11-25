@@ -37,10 +37,11 @@
 //! | 133 | `Cliffs` | the cliffs and ramps: see [`CliffsMsg`] |
 //! | 134 | `Objects` | what's placed: see [`ObjectsMsg`] |
 //! | 135 | `Picked` | what a `Pick` meets: see [`PickedMsg`] |
+//! | 136 | `Overlays` | pathing, regions, bounds, cameras, minimap: see [`OverlaysMsg`] |
 //!
 //! `Hello` is answered by `Map`, then `Ground`, `Water` and `Cliffs`
 //! (what the terrain's layers index, and what stands on it), then
-//! `Terrain`, then `Objects`.
+//! `Terrain`, then `Objects`, then `Overlays`.
 
 use std::io::{self, Read};
 
@@ -51,6 +52,7 @@ mod kind {
     pub const PICK: u8 = 2;
     pub const OBJECTS: u8 = 134;
     pub const PICKED: u8 = 135;
+    pub const OVERLAYS: u8 = 136;
     pub const MAP: u8 = 128;
     pub const ERROR: u8 = 129;
     pub const TERRAIN: u8 = 130;
@@ -142,15 +144,26 @@ pub struct ObjectsMsg {
     pub notes: Vec<String>,
 }
 
-/// Kind 135's body: `u8` found, `u32` model, `u32` instance, what it is
-/// (a line to show).
+/// Kind 135's body: `u8` found (a thing), `u32` model, `u32` instance,
+/// what it is (a line to show: the thing, else the ground's point and
+/// its regions); `u8` on the ground, its point `f32` x, y, z (cells,
+/// layers).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PickedMsg {
     pub found: bool,
     pub model: u32,
     pub instance: u32,
     pub text: String,
+    pub ground: Option<[f32; 3]>,
 }
+
+/// Kind 136's body: the pathing (`u32` width, height, a byte a cell, an
+/// array), the regions' picture (`u32` width, height, RGBA), a list of
+/// regions (name, `f32` left, bottom, right, top, `u8` r, g, b), lines of
+/// the bounds and of the cameras (`f32`, `overlays::POINT` a point), a
+/// list of cameras (name, `f32` target x, y, z, eye x, y, z), the
+/// minimap (`u32` width, height, RGBA, north up), notes.
+pub type OverlaysMsg = crate::overlays::Overlays;
 
 /// Editor → page.
 #[derive(Debug, Clone, PartialEq)]
@@ -171,6 +184,8 @@ pub enum ServerMsg {
     Objects(ObjectsMsg),
     /// Kind 135.
     Picked(PickedMsg),
+    /// Kind 136.
+    Overlays(OverlaysMsg),
 }
 
 /// A frame's body was shorter than its fields, or not UTF-8.
@@ -327,7 +342,32 @@ impl ServerMsg {
                 w.u32(p.model);
                 w.u32(p.instance);
                 w.string(&p.text);
+                w.u8(p.ground.is_some() as u8);
+                p.ground.unwrap_or_default().iter().for_each(|v| w.f32(*v));
                 kind::PICKED
+            }
+            ServerMsg::Overlays(o) => {
+                for g in [&o.pathing, &o.region_picture] {
+                    w.u32(g.width);
+                    w.u32(g.height);
+                    w.bytes(&g.data);
+                }
+                w.list(&o.regions, |w, r| {
+                    w.string(&r.name);
+                    r.bounds.iter().for_each(|v| w.f32(*v));
+                    r.color.iter().for_each(|v| w.u8(*v));
+                });
+                w.f32s(&o.bounds);
+                w.f32s(&o.camera_lines);
+                w.list(&o.cameras, |w, c| {
+                    w.string(&c.name);
+                    c.target.iter().chain(&c.eye).for_each(|v| w.f32(*v));
+                });
+                w.u32(o.minimap.width);
+                w.u32(o.minimap.height);
+                w.bytes(&o.minimap.data);
+                w.list(&o.notes, |w, n| w.string(n));
+                kind::OVERLAYS
             }
         };
         w.frame(kind)
@@ -427,7 +467,27 @@ impl ServerMsg {
                 })?;
                 ServerMsg::Objects(ObjectsMsg { textures, models, notes: r.list(|r| r.string())? })
             }
-            kind::PICKED => ServerMsg::Picked(PickedMsg { found: r.u8()? != 0, model: r.u32()?, instance: r.u32()?, text: r.string()? }),
+            kind::PICKED => {
+                let (found, model, instance, text) = (r.u8()? != 0, r.u32()?, r.u32()?, r.string()?);
+                let on = r.u8()? != 0;
+                let p = [r.f32()?, r.f32()?, r.f32()?];
+                ServerMsg::Picked(PickedMsg { found, model, instance, text, ground: on.then_some(p) })
+            }
+            kind::OVERLAYS => {
+                use crate::overlays::{Camera, Grid, Overlays, Region};
+                let grid = |r: &mut Reader| -> Result<Grid, DecodeError> { Ok(Grid { width: r.u32()?, height: r.u32()?, data: r.bytes()? }) };
+                let pathing = grid(&mut r)?;
+                let region_picture = grid(&mut r)?;
+                let regions = r.list(|r| {
+                    Ok(Region { name: r.string()?, bounds: [r.f32()?, r.f32()?, r.f32()?, r.f32()?], color: [r.u8()?, r.u8()?, r.u8()?] })
+                })?;
+                let bounds = r.f32s()?;
+                let camera_lines = r.f32s()?;
+                let cameras = r.list(|r| Ok(Camera { name: r.string()?, target: [r.f32()?, r.f32()?, r.f32()?], eye: [r.f32()?, r.f32()?, r.f32()?] }))?;
+                let minimap = grid(&mut r)?;
+                let notes = r.list(|r| r.string())?;
+                ServerMsg::Overlays(Overlays { pathing, regions, region_picture, bounds, camera_lines, cameras, minimap, notes })
+            }
             _ => return Ok(None),
         }))
     }

@@ -23,3 +23,23 @@ fn a_pixel_per_corner_north_up_in_its_textures_colour() {
     assert!(px(0, 0)[0] < lit / 2 + 1 && px(1, 1) == px(0, 0));
     assert!(p.notes.iter().any(|n| n.contains("Water.slk")), "{:?}", p.notes);
 }
+
+#[test]
+fn regions_and_units_marked_over_it() {
+    let dir = TestDir::new("picture-marks");
+    // A region over the whole terrain (-128..128 across, -64..64 up), green.
+    let mut regions = w3r_rs::Regions::new();
+    let mut r = w3r_rs::Region::new("All", -128.0, -64.0, 128.0, 64.0, 0);
+    (r.red, r.green, r.blue) = (0, 255, 0);
+    regions.regions.push(r);
+    dir.write("war3map.w3r", &regions.to_bytes().unwrap());
+    let game = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()] }.open().0;
+    let t = w3e_rs::parse(&testdir::terrain()).unwrap();
+    let mut p = Picture { width: 6, height: 4, rgba: vec![0; 6 * 4 * 4], notes: vec![] };
+    mark(&game, &t, &mut p, 2, Marks { regions: true, ..Default::default() });
+    let px = |x: u32, y: u32| &p.rgba[((y * 6 + x) * 4) as usize..][..3];
+    // Its outline: the corners' pixels; inside it, nothing.
+    assert_eq!(px(0, 3), [0, 255, 0]);
+    assert_eq!(px(4, 1), [0, 255, 0]);
+    assert_eq!(px(2, 2), [0, 0, 0]);
+}

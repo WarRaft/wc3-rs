@@ -979,9 +979,12 @@ dependencies = [
  "parser-rs",
  "slk-rs",
  "w3abdhqtu-rs",
+ "w3c-rs",
  "w3e-rs",
  "w3i-rs",
+ "w3r-rs",
  "wc3-server",
+ "wpm-rs",
  "wts-rs",
 ]
 

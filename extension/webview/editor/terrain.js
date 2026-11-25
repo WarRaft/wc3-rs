@@ -63,6 +63,32 @@ uniform sampler2DArray u_layers;
 uniform uint u_first[64];
 uniform vec3 u_light;
 uniform bool u_grid;
+uniform highp usampler2D u_pathing;
+uniform sampler2D u_regions;
+uniform bool u_showPathing;
+uniform bool u_showRegions;
+// The pathing's colours as the game's pathing textures draw them (red no
+// walking, green no flying, blue no building), half over; the regions'
+// picture over that.
+vec3 overlays(vec3 c, vec2 pos) {
+    ivec2 cell = ivec2(floor(pos * 4.0));
+    if (u_showPathing) {
+        ivec2 size = textureSize(u_pathing, 0);
+        if (all(greaterThanEqual(cell, ivec2(0))) && all(lessThan(cell, size))) {
+            uint f = texelFetch(u_pathing, cell, 0).r;
+            vec3 p = vec3((f & 2u) >> 1, (f & 4u) >> 2, (f & 8u) >> 3);
+            if ((f & 14u) != 0u) c = mix(c, p, 0.5);
+        }
+    }
+    if (u_showRegions) {
+        ivec2 size = textureSize(u_regions, 0);
+        if (all(greaterThanEqual(cell, ivec2(0))) && all(lessThan(cell, size))) {
+            vec4 r = texelFetch(u_regions, cell, 0);
+            c = mix(c, r.rgb / max(r.a, 0.001), r.a);
+        }
+    }
+    return c;
+}
 in vec2 v_uv;
 flat in uvec4 v_tex;
 in vec3 v_normal;
@@ -82,6 +108,7 @@ void main() {
     float light = clamp((dot(-u_light, normalize(v_normal)) + 1.0) * 0.5, 0.0, 1.0);
     color.rgb *= light;
     color.rgb *= 1.0 - 0.55 * v_boundary;
+    color.rgb = overlays(color.rgb, v_pos);
     if (u_grid) {
         vec2 g = abs(fract(v_pos - 0.5) - 0.5) / fwidth(v_pos);
         float line = 1.0 - clamp(min(g.x, g.y), 0.0, 1.0);
@@ -103,6 +130,7 @@ uniform ivec2 u_size;
 uniform sampler2D u_ground;
 out vec3 v_uv;
 out vec3 v_normal;
+out vec2 v_pos;
 float ground(ivec2 c) { return texelFetch(u_ground, clamp(c, ivec2(0), u_size - 1), 0).r; }
 void main() {
     // The models lie a quarter turn round (HiveWE's cliff.vert).
@@ -112,6 +140,7 @@ void main() {
     vec3 n = vec3(a_normal.y, -a_normal.x, a_normal.z);
     v_normal = normalize(vec3(n.xy + terrain.xy, n.z * terrain.z));
     v_uv = vec3(a_uv, a_inst.w);
+    v_pos = p.xy;
     gl_Position = u_mvp * vec4(p.xy, p.z + ground(c), 1.0);
 }`
 
@@ -120,12 +149,40 @@ precision highp float;
 precision highp sampler2DArray;
 uniform sampler2DArray u_cliffs;
 uniform vec3 u_light;
+uniform highp usampler2D u_pathing;
+uniform sampler2D u_regions;
+uniform bool u_showPathing;
+uniform bool u_showRegions;
+// The pathing's colours as the game's pathing textures draw them (red no
+// walking, green no flying, blue no building), half over; the regions'
+// picture over that.
+vec3 overlays(vec3 c, vec2 pos) {
+    ivec2 cell = ivec2(floor(pos * 4.0));
+    if (u_showPathing) {
+        ivec2 size = textureSize(u_pathing, 0);
+        if (all(greaterThanEqual(cell, ivec2(0))) && all(lessThan(cell, size))) {
+            uint f = texelFetch(u_pathing, cell, 0).r;
+            vec3 p = vec3((f & 2u) >> 1, (f & 4u) >> 2, (f & 8u) >> 3);
+            if ((f & 14u) != 0u) c = mix(c, p, 0.5);
+        }
+    }
+    if (u_showRegions) {
+        ivec2 size = textureSize(u_regions, 0);
+        if (all(greaterThanEqual(cell, ivec2(0))) && all(lessThan(cell, size))) {
+            vec4 r = texelFetch(u_regions, cell, 0);
+            c = mix(c, r.rgb / max(r.a, 0.001), r.a);
+        }
+    }
+    return c;
+}
 in vec3 v_uv;
 in vec3 v_normal;
+in vec2 v_pos;
 out vec4 color;
 void main() {
     color = texture(u_cliffs, v_uv);
     color.rgb *= clamp((dot(-u_light, normalize(v_normal)) + 1.0) * 0.5, 0.0, 1.0);
+    color.rgb = overlays(color.rgb, v_pos);
     color.a = 1.0;
 }`
 
@@ -239,6 +296,10 @@ void main() {
             /** Each cliff model's vertex array, index count and instances. */
             this.cliffs = []
             this.cliffTextures = null
+            /** The pathing's and the regions' pictures, and which show. */
+            this.pathing = dataTexture(gl, gl.R8UI, gl.RED_INTEGER, gl.UNSIGNED_BYTE, 1, 1, new Uint8Array(1))
+            this.regions = dataTexture(gl, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, 1, 1, new Uint8Array(4))
+            this.show = {pathing: false, regions: false}
             this.vao = gl.createVertexArray()
             this.terrain = null
             this.layers = null
@@ -312,6 +373,29 @@ void main() {
             this.notes.push(...msg.notes)
         }
 
+        setOverlays(msg) {
+            const gl = this.gl
+            gl.deleteTexture(this.pathing)
+            gl.deleteTexture(this.regions)
+            const p = msg.pathing.width ? msg.pathing : {width: 1, height: 1, data: new Uint8Array(1)}
+            const r = msg.regionPicture.width ? msg.regionPicture : {width: 1, height: 1, data: new Uint8Array(4)}
+            this.pathing = dataTexture(gl, gl.R8UI, gl.RED_INTEGER, gl.UNSIGNED_BYTE, p.width, p.height, p.data)
+            this.regions = dataTexture(gl, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, r.width, r.height, r.data)
+        }
+
+        /** Binds the overlays' pictures (units 6 and 7) for program `p`. */
+        bindOverlays(p) {
+            const gl = this.gl
+            gl.activeTexture(gl.TEXTURE6)
+            gl.bindTexture(gl.TEXTURE_2D, this.pathing)
+            gl.uniform1i(p.uniforms.u_pathing, 6)
+            gl.activeTexture(gl.TEXTURE7)
+            gl.bindTexture(gl.TEXTURE_2D, this.regions)
+            gl.uniform1i(p.uniforms.u_regions, 7)
+            gl.uniform1i(p.uniforms.u_showPathing, this.show.pathing ? 1 : 0)
+            gl.uniform1i(p.uniforms.u_showRegions, this.show.regions ? 1 : 0)
+        }
+
         setTerrain(msg) {
             const gl = this.gl
             if (this.terrain) for (const t of Object.values(this.terrain.textures)) gl.deleteTexture(t)
@@ -381,6 +465,7 @@ void main() {
             bind(3, gl.TEXTURE_2D, t.textures.corners, g.uniforms.u_corners)
             bind(4, gl.TEXTURE_2D_ARRAY, this.layers, g.uniforms.u_layers)
             bind(5, gl.TEXTURE_2D, t.textures.tileFlags, g.uniforms.u_tileFlags)
+            this.bindOverlays(g)
             gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, tiles)
 
             if (this.cliffs.length && this.cliffTextures) {
@@ -391,6 +476,7 @@ void main() {
                 gl.uniform3fv(c.uniforms.u_light, LIGHT)
                 bind(0, gl.TEXTURE_2D, t.textures.ground, c.uniforms.u_ground)
                 bind(1, gl.TEXTURE_2D_ARRAY, this.cliffTextures, c.uniforms.u_cliffs)
+                this.bindOverlays(c)
                 for (const m of this.cliffs) {
                     gl.bindVertexArray(m.vao)
                     gl.drawElementsInstanced(gl.TRIANGLES, m.count, gl.UNSIGNED_SHORT, 0, m.instances)

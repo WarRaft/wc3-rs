@@ -32,11 +32,12 @@ fn hello_is_answered_with_the_map_each_time() {
             ServerMsg::Water(_) => "water",
             ServerMsg::Cliffs(_) => "cliffs",
             ServerMsg::Objects(_) => "objects",
+            ServerMsg::Overlays(_) => "overlays",
             ServerMsg::Terrain(t) if t.width == 3 => "terrain",
             _ => "?",
         })
         .collect();
-    assert_eq!(kinds, ["map", "ground", "water", "cliffs", "terrain", "objects", "map", "ground", "water", "cliffs", "terrain", "objects"]);
+    assert_eq!(kinds, ["map", "ground", "water", "cliffs", "terrain", "objects", "overlays", "map", "ground", "water", "cliffs", "terrain", "objects", "overlays"]);
 }
 
 #[test]
