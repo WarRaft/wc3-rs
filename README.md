@@ -21,9 +21,10 @@ item's details are in its section below):
     `//! loaddata`, `//! external`: an error each.
   - An operator of an interface or a `stub` one; a struct of more than
     8190 instances.
-  - AngelScript: a struct `extends array`, `.execute` of an object's
-    method. Neither Lua nor AngelScript
-    is run in the game yet (only `luac`, a test's `lua`, `as-rs`).
+  - Neither Lua nor AngelScript is run in the game yet (only `luac`, a
+    test's `lua`, `as-rs`). JassHelper's own manual is in
+    `../JassHelper-manual/Writerside/topics`: what's left of vJASS is
+    checked against it.
   - A copy of a base map keeps the space of the files it replaces (no
     compacting: it would lose the files nobody knows the names of).
   - A build from `.trg` files leaves the map's `war3map.wtg` and
