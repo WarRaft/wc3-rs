@@ -1698,6 +1698,15 @@ be done safely:
   name, the same namespace);
 - it's used in the game's scripts, or in a map that can't be written (see
   maps as folders above).
+- it's what World Editor's script makes of a map's triggers: a name
+  declared only in a `war3map.j` with a `war3map.wtg` beside it (a
+  variable's `udg_`, a trigger's `gg_trg_` and its GUI functions, a
+  placed thing's `gg_unit_` ...: made again from the triggers when the
+  map is saved or built), or a trigger's `InitTrig_<name>` in the custom
+  script (called by the trigger's name). The trigger or variable is
+  renamed instead. A name the custom script declares and that
+  `war3map.j` copies is renamed in both, from either. The MCP's
+  `jass_rename` is this rename.
 
 When some of the places are inside maps, the editor asks first: renaming
 there rewrites the map. **Rename** changes them all, **Rename Outside

@@ -106,6 +106,12 @@ async function steps() {
     check(!wctDiags.some(d => /'(gg_trg_|udg_)/.test(d.message)), "no trigger's or variable's name is unknown")
     check(errors.length === 0, "and no error at all: what the map's files place (gg_unit_, gg_rct_ ...) is known too")
 
+    log("Rename on a variable's udg_ in the custom script: refused, World Editor's script makes it of the triggers")
+    const heroes = wct.getText().indexOf('udg_Heroes')
+    check(heroes >= 0, 'the custom script uses udg_Heroes')
+    const refused = await vscode.commands.executeCommand('vscode.executeDocumentRenameProvider', wct.uri, wct.positionAt(heroes + 2), 'udg_Champions').then(() => null, e => String(e?.message ?? e))
+    check(refused && refused.includes('World Editor makes from the map'), `refused: ${refused}`)
+
     const nth = tree.triggers.findIndex((t, k) => t.custom && !tree.wct.code[k][2]) + 1
     const name = tree.triggers[nth - 1].name
     log(`a trigger of custom text picked: ${nth} ${name}`)

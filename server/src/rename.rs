@@ -19,7 +19,16 @@
 //!   (`Blizzard.j`, say; see `workspace`);
 //! - **in a read-only map**: an occurrence is in a file inside a map
 //!   that can't be written (see `mapfs`). Files in other maps are renamed
-//!   like any; the editor asks before changing a map.
+//!   like any; the editor asks before changing a map;
+//! - **World Editor's**: what its script makes of a map's triggers. A
+//!   name declared only in a `war3map.j` with a `war3map.wtg` beside it
+//!   ([`made_from_triggers`]: a variable's `udg_`, a trigger's `gg_trg_`
+//!   and its GUI functions, a placed thing's `gg_unit_` ...) comes back
+//!   the next time the map is saved or built: its trigger or variable is
+//!   renamed instead. So is a trigger's `InitTrig_<name>` in the custom
+//!   script (`war3map.wct`), which World Editor's script calls by the
+//!   trigger's name. A name the custom script declares and that script
+//!   copies is renamed in both.
 //!
 //! An AngelScript class is renamed with its constructors and destructor,
 //! which are members named like it; renaming a constructor renames its
@@ -132,6 +141,24 @@ fn plan<'a>(ws: &'a Workspace, id: &'a str, pos: Position) -> Result<Vec<Found<'
             ));
         }
     }
+    if decls.iter().all(|f| made_from_triggers(f.1)) {
+        return Err(format!(
+            "`{}` is declared only in {}, which World Editor makes from the map's triggers (a `udg_` is a variable's, \
+             a `gg_trg_` a trigger's, a `gg_unit_`, `gg_rct_` ... something placed): rename the trigger or variable instead, \
+             or it comes back the next time the map is saved or built.",
+            target.name,
+            file_name(decls[0].0)
+        ));
+    }
+    if let Some(trigger) = target.name.strip_prefix("InitTrig_")
+        && decls.iter().any(|f| f.1.path.as_deref().is_some_and(crate::customtext::is_custom_text_file))
+    {
+        return Err(format!(
+            "`{}` is what World Editor's script calls for the trigger `{trigger}`: rename the trigger instead, \
+             and its `InitTrig_` and `gg_trg_` follow.",
+            target.name
+        ));
+    }
     if target.scope == Scope::Member && decls.len() > 1 {
         let places: Vec<String> = decls.iter().map(|f| format!("{}:{}", file_name(f.0), f.2.line)).collect();
         return Err(format!(
@@ -220,6 +247,18 @@ fn label(language: Language) -> &'static str {
         Language::Wts => "WTS",
         Language::Txt2 => "txt2",
     }
+}
+
+/// Is `doc` a `war3map.j` World Editor makes from the triggers beside it
+/// (`war3map.wtg`, on disk or in the same map)? What it declares of them
+/// is theirs, and it's made again from them.
+pub fn made_from_triggers(doc: &Document) -> bool {
+    let Some(path) = doc.path.as_deref() else { return false };
+    if !path.file_name().is_some_and(|n| n.eq_ignore_ascii_case("war3map.j")) {
+        return false;
+    }
+    let wtg = path.with_file_name("war3map.wtg");
+    if map::split(&wtg).is_some() { map::bytes(&wtg).is_some() } else { wtg.is_file() }
 }
 
 fn file_name(id: &str) -> &str {

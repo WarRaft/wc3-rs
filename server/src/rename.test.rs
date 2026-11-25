@@ -202,3 +202,48 @@ fn content_answers_with_the_text_of_a_file_in_a_map() {
     assert_eq!(answer(&map.join("war3map.j")).text, USER);
     assert_eq!(answer(&map.join("missing.j")).text, "");
 }
+
+#[test]
+fn refuses_what_world_editors_script_makes_of_the_triggers() {
+    let (tmp, mut ws) = workspace("ren-we", &[]);
+    let custom = wct_rs::CustomText {
+        magic: false,
+        version: 1,
+        comment: vec![],
+        header: wct_rs::Code::new(b"function Shared takes nothing returns nothing\nendfunction\n"),
+        triggers: vec![wct_rs::Code::new(b"function InitTrig_A takes nothing returns nothing\n    call Shared()\nendfunction\n")],
+    };
+    let script = "globals\n    integer udg_Count = 0\nendglobals\nfunction Shared takes nothing returns nothing\nendfunction\nfunction main takes nothing returns nothing\n    set udg_Count = 1\n    call Shared()\nendfunction\n";
+    let map = tmp.0.join("Test.w3x");
+    let wct = custom.to_bytes().unwrap();
+    crate::map::tests::make_map_bytes(&map, &[("war3map.j", script.as_bytes().to_vec()), ("war3map.wct", wct), ("war3map.wtg", b"WTG!".to_vec())]);
+    ws.disk_changed(std::slice::from_ref(&map));
+    ws.take_reports();
+    // By a declaration's name in a file of the map.
+    let by_name = |file: &str, name: &str, new: &str| -> Answer {
+        let id = map.join(file).to_string_lossy().into_owned();
+        let (doc, occ) = ws.file(&id).unwrap_or_else(|| panic!("{id}"));
+        let o = occ.iter().find(|o| o.declaration && o.name == name).unwrap();
+        let line = doc.text.lines().nth(o.line - 1).unwrap();
+        let ch = line.chars().take(o.col - 1).collect::<String>().encode_utf16().count() as u32;
+        rename(&ws, &id, Position::new(o.line as u32 - 1, ch), new)
+    };
+    // Only in the script made of the triggers: the variable's.
+    let a = by_name("war3map.j", "udg_Count", "udg_Total");
+    assert!(a.locations.is_empty() && a.text.starts_with("`udg_Count` is declared only in war3map.j, which World Editor makes"), "{}", a.text);
+    // A trigger's InitTrig_: the trigger's name.
+    let a = by_name("war3map.wct", "InitTrig_A", "InitTrig_B");
+    assert!(a.text.starts_with("`InitTrig_A` is what World Editor's script calls for the trigger `A`"), "{}", a.text);
+    // The custom script's own: in it and in its copy, from either.
+    for file in ["war3map.wct", "war3map.j"] {
+        let files: Vec<String> = edits(&by_name(file, "Shared", "Common")).into_iter().map(|(f, _, _)| f).collect();
+        assert_eq!((files.iter().filter(|f| *f == "war3map.j").count(), files.iter().filter(|f| *f == "war3map.wct").count()), (2, 2), "{file}: {files:?}");
+    }
+    // Without triggers beside it, a war3map.j is the map's own code.
+    let plain = tmp.0.join("Plain.w3x");
+    crate::map::tests::make_map(&plain, &[("war3map.j", script)]);
+    ws.disk_changed(std::slice::from_ref(&plain));
+    ws.take_reports();
+    let id = plain.join("war3map.j").to_string_lossy().into_owned();
+    assert!(rename(&ws, &id, Position::new(1, 12), "udg_Total").text.is_empty());
+}
