@@ -1570,7 +1570,7 @@ aren't lint: they can't be turned off. The rules are defined in
 | `type-mismatch`                  | JASS                         | on      | a value of the wrong type: an argument, a value set or returned, a condition, an operator's side |
 | `array-access`                   | JASS                         | on      | an array used without its index, or an index of what isn't an array |
 | `constant-assignment`            | JASS                         | on      | a constant set |
-| `array-struct`                   | JASS                         | on      | what a struct `extends array` can't have or do (JassHelper's manual, Array structs): a member's default value, an array member, `onDestroy`; `allocate`, `create` not its own, `destroy`, `deallocate` (a method so named of its own or of a module it implements is allowed) |
+| `array-struct`                   | JASS                         | on      | what a struct `extends array` can't have or do, its instances only numbers that nothing creates or destroys: a member's default value, an array member, `onDestroy` (its own, or a module's it implements: said at the `implement`); `allocate`, `create`, `destroy`, `deallocate` not its own or a module's |
 | `implicit-signature`             | JASS                         | **off** | a `function` or `native` without `takes` or `returns`, which the game requires (group `pure`) |
 | `implicit-keyword`               | JASS                         | **off** | an assignment without `set`, a call without `call` or a local without `local`, which the game requires (group `pure`) |
 | `merged-function`                | JASS                         | **off** | more than one `main` or `config`, which the build merges into one; the game reads one (group `pure`) |
