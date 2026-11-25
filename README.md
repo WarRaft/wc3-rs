@@ -19,8 +19,17 @@ item's details are in its section below):
 - **The build** (see [Building a map](#building-a-map)).
   - JassHelper's `//! inject main/config`, `//! dovjassinit`,
     `//! loaddata`, `//! external`: an error each.
-  - An operator of an interface or a `stub` one; a struct of more than
-    8190 instances.
+  - An operator of an interface or a `stub` one.
+  - What JassHelper's manual has that isn't read or built yet (its every
+    example is run by `wc3-build`'s `tests/manual.rs`): dynamic arrays
+    (`type T extends integer array [8]`, `[200,40000]`, Zinc's
+    `extends integer[5]`); vJASS's 2D arrays (`integer array m[10][20]`);
+    more index space than 8190 (`struct X[10000]`, `interface A[20000]`,
+    `extends array [20000]`, Zinc's `struct[20000]`, a Zinc array past
+    8192); an interface's members (fields); `I.create(typeid)`; function
+    interfaces taking a static or an object's method (`f = S.m`);
+    `x.m.exists`; Zinc's function types (`type F extends
+    function(unit)`).
   - Neither Lua nor AngelScript is run in the game yet (only `luac`, a
     test's `lua`, `as-rs`). JassHelper's own manual is in
     `../JassHelper-manual/Writerside/topics`: what's left of vJASS is
