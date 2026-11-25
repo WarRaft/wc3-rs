@@ -21,12 +21,9 @@ item's details are in its section below):
     `//! loaddata`, `//! external`: an error each.
   - An operator of an interface or a `stub` one.
   - What JassHelper's manual has that isn't read or built yet (its every
-    example is run by `wc3-build`'s `tests/manual.rs`): dynamic arrays
-    (`type T extends integer array [8]`, `[200,40000]`, Zinc's
-    `extends integer[5]`); vJASS's 2D arrays (`integer array m[10][20]`);
-    more index space than 8190 (`struct X[10000]`, `interface A[20000]`,
-    `extends array [20000]`, Zinc's `struct[20000]`, a Zinc array past
-    8192); Zinc's function types (`type F extends function(unit)`).
+    example is run by `wc3-build`'s `tests/manual.rs`): Zinc's interface
+    methods' `= value` defaults (`method balls(integer x) = null;`);
+    `//! inject`, `//! dovjassinit`, `//! loaddata` (an error each).
   - Neither Lua nor AngelScript is run in the game yet (only `luac`, a
     test's `lua`, `as-rs`). JassHelper's own manual is in
     `../JassHelper-manual/Writerside/topics`: what's left of vJASS is
