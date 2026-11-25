@@ -19,8 +19,12 @@ item's details are in its section below):
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
-  Castle, CruiserCommand, LastGuards); none uses textmacros, hooks or
-  Zinc's arrays of several dimensions, which only tests cover. The
+  Castle, CruiserCommand, LastGuards, three-corridors). three-corridors'
+  custom script is vJASS and Zinc as real libraries write them (95
+  textmacros, 13 Zinc blocks, 43 libraries: Nestharus', Bribe's,
+  BPower's) and builds clean (`wc3-build`'s README, Tests); none uses
+  hooks or Zinc's arrays of several dimensions, which only tests
+  cover. The
   build's and the server's tests on real maps take their paths from
   environment variables (`WC3_PROJECT`, `MAP`, `EXTRACT_MAP` ...: see
   each test).
