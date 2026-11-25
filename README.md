@@ -26,10 +26,7 @@ item's details are in its section below):
     `extends integer[5]`); vJASS's 2D arrays (`integer array m[10][20]`);
     more index space than 8190 (`struct X[10000]`, `interface A[20000]`,
     `extends array [20000]`, Zinc's `struct[20000]`, a Zinc array past
-    8192); an interface's members (fields); `I.create(typeid)`; function
-    interfaces taking a static or an object's method (`f = S.m`);
-    `x.m.exists`; Zinc's function types (`type F extends
-    function(unit)`).
+    8192); Zinc's function types (`type F extends function(unit)`).
   - Neither Lua nor AngelScript is run in the game yet (only `luac`, a
     test's `lua`, `as-rs`). JassHelper's own manual is in
     `../JassHelper-manual/Writerside/topics`: what's left of vJASS is
