@@ -135,6 +135,24 @@
         "title": "Open Preview to the Side",
         "category": "txt2",
         "icon": "$(open-preview)"
+      },
+      {
+        "command": "wc3.editor.open",
+        "title": "Open World Editor",
+        "category": "WC3",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "wc3.editor.close",
+        "title": "Close World Editor",
+        "category": "WC3",
+        "icon": "$(close)"
+      },
+      {
+        "command": "wc3.editors.refresh",
+        "title": "Refresh",
+        "category": "WC3",
+        "icon": "$(refresh)"
       }
     ],
     "customEditors": [
@@ -268,6 +286,11 @@
           "id": "wc3.maps",
           "name": "WC3 Maps",
           "icon": "./icons/w3x.svg"
+        },
+        {
+          "id": "wc3.editors",
+          "name": "WC3 Editors",
+          "icon": "$(globe)"
         }
       ]
     },
@@ -324,12 +347,25 @@
         {
           "command": "wc3.trg.showAngelScript",
           "when": "editorLangId == trg || activeCustomEditorId == wc3.trigger || activeCustomEditorId == wc3.wtgTriggers"
+        },
+        {
+          "command": "wc3.editor.close",
+          "when": "false"
+        },
+        {
+          "command": "wc3.editors.refresh",
+          "when": "false"
         }
       ],
       "view/title": [
         {
           "command": "wc3.maps.refresh",
           "when": "view == wc3.maps",
+          "group": "navigation"
+        },
+        {
+          "command": "wc3.editors.refresh",
+          "when": "view == wc3.editors",
           "group": "navigation"
         }
       ],
@@ -342,11 +378,26 @@
         {
           "command": "wc3.maps.reveal",
           "when": "view == wc3.maps && viewItem == wc3.map"
+        },
+        {
+          "command": "wc3.editor.open",
+          "when": "view == wc3.editors && viewItem =~ /^wc3\\.project/",
+          "group": "inline"
+        },
+        {
+          "command": "wc3.editor.close",
+          "when": "view == wc3.editors && viewItem == wc3.project.open",
+          "group": "inline"
         }
       ],
       "explorer/context": [
         {
           "command": "wc3.build",
+          "when": "resourceFilename == wc3.bni",
+          "group": "navigation"
+        },
+        {
+          "command": "wc3.editor.open",
           "when": "resourceFilename == wc3.bni",
           "group": "navigation"
         },
@@ -394,6 +445,11 @@
       "editor/title": [
         {
           "command": "wc3.build",
+          "when": "resourceFilename == wc3.bni",
+          "group": "navigation"
+        },
+        {
+          "command": "wc3.editor.open",
           "when": "resourceFilename == wc3.bni",
           "group": "navigation"
         },

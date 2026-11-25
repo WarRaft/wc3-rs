@@ -6,11 +6,15 @@
 //! - `wc3 mcp`: the MCP server for AI assistants (`wc3_mcp::run`);
 //! - `wc3 build [name] [--project <path>]`: builds the map of the project
 //!   of the current folder (or of `path`), its `[build]` `name` or its
-//!   first (`wc3_server::build`).
+//!   first (`wc3_server::build`);
+//! - `wc3 editor --project <path>`: the World Editor's backend of a
+//!   project, one per project, speaking the editor protocol over stdio
+//!   (`wc3_editor::run`).
 //!
-//! Both talk over stdin and stdout and end when stdin closes.
+//! The server, MCP and the editor talk over stdin and stdout and end
+//! when stdin closes.
 
-const USAGE: &str = "usage: wc3 <mode>\n\n  server   the language backend of the VS Code extension (stdio)\n  mcp      the MCP server for AI assistants (stdio)\n  build    builds the project's map: wc3 build [name] [--project <path>]\n  version  the version\n";
+const USAGE: &str = "usage: wc3 <mode>\n\n  server   the language backend of the VS Code extension (stdio)\n  mcp      the MCP server for AI assistants (stdio)\n  build    builds the project's map: wc3 build [name] [--project <path>]\n  editor   the World Editor's backend of a project (stdio): wc3 editor --project <path>\n  version  the version\n";
 
 fn main() {
     let mode = std::env::args().nth(1).unwrap_or_default();
@@ -18,6 +22,7 @@ fn main() {
         "server" => wc3_server::server::run_stdio(),
         "mcp" => wc3_mcp::run(),
         "build" => build(std::env::args().skip(2).collect()),
+        "editor" => editor(std::env::args().skip(2).collect()),
         "version" | "--version" | "-V" => println!("wc3 {}", env!("CARGO_PKG_VERSION")),
         "help" | "--help" | "-h" => print!("{USAGE}"),
         other => {
@@ -28,6 +33,18 @@ fn main() {
             std::process::exit(2);
         }
     }
+}
+
+/// `wc3 editor --project <path>`: exits as `wc3_editor::run` says.
+fn editor(args: Vec<String>) {
+    let mut project = std::path::PathBuf::from(".");
+    let mut it = args.into_iter();
+    while let Some(a) = it.next() {
+        if a == "--project" || a == "-p" {
+            project = it.next().map(Into::into).unwrap_or(project);
+        }
+    }
+    std::process::exit(wc3_editor::run(&project));
 }
 
 /// `wc3 build [name] [--project <path>]`.

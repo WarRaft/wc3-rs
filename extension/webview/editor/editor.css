@@ -1,0 +1,97 @@
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--vscode-editor-background);
+    color: var(--vscode-foreground);
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+}
+
+.bar {
+    display: flex;
+    align-items: baseline;
+    gap: 1em;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--vscode-panel-border, transparent);
+    flex: none;
+}
+
+.name {
+    font-weight: 600;
+}
+
+.meta {
+    color: var(--vscode-descriptionForeground);
+}
+
+.stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+}
+
+canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.message {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2em;
+    background: var(--vscode-editor-background);
+}
+
+.message[hidden] {
+    display: none;
+}
+
+.message h2 {
+    font-size: 1.2em;
+    font-weight: 600;
+    margin: 0 0 .5em;
+}
+
+.message p {
+    color: var(--vscode-descriptionForeground);
+    margin: 0 0 1.2em;
+    max-width: 40em;
+    white-space: pre-wrap;
+}
+
+button {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: 0;
+    padding: .4em 1.2em;
+    font: inherit;
+    cursor: pointer;
+    border-radius: 2px;
+}
+
+button:hover {
+    background: var(--vscode-button-hoverBackground);
+}
+
+.notes {
+    flex: none;
+    margin: 0;
+    padding: 6px 12px 6px 28px;
+    max-height: 8em;
+    overflow: auto;
+    border-top: 1px solid var(--vscode-panel-border, transparent);
+    color: var(--vscode-editorWarning-foreground);
+}

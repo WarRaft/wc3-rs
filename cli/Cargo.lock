@@ -976,6 +976,7 @@ checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 name = "wc3"
 version = "0.1.0"
 dependencies = [
+ "wc3-editor",
  "wc3-mcp",
  "wc3-server",
 ]
@@ -995,6 +996,17 @@ dependencies = [
  "w3s-rs",
  "wtg-rs",
  "zinc-rs",
+]
+
+[[package]]
+name = "wc3-editor"
+version = "0.1.0"
+dependencies = [
+ "parser-rs",
+ "w3e-rs",
+ "w3i-rs",
+ "wc3-server",
+ "wts-rs",
 ]
 
 [[package]]

@@ -2,7 +2,7 @@
 name = "wc3"
 version = "0.1.0"
 edition = "2024"
-description = "The one binary the WC3 extension ships for each system: `wc3 server` (the language backend) and `wc3 mcp` (the MCP server)"
+description = "The one binary the WC3 extension ships for each system: `wc3 server` (the language backend), `wc3 mcp` (the MCP server), `wc3 build`, `wc3 editor` (the World Editor's backend)"
 license = "CC0-1.0"
 
 [[bin]]
@@ -12,3 +12,4 @@ path = "src/main.rs"
 [dependencies]
 wc3-server = { path = "../server" }
 wc3-mcp = { path = "../../wc3-mcp" }
+wc3-editor = { path = "../editor" }

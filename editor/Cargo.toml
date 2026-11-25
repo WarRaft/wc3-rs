@@ -1,0 +1,20 @@
+[package]
+name = "wc3-editor"
+version = "0.1.0"
+edition = "2024"
+description = "The World Editor's backend: one process per project (`wc3 editor --project <root>`) holds its map open and answers the editor's page over a binary protocol on stdio."
+license = "CC0-1.0"
+
+[lib]
+name = "wc3_editor"
+path = "src/lib.rs"
+
+[dependencies]
+wc3-server = { path = "../server" }
+parser-rs = { path = "../../parser-rs" }
+w3e-rs = { path = "../../w3e-rs" }
+w3i-rs = { path = "../../w3i-rs" }
+wts-rs = { path = "../../wts-rs" }
+
+[profile.dev.package."*"]
+opt-level = 3

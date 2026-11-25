@@ -18,6 +18,8 @@ item's details are in its section below):
     of 1.31 and later is run from here nor UjAPI (Windows). JassHelper's own manual is in
     `../JassHelper-manual/Writerside/topics`: what's left of vJASS is
     checked against it.
+- **The World Editor** (see [World Editor](#world-editor)): its steps,
+  in order; the first not done is next. Done: 1 (the shell).
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1514,6 +1516,116 @@ In the table:
 
 It's drawn on a canvas, only what's in view (`webview/slk.js`), so a table
 of 50,000 cells scrolls like a small one.
+
+## World Editor
+
+The map's world (terrain, cliffs, water, doodads, units, regions,
+cameras, pathing) seen and edited in a page of VS Code, the way World
+Editor and [HiveWE](../HiveWE-main) show it. HiveWE (C++, Qt, Vulkan) is
+the reference for *what* to compute (tile variations, cliff meshes,
+water colours, the camera); none of its code is taken as is.
+
+### Shape
+
+- **Rust does the work, the page draws.** A process per editor, `wc3
+  editor --project <root>` (a mode of the one binary, see "One binary" under MCP),
+  holds the map open: it reads every file through the project's lookup
+  (`game::Lookup`: game folders, then the roots, last wins), decodes
+  textures (BLP) and models (MDX), works out what is drawn (corner
+  heights, each tile's ground layers, cliff and doodad instances) and
+  applies every edit (brushes, placement, undo). The page
+  (`extension/webview/editor/`) is WebGL2 and input: it uploads what it
+  is sent and sends back what the user does (a brush stroke at a
+  point), never edits the map itself.
+- **The editor protocol.** The same framing as `server/src/protocol.rs`
+  (`u32` length | `u8` kind | body, little-endian), its own kinds,
+  documented in its Rust module, its JavaScript twin in the page. The
+  extension passes frames between the process and the page as bytes,
+  without reading them: big arrays (heights, RGBA, vertices) go to the
+  page as they come, with no JSON on the way.
+- **One project, one map, one editor.** An editor is per project
+  (`wc3.bni`): opening it again shows the one open. Across VS Code
+  windows too: a lock (the process's pid) under the system's temp
+  folder, keyed by the project's path; a second window says where it is
+  open.
+- **The files are the truth.** The editor reads the files the build
+  reads (development is hybrid, see Triggers): a file in
+  a folder root and the same file inside a `.w3x` root are layers like
+  anywhere else. An edit is written to the layer the file comes from
+  (a folder root: the file; a map root: inside it); a file only the
+  game has goes to the top root. A change on disk (VS Code, git, the
+  language server) is read again. The editor's unsaved state and an
+  open text form of the same file (`war3map.doo` as text ...) stay in
+  step: what that means exactly is decided at step 7.
+- **Code.** The editor's state and protocol: a package of this
+  repository, `editor/` (lib `wc3_editor`, over `wc3_server`'s project
+  model), run by `cli` as `wc3 editor`. MDX models: a crate of their own,
+  `../mdx-rs` (`/Volumes/TrascendSSD/Work/mdx-rs`), a repository like
+  every other format's.
+- **MCP tools where they make sense.** What the editor works out that an
+  assistant can use without the page (a model's summary, a picture of
+  the terrain, what stands at a point, a brush applied to the files)
+  becomes a tool of `wc3 mcp` too, over the same Rust code; each step
+  says which ones it adds.
+
+### In the extension
+
+- A view **WC3 Editors** beside **WC3 Maps**: every project (`wc3.bni`)
+  in the workspace, its folder's name, and whether its editor is open; a
+  click opens it or shows it; a menu closes it.
+- A button over an open `wc3.bni` (beside Build), the Explorer's menu of
+  a `wc3.bni`, and the command palette (the active file's project):
+  **Open World Editor**.
+- Every new piece gets a step in `extension/e2e/suite.js`.
+
+### Steps
+
+Each step ends working: built, tested (Rust tests on `../maps`, an e2e
+step), this list updated.
+
+1. **The shell** (done). `wc3 editor` with the editor protocol: open the
+   project, answer what the map is (name from `war3map.w3i`, size,
+   tileset) or why it can't be opened; errors as messages, never a
+   crash. The extension: the WC3 Editors view, the commands and the
+   button, one panel and one process per project (closing the panel ends
+   the process; a crashed process is said in the panel with a way to
+   reopen), the cross-window lock. The page: an empty canvas and the
+   map's name. As built: `editor/` (`lock.rs`: an OS file lock, so a
+   crash leaves none; `session.rs`; `protocol.rs`: `Hello`, `Map`,
+   `Error`), `extension/world-editor.js`, `extension/webview/editor/`;
+   no MCP tool (nothing yet that the files' tools don't give).
+2. **Terrain.** `war3map.w3e` through the lookup; the tileset's ground
+   textures by `TerrainArt\Terrain.slk` (never a hardcoded list), BLPs
+   decoded in Rust, each sent once and cached by the page; per tile up
+   to four ground layers with their variations (HiveWE's
+   `get_tile_variation` and blending order), corner heights with the
+   layer height; the camera (HiveWE's `camera.ixx`: pan, zoom, rotate,
+   the game's angle); a grid. Water: the flat surface at its height,
+   colours from `TerrainArt\Water.slk`. Boundary and blight flags shown.
+3. **Cliffs.** `../mdx-rs` reads geosets and textures (enough for a
+   static mesh); `TerrainArt\CliffTypes.slk`; each cliff tile's model
+   picked by its corners' layers (`Doodads\Terrain\Cliffs\Cliffs<ABCD><n>.mdx`,
+   as HiveWE's `terrain.ixx`), ramps, the cliff texture per tile.
+4. **Doodads and units.** `war3map.doo` and `war3mapUnits.doo`; their
+   models from the game's tables with the map's object data
+   (`.w3d`/`.w3b`/`.w3u`, the obj pipeline the server already has);
+   drawn instanced, at their first `Stand` frame; picking and selection
+   (Rust answers what is under a point).
+5. **Overlays.** Pathing (`war3map.wpm`), regions (`war3map.w3r`),
+   cameras (`war3map.w3c`), the map's bounds (`war3map.w3i`), a
+   minimap.
+6. **Editing.** Terrain brushes (raise, lower, plateau, smooth, noise;
+   ground texture; cliff level; water), each applied in Rust, the
+   changed rectangle sent back; undo and redo in Rust; save to the
+   layers (see "The files are the truth"). Then the palettes, their
+   lists from the game's data through the lookup, their names from
+   `UI\WorldEditStrings.txt`: doodads, units, regions, pathing; moving,
+   rotating, deleting what's selected.
+7. **In step with the rest.** Disk changes read again piece by piece;
+   the editor and open text forms of the same file; the language server
+   and the build see what the editor saved.
+8. **Later.** Animations and particles, lighting and shadows, the
+   terrain's resize, the tile setter and pather, Reforged HD assets.
 
 ## MCP
 

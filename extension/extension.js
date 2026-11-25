@@ -143,6 +143,7 @@ const {
     ProgressLocation,
 } = require('vscode')
 const {encode, decode, FrameReader, QUERY, FS_OP, FS_FLAG, OBJECTS_OP} = require('./protocol.js')
+const {registerWorldEditor} = require('./world-editor.js')
 
 /** The scheme of files inside maps. */
 const MAP_SCHEME = 'wc3map'
@@ -2449,6 +2450,28 @@ function manifestOf(start) {
 }
 
 /**
+ * The `wc3.bni` a command is about: its argument's (a file's), the
+ * active editor's project, the workspace's (asked, `title`, when there
+ * are several).
+ *
+ * @param {unknown} arg
+ * @param {string} title
+ * @returns {Promise<string | null>}
+ */
+async function pickManifest(arg, title) {
+    if (arg instanceof Uri && arg.scheme === 'file') return manifestOf(arg.fsPath)
+    const active = window.activeTextEditor?.document.uri
+    if (active?.scheme === 'file') {
+        const m = manifestOf(active.fsPath)
+        if (m) return m
+    }
+    const found = await workspace.findFiles('**/wc3.bni', '**/node_modules/**', 50)
+    if (found.length <= 1) return found[0]?.fsPath ?? null
+    const picked = await window.showQuickPick(found.map(u => ({label: workspace.asRelativePath(u), uri: u})), {title})
+    return picked?.uri.fsPath ?? null
+}
+
+/**
  * Building a project's map (`wc3.build`): from the command palette (the
  * project of the active file, else of the workspace), the Explorer's
  * menu of a `wc3.bni`, the button over an open `wc3.bni`, and a lens over
@@ -2465,23 +2488,9 @@ function registerBuild(context, binary) {
     const output = window.createOutputChannel('WC3 Build')
     let running = false
 
-    /** The manifest a command is about: its argument, the active editor's project, the workspace's. */
-    const pickManifest = async arg => {
-        if (arg instanceof Uri && arg.scheme === 'file') return manifestOf(arg.fsPath)
-        const active = window.activeTextEditor?.document.uri
-        if (active?.scheme === 'file') {
-            const m = manifestOf(active.fsPath)
-            if (m) return m
-        }
-        const found = await workspace.findFiles('**/wc3.bni', '**/node_modules/**', 50)
-        if (found.length <= 1) return found[0]?.fsPath ?? null
-        const picked = await window.showQuickPick(found.map(u => ({label: workspace.asRelativePath(u), uri: u})), {title: 'Build the map of which project?'})
-        return picked?.uri.fsPath ?? null
-    }
-
     const run = async (arg, name) => {
         if (running) return window.showWarningMessage('WC3: a build is running.')
-        const manifest = await pickManifest(arg)
+        const manifest = await pickManifest(arg, 'Build the map of which project?')
         if (!manifest) return window.showWarningMessage('WC3: no wc3.bni in the workspace or above the active file.')
         const root = path.dirname(manifest)
         const open = workspace.textDocuments.find(d => d.uri.scheme === 'file' && d.uri.fsPath === manifest)
@@ -2580,6 +2589,7 @@ module.exports = {
         registerTriggerJass(context)
         registerBuild(context, command)
         registerTxt2Preview(context)
+        const worldEditors = registerWorldEditor(context, command, pickManifest)
 
         sendRoots()
         context.subscriptions.push(
@@ -2590,7 +2600,7 @@ module.exports = {
         )
         for (const doc of workspace.textDocuments) onOpen(doc)
         // What the tests in the editor (`e2e/`) reach.
-        return {test: {triggerEditors, PIECE_SCHEME, OBJECTS_SCHEME}}
+        return {test: {triggerEditors, worldEditors, PIECE_SCHEME, OBJECTS_SCHEME}}
     },
 
     deactivate() {

@@ -1,0 +1,97 @@
+//! The map an editor has open: its project's (`wc3.bni`), each file read
+//! through the project's lookup (`game::Lookup`: the game's folders, then
+//! the map's roots, the last that has it wins), as the build reads it.
+
+use std::path::{Path, PathBuf};
+
+use wc3_server::game::{Game, Lookup};
+use wc3_server::names::Names;
+use wc3_server::project::{self, Project};
+
+use crate::protocol::{MapInfo, ServerMsg};
+
+/// A project's map, open.
+pub struct Session {
+    pub project: Project,
+    pub game: Game,
+    pub terrain: w3e_rs::Terrain,
+    pub info: Option<w3i_rs::Info>,
+    /// The map's strings (`war3map.wts`), for its `TRIGSTR_`s.
+    pub strings: Option<wts_rs::Document>,
+    pub names: Names,
+    /// What was read with a problem, gone past.
+    pub notes: Vec<String>,
+}
+
+impl Session {
+    /// Opens the map of the project at `root`. The error says why it
+    /// can't be: no `wc3.bni`, no `[map] root=`, no terrain.
+    pub fn open(root: &Path) -> Result<Session, String> {
+        let manifest = root.join("wc3.bni");
+        let src = std::fs::read_to_string(&manifest).map_err(|e| format!("Can't read {}: {e}", manifest.display()))?;
+        let (project, issues) = project::load(root, &src);
+        let mut notes: Vec<String> = issues
+            .iter()
+            .filter(|i| i.level == parser_rs::Level::Error)
+            .map(|i| format!("wc3.bni:{}: {}", i.line + 1, i.message))
+            .collect();
+        if project.roots.is_empty() {
+            return Err("The project has no map: its wc3.bni names no [map] root=.".into());
+        }
+        if let Some(missing) = project.roots.iter().find(|r| !r.exists()) {
+            notes.push(format!("The root {} doesn't exist.", missing.display()));
+        }
+        let (game, errors) = Lookup::of(&project).open();
+        notes.extend(errors);
+
+        let read = |name: &str| game.read(name).map(|(bytes, _)| bytes);
+        let terrain = read("war3map.w3e").ok_or("The map has no terrain: no war3map.w3e in its roots.")?;
+        let terrain = w3e_rs::parse(&terrain).map_err(|e| format!("Can't read war3map.w3e: {e}"))?;
+        let info = match read("war3map.w3i").map(|b| w3i_rs::parse(&b)) {
+            Some(Ok(info)) => Some(info),
+            Some(Err(e)) => {
+                notes.push(format!("Can't read war3map.w3i: {e}"));
+                None
+            }
+            None => {
+                notes.push("The map has no war3map.w3i.".into());
+                None
+            }
+        };
+        let strings = read("war3map.wts").map(|b| wts_rs::parse(&String::from_utf8_lossy(&b)));
+        let names = Names::load(&game);
+        Ok(Session { project, game, terrain, info, strings, names, notes })
+    }
+
+    /// `text` with its `TRIGSTR_`s replaced by the map's strings.
+    pub fn text(&self, text: &str) -> String {
+        match &self.strings {
+            Some(strings) => strings.resolve(text),
+            None => text.to_string(),
+        }
+    }
+
+    pub fn root(&self) -> &PathBuf {
+        &self.project.root
+    }
+
+    /// What the page is told of the map.
+    pub fn map_msg(&self) -> ServerMsg {
+        let letter = self.terrain.tileset as char;
+        let (name, author) = self.info.as_ref().map_or_else(Default::default, |i| (self.text(&i.name), self.text(&i.author)));
+        ServerMsg::Map(MapInfo {
+            project: self.root().display().to_string(),
+            name,
+            author,
+            width: self.terrain.width,
+            height: self.terrain.height,
+            tileset: letter.to_string(),
+            tileset_name: self.names.tileset(letter).unwrap_or_default().to_string(),
+            notes: self.notes.clone(),
+        })
+    }
+}
+
+#[cfg(test)]
+#[path = "session.test.rs"]
+mod tests;

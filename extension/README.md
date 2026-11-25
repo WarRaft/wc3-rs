@@ -130,6 +130,14 @@ coming is listed below.
   (`.wct`), GUI triggers (`.wtg`), imports (`.imp`), minimap icons
   (`.mmp`), placed doodads and units (`.doo`).
 
+- The World Editor, its beginning: **Open World Editor** (the button
+  over a `wc3.bni` beside Build, its Explorer menu, the palette, or a
+  project in the **WC3 Editors** list beside WC3 Maps) opens a page for
+  the project's map, one per project (across windows too), with the
+  map's name, size and tileset; its process (`wc3 editor`) reads the
+  map through the project's roots. Its terrain, models and tools come
+  step by step (the repository README, "World Editor").
+
 ## Not yet
 
 - **Building the map.** A project's `[build]` scenarios are declared,
