@@ -17,13 +17,12 @@ item's details are in its section below):
   - What `war3mapUnits.doo` places is declared as both `gg_unit_` and
     `gg_item_` to the custom script (which it is takes the game's tables).
 - **The build** (see [Building a map](#building-a-map)).
-  - JassHelper's `//! inject main/config`, `//! dovjassinit`,
-    `//! loaddata`, `//! external`: an error each.
   - An operator of an interface or a `stub` one.
-  - What JassHelper's manual has that isn't read or built yet (its every
-    example is run by `wc3-build`'s `tests/manual.rs`): Zinc's interface
-    methods' `= value` defaults (`method balls(integer x) = null;`);
-    `//! inject`, `//! dovjassinit`, `//! loaddata` (an error each).
+  - Of JassHelper's manual (its every example run by `wc3-build`'s
+    `tests/manual.rs`): `//! external` (running another tool, an
+    ObjectMerger) isn't run: an error. The rest is read and built; what
+    its examples still fail on is the manual's own (typos, errors shown
+    on purpose, fragments).
   - Neither Lua nor AngelScript is run in the game yet (only `luac`, a
     test's `lua`, `as-rs`). JassHelper's own manual is in
     `../JassHelper-manual/Writerside/topics`: what's left of vJASS is
