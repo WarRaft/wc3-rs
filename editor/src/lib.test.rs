@@ -23,8 +23,18 @@ fn hello_is_answered_with_the_map_each_time() {
     input.extend_from_slice(&[1, 0, 0, 0, 99, 7]);
     input.extend(ClientMsg::Hello.encode());
     let msgs = answers(dir.path(), &input);
-    assert_eq!(msgs.len(), 2);
-    assert!(msgs.iter().all(|m| matches!(m, ServerMsg::Map(m) if m.width == 3)));
+    // Each: the map, its ground, its water, its terrain.
+    let kinds: Vec<&str> = msgs
+        .iter()
+        .map(|m| match m {
+            ServerMsg::Map(m) if m.width == 3 => "map",
+            ServerMsg::Ground(_) => "ground",
+            ServerMsg::Water(_) => "water",
+            ServerMsg::Terrain(t) if t.width == 3 => "terrain",
+            _ => "?",
+        })
+        .collect();
+    assert_eq!(kinds, ["map", "ground", "water", "terrain", "map", "ground", "water", "terrain"]);
 }
 
 #[test]

@@ -32,6 +32,7 @@ const VIEW = 'wc3.editors'
  * @property {import('child_process').ChildProcess | null} child
  * @property {{name: string, width: number, height: number} | null} map  what the page last said of the map
  * @property {string | null} error  what the page last said went wrong
+ * @property {{width: number, height: number, layers: number, water: number, error: number} | null} drawn  what the page drew of the terrain first
  */
 
 /**
@@ -66,12 +67,14 @@ function registerWorldEditor(context, binary, pickManifest) {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'">
 <link rel="stylesheet" href="${asset('editor.css')}">
 </head><body>
-<div class="bar"><span id="name" class="name">Opening…</span><span id="meta" class="meta"></span></div>
+<div class="bar"><span id="name" class="name">Opening…</span><span id="meta" class="meta"></span><span class="spacer"></span><span class="hint">Right drag: move · Ctrl + right drag: turn · Wheel: zoom · WASD · G: grid · Home: all of it</span></div>
 <div class="stage"><canvas id="view"></canvas>
 <div id="message" class="message" hidden><h2 id="message-title"></h2><p id="message-text"></p><button id="reopen" hidden>Reopen</button></div>
 </div>
 <ul id="notes" class="notes" hidden></ul>
 <script nonce="${nonce}" src="${asset('protocol.js')}"></script>
+<script nonce="${nonce}" src="${asset('camera.js')}"></script>
+<script nonce="${nonce}" src="${asset('terrain.js')}"></script>
 <script nonce="${nonce}" src="${asset('editor.js')}"></script>
 </body></html>`
     }
@@ -138,7 +141,7 @@ function registerWorldEditor(context, binary, pickManifest) {
         })
         panel.iconPath = new ThemeIcon('globe')
         /** @type {Editor} */
-        const editor = {root, panel, child: null, map: null, error: null}
+        const editor = {root, panel, child: null, map: null, error: null, drawn: null}
         editors.set(root, editor)
         panel.webview.html = html(panel.webview)
         panel.webview.onDidReceiveMessage(msg => {
@@ -149,6 +152,8 @@ function registerWorldEditor(context, binary, pickManifest) {
                 editor.error = null
                 panel.title = msg.map.name || path.basename(root)
                 refresh()
+            } else if (msg.type === 'drawn') {
+                editor.drawn = msg.terrain
             } else if (msg.type === 'error') {
                 editor.error = msg.message
             } else if (msg.type === 'reopen') {

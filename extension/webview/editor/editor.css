@@ -27,6 +27,18 @@ body {
     font-weight: 600;
 }
 
+.spacer {
+    flex: 1;
+}
+
+.hint {
+    color: var(--vscode-descriptionForeground);
+    font-size: .9em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .meta {
     color: var(--vscode-descriptionForeground);
 }

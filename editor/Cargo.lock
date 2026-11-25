@@ -966,7 +966,9 @@ dependencies = [
 name = "wc3-editor"
 version = "0.1.0"
 dependencies = [
+ "bni-rs",
  "parser-rs",
+ "slk-rs",
  "w3e-rs",
  "w3i-rs",
  "wc3-server",

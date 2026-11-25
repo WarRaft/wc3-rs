@@ -5,11 +5,18 @@
 //!
 //! - [`lock`]: one editor per project, across VS Code windows;
 //! - [`session`]: the map open, read through the project's lookup;
+//! - [`tileset`]: the game's tables a terrain is drawn with;
+//! - [`terrain`]: what the page draws of the terrain;
+//! - [`textures`]: the ground's and the water's pictures, decoded;
 //! - [`protocol`]: the frames.
 
 pub mod lock;
+pub mod picture;
 pub mod protocol;
 pub mod session;
+pub mod terrain;
+pub mod textures;
+pub mod tileset;
 
 use std::io::{self, Write};
 use std::path::Path;
@@ -59,15 +66,18 @@ pub fn serve(input: &mut impl io::Read, output: &mut impl Write, root: &Path) ->
         match msg {
             ClientMsg::Hello => {
                 // The page (re)loaded: the map as it is now, read again.
-                let answer = match session::Session::open(root) {
+                match session::Session::open(root) {
                     Ok(s) => {
-                        let msg = s.map_msg();
+                        // The map's name first, for the page to show
+                        // while the rest is worked out.
+                        write(output, &s.map_msg())?;
+                        for msg in s.draw() {
+                            write(output, &msg)?;
+                        }
                         session = Some(s);
-                        msg
                     }
-                    Err(message) => ServerMsg::Error { message },
-                };
-                write(output, &answer)?;
+                    Err(message) => write(output, &ServerMsg::Error { message })?,
+                }
             }
         }
     }

@@ -1002,7 +1002,9 @@ dependencies = [
 name = "wc3-editor"
 version = "0.1.0"
 dependencies = [
+ "bni-rs",
  "parser-rs",
+ "slk-rs",
  "w3e-rs",
  "w3i-rs",
  "wc3-server",
@@ -1033,6 +1035,7 @@ dependencies = [
  "w3r-rs",
  "w3s-rs",
  "wc3-build",
+ "wc3-editor",
  "wc3-server",
  "wct-rs",
  "wpm-rs",

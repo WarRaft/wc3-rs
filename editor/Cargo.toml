@@ -15,6 +15,8 @@ parser-rs = { path = "../../parser-rs" }
 w3e-rs = { path = "../../w3e-rs" }
 w3i-rs = { path = "../../w3i-rs" }
 wts-rs = { path = "../../wts-rs" }
+slk-rs = { path = "../../slk-rs" }
+bni-rs = { path = "../../bni-rs" }
 
 [profile.dev.package."*"]
 opt-level = 3

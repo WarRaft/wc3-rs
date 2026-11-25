@@ -19,7 +19,7 @@ item's details are in its section below):
     `../JassHelper-manual/Writerside/topics`: what's left of vJASS is
     checked against it.
 - **The World Editor** (see [World Editor](#world-editor)): its steps,
-  in order; the first not done is next. Done: 1 (the shell).
+  in order; the first not done is next. Done: 1 (the shell), 2 (terrain).
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1594,7 +1594,7 @@ step), this list updated.
    crash leaves none; `session.rs`; `protocol.rs`: `Hello`, `Map`,
    `Error`), `extension/world-editor.js`, `extension/webview/editor/`;
    no MCP tool (nothing yet that the files' tools don't give).
-2. **Terrain.** `war3map.w3e` through the lookup; the tileset's ground
+2. **Terrain** (done). `war3map.w3e` through the lookup; the tileset's ground
    textures by `TerrainArt\Terrain.slk` (never a hardcoded list), BLPs
    decoded in Rust, each sent once and cached by the page; per tile up
    to four ground layers with their variations (HiveWE's
@@ -1602,6 +1602,17 @@ step), this list updated.
    layer height; the camera (HiveWE's `camera.ixx`: pan, zoom, rotate,
    the game's angle); a grid. Water: the flat surface at its height,
    colours from `TerrainArt\Water.slk`. Boundary and blight flags shown.
+   As built: `editor/src/tileset.rs` (the tables), `terrain.rs` (heights,
+   each tile's four layers as `u32` texture | cell << 16, corner and tile
+   flags: a cliff tile, a ramp's foot), `textures.rs` (every ground
+   texture cut into its cells, one array of layers of the biggest cell's
+   size; the water's frames), messages `Terrain`, `Ground`, `Water`; the
+   page's `camera.js` and `terrain.js` (WebGL2: heights and layers in
+   textures read with `texelFetch`, a quad per tile drawn instanced). A
+   cliff tile is still drawn as a slope of ground until step 3 puts its
+   model there and leaves its ground out (`tile::CLIFF`,
+   `RAMP_ENTRANCE` say where). MCP: `w3e_image`, the terrain from above
+   (`editor/src/picture.rs`), in `wc3-mcp`.
 3. **Cliffs.** `../mdx-rs` reads geosets and textures (enough for a
    static mesh); `TerrainArt\CliffTypes.slk`; each cliff tile's model
    picked by its corners' layers (`Doodads\Terrain\Cliffs\Cliffs<ABCD><n>.mdx`,

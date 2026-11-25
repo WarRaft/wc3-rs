@@ -8,7 +8,9 @@ use wc3_server::game::{Game, Lookup};
 use wc3_server::names::Names;
 use wc3_server::project::{self, Project};
 
-use crate::protocol::{MapInfo, ServerMsg};
+use crate::protocol::{GroundMsg, MapInfo, ServerMsg, WaterMsg};
+use crate::terrain::{Draw, Grounds};
+use crate::tileset::Tileset;
 
 /// A project's map, open.
 pub struct Session {
@@ -19,6 +21,7 @@ pub struct Session {
     /// The map's strings (`war3map.wts`), for its `TRIGSTR_`s.
     pub strings: Option<wts_rs::Document>,
     pub names: Names,
+    pub tileset: Tileset,
     /// What was read with a problem, gone past.
     pub notes: Vec<String>,
 }
@@ -60,7 +63,9 @@ impl Session {
         };
         let strings = read("war3map.wts").map(|b| wts_rs::parse(&String::from_utf8_lossy(&b)));
         let names = Names::load(&game);
-        Ok(Session { project, game, terrain, info, strings, names, notes })
+        let tileset = Tileset::load(&game, terrain.tileset as char);
+        notes.extend(tileset.notes.iter().cloned());
+        Ok(Session { project, game, terrain, info, strings, names, tileset, notes })
     }
 
     /// `text` with its `TRIGSTR_`s replaced by the map's strings.
@@ -73,6 +78,33 @@ impl Session {
 
     pub fn root(&self) -> &PathBuf {
         &self.project.root
+    }
+
+    /// The terrain as the page draws it: its ground textures, its water,
+    /// then the terrain, whose layers index those textures.
+    pub fn draw(&self) -> Vec<ServerMsg> {
+        let grounds = Grounds::of(&self.terrain, &self.tileset);
+        let paths: Vec<(String, Option<String>)> = grounds
+            .ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                let path = if i == grounds.blight { self.tileset.blight.clone() } else { self.tileset.ground_path(id) };
+                (id.clone(), path)
+            })
+            .collect();
+        let (textures, layers) = crate::textures::ground(&self.game, &paths);
+        let water = match &self.tileset.water {
+            Some(w) => {
+                let (frames, error) = crate::textures::water(&self.game, &w.texture, w.count);
+                WaterMsg { rate: w.rate, colors: w.colors, frames, error }
+            }
+            None => WaterMsg { error: "No water for this tileset in TerrainArt\\Water.slk.".into(), ..Default::default() },
+        };
+        let extended = |t: usize| textures.get(t).is_some_and(|g| g.extended);
+        let height = self.tileset.water.as_ref().map_or(0.0, |w| w.height);
+        let draw = Draw::new(&self.terrain, &grounds, &extended, height);
+        vec![ServerMsg::Ground(GroundMsg { textures, layers }), ServerMsg::Water(water), ServerMsg::Terrain(draw)]
     }
 
     /// What the page is told of the map.

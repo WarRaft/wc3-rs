@@ -1,4 +1,4 @@
-/* global acquireVsCodeApi, EditorProtocol */
+/* global acquireVsCodeApi, EditorProtocol, EditorCamera, EditorTerrain */
 
 /**
  * The World Editor's page: it draws what the editor's process
@@ -17,8 +17,20 @@
 
     const canvas = $('view')
     const gl = canvas.getContext('webgl2', {antialias: true})
+    let terrain = null
+    let shaderError = ''
+    try {
+        terrain = gl && new EditorTerrain.Terrain(gl)
+    } catch (e) {
+        shaderError = e.message
+    }
+    const camera = new EditorCamera.Camera()
+    camera.heightAt = (x, y) => terrain?.heightAt(x, y) ?? 0
+    let placed = false
+    let mapNotes = []
+    let drawnSaid = false
 
-    function draw() {
+    function draw(now) {
         const dpr = window.devicePixelRatio || 1
         const w = Math.max(1, Math.round(canvas.clientWidth * dpr))
         const h = Math.max(1, Math.round(canvas.clientHeight * dpr))
@@ -30,8 +42,61 @@
         gl.viewport(0, 0, w, h)
         gl.clearColor(0.08, 0.09, 0.1, 1)
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+        if (terrain?.ready) terrain.draw(camera.matrix(w / h), now / 1000)
     }
-    new ResizeObserver(draw).observe(canvas)
+
+    // Keys held move the camera a little every frame.
+    const held = new Set()
+    let last = performance.now()
+    function frame(now) {
+        const dt = Math.min(0.1, (now - last) / 1000)
+        last = now
+        const speed = 40 * dt
+        const k = key => held.has(key)
+        const dx = (k('ArrowRight') || k('KeyD') ? 1 : 0) - (k('ArrowLeft') || k('KeyA') ? 1 : 0)
+        const dy = (k('ArrowDown') || k('KeyS') ? 1 : 0) - (k('ArrowUp') || k('KeyW') ? 1 : 0)
+        if (dx || dy) camera.move(dx * speed, dy * speed)
+        draw(now)
+        requestAnimationFrame(frame)
+    }
+    requestAnimationFrame(frame)
+
+    let drag = null
+    canvas.addEventListener('contextmenu', e => e.preventDefault())
+    canvas.addEventListener('mousedown', e => {
+        if (e.button === 2 || e.button === 1) {
+            drag = {x: e.clientX, y: e.clientY, turn: e.button === 1 || e.ctrlKey}
+        }
+    })
+    window.addEventListener('mouseup', () => { drag = null })
+    window.addEventListener('mousemove', e => {
+        if (!drag) return
+        const dx = e.clientX - drag.x
+        const dy = e.clientY - drag.y
+        drag.x = e.clientX
+        drag.y = e.clientY
+        if (drag.turn || e.ctrlKey) camera.turn(dx, dy)
+        else camera.move(-dx * 0.025, -dy * 0.025)
+    })
+    canvas.addEventListener('wheel', e => {
+        e.preventDefault()
+        camera.zoom(-e.deltaY)
+    }, {passive: false})
+    window.addEventListener('keydown', e => {
+        if (e.target instanceof HTMLInputElement) return
+        if (e.code === 'KeyG' && terrain) terrain.grid = !terrain.grid
+        else if (e.code === 'Home' && terrain?.terrain) camera.reset(terrain.terrain.width - 1, terrain.terrain.height - 1)
+        else held.add(e.code)
+    })
+    window.addEventListener('keyup', e => held.delete(e.code))
+    window.addEventListener('blur', () => held.clear())
+
+    function showNotes() {
+        const all = [...mapNotes, ...(terrain?.notes ?? [])]
+        const notes = $('notes')
+        notes.replaceChildren(...all.map(n => Object.assign(document.createElement('li'), {textContent: n})))
+        notes.hidden = !all.length
+    }
 
     /** A message over the view; `reopen` offers to start the editor again. */
     function say(title, text, reopen = false) {
@@ -47,10 +112,8 @@
         const cells = `${Math.max(0, m.width - 1)} × ${Math.max(0, m.height - 1)}`
         const tileset = m.tilesetName ? `${m.tilesetName} (${m.tileset})` : m.tileset
         $('meta').textContent = [cells, tileset, m.author && `by ${m.author}`].filter(Boolean).join(' · ')
-        const notes = $('notes')
-        notes.replaceChildren(...m.notes.map(n => Object.assign(document.createElement('li'), {textContent: n})))
-        notes.hidden = !m.notes.length
-        draw()
+        mapNotes = [...m.notes]
+        showNotes()
         vscode.postMessage({type: 'map', map: {name: m.name, width: m.width, height: m.height, tileset: m.tileset}})
     }
 
@@ -63,7 +126,29 @@
         }
         if (!msg) return
         if (msg.kind === 'map') showMap(msg)
-        else if (msg.kind === 'error') {
+        else if (msg.kind === 'ground' && terrain) {
+            terrain.setGround(msg)
+            for (const t of msg.textures) if (t.error) mapNotes.push(`Ground ${t.id}: ${t.error}`)
+            showNotes()
+        } else if (msg.kind === 'water' && terrain) {
+            terrain.setWater(msg)
+            if (msg.error) mapNotes.push(`Water: ${msg.error}`)
+            showNotes()
+        } else if (msg.kind === 'terrain' && terrain) {
+            terrain.setTerrain(msg)
+            if (!placed) {
+                camera.reset(msg.width - 1, msg.height - 1)
+                placed = true
+            }
+            showNotes()
+            if (!drawnSaid) {
+                drawnSaid = true
+                requestAnimationFrame(() => vscode.postMessage({
+                    type: 'drawn',
+                    terrain: {width: msg.width, height: msg.height, layers: terrain.layers ? 1 : 0, water: terrain.water?.count ?? 0, error: gl.getError()},
+                }))
+            }
+        } else if (msg.kind === 'error') {
             $('name').textContent = 'Can\'t open the map'
             say('Can\'t open the map', msg.message, true)
             vscode.postMessage({type: 'error', message: msg.message})
@@ -88,5 +173,9 @@
     }
 
     if (!gl) say('No WebGL 2', 'This VS Code can\'t draw the map: WebGL 2 isn\'t available.')
+    else if (!terrain) {
+        say('Can\'t draw', `The terrain's shaders don't compile here:\n${shaderError}`)
+        vscode.postMessage({type: 'error', message: shaderError})
+    }
     send(encode.hello())
 })()

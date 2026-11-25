@@ -134,9 +134,13 @@ coming is listed below.
   over a `wc3.bni` beside Build, its Explorer menu, the palette, or a
   project in the **WC3 Editors** list beside WC3 Maps) opens a page for
   the project's map, one per project (across windows too), with the
-  map's name, size and tileset; its process (`wc3 editor`) reads the
-  map through the project's roots. Its terrain, models and tools come
-  step by step (the repository README, "World Editor").
+  map's name, size and tileset, and its terrain: ground textures with
+  their variations and blends, heights, animated water by depth,
+  boundaries; right drag moves, Ctrl + right drag turns, the wheel
+  zooms, G shows the grid. Its process (`wc3 editor`) reads the map
+  through the project's roots and works out everything drawn. Cliffs,
+  models and tools come step by step (the repository README, "World
+  Editor").
 
 ## Not yet
 

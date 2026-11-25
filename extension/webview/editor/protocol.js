@@ -11,6 +11,9 @@ const EditorProtocol = (() => {
         HELLO: 1,
         MAP: 128,
         ERROR: 129,
+        TERRAIN: 130,
+        GROUND: 131,
+        WATER: 132,
     }
 
     const utf8 = new TextDecoder()
@@ -19,18 +22,18 @@ const EditorProtocol = (() => {
     class Reader {
         /** @param {Uint8Array} body */
         constructor(body) {
-            this.bytes = body
+            this.body = body
             this.view = new DataView(body.buffer, body.byteOffset, body.byteLength)
             this.at = 0
         }
 
         need(n) {
-            if (this.at + n > this.bytes.length) throw new Error(`malformed message: ${n} bytes wanted, ${this.bytes.length - this.at} left`)
+            if (this.at + n > this.body.length) throw new Error(`malformed message: ${n} bytes wanted, ${this.body.length - this.at} left`)
         }
 
         u8() {
             this.need(1)
-            return this.bytes[this.at++]
+            return this.body[this.at++]
         }
 
         u32() {
@@ -47,10 +50,27 @@ const EditorProtocol = (() => {
             return v
         }
 
+        /** An array's bytes, copied so a typed array can view them. */
+        bytes() {
+            const n = this.u32()
+            this.need(n)
+            const b = this.body.slice(this.at, this.at + n)
+            this.at += n
+            return b
+        }
+
+        f32s() {
+            return new Float32Array(this.bytes().buffer)
+        }
+
+        u32s() {
+            return new Uint32Array(this.bytes().buffer)
+        }
+
         string() {
             const n = this.u32()
             this.need(n)
-            const s = utf8.decode(this.bytes.subarray(this.at, this.at + n))
+            const s = utf8.decode(this.body.subarray(this.at, this.at + n))
             this.at += n
             return s
         }
@@ -117,6 +137,32 @@ const EditorProtocol = (() => {
                 }
             case KIND.ERROR:
                 return {kind: 'error', message: r.string()}
+            case KIND.TERRAIN:
+                return {
+                    kind: 'terrain',
+                    width: r.u32(),
+                    height: r.u32(),
+                    offset: [r.f32(), r.f32()],
+                    heights: r.f32s(),
+                    ground: r.f32s(),
+                    water: r.f32s(),
+                    corners: r.bytes(),
+                    tiles: r.u32s(),
+                    tileFlags: r.bytes(),
+                }
+            case KIND.GROUND: {
+                const size = r.u32()
+                const count = r.u32()
+                const textures = r.list(r => ({id: r.string(), path: r.string(), first: r.u32(), count: r.u32(), extended: r.u8() !== 0, error: r.string()}))
+                return {kind: 'ground', size, count, textures, rgba: r.bytes()}
+            }
+            case KIND.WATER: {
+                const rate = r.f32()
+                const colors = [0, 1, 2, 3].map(() => [r.u8(), r.u8(), r.u8(), r.u8()])
+                const size = r.u32()
+                const count = r.u32()
+                return {kind: 'water', rate, colors, size, count, rgba: r.bytes(), error: r.string()}
+            }
             default:
                 return null
         }

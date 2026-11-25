@@ -59,3 +59,32 @@ pub fn info() -> Vec<u8> {
     info.tileset = b'L';
     info.to_bytes().unwrap()
 }
+
+/// An uncompressed TGA, rows top to bottom, each pixel `pixel(x, y)`.
+pub fn tga(width: u16, height: u16, pixel: impl Fn(u32, u32) -> [u8; 4]) -> Vec<u8> {
+    let mut out = vec![0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    out.extend_from_slice(&width.to_le_bytes());
+    out.extend_from_slice(&height.to_le_bytes());
+    // 32 bits, 8 of alpha, the first row at the top.
+    out.extend_from_slice(&[32, 0x28]);
+    for y in 0..height as u32 {
+        for x in 0..width as u32 {
+            let [r, g, b, a] = pixel(x, y);
+            out.extend_from_slice(&[b, g, r, a]);
+        }
+    }
+    out
+}
+
+/// A SLK table of `rows` (the first its column names).
+pub fn slk(rows: &[&[&str]]) -> Vec<u8> {
+    let mut out = String::from("ID;PWXL;N;E\n");
+    for (y, row) in rows.iter().enumerate() {
+        for (x, cell) in row.iter().enumerate() {
+            let value = if cell.parse::<f64>().is_ok() { cell.to_string() } else { format!("\"{cell}\"") };
+            out += &format!("C;Y{};X{};K{value}\n", y + 1, x + 1);
+        }
+    }
+    out += "E\n";
+    out.into_bytes()
+}

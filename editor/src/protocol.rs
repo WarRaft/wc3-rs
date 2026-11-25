@@ -11,7 +11,9 @@
 //!
 //! and a body is a sequence of fields, all little-endian: `u8`, `u32`,
 //! `f32` as they are; a string is a `u32` byte length, then UTF-8; a list
-//! a `u32` count, then the items. A reader skips frames of a kind it
+//! a `u32` count, then the items; an **array** (heights, pixels) a `u32`
+//! byte length, then its items as they are in memory (`f32`, `u32`
+//! little-endian), for the page to view as a typed array. A reader skips frames of a kind it
 //! doesn't know, so either side can add messages without breaking the
 //! other. The JavaScript twin is `extension/webview/editor/protocol.js`;
 //! keep the two in step.
@@ -28,6 +30,12 @@
 //! |------|---------|------|
 //! | 128 | `Map`   | the map open: see [`MapInfo`] |
 //! | 129 | `Error` | a message: the map can't be opened, or a frame was malformed |
+//! | 130 | `Terrain` | the terrain as it's drawn: see [`TerrainMsg`] |
+//! | 131 | `Ground` | the ground textures' layers: see [`GroundMsg`] |
+//! | 132 | `Water` | the water: see [`WaterMsg`] |
+//!
+//! `Hello` is answered by `Map`, then `Ground` and `Water` (the textures
+//! the terrain's layers index), then `Terrain`.
 
 use std::io::{self, Read};
 
@@ -37,6 +45,9 @@ mod kind {
     pub const HELLO: u8 = 1;
     pub const MAP: u8 = 128;
     pub const ERROR: u8 = 129;
+    pub const TERRAIN: u8 = 130;
+    pub const GROUND: u8 = 131;
+    pub const WATER: u8 = 132;
 }
 
 /// Page → editor.
@@ -66,6 +77,33 @@ pub struct MapInfo {
     pub notes: Vec<String>,
 }
 
+/// Kind 130's body, in this order: `u32` width and height (corners),
+/// `f32` x and y of corner (0, 0); arrays, a corner each: `f32` final
+/// heights, `f32` ground heights, `f32` water levels, `u8` flags
+/// (`terrain::corner`); a tile each: `u32` ground layers, four per tile
+/// (`terrain::Draw::tiles`), `u8` flags (`terrain::tile`).
+pub type TerrainMsg = crate::terrain::Draw;
+
+/// Kind 131's body: `u32` cell size, `u32` layer count, a list of the
+/// textures (id, path, `u32` first layer, `u32` layers, `u8` extended,
+/// error), then the layers' RGBA (an array).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct GroundMsg {
+    pub textures: Vec<crate::textures::GroundTexture>,
+    pub layers: crate::textures::Layers,
+}
+
+/// Kind 132's body: `f32` frames a second, four RGBA colours (shallow
+/// least and most, deep least and most: 16 `u8`), `u32` frame size,
+/// `u32` frames, the frames' RGBA (an array), error (what's missing).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct WaterMsg {
+    pub rate: f32,
+    pub colors: [[u8; 4]; 4],
+    pub frames: crate::textures::Layers,
+    pub error: String,
+}
+
 /// Editor → page.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServerMsg {
@@ -73,6 +111,12 @@ pub enum ServerMsg {
     Map(MapInfo),
     /// Kind 129.
     Error { message: String },
+    /// Kind 130.
+    Terrain(TerrainMsg),
+    /// Kind 131.
+    Ground(GroundMsg),
+    /// Kind 132.
+    Water(WaterMsg),
 }
 
 /// A frame's body was shorter than its fields, or not UTF-8.
@@ -131,6 +175,44 @@ impl ServerMsg {
                 w.string(message);
                 kind::ERROR
             }
+            ServerMsg::Terrain(t) => {
+                w.u32(t.width);
+                w.u32(t.height);
+                w.f32(t.offset[0]);
+                w.f32(t.offset[1]);
+                w.f32s(&t.heights);
+                w.f32s(&t.ground);
+                w.f32s(&t.water);
+                w.bytes(&t.corners);
+                w.u32s(t.tiles.as_flattened());
+                w.bytes(&t.tile_flags);
+                kind::TERRAIN
+            }
+            ServerMsg::Ground(g) => {
+                w.u32(g.layers.size);
+                w.u32(g.layers.count);
+                w.list(&g.textures, |w, t| {
+                    w.string(&t.id);
+                    w.string(&t.path);
+                    w.u32(t.first);
+                    w.u32(t.count);
+                    w.u8(t.extended as u8);
+                    w.string(&t.error);
+                });
+                w.bytes(&g.layers.rgba);
+                kind::GROUND
+            }
+            ServerMsg::Water(m) => {
+                w.f32(m.rate);
+                for c in &m.colors {
+                    w.buf.extend_from_slice(c);
+                }
+                w.u32(m.frames.size);
+                w.u32(m.frames.count);
+                w.bytes(&m.frames.rgba);
+                w.string(&m.error);
+                kind::WATER
+            }
         };
         w.frame(kind)
     }
@@ -150,6 +232,45 @@ impl ServerMsg {
                 notes: r.list(|r| r.string())?,
             }),
             kind::ERROR => ServerMsg::Error { message: r.string()? },
+            kind::TERRAIN => ServerMsg::Terrain(crate::terrain::Draw {
+                width: r.u32()?,
+                height: r.u32()?,
+                offset: [r.f32()?, r.f32()?],
+                heights: r.f32s()?,
+                ground: r.f32s()?,
+                water: r.f32s()?,
+                corners: r.bytes()?,
+                tiles: r.u32s()?.chunks_exact(4).map(|c| [c[0], c[1], c[2], c[3]]).collect(),
+                tile_flags: r.bytes()?,
+            }),
+            kind::GROUND => {
+                let (size, count) = (r.u32()?, r.u32()?);
+                let textures = r.list(|r| {
+                    Ok(crate::textures::GroundTexture {
+                        id: r.string()?,
+                        path: r.string()?,
+                        first: r.u32()?,
+                        count: r.u32()?,
+                        extended: r.u8()? != 0,
+                        error: r.string()?,
+                    })
+                })?;
+                ServerMsg::Ground(GroundMsg { textures, layers: crate::textures::Layers { size, count, rgba: r.bytes()? } })
+            }
+            kind::WATER => {
+                let rate = r.f32()?;
+                let mut colors = [[0u8; 4]; 4];
+                for c in &mut colors {
+                    c.copy_from_slice(r.take(4)?);
+                }
+                let (size, count) = (r.u32()?, r.u32()?);
+                ServerMsg::Water(WaterMsg {
+                    rate,
+                    colors,
+                    frames: crate::textures::Layers { size, count, rgba: r.bytes()? },
+                    error: r.string()?,
+                })
+            }
             _ => return Ok(None),
         }))
     }
@@ -161,6 +282,34 @@ struct Writer {
 }
 
 impl Writer {
+    fn u8(&mut self, v: u8) {
+        self.buf.push(v);
+    }
+
+    fn f32(&mut self, v: f32) {
+        self.buf.extend_from_slice(&v.to_le_bytes());
+    }
+
+    /// An array of bytes.
+    fn bytes(&mut self, b: &[u8]) {
+        self.u32(b.len() as u32);
+        self.buf.extend_from_slice(b);
+    }
+
+    fn f32s(&mut self, v: &[f32]) {
+        self.u32((v.len() * 4) as u32);
+        for x in v {
+            self.f32(*x);
+        }
+    }
+
+    fn u32s(&mut self, v: &[u32]) {
+        self.u32((v.len() * 4) as u32);
+        for x in v {
+            self.u32(*x);
+        }
+    }
+
     fn u32(&mut self, v: u32) {
         self.buf.extend_from_slice(&v.to_le_bytes());
     }
@@ -200,8 +349,29 @@ impl Reader<'_> {
         Ok(head)
     }
 
+    fn u8(&mut self) -> Result<u8, DecodeError> {
+        Ok(self.take(1)?[0])
+    }
+
     fn u32(&mut self) -> Result<u32, DecodeError> {
         Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
+    }
+
+    fn f32(&mut self) -> Result<f32, DecodeError> {
+        Ok(f32::from_le_bytes(self.take(4)?.try_into().unwrap()))
+    }
+
+    fn bytes(&mut self) -> Result<Vec<u8>, DecodeError> {
+        let n = self.u32()? as usize;
+        Ok(self.take(n)?.to_vec())
+    }
+
+    fn f32s(&mut self) -> Result<Vec<f32>, DecodeError> {
+        Ok(self.bytes()?.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect())
+    }
+
+    fn u32s(&mut self) -> Result<Vec<u32>, DecodeError> {
+        Ok(self.bytes()?.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect())
     }
 
     fn string(&mut self) -> Result<String, DecodeError> {

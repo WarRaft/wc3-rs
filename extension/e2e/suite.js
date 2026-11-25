@@ -82,7 +82,7 @@ async function steps() {
     check(fs.statSync(built).size > 1000000, `build/map.w3x (${Math.round(fs.statSync(built).size / 1024)} KB)`)
     await vscode.commands.executeCommand('workbench.action.closeAllEditors')
 
-    log('the World Editor opened from the button over wc3.bni: the map, its name; opened again: the same one')
+    log('the World Editor opened from the button over wc3.bni: the map, its name, its terrain drawn; opened again: the same one')
     const root = path.dirname(manifest.fsPath)
     const we = await vscode.commands.executeCommand('wc3.editor.open', manifest, {groupId: 1})
     check(!!we && api.worldEditors.get(root) === we, 'one editor, of the project')
@@ -90,6 +90,9 @@ async function steps() {
     check(!!we.map, `the map shown${we.error ? `, not: ${we.error}` : ''}`)
     check(shown.width > 1 && shown.height > 1, `its terrain: ${shown.width} × ${shown.height} points, "${shown.name}"`)
     check(we.panel.title === (shown.name || path.basename(root)), `the tab is the map's name: ${we.panel.title}`)
+    const drawn = await until(() => we.drawn || we.error, 'the terrain drawn', 60000)
+    check(!!we.drawn && !we.error, `the terrain drawn${we.error ? `, not: ${we.error}` : ''}`)
+    check(drawn.layers && drawn.water > 0 && drawn.error === 0, `with its ground textures and ${drawn.water} water frames, no GL error (${drawn.error})`)
     const again = await vscode.commands.executeCommand('wc3.editor.open', {root})
     check(again === we && api.worldEditors.size === 1, 'opened again from the WC3 Editors view: the same editor')
     await shot('world-editor')
