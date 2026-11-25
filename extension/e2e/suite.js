@@ -92,6 +92,17 @@ async function steps() {
     check(!!wct, 'war3map.wct open beside, as a document')
     await shot('triggers')
 
+    log('the line beside the tree dragged as a mouse does: the tree follows it, its width kept; a double click: back')
+    await editor.page({type: 'e2eSplitter', dx: 120})
+    const sp = await until(() => editor.state().splitter, "the page's answer")
+    check(!sp.error, sp.error || 'the tree and the line are there')
+    const near = (a, b) => Math.abs(a - b) <= 1
+    const want = Math.min(sp.before + 120, sp.max)
+    check(near(sp.midway, Math.min(sp.before + 60, sp.max)), `halfway: ${sp.before} -> ${sp.midway}`)
+    check(near(sp.dragged, want), `dragged 120: ${sp.before} -> ${sp.dragged} (at most ${sp.max})`)
+    check(sp.keptDragged === sp.dragged, `the width kept with the page: ${sp.keptDragged}`)
+    check(near(sp.reset, sp.before) && sp.keptReset === null, `double click: ${sp.reset}, nothing kept`)
+
     log("the custom script's problems: none of names World Editor's script declares")
     const wctDiags = await until(async () => {
         await sleep(1500)

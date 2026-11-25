@@ -1830,6 +1830,8 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
             let picked = 0
             /** The last parameter's dialog's choices (for the tests in the editor). */
             let lastChoices = null
+            /** What the page said of the line beside the tree it was asked to drag (the tests). */
+            let lastSplitter = null
             /** @type {number[]} */
             let at = []
             /** A query's text: in a map's triggers, after which is picked. */
@@ -1994,6 +1996,8 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
             }
             const handle = async msg => {
                 switch (msg.type) {
+                // What the page answered the tests in the editor.
+                case 'e2eSplitter': lastSplitter = msg; return
                 case 'ready': {
                     // The editor's icons once (the project's), then the view.
                     const icons = await query(QUERY.TRIGGER_ICONS, id, {line: 0, character: 0}, '')
@@ -2109,7 +2113,7 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
             ]
             // For the tests in the editor (`e2e/`): what the page would send, and what it was last sent.
             const key = document.uri.toString()
-            triggerEditors.set(key, {receive, state: () => ({picked, tree: last, choices: lastChoices}), wct: () => wct, refresh: () => post(0)})
+            triggerEditors.set(key, {receive, state: () => ({picked, tree: last, choices: lastChoices, splitter: lastSplitter}), wct: () => wct, refresh: () => post(0), page: m => webview.postMessage(m)})
             panel.onDidDispose(() => {
                 clearTimeout(timer)
                 subscriptions.forEach(d => d.dispose())

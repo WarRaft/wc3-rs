@@ -16,9 +16,8 @@ item's details are in its section below):
     of 1.31 and later is run from here nor UjAPI (Windows). JassHelper's own manual is in
     `../JassHelper-manual/Writerside/topics`: what's left of vJASS is
     checked against it.
-- **Tests in the editor** ([below](#tests-in-the-editor)): dragging the
-  line beside the trigger tree isn't driven (no mouse); every new piece
-  of the editor gets a step in `extension/e2e/suite.js`.
+- **Tests in the editor** ([below](#tests-in-the-editor)): every new
+  piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
   Castle, CruiserCommand, LastGuards); none uses textmacros, hooks or
   Zinc's arrays of several dimensions, which only tests cover. The
@@ -1769,4 +1768,8 @@ Now: opening `war3map.wct` brings up the triggers, its problems have
 none of World Editor's names, a trigger of custom text opens its code
 alone, typing there changes its piece of `war3map.wct` and no other,
 a diagnostic shows on its line in the piece, moving the trigger moves its
-code, saving the piece writes the map.
+code, saving the piece writes the map. What only the page does is asked
+of the page (the editor's `page(message)`, its answer in `state()`): the
+line beside the trigger tree is dragged with the pointer's events a mouse
+makes (`e2eSplitter`: the tree follows it halfway and at the end, its
+width kept with the page, a double click back to its first width).

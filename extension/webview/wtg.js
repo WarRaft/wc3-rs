@@ -404,6 +404,28 @@ document.getElementById('extract')?.addEventListener('click', () => mapApi.postM
 
 window.addEventListener('message', e => {
     const msg = e.data
+    // The tests in the editor (`e2e/`): the line beside the tree dragged
+    // `dx` and double clicked as a mouse does, what the tree's width was.
+    if (msg.type === 'e2eSplitter') {
+        const side = /** @type {HTMLElement | null} */ (document.querySelector('.map-side'))
+        const splitter = document.getElementById('map-splitter')
+        if (!side || !splitter) return mapApi.postMessage({type: 'e2eSplitter', error: 'no tree beside the trigger'})
+        const width = () => Math.round(side.getBoundingClientRect().width)
+        const kept = () => (mapApi.getState() || {}).treeWidth ?? null
+        const at = splitter.getBoundingClientRect()
+        const x = at.left + at.width / 2, y = at.top + at.height / 2
+        const pointer = (/** @type {string} */ type, /** @type {number} */ px) => splitter.dispatchEvent(new PointerEvent(type, {clientX: px, clientY: y, pointerId: 77, bubbles: true, cancelable: true, isPrimary: true}))
+        const before = width()
+        pointer('pointerdown', x)
+        pointer('pointermove', x + msg.dx / 2)
+        const midway = width()
+        pointer('pointermove', x + msg.dx)
+        pointer('pointerup', x + msg.dx)
+        const dragged = width(), keptDragged = kept()
+        splitter.dispatchEvent(new MouseEvent('dblclick', {clientX: x, clientY: y, bubbles: true}))
+        mapApi.postMessage({type: 'e2eSplitter', before, midway, dragged, keptDragged, reset: width(), keptReset: kept(), max: Math.round(window.innerWidth * 0.6)})
+        return
+    }
     if (msg.type === 'tree') {
         mapData = msg.tree
         if (!mapData) return
@@ -437,7 +459,8 @@ window.addEventListener('message', e => {
     splitter?.addEventListener('pointerdown', e => {
         if (!side) return
         e.preventDefault()
-        splitter.setPointerCapture(e.pointerId)
+        // (A pointer of the tests' has nothing to capture.)
+        try { splitter.setPointerCapture(e.pointerId) } catch { /* moves still reach it */ }
         splitter.classList.add('dragging')
         document.body.classList.add('resizing')
         const start = e.clientX
