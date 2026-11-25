@@ -13,3 +13,8 @@ path = "src/main.rs"
 wc3-server = { path = "../server" }
 wc3-mcp = { path = "../../wc3-mcp" }
 wc3-editor = { path = "../editor" }
+
+# The parsers and the editor do the heavy work: optimized even in debug
+# builds (server/build-mac.sh), as wc3-server's own profile does.
+[profile.dev.package."*"]
+opt-level = 3

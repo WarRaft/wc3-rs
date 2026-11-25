@@ -19,7 +19,7 @@ item's details are in its section below):
     `../JassHelper-manual/Writerside/topics`: what's left of vJASS is
     checked against it.
 - **The World Editor** (see [World Editor](#world-editor)): its steps,
-  in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs).
+  in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs), 4 (doodads and units).
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1628,11 +1628,28 @@ step), this list updated.
    model's first geoset and where it stands; the page draws them
    instanced (a quarter turn round, each vertex on the ground under it,
    HiveWE's `cliff.vert`) and no ground under them. MCP: `mdx_info`.
-4. **Doodads and units.** `war3map.doo` and `war3mapUnits.doo`; their
+4. **Doodads and units** (done). `war3map.doo` and `war3mapUnits.doo`; their
    models from the game's tables with the map's object data
    (`.w3d`/`.w3b`/`.w3u`, the obj pipeline the server already has);
    drawn instanced, at their first `Stand` frame; picking and selection
    (Rust answers what is under a point).
+   As built: `editor/src/types.rs` (a type's fields: the game's
+   tables and `Units\ItemFunc.txt`, the map's object data over them,
+   each change under its field's key by the metadata), `placed.rs`
+   (each thing's model as HiveWE finds it, `placed::model_of`: a
+   doodad's variation after its name, a destructable's in place of the
+   extension, its `texFile` for its replaceable texture; a unit's or
+   item's `file`; geosets hidden at the start of `Stand` left out, as
+   `mdx-rs`'s `GEOA` says; textures at 256 or less; team colour the
+   average of `TeamColor<nn>.blp`; units on the ground, doodads at their
+   height; `Objects::pick`, a ray against each thing's box), messages
+   `Objects` and `Pick`/`Picked`; the page's `objects.js` (instanced,
+   the game's filter modes, the picked one lighter, said under the
+   view). Models are drawn as the file has their vertices: no bones,
+   so no animation and no pose (step 8); start locations (`sloc`) have
+   no model in the tables, said in a note. MCP: `doo_list` names each
+   thing and its model with the game's files
+   (`wc3_server::names::with_objects`).
 5. **Overlays.** Pathing (`war3map.wpm`), regions (`war3map.w3r`),
    cameras (`war3map.w3c`), the map's bounds (`war3map.w3i`), a
    minimap.

@@ -17,6 +17,8 @@ w3i-rs = { path = "../../w3i-rs" }
 wts-rs = { path = "../../wts-rs" }
 slk-rs = { path = "../../slk-rs" }
 mdx-rs = { path = "../../mdx-rs" }
+doo-rs = { path = "../../doo-rs" }
+w3abdhqtu-rs = { path = "../../w3abdhqtu-rs" }
 bni-rs = { path = "../../bni-rs" }
 
 [profile.dev.package."*"]

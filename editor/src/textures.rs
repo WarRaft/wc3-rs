@@ -40,7 +40,7 @@ pub struct GroundTexture {
 }
 
 /// A picture's base mip: width, height, RGBA.
-type Picture = (u32, u32, Vec<u8>);
+pub type Picture = (u32, u32, Vec<u8>);
 
 fn picture(game: &Game, path: &str) -> Result<Picture, String> {
     let (bytes, _) = game.read(path).ok_or_else(|| format!("{path}: not in the game's files or the roots"))?;
@@ -53,6 +53,33 @@ fn picture(game: &Game, path: &str) -> Result<Picture, String> {
         return Err(format!("{path}: {}", mip.error));
     }
     Ok((mip.width, mip.height, mip.rgba))
+}
+
+/// A picture's biggest mip no wider or higher than `max`, else its
+/// smallest: what a model's texture is drawn with.
+pub fn capped(game: &Game, path: &str, max: u32) -> Result<Picture, String> {
+    let (bytes, _) = game.read(path).ok_or_else(|| format!("{path}: not in the game's files or the roots"))?;
+    let t = wc3_server::texture::decode_file(path, &bytes);
+    if !t.error.is_empty() {
+        return Err(format!("{path}: {}", t.error));
+    }
+    let good: Vec<_> = t.mips.into_iter().filter(|m| m.error.is_empty() && !m.rgba.is_empty()).collect();
+    let mip = good.iter().find(|m| m.width.max(m.height) <= max).or(good.last()).ok_or_else(|| format!("{path}: no picture in it"))?;
+    Ok((mip.width, mip.height, mip.rgba.clone()))
+}
+
+/// The average colour of a picture, 0-255: a team's colour from its
+/// team colour texture.
+pub fn average(game: &Game, path: &str) -> Option<[u8; 3]> {
+    let (_, _, rgba) = capped(game, path, 64).ok()?;
+    let mut sum = [0u64; 3];
+    for px in rgba.chunks_exact(4) {
+        for (s, v) in sum.iter_mut().zip(px) {
+            *s += *v as u64;
+        }
+    }
+    let n = (rgba.len() / 4).max(1) as u64;
+    Some(sum.map(|s| (s / n) as u8))
 }
 
 /// Cell `(col, row)` of `size` pixels of a picture `width` wide.

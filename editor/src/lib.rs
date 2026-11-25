@@ -13,11 +13,13 @@
 pub mod cliffs;
 pub mod lock;
 pub mod picture;
+pub mod placed;
 pub mod protocol;
 pub mod session;
 pub mod terrain;
 pub mod textures;
 pub mod tileset;
+pub mod types;
 
 use std::io::{self, Write};
 use std::path::Path;
@@ -68,7 +70,7 @@ pub fn serve(input: &mut impl io::Read, output: &mut impl Write, root: &Path) ->
             ClientMsg::Hello => {
                 // The page (re)loaded: the map as it is now, read again.
                 match session::Session::open(root) {
-                    Ok(s) => {
+                    Ok(mut s) => {
                         // The map's name first, for the page to show
                         // while the rest is worked out.
                         write(output, &s.map_msg())?;
@@ -79,6 +81,10 @@ pub fn serve(input: &mut impl io::Read, output: &mut impl Write, root: &Path) ->
                     }
                     Err(message) => write(output, &ServerMsg::Error { message })?,
                 }
+            }
+            ClientMsg::Pick { origin, dir } => {
+                let picked = session.as_ref().map(|s| s.pick(origin, dir)).unwrap_or_default();
+                write(output, &ServerMsg::Picked(picked))?;
             }
         }
     }

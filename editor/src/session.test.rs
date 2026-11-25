@@ -52,9 +52,11 @@ fn the_terrain_drawn_with_the_tables_of_the_roots() {
     dir.write("map/TerrainArt/Terrain.slk", &testdir::slk(&[&["tileID", "dir", "file"], &["Ldrt", "T", "Dirt"]]));
     dir.write("map/TerrainArt/CliffTypes.slk", &testdir::slk(&[&["cliffID", "groundTile"], &["CLdi", "Ldrt"]]));
     dir.write("map/T/Dirt.blp", &testdir::tga(8, 4, |_, _| [9, 9, 9, 255]));
-    let s = Session::open(dir.path()).unwrap();
+    let mut s = Session::open(dir.path()).unwrap();
     let msgs = s.draw();
-    let [ServerMsg::Ground(g), ServerMsg::Water(w), ServerMsg::Cliffs(c), ServerMsg::Terrain(t)] = &msgs[..] else { panic!("{} messages", msgs.len()) };
+    let [ServerMsg::Ground(g), ServerMsg::Water(w), ServerMsg::Cliffs(c), ServerMsg::Terrain(t), ServerMsg::Objects(o)] = &msgs[..] else { panic!("{} messages", msgs.len()) };
+    // Nothing placed.
+    assert!(o.models.is_empty() && o.notes.is_empty());
     // No cliff on it; its one cliff texture isn't in the roots.
     assert!(c.meshes.is_empty() && c.texture_paths.len() == 1 && !c.texture_paths[0].1.is_empty());
     assert_eq!(g.textures.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["Ldrt", "blight"]);
@@ -76,7 +78,7 @@ fn the_terrain_drawn_with_the_tables_of_the_roots() {
 fn a_real_map_draws_with_its_textures() {
     let Some(root) = std::env::var_os("WC3_PROJECT") else { return };
     let start = std::time::Instant::now();
-    let s = Session::open(Path::new(&root)).unwrap();
+    let mut s = Session::open(Path::new(&root)).unwrap();
     let msgs = s.draw();
     eprintln!("drawn in {:?}; notes: {:?}", start.elapsed(), s.notes);
     for m in &msgs {
@@ -95,6 +97,14 @@ fn a_real_map_draws_with_its_textures() {
                 let placed: usize = c.meshes.iter().map(|m| m.instances.len() / 4).sum();
                 eprintln!("  cliffs: {} models, {placed} placed, textures {:?}, notes {:?}", c.meshes.len(), c.texture_paths, c.notes);
                 assert!(c.meshes.iter().all(|m| m.error.is_empty()) && c.texture_paths.iter().all(|(_, e)| e.is_empty()));
+            }
+            ServerMsg::Objects(o) => {
+                let placed: usize = o.models.iter().map(|m| m.instances.len() / crate::placed::INSTANCE).sum();
+                let pixels: usize = o.textures.iter().map(|t| t.rgba.len()).sum();
+                eprintln!("  objects: {} models, {placed} placed, {} textures ({pixels} bytes), notes {:?}", o.models.len(), o.textures.len(), o.notes);
+                for e in o.models.iter().filter(|m| !m.error.is_empty()).map(|m| &m.error).chain(o.textures.iter().filter(|t| !t.error.is_empty()).map(|t| &t.error)).take(10) {
+                    eprintln!("    {e}");
+                }
             }
             ServerMsg::Terrain(t) => eprintln!("  terrain {} x {}, {} cliff tiles", t.width, t.height, t.tile_flags.iter().filter(|f| **f & 1 != 0).count()),
             _ => {}

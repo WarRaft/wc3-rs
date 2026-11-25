@@ -370,6 +370,19 @@ pub fn names(lookup: &Lookup) -> Names {
     names
 }
 
+/// [`names`], with the objects' names whether or not the trigger editor's
+/// data is there: for what shows what's placed (the World Editor, MCP's
+/// `doo_list`).
+pub fn with_objects(lookup: &Lookup) -> Names {
+    if lookup.is_empty() {
+        return Names::default();
+    }
+    let (game, _) = lookup.open();
+    let mut names = Names::load(&game);
+    add_objects(&mut names, lookup, &game);
+    names
+}
+
 /// The game's part of the objects' names: its objects named, and each
 /// kind's metadata (to read a map's object data with).
 struct GameObjects {

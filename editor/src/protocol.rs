@@ -23,6 +23,7 @@
 //! | kind | message | body |
 //! |------|---------|------|
 //! | 1 | `Hello` | nothing: the page (re)loaded; answered by `Map` or `Error` |
+//! | 2 | `Pick` | a ray from the camera: `f32` origin x, y, z, direction x, y, z (cells, layers); answered by `Picked` |
 //!
 //! Editor → page:
 //!
@@ -34,10 +35,12 @@
 //! | 131 | `Ground` | the ground textures' layers: see [`GroundMsg`] |
 //! | 132 | `Water` | the water: see [`WaterMsg`] |
 //! | 133 | `Cliffs` | the cliffs and ramps: see [`CliffsMsg`] |
+//! | 134 | `Objects` | what's placed: see [`ObjectsMsg`] |
+//! | 135 | `Picked` | what a `Pick` meets: see [`PickedMsg`] |
 //!
 //! `Hello` is answered by `Map`, then `Ground`, `Water` and `Cliffs`
 //! (what the terrain's layers index, and what stands on it), then
-//! `Terrain`.
+//! `Terrain`, then `Objects`.
 
 use std::io::{self, Read};
 
@@ -45,6 +48,9 @@ pub use wc3_server::protocol::{HEADER, MAX_BODY};
 
 mod kind {
     pub const HELLO: u8 = 1;
+    pub const PICK: u8 = 2;
+    pub const OBJECTS: u8 = 134;
+    pub const PICKED: u8 = 135;
     pub const MAP: u8 = 128;
     pub const ERROR: u8 = 129;
     pub const TERRAIN: u8 = 130;
@@ -58,6 +64,8 @@ mod kind {
 pub enum ClientMsg {
     /// Kind 1.
     Hello,
+    /// Kind 2.
+    Pick { origin: [f32; 3], dir: [f32; 3] },
 }
 
 /// What the page is told of the map: kind 128's body, in this order.
@@ -121,6 +129,29 @@ pub struct CliffsMsg {
     pub notes: Vec<String>,
 }
 
+/// Kind 134's body: a list of textures (path, `u32` width, height, RGBA
+/// array, error), a list of models (path, `f32` box min x, y, z, max x,
+/// y, z, a list of geosets: `f32` positions, normals, texture
+/// coordinates, `u16` triangles, a list of layers: `i32` texture
+/// (`placed::texture`), `u32` filter mode, `u32` shading, `f32` alpha;
+/// then `f32` instances, `placed::INSTANCE` each; error), notes.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ObjectsMsg {
+    pub textures: Vec<crate::placed::Texture>,
+    pub models: Vec<crate::placed::Model>,
+    pub notes: Vec<String>,
+}
+
+/// Kind 135's body: `u8` found, `u32` model, `u32` instance, what it is
+/// (a line to show).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PickedMsg {
+    pub found: bool,
+    pub model: u32,
+    pub instance: u32,
+    pub text: String,
+}
+
 /// Editor → page.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServerMsg {
@@ -136,6 +167,10 @@ pub enum ServerMsg {
     Water(WaterMsg),
     /// Kind 133.
     Cliffs(CliffsMsg),
+    /// Kind 134.
+    Objects(ObjectsMsg),
+    /// Kind 135.
+    Picked(PickedMsg),
 }
 
 /// A frame's body was shorter than its fields, or not UTF-8.
@@ -157,18 +192,24 @@ pub fn read_frame(input: &mut impl Read) -> io::Result<Option<(u8, Vec<u8>)>> {
 
 impl ClientMsg {
     /// Decodes a frame. `Ok(None)` for a kind this side doesn't know.
-    pub fn decode(kind: u8, _body: &[u8]) -> Result<Option<ClientMsg>, DecodeError> {
+    pub fn decode(kind: u8, body: &[u8]) -> Result<Option<ClientMsg>, DecodeError> {
+        let mut r = Reader { buf: body };
         Ok(match kind {
             kind::HELLO => Some(ClientMsg::Hello),
+            kind::PICK => Some(ClientMsg::Pick { origin: [r.f32()?, r.f32()?, r.f32()?], dir: [r.f32()?, r.f32()?, r.f32()?] }),
             _ => None,
         })
     }
 
     /// The whole frame. The editor never sends these; tests do.
     pub fn encode(&self) -> Vec<u8> {
-        let w = Writer::default();
+        let mut w = Writer::default();
         let kind = match self {
             ClientMsg::Hello => kind::HELLO,
+            ClientMsg::Pick { origin, dir } => {
+                origin.iter().chain(dir).for_each(|v| w.f32(*v));
+                kind::PICK
+            }
         };
         w.frame(kind)
     }
@@ -252,6 +293,42 @@ impl ServerMsg {
                 w.list(&c.notes, |w, n| w.string(n));
                 kind::CLIFFS
             }
+            ServerMsg::Objects(o) => {
+                w.list(&o.textures, |w, t| {
+                    w.string(&t.path);
+                    w.u32(t.width);
+                    w.u32(t.height);
+                    w.bytes(&t.rgba);
+                    w.string(&t.error);
+                });
+                w.list(&o.models, |w, m| {
+                    w.string(&m.path);
+                    m.min.iter().chain(&m.max).for_each(|v| w.f32(*v));
+                    w.list(&m.geosets, |w, g| {
+                        w.f32s(&g.positions);
+                        w.f32s(&g.normals);
+                        w.f32s(&g.uvs);
+                        w.u16s(&g.indices);
+                        w.list(&g.layers, |w, l| {
+                            w.u32(l.texture as u32);
+                            w.u32(l.filter_mode);
+                            w.u32(l.shading);
+                            w.f32(l.alpha);
+                        });
+                    });
+                    w.f32s(&m.instances);
+                    w.string(&m.error);
+                });
+                w.list(&o.notes, |w, n| w.string(n));
+                kind::OBJECTS
+            }
+            ServerMsg::Picked(p) => {
+                w.u8(p.found as u8);
+                w.u32(p.model);
+                w.u32(p.instance);
+                w.string(&p.text);
+                kind::PICKED
+            }
         };
         w.frame(kind)
     }
@@ -327,6 +404,30 @@ impl ServerMsg {
                 })?;
                 ServerMsg::Cliffs(CliffsMsg { textures, texture_paths, meshes, notes: r.list(|r| r.string())? })
             }
+            kind::OBJECTS => {
+                let textures = r.list(|r| {
+                    Ok(crate::placed::Texture { path: r.string()?, width: r.u32()?, height: r.u32()?, rgba: r.bytes()?, error: r.string()? })
+                })?;
+                let models = r.list(|r| {
+                    let path = r.string()?;
+                    let min = [r.f32()?, r.f32()?, r.f32()?];
+                    let max = [r.f32()?, r.f32()?, r.f32()?];
+                    let geosets = r.list(|r| {
+                        Ok(crate::placed::Geoset {
+                            positions: r.f32s()?,
+                            normals: r.f32s()?,
+                            uvs: r.f32s()?,
+                            indices: r.bytes()?.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect(),
+                            layers: r.list(|r| {
+                                Ok(crate::placed::Layer { texture: r.u32()? as i32, filter_mode: r.u32()?, shading: r.u32()?, alpha: r.f32()? })
+                            })?,
+                        })
+                    })?;
+                    Ok(crate::placed::Model { path, min, max, geosets, instances: r.f32s()?, error: r.string()? })
+                })?;
+                ServerMsg::Objects(ObjectsMsg { textures, models, notes: r.list(|r| r.string())? })
+            }
+            kind::PICKED => ServerMsg::Picked(PickedMsg { found: r.u8()? != 0, model: r.u32()?, instance: r.u32()?, text: r.string()? }),
             _ => return Ok(None),
         }))
     }

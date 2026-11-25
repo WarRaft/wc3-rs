@@ -319,6 +319,7 @@ void main() {
             this.terrain = {
                 width: w,
                 height: h,
+                offset: msg.offset,
                 heights: msg.heights,
                 textures: {
                     heights: dataTexture(gl, gl.R32F, gl.RED, gl.FLOAT, w, h, msg.heights),

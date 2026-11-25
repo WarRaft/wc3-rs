@@ -107,3 +107,13 @@ button:hover {
     border-top: 1px solid var(--vscode-panel-border, transparent);
     color: var(--vscode-editorWarning-foreground);
 }
+.status {
+    flex: none;
+    min-height: 1.4em;
+    padding: 3px 12px;
+    border-top: 1px solid var(--vscode-panel-border, transparent);
+    color: var(--vscode-descriptionForeground);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

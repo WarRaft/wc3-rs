@@ -15,6 +15,9 @@ const EditorProtocol = (() => {
         GROUND: 131,
         WATER: 132,
         CLIFFS: 133,
+        OBJECTS: 134,
+        PICKED: 135,
+        PICK: 2,
     }
 
     const utf8 = new TextDecoder()
@@ -40,6 +43,13 @@ const EditorProtocol = (() => {
         u32() {
             this.need(4)
             const v = this.view.getUint32(this.at, true)
+            this.at += 4
+            return v
+        }
+
+        i32() {
+            this.need(4)
+            const v = this.view.getInt32(this.at, true)
             this.at += 4
             return v
         }
@@ -98,6 +108,11 @@ const EditorProtocol = (() => {
             this.bytes.push(v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff)
         }
 
+        f32(v) {
+            const b = new Uint8Array(new Float32Array([v]).buffer)
+            for (const x of b) this.bytes.push(x)
+        }
+
         string(s) {
             const b = utf8Out.encode(s)
             this.u32(b.length)
@@ -116,6 +131,12 @@ const EditorProtocol = (() => {
 
     const encode = {
         hello: () => new Writer().frame(KIND.HELLO),
+        /** A ray from the camera: origin and direction (cells, layers). */
+        pick(origin, dir) {
+            const w = new Writer()
+            for (const v of [...origin, ...dir]) w.f32(v)
+            return w.frame(KIND.PICK)
+        },
     }
 
     /**
@@ -184,6 +205,26 @@ const EditorProtocol = (() => {
                 }))
                 return {kind: 'cliffs', size, count, rgba, textures, meshes, notes: r.list(r => r.string())}
             }
+            case KIND.OBJECTS: {
+                const textures = r.list(r => ({path: r.string(), width: r.u32(), height: r.u32(), rgba: r.bytes(), error: r.string()}))
+                const models = r.list(r => ({
+                    path: r.string(),
+                    min: [r.f32(), r.f32(), r.f32()],
+                    max: [r.f32(), r.f32(), r.f32()],
+                    geosets: r.list(r => ({
+                        positions: r.f32s(),
+                        normals: r.f32s(),
+                        uvs: r.f32s(),
+                        indices: r.u16s(),
+                        layers: r.list(r => ({texture: r.i32(), filterMode: r.u32(), shading: r.u32(), alpha: r.f32()})),
+                    })),
+                    instances: r.f32s(),
+                    error: r.string(),
+                }))
+                return {kind: 'objects', textures, models, notes: r.list(r => r.string())}
+            }
+            case KIND.PICKED:
+                return {kind: 'picked', found: r.u8() !== 0, model: r.u32(), instance: r.u32(), text: r.string()}
             default:
                 return null
         }

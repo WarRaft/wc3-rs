@@ -8,7 +8,7 @@ use wc3_server::game::{Game, Lookup};
 use wc3_server::names::Names;
 use wc3_server::project::{self, Project};
 
-use crate::protocol::{CliffsMsg, GroundMsg, MapInfo, ServerMsg, WaterMsg};
+use crate::protocol::{CliffsMsg, GroundMsg, MapInfo, ObjectsMsg, PickedMsg, ServerMsg, WaterMsg};
 use crate::terrain::{Draw, Grounds};
 use crate::tileset::Tileset;
 
@@ -22,6 +22,8 @@ pub struct Session {
     pub strings: Option<wts_rs::Document>,
     pub names: Names,
     pub tileset: Tileset,
+    /// What's placed, once drawn ([`draw`](Self::draw)).
+    pub objects: Option<crate::placed::Objects>,
     /// What was read with a problem, gone past.
     pub notes: Vec<String>,
 }
@@ -62,10 +64,12 @@ impl Session {
             }
         };
         let strings = read("war3map.wts").map(|b| wts_rs::parse(&String::from_utf8_lossy(&b)));
-        let names = Names::load(&game);
+        // With the objects' names (the game's and the map's), for what
+        // a pick says.
+        let names = wc3_server::names::with_objects(&Lookup::of(&project));
         let tileset = Tileset::load(&game, terrain.tileset as char);
         notes.extend(tileset.notes.iter().cloned());
-        Ok(Session { project, game, terrain, info, strings, names, tileset, notes })
+        Ok(Session { project, game, terrain, info, strings, names, tileset, objects: None, notes })
     }
 
     /// `text` with its `TRIGSTR_`s replaced by the map's strings.
@@ -82,7 +86,7 @@ impl Session {
 
     /// The terrain as the page draws it: its ground textures, its water,
     /// then the terrain, whose layers index those textures.
-    pub fn draw(&self) -> Vec<ServerMsg> {
+    pub fn draw(&mut self) -> Vec<ServerMsg> {
         let grounds = Grounds::of(&self.terrain, &self.tileset);
         let paths: Vec<(String, Option<String>)> = grounds
             .ids
@@ -125,12 +129,37 @@ impl Session {
         let extended = |t: usize| textures.get(t).is_some_and(|g| g.extended);
         let height = self.tileset.water.as_ref().map_or(0.0, |w| w.height);
         let draw = Draw::new(&self.terrain, &grounds, cliffs.tile_flags, &extended, height);
+        let types = crate::types::Types::load(&self.game);
+        let objects = crate::placed::Objects::load(&self.game, &types, &draw);
+        let objects_msg = ObjectsMsg { textures: objects.textures.clone(), models: objects.models.clone(), notes: objects.notes.clone() };
+        self.objects = Some(objects);
         vec![
             ServerMsg::Ground(GroundMsg { textures, layers }),
             ServerMsg::Water(water),
             ServerMsg::Cliffs(cliffs_msg),
             ServerMsg::Terrain(draw),
+            ServerMsg::Objects(objects_msg),
         ]
+    }
+
+    /// What a ray from the camera meets first, said.
+    pub fn pick(&self, origin: [f32; 3], dir: [f32; 3]) -> PickedMsg {
+        let Some(t) = self.objects.as_ref().and_then(|o| o.pick(origin, dir)) else { return PickedMsg::default() };
+        let id = t.id.to_string();
+        let name = self.names.objects.get(t.kind, &id).map(|n| n.shown()).unwrap_or_else(|| id.clone());
+        let what = match t.kind {
+            w3abdhqtu_rs::Kind::Doodad => "doodad".to_string(),
+            w3abdhqtu_rs::Kind::Destructable => "destructable".to_string(),
+            w3abdhqtu_rs::Kind::Item => "item".to_string(),
+            _ => t.player.map_or("unit".to_string(), |p| format!("Player {}", p + 1)),
+        };
+        let file = if matches!(t.kind, w3abdhqtu_rs::Kind::Doodad | w3abdhqtu_rs::Kind::Destructable) { "war3map.doo" } else { "war3mapUnits.doo" };
+        PickedMsg {
+            found: true,
+            model: t.model as u32,
+            instance: t.instance as u32,
+            text: format!("{name} ({id}) · {what} · ({:.0}, {:.0}, {:.0}) · {file} #{}", t.world[0], t.world[1], t.world[2], t.index),
+        }
     }
 
     /// What the page is told of the map.

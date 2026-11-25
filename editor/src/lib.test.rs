@@ -31,11 +31,12 @@ fn hello_is_answered_with_the_map_each_time() {
             ServerMsg::Ground(_) => "ground",
             ServerMsg::Water(_) => "water",
             ServerMsg::Cliffs(_) => "cliffs",
+            ServerMsg::Objects(_) => "objects",
             ServerMsg::Terrain(t) if t.width == 3 => "terrain",
             _ => "?",
         })
         .collect();
-    assert_eq!(kinds, ["map", "ground", "water", "cliffs", "terrain", "map", "ground", "water", "cliffs", "terrain"]);
+    assert_eq!(kinds, ["map", "ground", "water", "cliffs", "terrain", "objects", "map", "ground", "water", "cliffs", "terrain", "objects"]);
 }
 
 #[test]
@@ -43,4 +44,11 @@ fn a_map_that_cant_open_is_an_error_message() {
     let dir = TestDir::new("serve-error");
     let msgs = answers(dir.path(), &ClientMsg::Hello.encode());
     assert!(matches!(&msgs[..], [ServerMsg::Error { message }] if message.contains("wc3.bni")));
+}
+
+#[test]
+fn a_pick_before_the_map_is_open_meets_nothing() {
+    let dir = TestDir::new("serve-pick");
+    let msgs = answers(dir.path(), &ClientMsg::Pick { origin: [0.0; 3], dir: [0.0, 0.0, -1.0] }.encode());
+    assert_eq!(msgs, [ServerMsg::Picked(protocol::PickedMsg::default())]);
 }

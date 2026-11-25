@@ -96,10 +96,29 @@ const EditorCamera = (() => {
             this.distance = Math.max(0.5, Math.min(1000, this.distance * Math.pow(0.999, -delta)))
         }
 
+        /** Where the camera is. */
+        eye() {
+            const d = this.direction
+            return [this.position[0] - d[0] * this.distance, this.position[1] - d[1] * this.distance, this.position[2] - d[2] * this.distance]
+        }
+
+        /**
+         * The ray from the camera through the point `(nx, ny)` of the view
+         * (-1 to 1, y up), for a picture `aspect` wide: its origin and
+         * direction.
+         */
+        ray(nx, ny, aspect) {
+            const d = this.direction
+            const {x} = this.axes()
+            const y = cross(x, d)
+            const t = Math.tan(this.fov * Math.PI / 360)
+            const dir = norm([0, 1, 2].map(k => d[k] + x[k] * nx * t * aspect + y[k] * ny * t))
+            return {origin: this.eye(), dir}
+        }
+
         /** The projection times the view, for a picture `aspect` wide. */
         matrix(aspect) {
-            const d = this.direction
-            const eye = [this.position[0] - d[0] * this.distance, this.position[1] - d[1] * this.distance, this.position[2] - d[2] * this.distance]
+            const eye = this.eye()
             const projection = mat4.perspective(this.fov * Math.PI / 180, aspect, 0.05, 2000)
             return mat4.multiply(projection, mat4.lookAt(eye, this.position, [0, 0, 1]))
         }

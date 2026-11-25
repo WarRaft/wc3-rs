@@ -49,6 +49,11 @@ impl Slk {
         self.rows.get(id)?.get(&column.to_ascii_lowercase()).map(String::as_str).filter(|s| !s.is_empty())
     }
 
+    /// Every row: its id and its cells by column (lower case).
+    pub fn rows(&self) -> impl Iterator<Item = (&String, &HashMap<String, String>)> {
+        self.rows.iter()
+    }
+
     /// [`get`](Self::get) as a number.
     pub fn number(&self, id: &str, column: &str) -> Option<f32> {
         self.get(id, column)?.parse().ok()
@@ -121,7 +126,7 @@ impl Tileset {
 }
 
 /// `path` with `.blp` when it has no extension.
-fn with_extension(path: &str) -> String {
+pub fn with_extension(path: &str) -> String {
     let file = path.rsplit(['\\', '/']).next().unwrap_or(path);
     if file.contains('.') { path.to_string() } else { format!("{path}.blp") }
 }
