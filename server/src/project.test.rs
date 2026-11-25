@@ -80,7 +80,7 @@ fn unknown_sections_and_keys_are_warnings() {
     assert_eq!(
         messages,
         vec![
-            (1, "unknown section [jas] (expected [project], [code], [map], [build], [jass] or [lint])"),
+            (1, "unknown section [jas] (expected [project], [code], [map], [build], [jass], [lint] or [external])"),
             (4, "unknown setting 'source' in [project] (expected 'game')"),
             (5, "setting without a name"),
         ]
@@ -443,4 +443,19 @@ fn a_build_says_where_and_how() {
     assert_eq!(project.builds[0], Build { name: "release".into(), out: Some(PathBuf::from("/p/out/map.w3x")), uglify: true, optimize: true, script: Default::default() });
     assert_eq!(project.builds[1].out(&project), PathBuf::from("/p/build/war3map.j"));
     assert_eq!(issues.iter().map(|i| i.message.as_str()).collect::<Vec<_>>(), ["'uglify' is 1 or 0", "'optimize' is 1 or 0"]);
+}
+
+#[test]
+fn externals_name_their_programs() {
+    let (p, issues) = load(Path::new("/proj"), "[external]\nObjectMerger=\"wine\",\"tools/ObjectMerger.exe\"\nLocal=\"bin/merge\"\nEmpty=\nObjectMerger=\"other\"\n");
+    // A program with a path in the project's folder; one by name as it is.
+    assert_eq!(p.externals, [
+        ("ObjectMerger".to_string(), vec!["wine".to_string(), "tools/ObjectMerger.exe".to_string()]),
+        ("Local".to_string(), vec![Path::new("/proj").join("bin/merge").to_string_lossy().into_owned()]),
+    ]);
+    let said: Vec<(usize, &str)> = issues.iter().map(|i| (i.line, i.message.as_str())).collect();
+    assert_eq!(said, [
+        (4, "'Empty' needs its program: Empty=\"path/to/tool\" (and arguments, comma-separated)"),
+        (5, "'ObjectMerger' is named already: the first is run"),
+    ]);
 }

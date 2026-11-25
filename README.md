@@ -8,10 +8,9 @@ item's details are in its section below):
 
 - **The build** (see [Building a map](#building-a-map)).
   - Of JassHelper's manual (its every example run by `wc3-build`'s
-    `tests/manual.rs`): `//! external` (running another tool, an
-    ObjectMerger) isn't run: an error. The rest is read and built; what
-    its examples still fail on is the manual's own (typos, errors shown
-    on purpose, fragments).
+    `tests/manual.rs`): all of it is read and built (`//! external` runs
+    its tool on the map: `[external]`); what its examples still fail on
+    is the manual's own (typos, errors shown on purpose, fragments).
   - Neither Lua nor AngelScript is run in the game yet (only `luac`, a
     test's `lua`, `as-rs`). JassHelper's own manual is in
     `../JassHelper-manual/Writerside/topics`: what's left of vJASS is
@@ -91,7 +90,20 @@ dialect=vjass
 | `[build]`   | `optimize` | `1` or `0`                              | the script optimized (see "Optimizing" below): inlining, dead code left out; `0` without it |
 | `[jass]`    | `dialect` | `jass` or `vjass` (case-insensitive)     | the dialect of `.j` files that don't declare one in a `// @dialect` header |
 | `[lint]`    | a rule or group id | `off`, `warning` or `error`     | turn a lint rule (or every rule of a group) off or on, at that level (see [Lint](#lint)) |
+| `[external]` | a tool's name | its program and first arguments, comma-separated BNI strings (`"wine","tools/ObjectMerger.exe"`; a program with a `/` relative to the project root) | the tool JassHelper's `//! external NAME` runs on the map built (see below) |
 
+- **`[external]`: JassHelper's tools.** A build runs each `//! external
+  NAME args` and `//! externalblock [extension=x] NAME args` ... `//! i
+  line` ... `//! endexternalblock` of the code on the map it wrote, in
+  order, as JassHelper does: the program `[external] NAME=` names, its
+  arguments there, then the map's path, the lookup paths (`;` between,
+  `/` for `\`: the project's folder, its roots, its game folders) and
+  the directive's own arguments (`"..."` one); a block's `//! i` lines
+  are the tool's input, or the file `$FILENAME$` names (with its
+  `extension=`), run in the project's folder. A tool that ends with
+  other than 0 fails the build, with what it said at its line; what it
+  says otherwise is a note. Code alone (no `[map]`) makes no map: an
+  error.
 - **`dialect`.** A file's own header always wins over the project, so a
   project can still mix dialects. Without either, a file is plain JASS.
   A `.vj` file is vJASS unless its header says otherwise. The order is
@@ -516,8 +528,9 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    code said of the lines written; `hook` (`h__Name`, the game's
    natives' signatures from `common.j` and `Blizzard.j`); Zinc's arrays
    of several dimensions (one array). In the editor a textmacro's body
-   and `novjass` are a comment. Not run yet: `//! inject`,
-   `dovjassinit`, `loaddata`, `external` (an error each, not code lost).
+   and `novjass` are a comment. `//! inject`, `dovjassinit`,
+   `loaddata` are built; `external` runs its tool on the map built
+   (`[external]` in Projects above).
 4. **Their objects in JASS**: structs as arrays and an allocator,
    interfaces through `TriggerEvaluate`, libraries in the order of
    `requires`. Done so far (`wc3-build`'s `lower` and `structs`):
@@ -531,8 +544,8 @@ a map needs it. Zinc's parser is complete; it goes into the same IR.
    each), operators (`x`, `x=`, `[]`, `[]=`, `<`), `delegate`; what's
    built checks clean as the game's JASS; operators of interfaces and
    `stub` ones by the instance's type, and more index space than an array
-   (split into the game's arrays). Everything of JassHelper's manual but
-   `//! external` (`wc3-build`'s README).
+   (split into the game's arrays). Everything of JassHelper's manual
+   (`wc3-build`'s README).
 5. **AngelScript and Lua** past their stubs (see Outputs above for
    what's decided): the build of code alone and `script=` first, then
    Lua, then AngelScript with `Blizzard.j` tree-shaken, then Show Lua and

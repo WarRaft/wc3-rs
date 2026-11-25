@@ -113,7 +113,11 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
         // AngelScript's: common.j's names in Jass::, what's used of Blizzard.j.
         let (common_j, blizzard_j) = if b.script == wc3_build::jass::Script::AngelScript { (text("Scripts\\common.j"), text("Scripts\\Blizzard.j")) } else { Default::default() };
         let options = wc3_build::jass::Options { uglify: b.uglify, optimize: b.optimize, game: game_sigs(), script: b.script, common_j, blizzard_j };
-        let built = wc3_build::from_jass::module_with(&sources, &import).and_then(|m| wc3_build::jass::build_with(&m, &options)).map_err(said)?;
+        let module = wc3_build::from_jass::module_with(&sources, &import).map_err(said)?;
+        if let Some(e) = module.externals.first() {
+            return Err(vec![format!("{}:{}: `//! external {}` runs a tool on the map, and code alone makes no map: give the project a [map] root=", e.origin.file, e.origin.line, e.tool)]);
+        }
+        let built = wc3_build::jass::build_with(&module, &options).map_err(said)?;
         notes.extend(built.notes);
         let errors = said(built.problems);
         if let Some(dir) = out.parent() {
@@ -145,7 +149,92 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
     }
 
     let written = write(project, &files, base.as_deref(), &made, &game, &out).map_err(|e| vec![e])?;
+    // JassHelper's `//! external`s: the tools on the map written.
+    run_externals(project, &script.externals, &out, &mut notes)?;
     Ok(Built { name: b.name, out, base, files: written, script: format!("war3map.{}", b.script.extension()), script_lines: script.text.lines().count(), triggers, notes, errors })
+}
+
+/// `args` split as a command line: by spaces, a `"..."` one argument
+/// (its quotes off).
+fn split_args(args: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut word = String::new();
+    let mut quoted = false;
+    let mut any = false;
+    for c in args.chars() {
+        match c {
+            '"' => {
+                quoted = !quoted;
+                any = true;
+            }
+            c if c.is_whitespace() && !quoted => {
+                if any || !word.is_empty() {
+                    out.push(std::mem::take(&mut word));
+                }
+                any = false;
+            }
+            c => word.push(c),
+        }
+    }
+    if any || !word.is_empty() {
+        out.push(word);
+    }
+    out
+}
+
+/// Runs JassHelper's `//! external`s on the map built at `map`, in order,
+/// as JassHelper does: the tool the project's `[external]` names, given
+/// the map's path, the lookup paths (`;` between, `/` for `\`: the
+/// project's folder, its roots and game folders) and the directive's own
+/// arguments; an `externalblock`'s lines its input, or the file
+/// `$FILENAME$` names (with its `extension=`). One that fails (not 0) is
+/// the build's error, with what it said; what one says otherwise, a note.
+fn run_externals(project: &Project, externals: &[wc3_build::ir::External], map: &Path, notes: &mut Vec<String>) -> Result<(), Vec<String>> {
+    use std::io::Write as _;
+    let lookups: Vec<String> = std::iter::once(&project.root).chain(&project.roots).chain(&project.game).map(|p| p.to_string_lossy().replace('\\', "/")).collect();
+    for (k, e) in externals.iter().enumerate() {
+        let at = format!("{}:{}: `//! external {}`", e.origin.file, e.origin.line, e.tool);
+        let Some((_, argv)) = project.externals.iter().find(|(t, _)| *t == e.tool) else {
+            return Err(vec![format!("{at}: wc3.bni has no [external] {}= (the tool's program)", e.tool)]);
+        };
+        let mut args = split_args(&e.args);
+        let mut file = None;
+        if let Some(input) = &e.input
+            && args.iter().any(|a| a.contains("$FILENAME$"))
+        {
+            let ext = e.extension.as_deref().unwrap_or("txt");
+            let path = std::env::temp_dir().join(format!("wc3-external-{}-{k}.{ext}", std::process::id()));
+            std::fs::write(&path, input).map_err(|err| vec![format!("{at}: {}: {err}", path.display())])?;
+            for a in &mut args {
+                *a = a.replace("$FILENAME$", &path.to_string_lossy());
+            }
+            file = Some(path);
+        }
+        let stdin = e.input.as_ref().filter(|_| file.is_none());
+        let mut command = std::process::Command::new(&argv[0]);
+        command.args(&argv[1..]).arg(map).arg(lookups.join(";")).args(&args).current_dir(&project.root);
+        command.stdin(if stdin.is_some() { std::process::Stdio::piped() } else { std::process::Stdio::null() });
+        command.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+        let ran = command.spawn().and_then(|mut child| {
+            if let (Some(text), Some(mut pipe)) = (stdin, child.stdin.take()) {
+                pipe.write_all(text.as_bytes())?;
+            }
+            child.wait_with_output()
+        });
+        if let Some(path) = file {
+            let _ = std::fs::remove_file(path);
+        }
+        let output = ran.map_err(|err| vec![format!("{at}: {} can't be run: {err}", argv[0])])?;
+        let said = |b: &[u8]| String::from_utf8_lossy(b).trim().to_string();
+        let (out, err) = (said(&output.stdout), said(&output.stderr));
+        if !output.status.success() {
+            let what = [err, out].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n");
+            let code = output.status.code().map_or("a signal".to_string(), |c| c.to_string());
+            return Err(vec![format!("{at} failed ({code}){}", if what.is_empty() { String::new() } else { format!(": {what}") })]);
+        }
+        notes.push(format!("{at} ran{}", if out.is_empty() { String::new() } else { format!(": {out}") }));
+    }
+    Ok(())
 }
 
 /// The project's `.trg` files made World Editor's `war3map.wtg` and

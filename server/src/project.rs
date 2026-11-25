@@ -83,6 +83,12 @@ pub struct Project {
     /// (`parser_rs::GROUPS`), by group id. A rule set by name wins over
     /// its groups.
     pub lint_groups: HashMap<String, LintSetting>,
+    /// `[external] NAME="program","arg",...`: the tools JassHelper's
+    /// `//! external NAME` runs on the map built, each its program and the
+    /// arguments before the ones the build gives (a program with a `/` in
+    /// it resolved against `root`; `"wine","tools/ObjectMerger.exe"` runs
+    /// a Windows tool), in the order written.
+    pub externals: Vec<(String, Vec<String>)>,
 }
 
 /// A `[build]`: a scenario of building the project's map. Any number of
@@ -371,12 +377,30 @@ pub fn load(root: &Path, src: &str) -> (Project, Vec<Issue>) {
                     }
                 }
             }
+            "external" => {
+                for item in items {
+                    let Some(tool) = key_of(item, &mut issues) else { continue };
+                    let mut argv: Vec<String> = item.fields.iter().map(|f| f.text().trim().to_string()).collect();
+                    if argv.first().is_none_or(|p| p.is_empty()) {
+                        issues.push(at_name(item.key.as_ref().expect("a key"), Level::Error, format!("'{tool}' needs its program: {tool}=\"path/to/tool\" (and arguments, comma-separated)")));
+                        continue;
+                    }
+                    if argv[0].contains(['/', '\\']) && Path::new(&argv[0]).is_relative() {
+                        argv[0] = root.join(&argv[0]).to_string_lossy().into_owned();
+                    }
+                    if project.externals.iter().any(|(t, _)| t == tool) {
+                        issues.push(at_name(item.key.as_ref().expect("a key"), Level::Warning, format!("'{tool}' is named already: the first is run")));
+                        continue;
+                    }
+                    project.externals.push((tool.to_string(), argv));
+                }
+            }
             // An empty name is already a bni-rs lint warning.
             "" => {}
             other => issues.push(at_name(
                 &section.name,
                 Level::Warning,
-                format!("unknown section [{other}] (expected [project], [code], [map], [build], [jass] or [lint])"),
+                format!("unknown section [{other}] (expected [project], [code], [map], [build], [jass], [lint] or [external])"),
             )),
         }
     }

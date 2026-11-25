@@ -153,3 +153,42 @@ fn code_alone_builds_its_script_in_each_language() {
     assert!(text.contains("function Half(i)\n    do return wcb__div(i, 2) end\nend"), "{text}");
     assert!(text.contains("BJDebugMsg(\"half: \" .. (I2S(Half(-7)) or \"\"))"), "{text}");
 }
+
+#[test]
+fn jasshelpers_externals_run_on_the_map_built() {
+    let tmp = crate::project::tests::TempDir::new("externals");
+    let root = &tmp.0;
+    std::fs::create_dir_all(root.join("map")).unwrap();
+    std::fs::write(root.join("map/war3map.w3i"), w3i_rs::Info { version: 25, ..Default::default() }.to_bytes().unwrap()).unwrap();
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    // A tool: what it's given, and its input, into a file beside the project.
+    std::fs::create_dir_all(root.join("tools")).unwrap();
+    std::fs::write(root.join("tools/tool.sh"), "printf '%s|' \"$@\" > \"$(dirname \"$0\")/args.txt\"\ncat > \"$(dirname \"$0\")/input.txt\"\ncase \"$3\" in fail) echo broke >&2; exit 3;; esac\n[ -f \"$4\" ] && cp \"$4\" \"$(dirname \"$0\")/file.txt\"\necho done\n").unwrap();
+    let code = |text: &str| std::fs::write(root.join("src/main.j"), format!("// @dialect vjass\n{text}\nfunction main takes nothing returns nothing\nendfunction\nfunction config takes nothing returns nothing\nendfunction\n")).unwrap();
+    std::fs::write(root.join("wc3.bni"), "[map]\nroot=map\n[code]\nsources=src\n[build]\n[external]\nTOOL=\"/bin/sh\",\"tools/tool.sh\"\n").unwrap();
+    let read = |f: &str| std::fs::read_to_string(root.join("tools").join(f)).unwrap_or_default();
+
+    // A block: its lines the tool's input; the map's path, the lookup paths, then its own arguments.
+    code("//! externalblock TOOL w3u \"two words\"\n//! i first\n//! i\n//! endexternalblock");
+    let b = build_at(root, None).unwrap_or_else(|e| panic!("{e:#?}"));
+    let args: Vec<String> = read("args.txt").trim_end_matches('|').split('|').map(String::from).collect();
+    assert_eq!(args[0], b.out.to_string_lossy());
+    assert!(args[1].split(';').next().is_some_and(|p| p == root.to_string_lossy().replace('\\', "/")), "{args:?}");
+    assert_eq!(&args[2..], ["w3u", "two words"]);
+    assert_eq!(read("input.txt"), "first\n\n");
+    assert!(b.notes.iter().any(|n| n.ends_with("`//! external TOOL` ran: done")), "{:?}", b.notes);
+
+    // `$FILENAME$`: the block in a file (its extension), no input.
+    code("//! externalblock extension=lua TOOL x $FILENAME$\n//! i print(1)\n//! endexternalblock");
+    build_at(root, None).unwrap_or_else(|e| panic!("{e:#?}"));
+    assert_eq!(read("file.txt"), "print(1)\n");
+    assert!(read("args.txt").contains(".lua|"), "{}", read("args.txt"));
+
+    // A tool that fails, or isn't named: the build's error, at its line.
+    code("//! external TOOL fail");
+    let e = build_at(root, None).unwrap_err();
+    assert!(e[0].ends_with("main.j:2: `//! external TOOL` failed (3): broke"), "{e:?}");
+    code("//! external Other");
+    let e = build_at(root, None).unwrap_err();
+    assert!(e[0].ends_with("main.j:2: `//! external Other`: wc3.bni has no [external] Other= (the tool's program)"), "{e:?}");
+}
