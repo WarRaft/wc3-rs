@@ -20,7 +20,6 @@ item's details are in its section below):
     compacting: it would lose the files nobody knows the names of).
   - Optimizing (`optimize=1`) is inlining and dead code only: none of
     wc3mapoptimizer's others (constants folded, locals reused ...).
-- **MCP**: renaming (refactoring) JASS across a project.
 - **Tests in the editor** ([below](#tests-in-the-editor)): dragging the
   line beside the trigger tree isn't driven (no mouse); every new piece
   of the editor gets a step in `extension/e2e/suite.js`.
