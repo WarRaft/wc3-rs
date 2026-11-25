@@ -66,6 +66,10 @@ fn triggers_taken_out_with_their_code_build() {
     let wct = crate::customtext::document(&script, &crate::map::bytes(&script).unwrap()).unwrap().text;
     let made = crate::triggers::extract_files(&f, Some(&wct)).unwrap();
     let _ = std::fs::remove_dir_all(&out);
+    // The categories' folders, an empty one too (as Extract makes them).
+    for folder in &made.folders {
+        std::fs::create_dir_all(out.join("triggers").join(folder)).unwrap();
+    }
     for (p, t) in &made.files {
         let path = out.join("triggers").join(p);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -75,6 +79,26 @@ fn triggers_taken_out_with_their_code_build() {
     std::fs::write(out.join("wc3.bni"), format!("[project]\ngame={:?}\n[code]\nsources=triggers/\n[map]\nroot={:?}\n[build]\n", game[0], map)).unwrap();
     let built = build_at(&out, None).unwrap_or_else(|e| panic!("{e:#?}"));
     println!("{} files of code ({custom} .j), {} triggers: {built:#?}", made.files.len(), f.triggers.len());
+    // The map built opens with the triggers it runs: World Editor's files of
+    // the .trg files, the map's own again (the categories numbered anew).
+    // The custom script's text: its code the same (the line breaks of a
+    // piece that mixes `\r\n` and `\n` aren't kept through its text, which
+    // Extract cuts it from).
+    let text = |b: &[u8]| wct_rs::text::to_text(&wct_rs::parse(b).unwrap(), wct_rs::text::Script::Jass).unwrap();
+    let back_wct = crate::map::bytes(&built.out.join("war3map.wct")).expect("war3map.wct written");
+    assert_eq!(text(&back_wct), text(&crate::map::bytes(&script).unwrap()), "war3map.wct");
+    let back = wtg_rs::parse_any(&crate::map::bytes(&built.out.join("war3map.wtg")).expect("war3map.wtg written"), &names.triggers).unwrap();
+    let wtg_rs::File::Classic(back) = back else { panic!("written as 1.31's") };
+    let named = |f: &wtg_rs::Triggers| -> Vec<(String, String)> {
+        f.triggers.iter().map(|t| (t.name.clone(), f.categories.iter().find(|c| c.index == t.category).map_or(String::new(), |c| c.name.clone()))).collect()
+    };
+    assert_eq!(named(&back), named(&f), "each trigger in its category");
+    assert_eq!(back.variables, f.variables);
+    let mut back = back;
+    for (t, o) in back.triggers.iter_mut().zip(&f.triggers) {
+        t.category = o.category;
+    }
+    assert_eq!(back.triggers, f.triggers);
 }
 
 /// The code of an extracted project's triggers put beside them, from the

@@ -10,8 +10,6 @@ item's details are in its section below):
   - No **Convert to Custom Text** yet.
   - Maps of 1.31 and later: `war3map.wtg`'s layout has no text form, so
     their triggers don't open in the editor.
-  - The way back, `.trg` into a map's `war3map.wtg` (only what World
-    Editor has; what it hasn't is listed), isn't written yet.
   - Names of objects for codes (`hfoo`), and pickers of objects in the
     parameters' dialogs.
   - What `war3mapUnits.doo` places is declared as both `gg_unit_` and
@@ -28,9 +26,6 @@ item's details are in its section below):
     checked against it.
   - A copy of a base map keeps the space of the files it replaces (no
     compacting: it would lose the files nobody knows the names of).
-  - A build from `.trg` files leaves the map's `war3map.wtg` and
-    `war3map.wct` as they were (World Editor would open the old
-    triggers).
   - Optimizing (`optimize=1`) is inlining and dead code only: none of
     wc3mapoptimizer's others (constants folded, locals reused ...).
 - **MCP**: renaming (refactoring) JASS across a project.
@@ -1164,11 +1159,18 @@ the code stays JASS, with everything the editor does for JASS):
 Of this, the view of `.trg` files, Extract, and editing a map's
 `war3map.wtg` in place (its tree: new, renamed and deleted categories,
 triggers and variables; a trigger picked in it edited as a `.trg`;
-moved between categories; saved back) are done; making `war3map.j`
-from a map's files, the test that taking a file out keeps the script,
-and the way back are next. The way back writes only what World Editor
-has: a `.trg` with locals, private variables or custom script of many
-lines is told so.
+moved between categories; saved back), making `war3map.j` from a map's
+files, and the way back are done. The way back is the build's: a map
+built from `.trg` files gets a `war3map.wtg` and a `war3map.wct` made of
+them (`wtg_rs::text::from_files`), so World Editor opens it with the
+triggers it runs: the custom script's header the map's, a trigger of
+custom text's code the `X.j` beside it (else the map's), a comment's
+text the map's. What World Editor's files can't hold (a variable
+private or local to its file, a trigger outside a category ...) leaves
+the map's own two as they are, and a note of the build says why.
+Taken out of Diablo III beta and The Castle and built back, the triggers
+are the map's again (the categories numbered anew), the custom script's
+code too (server test `triggers_taken_out_with_their_code_build`).
 
 The `.trg` format is free to grow: a new field, a new kind of line,
 more than `UI\TriggerData.txt` describes, with nothing to keep in

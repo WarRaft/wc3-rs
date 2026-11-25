@@ -129,6 +129,9 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
     notes.extend(script.notes);
     let errors = said(script.problems.clone());
     let mut made = vec![(format!("war3map.{}", b.script.extension()), script.text.clone().into_bytes())];
+    // Triggers of `.trg` files: World Editor's files of them too, so the
+    // map opens with the triggers it runs.
+    made.extend(triggers_back(project, &game, &names, &mut notes));
     // A map of Lua says so in its war3map.w3i (from 1.31's layout).
     if b.script == wc3_build::jass::Script::Lua
         && let Some(mut info) = read("war3map.w3i").and_then(|b| w3i_rs::parse(&b).ok())
@@ -143,6 +146,135 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
 
     let written = write(project, &files, base.as_deref(), &made, &game, &out).map_err(|e| vec![e])?;
     Ok(Built { name: b.name, out, base, files: written, script: format!("war3map.{}", b.script.extension()), script_lines: script.text.lines().count(), triggers, notes, errors })
+}
+
+/// The project's `.trg` files made World Editor's `war3map.wtg` and
+/// `war3map.wct` (`wtg_rs::text::from_files`, Extract's way back), for the
+/// map built: its triggers as the files have them, in their order; the
+/// custom script's header the map's; a trigger of custom text's code its
+/// `X.j` beside it (as Extract wrote it: its `// @dialect` line and, for
+/// one that's off, the comment around it taken off), else the map's by its
+/// name. None without `.trg` files. What World Editor's files can't hold
+/// (a private or local variable, a trigger outside a category ...) leaves
+/// the map's own two files as they are, and a note says why.
+fn triggers_back(project: &Project, game: &Game, names: &crate::names::Names, notes: &mut Vec<String>) -> Vec<(String, Vec<u8>)> {
+    let trg = code_files(project, &["trg"]);
+    if trg.is_empty() {
+        return Vec::new();
+    }
+    // Their folder: above the categories' folders (`_variables.trg` in it).
+    fn parent_of(p: &Path) -> Option<&Path> {
+        if p.file_name().is_some_and(|n| n == wtg_rs::text::VARIABLES_FILE) { p.parent() } else { p.parent().and_then(Path::parent) }
+    }
+    let mut root: Option<PathBuf> = None;
+    for p in &trg {
+        let Some(up) = parent_of(p) else { continue };
+        root = Some(match root {
+            None => up.to_path_buf(),
+            Some(r) => r.ancestors().find(|a| up.starts_with(a)).unwrap_or(Path::new("")).to_path_buf(),
+        });
+    }
+    let root = root.unwrap_or_default();
+    let mut files: Vec<(String, String, PathBuf)> = Vec::new();
+    for p in &trg {
+        let Ok(text) = std::fs::read(p).map(crate::document::decode) else { continue };
+        let rel = p.strip_prefix(&root).unwrap_or(p).to_string_lossy().replace('\\', "/");
+        files.push((rel, text, p.clone()));
+    }
+    let pairs: Vec<(String, String)> = files.iter().map(|(r, t, _)| (r.clone(), t.clone())).collect();
+    // The categories' folders, an empty one too.
+    let folders: Vec<String> = std::fs::read_dir(&root).into_iter().flatten().flatten().filter(|e| e.path().is_dir()).map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    let left = |why: String, notes: &mut Vec<String>| notes.push(format!("war3map.wtg and war3map.wct left as the map has them: {why}"));
+    let wtg = match wtg_rs::text::from_files(&folders, &pairs, Some(&names.triggers)) {
+        Ok(f) => f,
+        Err(e) => {
+            let more = if e.len() > 5 { format!(" (and {} more)", e.len() - 5) } else { String::new() };
+            left(format!("World Editor's can't hold the triggers as the .trg files have them: {}{more}", e[..e.len().min(5)].join("; ")), notes);
+            return Vec::new();
+        }
+    };
+    // The trigger files in the order `from_files` read them.
+    files.retain(|(r, _, _)| r != wtg_rs::text::VARIABLES_FILE);
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    // The map's custom script: its header, its triggers' code by name.
+    let map_wct = game.read("war3map.wct").and_then(|(b, _)| wct_rs::parse(&b).ok());
+    let map_wtg = game.read("war3map.wtg").and_then(|(b, _)| match wtg_rs::parse_any(&b, &names.triggers) {
+        Ok(wtg_rs::File::Classic(f)) => Some(f),
+        _ => None,
+    });
+    // The map's pieces by their triggers' names, each taken once, in order
+    // (names may repeat).
+    let mut map_pieces: Vec<(String, wct_rs::Code)> = Vec::new();
+    if let (Some(w), Some(c)) = (&map_wtg, &map_wct)
+        && w.triggers.len() == c.triggers.len()
+    {
+        map_pieces = w.triggers.iter().zip(&c.triggers).map(|(t, code)| (t.name.clone(), code.clone())).collect();
+    }
+    let mut take = |name: &str| -> Option<wct_rs::Code> {
+        let at = map_pieces.iter().position(|(n, _)| n == name)?;
+        Some(map_pieces.remove(at).1)
+    };
+    // Line breaks as the map's custom script has them (World Editor's
+    // `\r\n` without one): the code beside its trigger has `\n`.
+    let crlf = map_wct.as_ref().is_none_or(|c| std::iter::once(&c.header).chain(&c.triggers).any(|p| p.text().windows(2).any(|w| w == b"\r\n")));
+    let mut pieces = Vec::new();
+    for (t, (_, _, path)) in wtg.triggers.iter().zip(&files) {
+        // A comment: its text as the map has it (Extract leaves it in).
+        if t.is_comment != 0 {
+            pieces.push(take(&t.name).unwrap_or(wct_rs::Code(None)));
+            continue;
+        }
+        // Not custom text: no code at all, as World Editor stores it.
+        if t.is_custom == 0 {
+            take(&t.name);
+            pieces.push(wct_rs::Code(None));
+            continue;
+        }
+        let from_map = take(&t.name);
+        let code = if let Ok(text) = std::fs::read(path.with_extension("j")).map(crate::document::decode) {
+            let code = extracted_code(&text, t.enabled == 0).replace("\r\n", "\n");
+            let code = if crlf { code.replace('\n', "\r\n") } else { code };
+            wct_rs::Code::new(code.as_bytes())
+        } else if let Some(code) = from_map {
+            code
+        } else {
+            left(format!("trigger '{}' is custom text, and its code is neither beside it nor in the map's war3map.wct", t.name), notes);
+            return Vec::new();
+        };
+        pieces.push(code);
+    }
+    let wct = wct_rs::CustomText {
+        magic: false,
+        version: 1,
+        comment: map_wct.as_ref().map(|c| c.comment.clone()).unwrap_or_default(),
+        header: map_wct.as_ref().map(|c| c.header.clone()).unwrap_or_else(|| wct_rs::Code::new(b"")),
+        triggers: pieces,
+    };
+    match (wtg.to_bytes(), wct.to_bytes()) {
+        (Ok(a), Ok(b)) => vec![("war3map.wtg".into(), a), ("war3map.wct".into(), b)],
+        (Err(e), _) | (_, Err(e)) => {
+            left(format!("{e}"), notes);
+            Vec::new()
+        }
+    }
+}
+
+/// A trigger's code as Extract wrote it beside its `.trg` (`X.j`), as
+/// `war3map.wct` holds it: its `// @dialect` line left out, (`off`, a
+/// trigger that's off) the `// ` before each line of the comment it's in,
+/// and the line break after it that isn't the code's (Extract cuts it out
+/// of `war3map.wct`'s text form, which ends each piece with one).
+fn extracted_code(text: &str, off: bool) -> String {
+    let text = text.strip_suffix("\r\n").or_else(|| text.strip_suffix('\n')).unwrap_or(text);
+    let mut lines: Vec<&str> = text.split_inclusive('\n').collect();
+    if lines.first().is_some_and(|l| l.trim_start().starts_with("// @dialect")) {
+        lines.remove(0);
+    }
+    if off && lines.first().is_some_and(|l| l.starts_with("// The trigger is off")) {
+        lines.remove(0);
+        return lines.iter().map(|l| l.strip_prefix("// ").unwrap_or(l)).collect();
+    }
+    lines.concat()
 }
 
 /// The build `name` of the project of `path` (a file or folder in it:
