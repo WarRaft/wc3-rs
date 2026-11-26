@@ -270,9 +270,11 @@ pub struct CliffsMsg {
 /// array, error), a list of models (path, `f32` box min x, y, z, max x,
 /// y, z, a list of geosets: `f32` positions, normals, texture
 /// coordinates, `u16` triangles, a list of layers: `i32` texture
-/// (`placed::texture`), `u32` filter mode, `u32` shading, `f32` alpha;
+/// (`placed::texture`), `u32` filter mode, `u32` shading, `f32` alpha,
+/// `u8` HD, `i32` its normal, ORM, emissive and team colour textures;
 /// the vertices' bones and weights, 8 bytes each (none when no bone is
-/// baked), `u32` its index in the model; then `f32` instances, `placed::INSTANCE` each; error;
+/// baked), `u32` its index in the model, `f32` tangents (4 a vertex;
+/// none without them); then `f32` instances, `placed::INSTANCE` each; error;
 /// its animation, `u32` bones, `u32` geosets, `u32` frames, `f32` frames
 /// a second, `f32` a row a frame (`anim::BONE` a bone, then 4 a geoset:
 /// its colour and alpha), 0 frames when nothing is animated; a list of
@@ -710,9 +712,14 @@ impl ServerMsg {
                             w.u32(l.filter_mode);
                             w.u32(l.shading);
                             w.f32(l.alpha);
+                            w.u8(l.hd as u8);
+                            for t in [l.normal, l.orm, l.emissive, l.team] {
+                                w.u32(t as u32);
+                            }
                         });
                         w.bytes(&g.skin);
                         w.u32(g.index);
+                        w.f32s(&g.tangents);
                     });
                     w.f32s(&m.instances);
                     w.string(&m.error);
@@ -963,10 +970,21 @@ impl ServerMsg {
                             uvs: r.f32s()?,
                             indices: r.bytes()?.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect(),
                             layers: r.list(|r| {
-                                Ok(crate::placed::Layer { texture: r.u32()? as i32, filter_mode: r.u32()?, shading: r.u32()?, alpha: r.f32()? })
+                                Ok(crate::placed::Layer {
+                                    texture: r.u32()? as i32,
+                                    filter_mode: r.u32()?,
+                                    shading: r.u32()?,
+                                    alpha: r.f32()?,
+                                    hd: r.u8()? != 0,
+                                    normal: r.u32()? as i32,
+                                    orm: r.u32()? as i32,
+                                    emissive: r.u32()? as i32,
+                                    team: r.u32()? as i32,
+                                })
                             })?,
                             skin: r.bytes()?,
                             index: r.u32()?,
+                            tangents: r.f32s()?,
                         })
                     })?;
                     let (instances, error) = (r.f32s()?, r.string()?);

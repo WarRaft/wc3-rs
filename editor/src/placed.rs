@@ -47,6 +47,15 @@ pub struct Layer {
     pub filter_mode: u32,
     pub shading: u32,
     pub alpha: f32,
+    /// Reforged's HD layer (its textures by slot, more than a diffuse
+    /// one): its normal map, ORM (occlusion, roughness, metalness; its
+    /// alpha where team colour goes), emissive and team colour textures,
+    /// each as [`texture`](Self::texture) ([`texture::NONE`] for none).
+    pub hd: bool,
+    pub normal: i32,
+    pub orm: i32,
+    pub emissive: i32,
+    pub team: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -61,6 +70,9 @@ pub struct Geoset {
     pub skin: Vec<u8>,
     /// Its index in the model: its colour's texel (`anim::Baked`).
     pub index: u32,
+    /// Reforged's tangents (`TANG`), four a vertex (the fourth the
+    /// bitangent's sign); none without them.
+    pub tangents: Vec<f32>,
 }
 
 /// A model and where it stands.
@@ -580,11 +592,20 @@ fn load_model(
             .map(|mat| {
                 mat.layers
                     .iter()
-                    .map(|l| Layer {
-                        texture: texs.get(l.diffuse(version) as usize).copied().unwrap_or(texture::NONE),
-                        filter_mode: l.filter_mode,
-                        shading: l.shading,
-                        alpha: l.alpha,
+                    .map(|l| {
+                        let slots = l.textures(version).unwrap_or_default();
+                        let slot = |n: u32| slots.iter().find(|t| t.slot == n).and_then(|t| texs.get(t.texture_id as usize).copied()).unwrap_or(texture::NONE);
+                        Layer {
+                            texture: texs.get(l.diffuse(version) as usize).copied().unwrap_or(texture::NONE),
+                            filter_mode: l.filter_mode,
+                            shading: l.shading,
+                            alpha: l.alpha,
+                            hd: slots.len() > 1,
+                            normal: slot(1),
+                            orm: slot(2),
+                            emissive: slot(3),
+                            team: slot(4),
+                        }
                     })
                     .collect()
             })
@@ -597,6 +618,7 @@ fn load_model(
             layers,
             skin: if skinned { crate::anim::skin(g, &slots, version) } else { Vec::new() },
             index: gi as u32,
+            tangents: g.tangents.as_ref().filter(|t| t.len() == g.vertices.len()).map(|t| t.iter().flatten().copied().collect()).unwrap_or_default(),
         });
     }
     // Nothing shown (a model of particles alone): nothing to draw yet,

@@ -24,7 +24,7 @@ item's details are in its section below):
   pathing), 7 (in step with the rest), 8a (animation), 8b (particles),
   8c (light), 8d (the map's size and tiles), the leftovers; Reforged HD
   a (the storage), b (the game's layers), c (`.dds`), d (its
-  models). Next: Reforged HD e.
+  models), e (the HD shaders).
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1960,8 +1960,19 @@ step), this list updated.
        `E2E_HD=1`). Its trees come out reddish-orange where the
        classic's are green-yellow: their texture as Reforged names it,
        not looked into yet.
-     - **e, the HD shaders**: diffuse, normal, ORM, emissive, team
-       colour, as the game draws them.
+     - **e, the HD shaders** (done): an HD layer (its textures by slot,
+       more than a diffuse one) sends its normal map, ORM, emissive and
+       team colour textures (`placed::Layer`), its geoset its tangents
+       (`TANG`); the page's `objects.js` skins the tangents as the
+       normals and, as HiveWE's `skinned_mesh_hd.frag` does: team colour
+       where the ORM's alpha says, the normal map's x and y (z worked
+       out) about the tangent (its w the bitangent's sign), the emissive
+       added after the light; the normal taken to the world rather than
+       the light to the tangent's space, so HD models take the map's day
+       and night as the rest. A slot a layer hasn't: a flat normal, an
+       ORM with no team colour, no glow. Not yet: roughness and
+       metalness (the ORM's G, B: no specular light here), reflections
+       (slot 5).
 
 ## MCP
 

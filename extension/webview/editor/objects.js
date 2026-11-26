@@ -26,6 +26,9 @@ layout(location = 5) in vec3 a_tint;
 layout(location = 6) in vec3 a_team;
 layout(location = 7) in vec4 a_bones;
 layout(location = 8) in vec4 a_weights;
+// Reforged's tangents (the fourth the bitangent's sign); (0, 0, 0, 1)
+// without them.
+layout(location = 9) in vec4 a_tangent;
 uniform mat4 u_mvp;
 uniform int u_selected;
 // The model's animation: its bones' matrices, a row of four texels a
@@ -99,6 +102,7 @@ vec3 skinned(vec4 v, int frame) {
 }
 out vec2 v_uv;
 out vec3 v_normal;
+out vec4 v_tangent;
 out vec3 v_tint;
 out vec3 v_team;
 out float v_selected;
@@ -108,6 +112,7 @@ uniform vec3 u_eye;
 void main() {
     vec3 pos = a_pos;
     vec3 normal = a_normal;
+    vec3 tangent = a_tangent.xyz;
     v_geoset = vec4(1.0);
     if (u_animated) {
         // Each one at its own place in the loop, by where it stands.
@@ -116,6 +121,7 @@ void main() {
         if (u_skinned) {
             pos = skinned(vec4(a_pos, 1.0), frame);
             normal = skinned(vec4(a_normal, 0.0), frame);
+            tangent = skinned(vec4(a_tangent.xyz, 0.0), frame);
         }
         if (u_geoset >= 0) v_geoset = texelFetch(u_matrices, ivec2(u_geoset, frame), 0);
     }
@@ -124,6 +130,7 @@ void main() {
     float s = sin(a_place.w);
     p = vec3(p.x * c - p.y * s, p.x * s + p.y * c, p.z) + a_place.xyz;
     v_normal = vec3(normal.x * c - normal.y * s, normal.x * s + normal.y * c, normal.z);
+    v_tangent = vec4(tangent.x * c - tangent.y * s, tangent.x * s + tangent.y * c, tangent.z, a_tangent.w);
     v_uv = a_uv;
     v_tint = a_tint;
     v_team = a_team;
@@ -140,10 +147,17 @@ uniform float u_alpha;
 uniform bool u_cutout;
 uniform bool u_unshaded;
 uniform vec3 u_light;
+// Reforged's HD layer: its normal map (x, y), ORM (its alpha where team
+// colour goes), emissive (units 2, 3, 4).
+uniform bool u_hd;
+uniform sampler2D u_normalMap;
+uniform sampler2D u_orm;
+uniform sampler2D u_emissive;
 ${EditorLight.GLSL}
 in float v_dist;
 in vec2 v_uv;
 in vec3 v_normal;
+in vec4 v_tangent;
 in vec3 v_tint;
 in vec3 v_team;
 in float v_selected;
@@ -156,9 +170,28 @@ void main() {
     color.rgb *= v_tint * v_geoset.rgb;
     color.a *= u_alpha * v_geoset.a;
     if (u_cutout && color.a < 0.75) discard;
-    if (!u_unshaded) {
-        color.rgb = lit(color.rgb, v_normal, clamp((dot(-u_light, normalize(v_normal)) + 1.0) * 0.5, 0.0, 1.0) * 1.2);
+    vec3 n = v_normal;
+    vec3 glow = vec3(0.0);
+    if (u_hd) {
+        // As the game's HD shader: team colour where the ORM's alpha says,
+        // the normal map's x and y (z worked out) about the vertex's
+        // tangent, the emissive added after the light.
+        vec4 orm = texture(u_orm, v_uv);
+        color.rgb = mix(color.rgb, color.rgb * v_team, orm.a);
+        if (dot(v_tangent.xyz, v_tangent.xyz) > 1e-4) {
+            vec2 xy = texture(u_normalMap, v_uv).xy * 2.0 - 1.0;
+            vec3 tn = vec3(xy, sqrt(max(0.0, 1.0 - dot(xy, xy))));
+            vec3 N = normalize(v_normal);
+            vec3 T = normalize(v_tangent.xyz - N * dot(N, v_tangent.xyz));
+            vec3 B = cross(N, T) * (v_tangent.w < 0.0 ? -1.0 : 1.0);
+            n = T * tn.x + B * tn.y + N * tn.z;
+        }
+        glow = texture(u_emissive, v_uv).rgb;
     }
+    if (!u_unshaded) {
+        color.rgb = lit(color.rgb, n, clamp((dot(-u_light, normalize(n)) + 1.0) * 0.5, 0.0, 1.0) * 1.2);
+    }
+    color.rgb += glow;
     color.rgb = fogged(color.rgb, v_dist);
     color.rgb = mix(color.rgb, vec3(0.3, 1.0, 0.3), v_selected * 0.35);
 }`
@@ -184,7 +217,7 @@ void main() {
         if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p))
         const u = name => gl.getUniformLocation(p, name)
         const light = Object.fromEntries(['u_daylight', 'u_sun', 'u_diffuse', 'u_ambient', 'u_fog', 'u_fogStart', 'u_fogEnd', 'u_fogColor', 'u_eye'].map(n => [n, u(n)]))
-        return {...light, program: p, u_animated: u('u_animated'), u_skinned: u('u_skinned'), u_geoset: u('u_geoset'), u_still: u('u_still'), u_camRight: u('u_camRight'), u_camUp: u('u_camUp'), u_camForward: u('u_camForward'), u_matrices: u('u_matrices'), u_time: u('u_time'), u_fps: u('u_fps'), u_frames: u('u_frames'), u_mvp: u('u_mvp'), u_selected: u('u_selected'), u_texture: u('u_texture'), u_source: u('u_source'), u_alpha: u('u_alpha'), u_cutout: u('u_cutout'), u_unshaded: u('u_unshaded'), u_light: u('u_light')}
+        return {...light, program: p, u_animated: u('u_animated'), u_skinned: u('u_skinned'), u_geoset: u('u_geoset'), u_still: u('u_still'), u_camRight: u('u_camRight'), u_camUp: u('u_camUp'), u_camForward: u('u_camForward'), u_matrices: u('u_matrices'), u_time: u('u_time'), u_fps: u('u_fps'), u_frames: u('u_frames'), u_mvp: u('u_mvp'), u_selected: u('u_selected'), u_texture: u('u_texture'), u_source: u('u_source'), u_alpha: u('u_alpha'), u_cutout: u('u_cutout'), u_unshaded: u('u_unshaded'), u_light: u('u_light'), u_hd: u('u_hd'), u_normalMap: u('u_normalMap'), u_orm: u('u_orm'), u_emissive: u('u_emissive')}
     }
 
     class Objects {
@@ -196,6 +229,11 @@ void main() {
             this.models = []
             this.particles = new EditorParticles.Particles(gl)
             this.white = this.texture({width: 1, height: 1, rgba: new Uint8Array([255, 255, 255, 255])})
+            // An HD layer's slots it hasn't: a flat normal, an ORM with no
+            // team colour, no glow.
+            this.flat = this.texture({width: 1, height: 1, rgba: new Uint8Array([128, 128, 255, 255])})
+            this.plainOrm = this.texture({width: 1, height: 1, rgba: new Uint8Array([255, 255, 0, 0])})
+            this.black = this.texture({width: 1, height: 1, rgba: new Uint8Array([0, 0, 0, 255])})
             /** The model and instance picked; -1 none. */
             this.selected = {model: -1, instance: -1}
             this.notes = []
@@ -280,6 +318,8 @@ void main() {
                     attribute(0, g.positions, 3)
                     attribute(1, g.normals, 3)
                     attribute(2, g.uvs, 2)
+                    if (g.tangents.length) attribute(9, g.tangents, 4)
+                    else gl.vertexAttrib4f(9, 0, 0, 0, 1)
                     if (g.skin.length) {
                         const b = gl.createBuffer()
                         buffers.push(b)
@@ -382,6 +422,16 @@ void main() {
                             gl.uniform1f(p.u_alpha, l.alpha)
                             gl.uniform1i(p.u_cutout, l.filterMode === 1 ? 1 : 0)
                             gl.uniform1i(p.u_unshaded, l.shading & 1 ? 1 : 0)
+                            gl.uniform1i(p.u_hd, l.hd ? 1 : 0)
+                            if (l.hd) {
+                                const own = (i, none) => (i >= 0 ? this.textures[i] : null) ?? none
+                                for (const [unit, name, t] of [[2, 'u_normalMap', own(l.normal, this.flat)], [3, 'u_orm', own(l.orm, this.plainOrm)], [4, 'u_emissive', own(l.emissive, this.black)]]) {
+                                    gl.activeTexture(gl.TEXTURE0 + unit)
+                                    gl.bindTexture(gl.TEXTURE_2D, t)
+                                    gl.uniform1i(p[name], unit)
+                                }
+                                gl.activeTexture(gl.TEXTURE0)
+                            }
                             gl.drawElementsInstanced(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0, m.instances)
                         }
                     }
