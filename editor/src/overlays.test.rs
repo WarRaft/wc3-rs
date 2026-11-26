@@ -41,7 +41,7 @@ fn regions_bounds_cameras_and_the_minimap() {
     let minimap = (3, 2, vec![0u8; 3 * 2 * 4]);
     let files = crate::placed::Files::read(&game).0;
     let info = game.read("war3map.w3i").and_then(|(b, _)| w3i_rs::parse(&b).ok());
-    let o = Overlays::load(&game, &t, &d, &Objects::default(), &files, info.as_ref(), minimap);
+    let o = Overlays::load(&t, &d, &Objects::default(), &files, info.as_ref(), minimap);
     assert!(o.notes.is_empty(), "{:?}", o.notes);
     // The region's picture: the left cell, four by four pixels, its
     // edge stronger; the right cell clear.
@@ -88,7 +88,7 @@ fn reforged_cameras() {
     let (t, d) = draw();
     let files = crate::placed::Files::read(&game).0;
     let info = game.read("war3map.w3i").and_then(|(b, _)| w3i_rs::parse(&b).ok());
-    let o = Overlays::load(&game, &t, &d, &Objects::default(), &files, info.as_ref(), (3, 2, vec![0u8; 24]));
+    let o = Overlays::load(&t, &d, &Objects::default(), &files, info.as_ref(), (3, 2, vec![0u8; 24]));
     assert!(!o.notes.iter().any(|n| n.contains("w3c")), "{:?}", o.notes);
     assert_eq!(o.cameras.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Camera 002"]);
 }

@@ -11,7 +11,6 @@
 //! the camera meets the ground.
 
 use w3e_rs::Terrain;
-use wc3_server::game::Game;
 
 use crate::placed::{INSTANCE, Objects, ground_at};
 use crate::terrain::Draw;
@@ -104,13 +103,11 @@ const PLAYABLE: [f32; 4] = [1.0, 0.85, 0.2, 1.0];
 const CAMERA: [f32; 4] = [1.0, 0.4, 0.9, 1.0];
 
 impl Overlays {
-    /// The overlays of the map through `game`, its regions and pathing
+    /// The overlays of the map: its regions, pathing and cameras
     /// `files`' and its bounds `info`'s (as the editor has them).
-    pub fn load(game: &Game, t: &Terrain, draw: &Draw, objects: &Objects, files: &crate::placed::Files, info: Option<&w3i_rs::Info>, minimap: (u32, u32, Vec<u8>)) -> Overlays {
+    pub fn load(t: &Terrain, draw: &Draw, objects: &Objects, files: &crate::placed::Files, info: Option<&w3i_rs::Info>, minimap: (u32, u32, Vec<u8>)) -> Overlays {
         let mut out = Overlays::default();
         let cells = |wx: f32, wy: f32| [(wx - draw.offset[0]) / 128.0, (wy - draw.offset[1]) / 128.0];
-        let read = |name: &str| game.read(name).map(|(b, _)| b);
-        let w3i = read("war3map.w3i");
 
         if let Some(p) = &files.pathing {
             out.pathing = Grid { width: p.width, height: p.height, data: p.cells.clone() };
@@ -157,25 +154,20 @@ impl Overlays {
 
         // The cameras: a line from where each is to where it looks, and a
         // cross where it looks.
-        if let Some(bytes) = read("war3map.w3c") {
-            let layout = w3i.as_deref().and_then(w3c_rs::Layout::from_w3i);
-            match layout.map_or_else(|| w3c_rs::parse_any(&bytes), |l| w3c_rs::parse(&bytes, l)) {
-                Ok(cams) => {
-                    for c in &cams.cameras {
-                        let [x, y] = cells(c.target_x, c.target_y);
-                        let target = [x, y, ground_at(draw, x, y) + c.z_offset / 128.0];
-                        let (rot, aoa) = (c.rotation.to_radians(), c.angle_of_attack.to_radians());
-                        let forward = [rot.cos() * aoa.cos(), rot.sin() * aoa.cos(), aoa.sin()];
-                        let d = c.distance / 128.0;
-                        let eye = [target[0] - forward[0] * d, target[1] - forward[1] * d, target[2] - forward[2] * d];
-                        line(eye, target, CAMERA, &mut out.camera_lines);
-                        for (dx, dy) in [(0.5, 0.0), (0.0, 0.5)] {
-                            line([x - dx, y - dy, target[2]], [x + dx, y + dy, target[2]], CAMERA, &mut out.camera_lines);
-                        }
-                        out.cameras.push(Camera { name: c.name.clone(), target, eye });
-                    }
+        // (`placed::Files` read them, and said an error.)
+        if let Some(cams) = files.cameras.as_ref() {
+            for c in &cams.cameras {
+                let [x, y] = cells(c.target_x, c.target_y);
+                let target = [x, y, ground_at(draw, x, y) + c.z_offset / 128.0];
+                let (rot, aoa) = (c.rotation.to_radians(), c.angle_of_attack.to_radians());
+                let forward = [rot.cos() * aoa.cos(), rot.sin() * aoa.cos(), aoa.sin()];
+                let d = c.distance / 128.0;
+                let eye = [target[0] - forward[0] * d, target[1] - forward[1] * d, target[2] - forward[2] * d];
+                line(eye, target, CAMERA, &mut out.camera_lines);
+                for (dx, dy) in [(0.5, 0.0), (0.0, 0.5)] {
+                    line([x - dx, y - dy, target[2]], [x + dx, y + dy, target[2]], CAMERA, &mut out.camera_lines);
                 }
-                Err(e) => out.notes.push(format!("Can't read war3map.w3c: {e}")),
+                out.cameras.push(Camera { name: c.name.clone(), target, eye });
             }
         }
 

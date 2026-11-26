@@ -96,6 +96,8 @@ pub struct Dirty {
     pub units: bool,
     pub regions: bool,
     pub pathing: bool,
+    /// `war3map.w3c` (cameras off a cut terrain removed).
+    pub cameras: bool,
     /// `war3map.w3i` (its playable area, its tileset) and `war3map.shd`.
     pub info: bool,
     pub shadows: bool,
@@ -103,7 +105,7 @@ pub struct Dirty {
 
 impl Dirty {
     pub fn any(self) -> bool {
-        self.terrain || self.doodads || self.units || self.regions || self.pathing || self.info || self.shadows
+        self.terrain || self.doodads || self.units || self.regions || self.pathing || self.cameras || self.info || self.shadows
     }
 }
 

@@ -259,6 +259,8 @@ pub struct Files {
     /// The regions (`war3map.w3r`) and the pathing (`war3map.wpm`).
     pub regions: Option<w3r_rs::Regions>,
     pub pathing: Option<wpm_rs::Pathing>,
+    /// The cameras (`war3map.w3c`), in the layout `war3map.w3i` says.
+    pub cameras: Option<w3c_rs::Cameras>,
     /// The layout the map's `war3map.w3i` says (1.32's skins), for new
     /// files.
     pub layout: doo_rs::Layout,
@@ -301,7 +303,18 @@ impl Files {
                 None
             }
         });
-        let files = Files { doodads, units, regions, pathing, layout: layout.unwrap_or_default() };
+        let w3i = game.read("war3map.w3i").map(|(b, _)| b);
+        let cameras = game.read("war3map.w3c").and_then(|(bytes, _)| {
+            let layout = w3i.as_deref().and_then(w3c_rs::Layout::from_w3i);
+            match layout.map_or_else(|| w3c_rs::parse_any(&bytes), |l| w3c_rs::parse(&bytes, l)) {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    notes.push(format!("Can't read war3map.w3c: {e}"));
+                    None
+                }
+            }
+        });
+        let files = Files { doodads, units, regions, pathing, cameras, layout: layout.unwrap_or_default() };
         (files, notes)
     }
 }

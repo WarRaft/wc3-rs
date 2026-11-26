@@ -78,10 +78,15 @@ fn whats_off_the_map_removed_regions_cut() {
     let region = |l: f32, rt: f32| w3r_rs::Region::new("R", l, 0.0, rt, 64.0, 0);
     r.regions = vec![region(right - 64.0, right + 64.0), region(right + 1.0, right + 100.0)];
     files.regions = Some(r);
+    // A camera looking at a point on it kept, one off it removed.
+    let mut c = w3c_rs::Cameras::new(w3c_rs::Layout::Classic);
+    c.cameras = vec![w3c_rs::Camera::new("On", right - 1.0, 0.0), w3c_rs::Camera::new("Off", right + 1.0, 0.0)];
+    files.cameras = Some(c);
     let removed = placed(&mut files, &t, Sides { right: -8, ..Default::default() });
-    assert_eq!(removed, Removed { things: 1, regions: 1 });
+    assert_eq!(removed, Removed { things: 1, regions: 1, cameras: 1 });
     let r = &files.regions.as_ref().unwrap().regions;
     assert_eq!((r.len(), r[0].right), (1, right));
+    assert_eq!(files.cameras.as_ref().unwrap().cameras.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["On"]);
 }
 
 #[test]

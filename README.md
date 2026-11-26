@@ -24,7 +24,7 @@ item's details are in its section below):
   pathing), 7 (in step with the rest), 8a (animation), 8b (particles),
   8c (light), 8d (the map's size and tiles), the leftovers; Reforged HD
   a (the storage), b (the game's layers), c (`.dds`), d (its
-  models), e (the HD shaders).
+  models), e (the HD shaders), f (2.0's mods and HD terrain).
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1918,8 +1918,10 @@ step), this list updated.
      with it, its three flags put on those cells, the rest kept; undone
      as a pathing brush; kept on save as a brush's paint is). The page's
      Map… panel (`mapsettings.js`); `war3map.w3i` and `war3map.shd`
-     saved when they changed. MCP: `w3e_tiles`, `map_resize`. Not yet:
-     cameras (`war3map.w3c`) off a cut terrain aren't removed.
+     saved when they changed. MCP: `w3e_tiles`, `map_resize`. The
+     cameras (`war3map.w3c`, now a piece of the session as the regions
+     are: read with the rest, taken in when changed on disk, saved when
+     changed) looking at a point off a cut terrain removed.
    - **Reforged HD** (a Reforged install is at hand: 3.0.1, a CASC
      storage), in parts:
      - **a, the storage** (done): `../casc-rs` (its own repository,

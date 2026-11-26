@@ -253,7 +253,7 @@ impl Session {
         let objects = self.objects.as_ref().unwrap();
         let (_, grounds, textures, layers) = self.ground_cache.as_ref().unwrap();
         let minimap = crate::picture::paint(&self.terrain, grounds, textures, layers, &draw, self.tileset.water.as_ref(), 1);
-        let mut overlays = crate::overlays::Overlays::load(&self.game, &self.terrain, &draw, objects, &self.placed, self.info.as_ref(), minimap);
+        let mut overlays = crate::overlays::Overlays::load(&self.terrain, &draw, objects, &self.placed, self.info.as_ref(), minimap);
         overlays.destructables = self.destructables_pathing();
         self.overlays = Some(overlays.clone());
         terrain.extend(objects_msg);
@@ -363,11 +363,16 @@ impl Session {
         d.doodads |= (removed.things > 0 || sides.left != 0 || sides.bottom != 0) && self.placed.doodads.is_some();
         d.units |= removed.things > 0 && self.placed.units.is_some();
         d.regions |= removed.regions > 0;
+        d.cameras |= removed.cameras > 0;
         let message = format!(
             "The map is {} by {} cells{}.",
             self.terrain.width - 1,
             self.terrain.height - 1,
-            if removed.things + removed.regions > 0 { format!("; off it, removed: {} things, {} regions", removed.things, removed.regions) } else { String::new() }
+            if removed.things + removed.regions + removed.cameras > 0 {
+                format!("; off it, removed: {} things, {} regions, {} cameras", removed.things, removed.regions, removed.cameras)
+            } else {
+                String::new()
+            }
         );
         self.redraw(false, message)
     }
@@ -600,12 +605,13 @@ impl Session {
         let docs: Vec<String> = self.docs.values().map(|(p, _)| p.clone()).collect();
         let mut saved = Vec::new();
         let mut failed = Vec::new();
-        let files: [FileToSave; 7] = [
+        let files: [FileToSave; 8] = [
             (dirty.terrain, "war3map.w3e", self.terrain.to_bytes().map_err(|e| e.to_string())),
             (dirty.doodads, "war3map.doo", self.placed.doodads.as_ref().map_or(Ok(Vec::new()), |d| d.to_bytes().map_err(|e| e.to_string()))),
             (dirty.units, "war3mapUnits.doo", self.placed.units.as_ref().map_or(Ok(Vec::new()), |u| u.to_bytes().map_err(|e| e.to_string()))),
             (dirty.regions, "war3map.w3r", self.placed.regions.as_ref().map_or(Ok(Vec::new()), |r| r.to_bytes().map_err(|e| e.to_string()))),
             (dirty.pathing, "war3map.wpm", self.placed.pathing.as_ref().map_or(Ok(Vec::new()), |p| p.to_bytes().map_err(|e| e.to_string()))),
+            (dirty.cameras && self.placed.cameras.is_some(), "war3map.w3c", self.placed.cameras.as_ref().map_or(Ok(Vec::new()), |c| c.to_bytes().map_err(|e| e.to_string()))),
             (dirty.info && self.info.is_some(), "war3map.w3i", self.info.as_ref().map_or(Ok(Vec::new()), |i| i.to_bytes().map_err(|e| e.to_string()))),
             (dirty.shadows && self.shadows.is_some(), "war3map.shd", Ok(self.shadows.as_ref().map_or(Vec::new(), |s| s.to_bytes()))),
         ];
@@ -625,7 +631,7 @@ impl Session {
                 Ok(to) => {
                     saved.push(to.display().to_string());
                     let d = &mut self.edits.dirty;
-                    *[&mut d.terrain, &mut d.doodads, &mut d.units, &mut d.regions, &mut d.pathing, &mut d.info, &mut d.shadows][i] = false;
+                    *[&mut d.terrain, &mut d.doodads, &mut d.units, &mut d.regions, &mut d.pathing, &mut d.cameras, &mut d.info, &mut d.shadows][i] = false;
                 }
                 Err(e) => failed.push(format!("{name}: {e}")),
             }
@@ -732,7 +738,7 @@ impl Session {
     }
 
     /// The map's pieces the editor changes, by name.
-    pub const PIECES: [&'static str; 5] = ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.wpm"];
+    pub const PIECES: [&'static str; 6] = ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.wpm", "war3map.w3c"];
 
     /// Each piece's bytes as the layers have it now, hashed (`None`: no
     /// layer has it).
@@ -767,6 +773,7 @@ impl Session {
             "war3map.doo" => d.doodads,
             "war3mapUnits.doo" => d.units,
             "war3map.w3r" => d.regions,
+            "war3map.w3c" => d.cameras,
             _ => d.pathing,
         };
         let (kept, taken): (Vec<&str>, Vec<&str>) = changed.iter().partition(|n| dirty(n));
@@ -788,6 +795,7 @@ impl Session {
                 "war3map.doo" => self.placed.doodads = files.doodads.clone(),
                 "war3mapUnits.doo" => self.placed.units = files.units.clone(),
                 "war3map.w3r" => self.placed.regions = files.regions.clone(),
+                "war3map.w3c" => self.placed.cameras = files.cameras.clone(),
                 _ => {
                     self.placed.pathing = files.pathing.clone();
                     self.pathing_made = None;
@@ -973,7 +981,7 @@ impl Session {
         let minimap = crate::picture::paint(&self.terrain, grounds, textures, layers, &draw, self.tileset.water.as_ref(), 1);
         let empty = crate::placed::Objects::default();
         let objects = self.objects.as_ref().unwrap_or(&empty);
-        let mut o = crate::overlays::Overlays::load(&self.game, &self.terrain, &draw, objects, &self.placed, self.info.as_ref(), minimap);
+        let mut o = crate::overlays::Overlays::load(&self.terrain, &draw, objects, &self.placed, self.info.as_ref(), minimap);
         o.destructables = self.destructables_pathing();
         self.overlays = Some(o.clone());
         o

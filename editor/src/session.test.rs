@@ -401,10 +401,14 @@ fn the_map_resized_its_tiles_set_and_undone_saved_with_its_info_and_shadows() {
     info.camera_complements = [2, 2, 2, 2];
     dir.write("map/war3map.w3i", &info.to_bytes().unwrap());
     dir.write("map/war3map.shd", &vec![255u8; 128 * 128]);
+    let mut cams = w3c_rs::Cameras::new(w3c_rs::Layout::Classic);
+    cams.cameras = vec![w3c_rs::Camera::new("Kept", 0.0, 0.0), w3c_rs::Camera::new("Cut", 3000.0, 0.0)];
+    dir.write("map/war3map.w3c", &cams.to_bytes().unwrap());
     dir.write("map/TerrainArt/Terrain.slk", &testdir::slk(&[&["tileID", "dir", "file"], &["Ldrt", "T", "Dirt"], &["Lgrs", "T", "Grass"]]));
     dir.write("map/TerrainArt/CliffTypes.slk", &testdir::slk(&[&["cliffID", "groundTile"], &["CLdi", "Ldrt"], &["CLgr", "Lgrs"]]));
     let mut s = Session::open(dir.path()).unwrap();
     s.draw();
+    assert_eq!(s.overlays().cameras.len(), 2);
     let settings = s.map_settings();
     assert_eq!((settings.width, settings.margins, settings.map_tiles.clone(), settings.max_tiles), (33, [2, 2, 2, 2], vec!["Ldrt".to_string()], 16));
     assert_eq!(settings.tiles.iter().map(|t| (t.id.as_str(), t.cliff)).collect::<Vec<_>>(), [("Ldrt", true), ("Lgrs", true)]);
@@ -439,6 +443,15 @@ fn the_map_resized_its_tiles_set_and_undone_saved_with_its_info_and_shadows() {
     assert!(p.cells.iter().all(|c| c & wpm_rs::NO_WALK != 0 || c & wpm_rs::NO_FLY != 0));
     s.undo(false);
     assert!(s.placed.pathing.as_ref().unwrap().cells.iter().any(|c| c & wpm_rs::NO_WALK == 0));
+    // Cut on the right (to x 2944): the camera looking past it removed,
+    // the other kept; saved.
+    let msgs = s.resize(crate::resize::Sides { right: -8, ..Default::default() }, None);
+    assert!(matches!(msgs.last(), Some(ServerMsg::State(st)) if st.message.contains("1 cameras")), "{msgs:?}");
+    assert_eq!(s.overlays().cameras.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Kept"]);
+    let saved = s.save();
+    assert!(matches!(saved.last(), Some(ServerMsg::State(st)) if st.message.contains("war3map.w3c")), "{saved:?}");
+    let c = w3c_rs::parse_any(&std::fs::read(dir.path().join("map/war3map.w3c")).unwrap()).unwrap();
+    assert_eq!(c.cameras.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Kept"]);
     // Too small: refused, nothing changed.
     let msgs = s.resize(crate::resize::Sides { right: -20, ..Default::default() }, None);
     assert!(matches!(&msgs[..], [ServerMsg::State(st)] if st.message.contains("32 to 480")));

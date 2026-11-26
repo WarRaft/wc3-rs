@@ -14,8 +14,8 @@
 //!   camera's bounds leave out grow by what's added; when the cut goes
 //!   into it, the playable area is set again);
 //! - what's placed off the terrain now is removed, the regions cut to it
-//!   (one with nothing left removed); the special doodads (on the
-//!   terrain's grid) move with it.
+//!   (one with nothing left removed), a camera looking at a point off it
+//!   removed; the special doodads (on the terrain's grid) move with it.
 //!
 //! The playable area: the points outside it (the cells left out on
 //! each side) the edge's, `war3map.w3i`'s bounds and camera bounds
@@ -37,11 +37,12 @@ pub struct Sides {
 pub const MIN: i32 = 32;
 pub const MAX: i32 = 480;
 
-/// What was removed: things placed and regions.
+/// What was removed: things placed, regions, cameras.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Removed {
     pub things: usize,
     pub regions: usize,
+    pub cameras: usize,
 }
 
 /// The terrain's cells across and up after `s`, or why it can't be.
@@ -119,7 +120,8 @@ pub fn shadows(sh: &mut shd_rs::Shadows, s: Sides) {
 }
 
 /// What's placed off the terrain `t` (resized) removed, the regions cut
-/// to it, the special doodads moved by `s`.
+/// to it, the cameras looking off it removed, the special doodads moved
+/// by `s`.
 pub fn placed(files: &mut crate::placed::Files, t: &Terrain, s: Sides) -> Removed {
     let (x0, y0) = (t.offset_x, t.offset_y);
     let (x1, y1) = (x0 + (t.width - 1) as f32 * w3e_rs::CELL, y0 + (t.height - 1) as f32 * w3e_rs::CELL);
@@ -151,6 +153,11 @@ pub fn placed(files: &mut crate::placed::Files, t: &Terrain, s: Sides) -> Remove
         }
         r.regions.retain(|g| g.right > g.left && g.top > g.bottom);
         removed.regions = n - r.regions.len();
+    }
+    if let Some(c) = files.cameras.as_mut() {
+        let n = c.cameras.len();
+        c.cameras.retain(|c| on(c.target_x, c.target_y));
+        removed.cameras = n - c.cameras.len();
     }
     removed
 }
