@@ -349,6 +349,8 @@
     $('save').onclick = () => send(encode.save())
     const mapPanel = new EditorMapSettings.Panel($('map-panel'), send, encode)
     $('map-open').onclick = () => (mapPanel.isOpen ? mapPanel.close() : mapPanel.open())
+    const objectsPanel = new EditorObjectEditor.Panel($('objects-panel'), send, encode, objects => vscode.postMessage({type: 'objects', objects}))
+    $('objects-open').onclick = () => (objectsPanel.isOpen ? objectsPanel.close() : objectsPanel.open())
     $('reload').onclick = () => send(encode.reload())
     showTools()
 
@@ -1162,6 +1164,10 @@
             askThing()
             $('status').textContent = msg.found ? msg.text : ''
             vscode.postMessage({type: 'picked', text: msg.found ? msg.text : ''})
+        } else if (msg.kind === 'objectList') {
+            objectsPanel.setList(msg)
+        } else if (msg.kind === 'objectFields') {
+            objectsPanel.setFields(msg)
         } else if (msg.kind === 'sounds') {
             sounds = msg.sounds
             if (selectNewSound) {
@@ -1256,6 +1262,17 @@
                 send(encode.camera(true, c, camera.ray(msg.x, msg.y, aspect())))
                 send(encode.strokeEnd())
             }
+        } else if (msg.type === 'object') {
+            // The object editor's, for the tests: `open`, `kind` (`k`),
+            // `pick` (`id`), a `field` typed (`field`, `level`, `value`),
+            // `new` (based on the one picked), `delete`, `close`.
+            if (msg.action === 'open') objectsPanel.open()
+            else if (msg.action === 'kind') objectsPanel.showKind(msg.k)
+            else if (msg.action === 'pick') objectsPanel.pick(msg.id)
+            else if (msg.action === 'field') objectsPanel.type(msg.field, msg.level, msg.value)
+            else if (msg.action === 'new') objectsPanel.newButton.onclick()
+            else if (msg.action === 'delete') objectsPanel.deleteButton.onclick()
+            else if (msg.action === 'close') objectsPanel.close()
         } else if (msg.type === 'sound') {
             // The Sounds tool's, for the tests: `new` of a `file`, `pick`
             // one (`index`), a `field` typed (a flag's `bit` checked or not),

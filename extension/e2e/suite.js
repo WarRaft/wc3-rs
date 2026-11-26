@@ -13,7 +13,7 @@ const path = require('path')
  * The steps of the work in hand (`node e2e/run.js current`): moved on as
  * the work does; `all` runs every step.
  */
-const CURRENT = ['sounds']
+const CURRENT = ['objects']
 
 const out = process.env.E2E_OUT
 const map = process.env.E2E_MAP
@@ -397,6 +397,47 @@ async function steps(only) {
             await we.panel.webview.postMessage({type: 'save'})
             const saved = await until(() => we.state?.message && we.state, 'saved')
             check(!saved.dirty && saved.message.includes('war3map.w3s'), saved.message)
+        }},
+        {name: 'objects', editor: true, run: async () => {
+            log("the object editor: the units listed, the footman's hit points typed and refused, one based on it made, deleted and back; Blizzard's cooldown at level 2; saved")
+            await we.panel.webview.postMessage({type: 'object', action: 'open'})
+            const units = await until(() => we.objects?.kind === 0 && we.objects.count > 100 && we.objects, 'the units listed')
+            check(true, `${units.count} units, ${units.changed.length} changed by the map, ${units.custom.length} its own`)
+            const field = (id, level = 0) => we.objects?.picked?.fields.find(f => f[0] === id && f[1] === level)
+            await we.panel.webview.postMessage({type: 'object', action: 'pick', id: 'hfoo'})
+            const footman = await until(() => we.objects?.picked?.id === 'hfoo' && we.objects.picked, "the footman's fields")
+            check(field('uhpm')?.[2] === '420' && footman.fields.length > 50, `${footman.name}: ${footman.fields.length} fields, hit points ${field('uhpm')?.[2]}`)
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'object', action: 'field', field: 'uhpm', value: 500})
+            await until(() => field('uhpm')?.[2] === '500' && field('uhpm')[3], 'its hit points typed')
+            check(we.objects.changed.includes('hfoo') && !we.state?.message, 'hit points 500: changed')
+            await shot('world-editor-objects')
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'object', action: 'field', field: 'uhpm', value: 0})
+            const refused = await until(() => we.state?.message && we.state, 'refused')
+            check(/1 to \d+, not 0/.test(refused.message), refused.message)
+            const customs = we.objects.custom.length
+            await we.panel.webview.postMessage({type: 'object', action: 'new'})
+            const made = await until(() => we.objects?.custom.length === customs + 1 && we.objects.picked?.base === 'hfoo' && we.objects.picked.id !== 'hfoo' && we.objects.picked, 'one based on it')
+            check(/^h[0-9A-Z]{3}$/.test(made.id) && field('uhpm')?.[2] === '500', `${made.id}: based on hfoo, its hit points copied: ${field('uhpm')?.[2]}`)
+            await we.panel.webview.postMessage({type: 'object', action: 'delete'})
+            await until(() => we.objects?.custom.length === customs, 'deleted')
+            await we.panel.webview.postMessage({type: 'undo'})
+            await until(() => we.objects?.custom.length === customs + 1, 'undone: back')
+            await we.panel.webview.postMessage({type: 'object', action: 'kind', k: 4})
+            await until(() => we.objects?.kind === 4 && we.objects.count > 300, 'the abilities listed')
+            await we.panel.webview.postMessage({type: 'object', action: 'pick', id: 'AHbz'})
+            const blizzard = await until(() => we.objects?.picked?.id === 'AHbz' && we.objects.picked, "Blizzard's fields")
+            check(blizzard.levels === 3 && field('acdn', 2), `${blizzard.name}: ${blizzard.levels} levels, cooldown at 2: ${field('acdn', 2)?.[2]}`)
+            await we.panel.webview.postMessage({type: 'object', action: 'field', field: 'acdn', level: 2, value: 9})
+            await until(() => field('acdn', 2)?.[2] === '9' && field('acdn', 2)[3] && !field('acdn', 1)[3], 'its cooldown at level 2 typed')
+            check(true, 'cooldown at level 2: 9, level 1 the game\'s')
+            await shot('world-editor-objects-ability')
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'save'})
+            const saved = await until(() => we.state?.message && we.state, 'saved')
+            check(!saved.dirty && saved.message.includes('war3map.w3u') && saved.message.includes('war3map.w3a'), saved.message)
+            await we.panel.webview.postMessage({type: 'object', action: 'close'})
         }},
         {name: 'map', editor: true, run: async () => {
             log("the map's settings: its tiles reordered and undone, a tile's pathing and undone, four cells added on the right, saved")

@@ -60,7 +60,7 @@ fn the_terrain_drawn_with_the_tables_of_the_roots() {
     assert!(l.terrain.is_empty() && l.notes.iter().any(|n| n.contains("TerrainLights")), "{:?}", l.notes);
     // The pieces with a text form, where they are (the terrain) or would
     // be, at the top root (the map has none of the others).
-    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c", "war3map.w3s"]);
+    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c", "war3map.w3s", "war3map.w3u", "war3map.w3t", "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3h", "war3map.w3q"]);
     assert!(f[1].1.ends_with("map/war3map.doo"), "{f:?}");
     // Nothing placed; the minimap a pixel a corner.
     assert!(o.models.is_empty() && o.notes.is_empty());
@@ -720,4 +720,79 @@ fn sounds_made_set_in_their_ranges_deleted_undone_saved_played_and_in_step_with_
     let typed = s.piece_text("war3map.w3s", &path).unwrap().replace("[gg_snd_Storm]", "[gg_snd_Typed]");
     let msgs = s.text_changed(&path, &typed);
     assert!(matches!(&msgs[0], ServerMsg::Sounds(l) if l[0].name == "gg_snd_Typed"), "{msgs:?}");
+}
+
+#[test]
+fn objects_listed_their_fields_set_reset_made_deleted_undone_saved_and_in_step_with_their_text() {
+    let dir = TestDir::new("session-objects");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    dir.write(
+        "map/Units/UnitMetaData.slk",
+        &testdir::slk(&[
+            &["ID", "field", "slk", "type", "minVal", "maxVal", "category", "useItem"],
+            &["uhpm", "HP", "UnitBalance", "int", "1", "100000", "stats", "0"],
+            &["unam", "Name", "Profile", "string", "", "", "text", "1"],
+            &["umvs", "spd", "UnitBalance", "unreal", "0", "522", "move", "0"],
+        ]),
+    );
+    dir.write("map/Units/UnitData.slk", &testdir::slk(&[&["unitID", "race"], &["hfoo", "human"], &["ogru", "orc"]]));
+    dir.write("map/Units/UnitBalance.slk", &testdir::slk(&[&["unitBalanceID", "HP", "spd"], &["hfoo", "420", "270"], &["ogru", "700", "270"]]));
+    dir.write("map/Units/HumanUnitStrings.txt", b"[hfoo]\nName=Footman\n");
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let said = |msgs: &[ServerMsg]| match msgs.last() {
+        Some(ServerMsg::State(st)) => st.message.clone(),
+        m => panic!("{m:?}"),
+    };
+    let list = |s: &mut Session| match s.object_list(0) {
+        ServerMsg::ObjectList(l) => l.objects,
+        m => panic!("{m:?}"),
+    };
+    let fields = |s: &mut Session, id: &str| match s.object_fields(0, id) {
+        ServerMsg::ObjectFields(f) => f,
+        m => panic!("{m:?}"),
+    };
+    assert_eq!(list(&mut s), [("hfoo".into(), "Footman".into(), "human".into(), 0), ("ogru".into(), "ogru".into(), "orc".into(), 0)]);
+    let f = fields(&mut s, "hfoo");
+    let row = |f: &crate::protocol::ObjectFieldsMsg, id: &str| f.fields.iter().find(|r| r.field == id).cloned().unwrap();
+    assert_eq!(f.fields.iter().map(|r| r.field.as_str()).collect::<Vec<_>>(), ["umvs", "uhpm", "unam"], "by category: move, stats, text");
+    assert_eq!((row(&f, "uhpm").value.as_str(), row(&f, "uhpm").changed), ("420", false));
+    // Set in its limits, an undo each; empty: the game's again.
+    assert_eq!(said(&s.object_set(0, "hfoo", "uhpm", 0, 0, "500")), "");
+    assert!(said(&s.object_set(0, "hfoo", "uhpm", 0, 0, "0")).contains("1 to 100000"));
+    assert_eq!(said(&s.object_set(0, "hfoo", "unam", 0, 0, "Swordsman")), "");
+    let f = fields(&mut s, "hfoo");
+    assert_eq!((row(&f, "uhpm").value.as_str(), row(&f, "uhpm").default.as_str(), row(&f, "uhpm").changed), ("500", "420", true));
+    assert_eq!(list(&mut s)[0], ("hfoo".into(), "Swordsman".into(), "human".into(), 1));
+    s.object_set(0, "hfoo", "uhpm", 0, 0, "");
+    assert!(!row(&fields(&mut s, "hfoo"), "uhpm").changed);
+    // A custom one: its id World Editor's, its base's changes copied.
+    let made = s.object_new(0, "hfoo");
+    assert!(matches!(&made[1], ServerMsg::ObjectFields(f) if f.id == "h000" && f.base == "hfoo"), "{made:?}");
+    assert!(said(&s.object_new(0, "zzzz")).contains("isn't one of the game's"));
+    s.object_set(0, "h000", "uhpm", 0, 0, "900");
+    assert_eq!(list(&mut s)[2], ("h000".into(), "Swordsman".into(), "human".into(), 2), "its base's name change copied");
+    assert_eq!(row(&fields(&mut s, "h000"), "uhpm").value, "900");
+    // Deleted, undone.
+    s.object_delete(0, "h000");
+    assert_eq!(list(&mut s).len(), 2);
+    let undone = s.undo(false);
+    assert!(matches!(&undone[0], ServerMsg::ObjectList(l) if l.objects.len() == 3));
+    // Saved into the root.
+    assert!(said(&s.save()).contains("war3map.w3u"));
+    let back = w3abdhqtu_rs::parse(&std::fs::read(dir.path().join("map/war3map.w3u")).unwrap(), w3abdhqtu_rs::Kind::Unit).unwrap();
+    assert_eq!((back.originals.len(), back.customs.len()), (1, 1));
+    // Its text form: the editor's change goes to it, typed in it the editor follows.
+    let path = dir.path().join("map/war3map.w3u").display().to_string();
+    let text = s.piece_text("war3map.w3u", &path).unwrap();
+    assert!(text.contains("[h000]") && text.contains("HP=900"), "{text}");
+    s.text_changed(&path, &text);
+    s.object_set(0, "h000", "uhpm", 0, 0, "950");
+    let out = s.sync_docs();
+    assert!(matches!(&out[..], [ServerMsg::TextOut { text, .. }] if text.contains("HP=950")), "{out:?}");
+    let typed = s.piece_text("war3map.w3u", &path).unwrap().replace("HP=950", "HP=990");
+    let msgs = s.text_changed(&path, &typed);
+    assert!(matches!(&msgs[0], ServerMsg::ObjectList(_)), "{msgs:?}");
+    assert_eq!(row(&fields(&mut s, "h000"), "uhpm").value, "990");
 }

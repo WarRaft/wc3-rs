@@ -491,3 +491,116 @@ button:hover {
 .map-row select {
     flex: 1;
 }
+
+.obj-panel {
+    position: absolute;
+    left: 240px;
+    right: 12px;
+    top: 12px;
+    bottom: 12px;
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    background: color-mix(in srgb, var(--vscode-editor-background) 96%, transparent);
+    border: 1px solid var(--vscode-panel-border, #444);
+    font-size: .9em;
+}
+
+.obj-panel[hidden] {
+    display: none;
+}
+
+.obj-side {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 280px;
+    min-width: 200px;
+}
+
+.obj-tabs, .obj-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+}
+
+.obj-panel button {
+    background: transparent;
+    color: var(--vscode-foreground);
+    border: 1px solid var(--vscode-panel-border, #555);
+    padding: 2px 6px;
+    font: inherit;
+}
+
+.obj-panel button.on {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+}
+
+.obj-panel input {
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, #555);
+    padding: 2px 4px;
+    font: inherit;
+    min-width: 0;
+}
+
+.obj-list, .obj-fields {
+    flex: 1;
+    overflow: auto;
+    border: 1px solid var(--vscode-panel-border, #444);
+}
+
+.obj-row {
+    padding: 1px 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.obj-row.changed, .obj-field.changed .obj-name {
+    color: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d);
+}
+
+.obj-row.custom {
+    color: var(--vscode-gitDecoration-addedResourceForeground, #81b88b);
+}
+
+.obj-row.on {
+    background: var(--vscode-list-activeSelectionBackground);
+    color: var(--vscode-list-activeSelectionForeground);
+}
+
+.obj-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.obj-title {
+    font-weight: bold;
+}
+
+.obj-category {
+    padding: 4px 4px 2px;
+    font-weight: bold;
+    color: var(--vscode-descriptionForeground);
+}
+
+.obj-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    gap: 4px;
+    align-items: center;
+    padding: 1px 4px;
+}
+
+.obj-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

@@ -45,6 +45,11 @@ fn edits_round_trip() {
         ClientMsg::Redo,
         ClientMsg::Save,
         ClientMsg::ThingAsk { file: 1, index: 7 },
+        ClientMsg::ObjectList { kind: 4 },
+        ClientMsg::ObjectAsk { kind: 0, id: "hfoo".into() },
+        ClientMsg::ObjectSet { kind: 4, id: "A000".into(), field: "Hbz1".into(), level: 2, column: 1, value: "12".into() },
+        ClientMsg::ObjectNew { kind: 0, base: "hfoo".into() },
+        ClientMsg::ObjectDelete { kind: 0, id: "h000".into() },
         ClientMsg::SoundNew { file: "Sound\\Ambient\\Rain.wav".into() },
         ClientMsg::SoundSet { index: 1, field: "volume".into(), value: "".into() },
         ClientMsg::SoundDelete { index: 2 },
@@ -67,6 +72,15 @@ fn edits_round_trip() {
     rain.volume = 100;
     round_trip(ServerMsg::Sounds(vec![rain, w3s_rs::Sound::new("gg_snd_B", "b.mp3")]));
     round_trip(ServerMsg::SoundData { file: "a.wav".into(), bytes: vec![1, 2, 3], error: String::new() });
+    round_trip(ServerMsg::ObjectList(ObjectListMsg { kind: 0, objects: vec![("hfoo".into(), "Footman".into(), "human".into(), 1)] }));
+    round_trip(ServerMsg::ObjectFields(ObjectFieldsMsg {
+        kind: 4,
+        id: "A000".into(),
+        base: "AHbz".into(),
+        name: "Blizzard".into(),
+        levels: 3,
+        fields: vec![FieldRow { field: "Hbz1".into(), name: "Number of Waves".into(), category: "data".into(), ty: "int".into(), level: 2, column: 1, value: "8".into(), default: "6".into(), changed: true }],
+    }));
     round_trip(ServerMsg::Thing(ThingMsg { file: 1, index: 7, fields: vec![("x".into(), 64.0), ("hp".into(), -1.0)] }));
     round_trip(ServerMsg::State(StateMsg { dirty: true, undo: true, redo: false, message: "Saved".into() }));
     round_trip(ServerMsg::Palette(PaletteMsg {

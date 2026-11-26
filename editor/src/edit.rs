@@ -85,6 +85,8 @@ pub enum Snapshot {
     Regions(Vec<w3r_rs::Region>),
     Cameras(Vec<w3c_rs::Camera>),
     Sounds(Vec<w3s_rs::Sound>),
+    /// A kind's object data, whole (`None`: the map had no file).
+    Objects(w3abdhqtu_rs::Kind, Option<w3abdhqtu_rs::ObjectData>),
     Pathing(Vec<u8>),
     /// The whole terrain (the tile setter's: its list, cliffs, tileset).
     Whole(Box<Terrain>),
@@ -102,6 +104,8 @@ pub struct Dirty {
     pub cameras: bool,
     /// `war3map.w3s`.
     pub sounds: bool,
+    /// The object data's files: a bit each, by `objdata::KINDS`' order.
+    pub objects: u8,
     /// `war3map.w3i` (its playable area, its tileset) and `war3map.shd`.
     pub info: bool,
     pub shadows: bool,
@@ -109,7 +113,7 @@ pub struct Dirty {
 
 impl Dirty {
     pub fn any(self) -> bool {
-        self.terrain || self.doodads || self.units || self.regions || self.pathing || self.cameras || self.sounds || self.info || self.shadows
+        self.terrain || self.doodads || self.units || self.regions || self.pathing || self.cameras || self.sounds || self.objects != 0 || self.info || self.shadows
     }
 }
 
@@ -244,6 +248,7 @@ impl Edits {
             Snapshot::Regions(_) => self.dirty.regions = true,
             Snapshot::Cameras(_) => self.dirty.cameras = true,
             Snapshot::Sounds(_) => self.dirty.sounds = true,
+            Snapshot::Objects(kind, _) => self.dirty.objects |= crate::objdata::bit(*kind),
             Snapshot::Pathing(_) => self.dirty.pathing = true,
         }
         self.undo.push(before);
@@ -349,6 +354,14 @@ impl Edits {
                 self.dirty.sounds = true;
                 let file = t.files.sounds.get_or_insert_with(w3s_rs::Sounds::new);
                 Snapshot::Sounds(std::mem::replace(&mut file.sounds, s))
+            }
+            Snapshot::Objects(kind, data) => {
+                self.dirty.objects |= crate::objdata::bit(kind);
+                let before = match data {
+                    Some(d) => t.files.objects.insert(kind, d),
+                    None => t.files.objects.remove(&kind),
+                };
+                Snapshot::Objects(kind, before)
             }
             Snapshot::Pathing(cells) => {
                 self.dirty.pathing = true;

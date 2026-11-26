@@ -21,7 +21,8 @@ item's details are in its section below):
 - **The World Editor** (see [World Editor](#world-editor)): its steps,
   in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs), 4 (doodads and units),
   5 (overlays), 6 (editing: terrain brushes, things placed, regions,
-  pathing, cameras, a thing's properties, sounds), 7 (in step with the rest), 8a (animation), 8b (particles),
+  pathing, cameras, a thing's properties, sounds, the object
+  editor's first part), 7 (in step with the rest), 8a (animation), 8b (particles),
   8c (light), 8d (the map's size and tiles), the leftovers; Reforged HD
   a (the storage), b (the game's layers), c (`.dds`), d (its
   models), e (the HD shaders), f (2.0's mods and HD terrain).
@@ -1808,6 +1809,39 @@ step), this list updated.
      `AudioContext`); Delete. An undo each. Messages `SoundNew`,
      `SoundSet`, `SoundDelete`, `SoundPlay`, `Sounds`, `SoundData`. MCP:
      the `w3s_*` tools already change the file.
+   - **6g, the object editor** (done after 6f; a first part): the
+     map's object data (`war3map.w3u`, `.w3t`, `.w3b`, `.w3d`, `.w3a`,
+     `.w3h`, `.w3q`) pieces of the session (read with the rest, taken in
+     when changed on disk, saved, their text forms in step;
+     `Snapshot::Objects`, a kind's file whole). `editor/src/objdata.rs`:
+     the game's values of its standard objects from its tables
+     (`Units\UnitData.slk`, `UnitBalance.slk` ...) and its profile files
+     (`Units\*UnitFunc.txt`, `*Strings.txt` ...), kept apart (a field the
+     metadata reads from `Profile` the profile's first: `UnitUI.slk`'s
+     `name` is `footman`); a field by its metadata's key (`HP`; `DataA1`
+     at level 1; a list's item by its level or `index`). The page's
+     Objects… panel (`objecteditor.js`): World Editor's tabs (units,
+     items, destructables, doodads, abilities, buffs, upgrades); a kind's
+     objects (the game's in its table's order, changed ones marked, then
+     the map's own), searched; the one picked's fields (`Metadata::
+     applies`: an ability's by its code, items' and units' by their
+     columns), by category, a row a level (as many as its levels field
+     says, a doodad's variations), each its value (the map's change, else
+     the game's) set as it's typed in World Editor's limits (`minVal`,
+     `maxVal`; a bool 0 or 1), ↺ or empty the game's again (a standard
+     object's last change out: no entry); New (a custom object based on
+     the one picked, World Editor's next id: a unit's base's first
+     letter, `I`, `B`, `D`, `A`, `R` and `000` counting up in `0-9A-Z`;
+     its base's changes copied, as World Editor copies them), Delete (a
+     custom one; a standard one's changes). An undo each. A new file
+     takes the map's other files' version, else 2. Messages
+     `ObjectList`, `ObjectAsk`, `ObjectSet`, `ObjectNew`,
+     `ObjectDelete`, `ObjectFields`. Not yet: a unit's fields told apart
+     as a hero's, a building's or a unit's (the metadata's `useHero`,
+     `useBuilding` are one flag here: a footman lists heroes' fields
+     too); what's placed drawn again by the changed types (a model, a
+     scale: the view takes them in on the next open); `TRIGSTR_` values
+     shown as their ids. MCP: the `obj_*` tools already change them.
 
 7. **In step with the rest** (done). Decided with the user: a text form
    open in VS Code and the editor are one (the text is the truth, as

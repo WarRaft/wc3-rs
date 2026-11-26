@@ -265,6 +265,8 @@ pub struct Files {
     pub cameras: Option<w3c_rs::Cameras>,
     /// The sounds (`war3map.w3s`).
     pub sounds: Option<w3s_rs::Sounds>,
+    /// The object data (`war3map.w3u` ...: `objdata::KINDS`), by kind.
+    pub objects: HashMap<w3abdhqtu_rs::Kind, w3abdhqtu_rs::ObjectData>,
     /// The layout the map's `war3map.w3i` says (1.32's skins), for new
     /// files.
     pub layout: doo_rs::Layout,
@@ -325,7 +327,18 @@ impl Files {
                 None
             }
         });
-        let files = Files { doodads, units, regions, pathing, cameras, sounds, layout: layout.unwrap_or_default() };
+        let mut objects = HashMap::new();
+        for kind in crate::objdata::KINDS {
+            let name = crate::objdata::file_name(kind);
+            let Some((bytes, _)) = game.read(&name) else { continue };
+            match w3abdhqtu_rs::parse(&bytes, kind) {
+                Ok(data) => {
+                    objects.insert(kind, data);
+                }
+                Err(e) => notes.push(format!("Can't read {name}: {e}")),
+            }
+        }
+        let files = Files { doodads, units, regions, pathing, cameras, sounds, objects, layout: layout.unwrap_or_default() };
         (files, notes)
     }
 }

@@ -83,6 +83,7 @@ const VIEW = 'wc3.editors'
  * @property {number | undefined} icons  how many of the object palette's icons the page has
  * @property {Map<string, string> | undefined} follow  the paths of the pieces with a text form, by their lower case
  * @property {string | undefined} picked  what the last click picked, said ('' nothing)
+ * @property {{kind: number, count: number, custom: string[], changed: string[], picked: {id: string, base: string, name: string, levels: number, fields: [string, number, string, boolean][]} | null} | undefined} objects  the object editor's kind, its objects, the one picked and its fields
  * @property {{count: number, names: string[], picked: object | null} | undefined} sounds  the map's sounds and the one picked (the Sounds tool)
  * @property {{file: string, bytes: number, error: string, played: boolean} | undefined} played  the last sound file played: its bytes, whether it played
  * @property {{file: number, index: number, fields: [string, number][]} | null | undefined} thing  the thing picked and its fields as its panel shows them (the Select tool)
@@ -170,8 +171,10 @@ function registerWorldEditor(context, binary, pickManifest) {
   </div>
   <div class="edits"><button id="undo" title="Undo (Ctrl+Z)" disabled>Undo</button><button id="redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button><button id="save" title="Save the files changed (Ctrl+S)" disabled>Save</button><button id="reload" title="Read the map again, the changes not saved dropped">Reload</button></div>
   <button id="map-open" title="The map's size, its tiles and their pathing">Map…</button>
+  <button id="objects-open" title="The object editor: units, items, destructables, doodads, abilities, buffs, upgrades">Objects…</button>
 </div>
 <div id="map-panel" class="map-panel" hidden></div>
+<div id="objects-panel" class="obj-panel" hidden></div>
 <div id="message" class="message" hidden><h2 id="message-title"></h2><p id="message-text"></p><button id="reopen" hidden>Reopen</button></div>
 </div>
 <ul id="notes" class="notes" hidden></ul>
@@ -180,6 +183,7 @@ function registerWorldEditor(context, binary, pickManifest) {
 <script nonce="${nonce}" src="${asset('camera.js')}"></script>
 <script nonce="${nonce}" src="${asset('light.js')}"></script>
 <script nonce="${nonce}" src="${asset('mapsettings.js')}"></script>
+<script nonce="${nonce}" src="${asset('objecteditor.js')}"></script>
 <script nonce="${nonce}" src="${asset('terrain.js')}"></script>
 <script nonce="${nonce}" src="${asset('particles.js')}"></script>
 <script nonce="${nonce}" src="${asset('objects.js')}"></script>
@@ -325,6 +329,8 @@ function registerWorldEditor(context, binary, pickManifest) {
                 editor.region = msg.region
             } else if (msg.type === 'camera') {
                 editor.camera = msg.camera
+            } else if (msg.type === 'objects') {
+                editor.objects = msg.objects
             } else if (msg.type === 'sounds') {
                 editor.sounds = msg.sounds
             } else if (msg.type === 'played') {

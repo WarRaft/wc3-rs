@@ -53,6 +53,11 @@
 //! | 31 | `SoundSet` | a sound's field set: `u32` index, the field's name (`name`, `file`, `eax`, `flags`, or one of `w3s_rs::Sound::numbers`), its value as text (empty: "use default"); answered the same |
 //! | 32 | `SoundDelete` | `u32` index; answered the same |
 //! | 33 | `SoundPlay` | a sound file's bytes asked for: its path; answered by `SoundData` |
+//! | 34 | `ObjectList` | `u8` kind (`objdata::KINDS`: units, items, destructables, doodads, abilities, buffs, upgrades); answered by `ObjectList` |
+//! | 35 | `ObjectAsk` | `u8` kind, an object's id; answered by `ObjectFields` |
+//! | 36 | `ObjectSet` | an object's field set: `u8` kind, its id, the field's id, `u32` level, `u32` data column, the value as text (empty: the game's again); answered by `ObjectList`, `State` |
+//! | 37 | `ObjectNew` | a custom object: `u8` kind, the id of the one it's based on; answered the same, `ObjectFields` of it |
+//! | 38 | `ObjectDelete` | `u8` kind, an id: a custom object taken away, a standard one's changes; answered the same |
 //! | 22 | `TilePathing` | the tile pather's: `u8` a tile's index in the terrain's list, `u8` what it forbids (`wpm` flags: 2 walking, 4 flying, 8 building); answered by `Overlays` and `State` |
 //! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id); answered by `Icons` |
 //!
@@ -81,6 +86,8 @@
 //! | 147 | `Thing` | a thing's fields: `u8` file, `u32` index, a list of (name, `f32` value); none for no such thing |
 //! | 148 | `Sounds` | the map's sounds: a list of (name, file, EAX label, `u32` flags, `f32` array of `w3s_rs::Sound::numbers`' 16) |
 //! | 149 | `SoundData` | a sound file: its path, its bytes (an array of `u8`), why not (empty: found) |
+//! | 150 | `ObjectList` | a kind's objects: see [`ObjectListMsg`] |
+//! | 151 | `ObjectFields` | an object's fields: see [`ObjectFieldsMsg`] |
 //! | 141 | `Icons` | a list of (`u8` kind, id, `u32` width, height, RGBA; 0 by 0 for none) |
 //!
 //! After an edit the terrain's messages come again: `Cliffs` with no
@@ -137,6 +144,13 @@ mod kind {
     pub const SOUND_PLAY: u8 = 33;
     pub const SOUNDS: u8 = 148;
     pub const SOUND_DATA: u8 = 149;
+    pub const OBJECT_LIST: u8 = 34;
+    pub const OBJECT_ASK: u8 = 35;
+    pub const OBJECT_SET: u8 = 36;
+    pub const OBJECT_NEW: u8 = 37;
+    pub const OBJECT_DELETE: u8 = 38;
+    pub const OBJECT_LIST_ANSWER: u8 = 150;
+    pub const OBJECT_FIELDS: u8 = 151;
     pub const FOLLOW: u8 = 142;
     pub const TEXT_OUT: u8 = 143;
     pub const SAVE_DOCS: u8 = 144;
@@ -224,6 +238,16 @@ pub enum ClientMsg {
     SoundDelete { index: u32 },
     /// Kind 33.
     SoundPlay { file: String },
+    /// Kind 34.
+    ObjectList { kind: u8 },
+    /// Kind 35.
+    ObjectAsk { kind: u8, id: String },
+    /// Kind 36.
+    ObjectSet { kind: u8, id: String, field: String, level: u32, column: u32, value: String },
+    /// Kind 37.
+    ObjectNew { kind: u8, base: String },
+    /// Kind 38.
+    ObjectDelete { kind: u8, id: String },
 }
 
 /// A tile the tile setter offers: its id, name, tileset's letter (its
@@ -362,6 +386,44 @@ pub struct PickedMsg {
     pub ground: Option<[f32; 3]>,
 }
 
+/// Kind 150's body: `u8` the kind (`objdata::KINDS`), its objects: a list
+/// of (id, name, group, `u8` 0 the game's, 1 changed, 2 the map's own),
+/// the game's in its table's order, then the map's.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ObjectListMsg {
+    pub kind: u8,
+    pub objects: Vec<(String, String, String, u8)>,
+}
+
+/// Kind 151's body: `u8` the kind, the object's id, the id of the one
+/// it's based on (its own for the game's), its name, `u32` its levels,
+/// its fields (none: no such object): a list of [`FieldRow`].
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ObjectFieldsMsg {
+    pub kind: u8,
+    pub id: String,
+    pub base: String,
+    pub name: String,
+    pub levels: u32,
+    pub fields: Vec<FieldRow>,
+}
+
+/// A field of an object at a level: its id, World Editor's name, its
+/// category, its metadata type, `u32` level (0: none), `u32` data column,
+/// its value as text, the game's, `u8` changed by the map.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FieldRow {
+    pub field: String,
+    pub name: String,
+    pub category: String,
+    pub ty: String,
+    pub level: u32,
+    pub column: u32,
+    pub value: String,
+    pub default: String,
+    pub changed: bool,
+}
+
 /// Kind 147's body: a thing placed (`file` 0 `war3map.doo`, 1
 /// `war3mapUnits.doo`, its `index` there) and its fields as the panel
 /// shows them (`Session::thing`); none for no such thing.
@@ -463,6 +525,10 @@ pub enum ServerMsg {
     Thing(ThingMsg),
     /// Kind 148.
     Sounds(Vec<w3s_rs::Sound>),
+    /// Kind 150.
+    ObjectList(ObjectListMsg),
+    /// Kind 151.
+    ObjectFields(ObjectFieldsMsg),
     /// Kind 149.
     SoundData { file: String, bytes: Vec<u8>, error: String },
     /// Kind 136.
@@ -584,6 +650,11 @@ impl ClientMsg {
             kind::CAMERA_RENAME => Some(ClientMsg::CameraRename { index: r.u32()?, name: r.string()? }),
             kind::CAMERA_DELETE => Some(ClientMsg::CameraDelete { index: r.u32()? }),
             kind::CAMERA_SET => Some(ClientMsg::CameraSet { index: r.u32()?, field: r.string()?, value: r.f32()? }),
+            kind::OBJECT_LIST => Some(ClientMsg::ObjectList { kind: r.u8()? }),
+            kind::OBJECT_ASK => Some(ClientMsg::ObjectAsk { kind: r.u8()?, id: r.string()? }),
+            kind::OBJECT_SET => Some(ClientMsg::ObjectSet { kind: r.u8()?, id: r.string()?, field: r.string()?, level: r.u32()?, column: r.u32()?, value: r.string()? }),
+            kind::OBJECT_NEW => Some(ClientMsg::ObjectNew { kind: r.u8()?, base: r.string()? }),
+            kind::OBJECT_DELETE => Some(ClientMsg::ObjectDelete { kind: r.u8()?, id: r.string()? }),
             kind::SOUND_NEW => Some(ClientMsg::SoundNew { file: r.string()? }),
             kind::SOUND_SET => Some(ClientMsg::SoundSet { index: r.u32()?, field: r.string()?, value: r.string()? }),
             kind::SOUND_DELETE => Some(ClientMsg::SoundDelete { index: r.u32()? }),
@@ -714,6 +785,34 @@ impl ClientMsg {
                 w.string(field);
                 w.f32(*value);
                 kind::CAMERA_SET
+            }
+            ClientMsg::ObjectList { kind } => {
+                w.u8(*kind);
+                kind::OBJECT_LIST
+            }
+            ClientMsg::ObjectAsk { kind, id } => {
+                w.u8(*kind);
+                w.string(id);
+                kind::OBJECT_ASK
+            }
+            ClientMsg::ObjectSet { kind, id, field, level, column, value } => {
+                w.u8(*kind);
+                w.string(id);
+                w.string(field);
+                w.u32(*level);
+                w.u32(*column);
+                w.string(value);
+                kind::OBJECT_SET
+            }
+            ClientMsg::ObjectNew { kind, base } => {
+                w.u8(*kind);
+                w.string(base);
+                kind::OBJECT_NEW
+            }
+            ClientMsg::ObjectDelete { kind, id } => {
+                w.u8(*kind);
+                w.string(id);
+                kind::OBJECT_DELETE
             }
             ClientMsg::SoundNew { file } => {
                 w.string(file);
@@ -906,6 +1005,34 @@ impl ServerMsg {
                 w.u8(p.ground.is_some() as u8);
                 p.ground.unwrap_or_default().iter().for_each(|v| w.f32(*v));
                 kind::PICKED
+            }
+            ServerMsg::ObjectList(m) => {
+                w.u8(m.kind);
+                w.list(&m.objects, |w, (id, name, group, state)| {
+                    w.string(id);
+                    w.string(name);
+                    w.string(group);
+                    w.u8(*state);
+                });
+                kind::OBJECT_LIST_ANSWER
+            }
+            ServerMsg::ObjectFields(m) => {
+                w.u8(m.kind);
+                w.string(&m.id);
+                w.string(&m.base);
+                w.string(&m.name);
+                w.u32(m.levels);
+                w.list(&m.fields, |w, f| {
+                    for s in [&f.field, &f.name, &f.category, &f.ty] {
+                        w.string(s);
+                    }
+                    w.u32(f.level);
+                    w.u32(f.column);
+                    w.string(&f.value);
+                    w.string(&f.default);
+                    w.u8(f.changed as u8);
+                });
+                kind::OBJECT_FIELDS
             }
             ServerMsg::Sounds(list) => {
                 w.list(list, |w, s| {
@@ -1201,6 +1328,24 @@ impl ServerMsg {
                 let on = r.u8()? != 0;
                 let p = [r.f32()?, r.f32()?, r.f32()?];
                 ServerMsg::Picked(PickedMsg { found, model, instance, file, index, region, text, ground: on.then_some(p) })
+            }
+            kind::OBJECT_LIST_ANSWER => ServerMsg::ObjectList(ObjectListMsg { kind: r.u8()?, objects: r.list(|r| Ok((r.string()?, r.string()?, r.string()?, r.u8()?)))? }),
+            kind::OBJECT_FIELDS => {
+                let (kind, id, base, name, levels) = (r.u8()?, r.string()?, r.string()?, r.string()?, r.u32()?);
+                let fields = r.list(|r| {
+                    Ok(FieldRow {
+                        field: r.string()?,
+                        name: r.string()?,
+                        category: r.string()?,
+                        ty: r.string()?,
+                        level: r.u32()?,
+                        column: r.u32()?,
+                        value: r.string()?,
+                        default: r.string()?,
+                        changed: r.u8()? != 0,
+                    })
+                })?;
+                ServerMsg::ObjectFields(ObjectFieldsMsg { kind, id, base, name, levels, fields })
             }
             kind::SOUNDS => ServerMsg::Sounds(r.list(|r| {
                 let mut s = w3s_rs::Sound::new(r.string()?, r.string()?);

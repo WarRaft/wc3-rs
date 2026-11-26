@@ -65,6 +65,8 @@ pub struct Session {
     pub shadows: Option<shd_rs::Shadows>,
     /// What was read with a problem, gone past.
     pub notes: Vec<String>,
+    /// The game's tables the object editor reads, once asked.
+    object_tables: crate::objdata::Tables,
 }
 
 impl Session {
@@ -143,6 +145,7 @@ impl Session {
             docs: Default::default(),
             shadows,
             notes,
+            object_tables: Default::default(),
         })
     }
 
@@ -559,6 +562,10 @@ impl Session {
             match what {
                 crate::edit::Snapshot::Regions(_) | crate::edit::Snapshot::Cameras(_) | crate::edit::Snapshot::Pathing(_) => out.push(ServerMsg::Overlays(self.overlays())),
                 crate::edit::Snapshot::Sounds(_) => out.push(self.sounds_msg()),
+                crate::edit::Snapshot::Objects(kind, _) => {
+                    let k = crate::objdata::KINDS.iter().position(|x| *x == kind).unwrap_or(0) as u8;
+                    out.push(self.object_list(k));
+                }
                 crate::edit::Snapshot::Whole(_) => {
                     let changed = self.tileset_letter() != self.terrain.tileset;
                     self.retileset(changed);
@@ -635,6 +642,34 @@ impl Session {
                     saved.push(to.display().to_string());
                     let d = &mut self.edits.dirty;
                     *[&mut d.terrain, &mut d.doodads, &mut d.units, &mut d.regions, &mut d.pathing, &mut d.cameras, &mut d.sounds, &mut d.info, &mut d.shadows][i] = false;
+                }
+                Err(e) => failed.push(format!("{name}: {e}")),
+            }
+        }
+        for kind in crate::objdata::KINDS {
+            let bit = crate::objdata::bit(kind);
+            if self.edits.dirty.objects & bit == 0 {
+                continue;
+            }
+            let name = crate::objdata::file_name(kind);
+            let bytes = self.placed.objects.get(&kind).map_or(Ok(None), |d| d.to_bytes().map(Some).map_err(|e| e.to_string()));
+            // A file the edits emptied out of a map that had none: none.
+            let Ok(Some(bytes)) = bytes else {
+                if let Err(e) = bytes {
+                    failed.push(format!("{name}: {e}"));
+                } else {
+                    self.edits.dirty.objects &= !bit;
+                }
+                continue;
+            };
+            let h = hash(&bytes);
+            match self.write_file(&name, bytes) {
+                Ok(to) => {
+                    if let Some(piece) = Self::PIECES.iter().find(|p| **p == name) {
+                        self.disk.insert(piece, Some(h));
+                    }
+                    saved.push(to.display().to_string());
+                    self.edits.dirty.objects &= !bit;
                 }
                 Err(e) => failed.push(format!("{name}: {e}")),
             }
@@ -741,7 +776,22 @@ impl Session {
     }
 
     /// The map's pieces the editor changes, by name.
-    pub const PIECES: [&'static str; 7] = ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.wpm", "war3map.w3c", "war3map.w3s"];
+    pub const PIECES: [&'static str; 14] = [
+        "war3map.w3e",
+        "war3map.doo",
+        "war3mapUnits.doo",
+        "war3map.w3r",
+        "war3map.wpm",
+        "war3map.w3c",
+        "war3map.w3s",
+        "war3map.w3u",
+        "war3map.w3t",
+        "war3map.w3b",
+        "war3map.w3d",
+        "war3map.w3a",
+        "war3map.w3h",
+        "war3map.w3q",
+    ];
 
     /// Each piece's bytes as the layers have it now, hashed (`None`: no
     /// layer has it).
@@ -778,6 +828,7 @@ impl Session {
             "war3map.w3r" => d.regions,
             "war3map.w3c" => d.cameras,
             "war3map.w3s" => d.sounds,
+            n if crate::objdata::kind_of(n).is_some() => d.objects & crate::objdata::bit(crate::objdata::kind_of(n).unwrap()) != 0,
             _ => d.pathing,
         };
         let (kept, taken): (Vec<&str>, Vec<&str>) = changed.iter().partition(|n| dirty(n));
@@ -801,6 +852,13 @@ impl Session {
                 "war3map.w3r" => self.placed.regions = files.regions.clone(),
                 "war3map.w3c" => self.placed.cameras = files.cameras.clone(),
                 "war3map.w3s" => self.placed.sounds = files.sounds.clone(),
+                n if crate::objdata::kind_of(n).is_some() => {
+                    let kind = crate::objdata::kind_of(n).unwrap();
+                    match files.objects.get(&kind) {
+                        Some(d) => self.placed.objects.insert(kind, d.clone()),
+                        None => self.placed.objects.remove(&kind),
+                    };
+                }
                 _ => {
                     self.placed.pathing = files.pathing.clone();
                     self.pathing_made = None;
@@ -818,6 +876,11 @@ impl Session {
             }
             out.push(ServerMsg::Overlays(self.overlays()));
             out.push(self.sounds_msg());
+            for name in &taken {
+                if let Some(k) = crate::objdata::kind_of(name).and_then(|kind| crate::objdata::KINDS.iter().position(|x| *x == kind)) {
+                    out.push(self.object_list(k as u8));
+                }
+            }
         }
         let message = match (taken.is_empty(), kept.is_empty()) {
             (_, false) => format!("Changed on disk: {}; your changes to it kept (Reload takes the disk's).", kept.join(", ")),
@@ -833,7 +896,7 @@ impl Session {
     /// is at (or would be written to): what the page's text forms are
     /// matched by.
     pub fn follow(&self) -> Vec<(String, String)> {
-        ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c", "war3map.w3s"].iter().filter_map(|n| Some((n.to_string(), self.path_of(n)?.display().to_string()))).collect()
+        Self::PIECES.iter().filter(|n| **n != "war3map.wpm").filter_map(|n| Some((n.to_string(), self.path_of(n)?.display().to_string()))).collect()
     }
 
     /// Where the map's file `name` is (on disk, or inside a root map), or
@@ -855,6 +918,7 @@ impl Session {
             "war3map.w3r" => self.placed.regions.as_ref()?.to_bytes().ok(),
             "war3map.w3c" => self.placed.cameras.as_ref()?.to_bytes().ok(),
             "war3map.w3s" => self.placed.sounds.as_ref()?.to_bytes().ok(),
+            n if crate::objdata::kind_of(n).is_some() => self.placed.objects.get(&crate::objdata::kind_of(n)?)?.to_bytes().ok(),
             "war3map.w3e" => self.terrain.to_bytes().ok(),
             _ => None,
         }
@@ -862,9 +926,12 @@ impl Session {
 
     /// A piece's text form, as the editor has it (`name` its file's, for
     /// the layout `war3map.w3i` beside it says).
-    fn piece_text(&self, name: &'static str, path: &str) -> Option<String> {
+    fn piece_text(&mut self, name: &'static str, path: &str) -> Option<String> {
         let bytes = self.piece_bytes(name)?;
-        let text = if name == "war3map.w3r" {
+        let text = if let Some(kind) = crate::objdata::kind_of(name) {
+            self.object_tables.load(&self.game, kind);
+            wc3_server::objects::convert(wc3_server::objects::TO_TEXT, path, &bytes, &self.object_tables.meta[&kind])
+        } else if name == "war3map.w3r" {
             wc3_server::regions::convert(wc3_server::objects::TO_TEXT, path, &bytes)
         } else if name == "war3map.w3c" {
             wc3_server::cameras::convert(wc3_server::objects::TO_TEXT, path, &bytes)
@@ -891,6 +958,9 @@ impl Session {
         }
         if name == "war3map.w3e" {
             return self.terrain_text_changed(text);
+        }
+        if let Some(kind) = crate::objdata::kind_of(name) {
+            return self.objects_text_changed(kind, path, text);
         }
         let bytes = if name == "war3map.w3r" {
             wc3_server::regions::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
@@ -935,6 +1005,24 @@ impl Session {
             "war3map.w3s" => vec![self.sounds_msg()],
             _ => self.place_objects(),
         };
+        out.extend(self.sync_docs());
+        out.push(ServerMsg::State(self.state(String::new())));
+        out
+    }
+
+    /// An object data file's text form changed: taken in as that kind's
+    /// object data (an undo), unless it has an error (said).
+    fn objects_text_changed(&mut self, kind: w3abdhqtu_rs::Kind, path: &str, text: &str) -> Vec<ServerMsg> {
+        self.object_tables.load(&self.game, kind);
+        let data = wc3_server::objects::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes(), &self.object_tables.meta[&kind]).and_then(|b| w3abdhqtu_rs::parse(&b, kind).map_err(|e| e.to_string()));
+        let data = match data {
+            Ok(d) => d,
+            Err(e) => return vec![ServerMsg::State(self.state(e))],
+        };
+        let before = self.placed.objects.insert(kind, data);
+        self.edits.record(crate::edit::Snapshot::Objects(kind, before));
+        let k = crate::objdata::KINDS.iter().position(|x| *x == kind).unwrap_or(0) as u8;
+        let mut out = vec![self.object_list(k)];
         out.extend(self.sync_docs());
         out.push(ServerMsg::State(self.state(String::new())));
         out
@@ -989,6 +1077,7 @@ impl Session {
                 "war3map.w3r" => d.regions = false,
                 "war3map.w3c" => d.cameras = false,
                 "war3map.w3s" => d.sounds = false,
+                n if crate::objdata::kind_of(n).is_some() => d.objects &= !crate::objdata::bit(crate::objdata::kind_of(n).unwrap()),
                 _ => {}
             }
         }
@@ -1264,6 +1353,204 @@ impl Session {
             }
             cameras.cameras.remove(index as usize);
             Ok(())
+        })
+    }
+
+    /// Kind `k` of `objdata::KINDS` (the page's number for it), its
+    /// tables read.
+    fn object_kind(&mut self, k: u8) -> Option<w3abdhqtu_rs::Kind> {
+        let kind = *crate::objdata::KINDS.get(k as usize)?;
+        self.object_tables.load(&self.game, kind);
+        Some(kind)
+    }
+
+    /// An object's name as World Editor shows it: its name field (and
+    /// suffix) as the map changes it, else the game's (`WESTRING_`s and
+    /// `TRIGSTR_`s resolved, colours off).
+    fn object_name(&self, kind: w3abdhqtu_rs::Kind, object: Option<&w3abdhqtu_rs::Object>, base: &str) -> String {
+        let std = &self.object_tables.standard[&kind];
+        let meta = &self.object_tables.meta[&kind];
+        let own = |key: &str| -> Option<String> {
+            let o = object?;
+            let field = meta.keys(kind, o.base).field(key)?;
+            o.mods().filter(|m| m.field == field && m.level <= 1).last().map(|m| crate::objdata::shown(&m.value))
+        };
+        let game = |key: &str| std.get(base, key).map(|v| v.split(',').next().unwrap_or("").to_string());
+        let name_key = crate::objdata::name_key(kind);
+        let name = own(name_key)
+            .filter(|n| !n.is_empty())
+            .or_else(|| game(name_key))
+            .or_else(|| (kind == w3abdhqtu_rs::Kind::Buff).then(|| game("Bufftip")).flatten())
+            .unwrap_or_else(|| object.map_or(base.to_string(), |o| crate::objdata::id_of(o).to_string()));
+        let suffix = own("EditorSuffix").or_else(|| game("EditorSuffix")).unwrap_or_default();
+        let shown = |t: &str| wc3_server::names::plain(&self.names.resolve(&self.text(t)));
+        let (name, suffix) = (shown(&name), shown(&suffix));
+        if suffix.trim().is_empty() { name } else { format!("{name} {}", suffix.trim()) }
+    }
+
+    /// Kind `k`'s objects: the game's (changed by the map or not), then
+    /// the map's own.
+    pub fn object_list(&mut self, k: u8) -> ServerMsg {
+        let Some(kind) = self.object_kind(k) else { return ServerMsg::ObjectList(Default::default()) };
+        let data = self.placed.objects.get(&kind);
+        let std = &self.object_tables.standard[&kind];
+        let group = |base: &str| std.get(base, crate::objdata::group_key(kind)).unwrap_or("").to_string();
+        let mut objects = Vec::new();
+        for id in &std.ids {
+            let changed = data.and_then(|d| d.originals.iter().find(|o| o.base.to_string() == *id));
+            objects.push((id.clone(), self.object_name(kind, changed, id), group(id), changed.is_some() as u8));
+        }
+        for o in data.map(|d| d.customs.as_slice()).unwrap_or_default() {
+            let base = o.base.to_string();
+            objects.push((o.id.to_string(), self.object_name(kind, Some(o), &base), group(&base), 2));
+        }
+        ServerMsg::ObjectList(crate::protocol::ObjectListMsg { kind: k, objects })
+    }
+
+    /// The version a new object data file of the map takes: its other
+    /// files' (3 since 1.33), else 2.
+    fn object_version(&self) -> u32 {
+        self.placed.objects.values().map(|d| d.version).max().unwrap_or(2)
+    }
+
+    /// Object `id` of kind `k`: every field it has (the metadata's, for
+    /// what it's based on), a row a level for a field with levels (as
+    /// many as its levels field says, a doodad's variations), its value
+    /// (the map's change, else the game's) and the game's, by category
+    /// and name.
+    pub fn object_fields(&mut self, k: u8, id: &str) -> ServerMsg {
+        let none = || ServerMsg::ObjectFields(crate::protocol::ObjectFieldsMsg { kind: k, id: id.to_string(), ..Default::default() });
+        let Some(kind) = self.object_kind(k) else { return none() };
+        let Some(code) = parser_rs::bin::Rawcode::parse(id) else { return none() };
+        let std = &self.object_tables.standard[&kind];
+        let meta = &self.object_tables.meta[&kind];
+        let data = self.placed.objects.get(&kind);
+        let object = data.and_then(|d| crate::objdata::find(d, code).map(|(custom, i)| if custom { &d.customs[i] } else { &d.originals[i] }));
+        let base = object.map_or(code, |o| o.base);
+        let base_text = base.to_string();
+        if object.is_none_or(|o| o.id == parser_rs::bin::Rawcode::NONE) && !std.has(id) {
+            return none();
+        }
+        let version = data.map_or(self.object_version(), |d| d.version);
+        let leveled = kind.has_levels(version);
+        let own = |field, level, column| object.and_then(|o| o.mods().filter(|m| m.field == field && m.level == level && m.column == column).last());
+        // How many levels: its levels field, the map's or the game's.
+        let levels = crate::objdata::levels_key(kind)
+            .and_then(|key| {
+                let (field, f) = meta.fields().find(|(_, f)| f.key.eq_ignore_ascii_case(key) && meta.applies(kind, base, f))?;
+                let column = if kind == w3abdhqtu_rs::Kind::Ability { f.column } else { 0 };
+                let v = own(field, 0, column).map(|m| crate::objdata::shown(&m.value)).or_else(|| std.value(&base_text, f, 0))?;
+                v.trim().parse::<f64>().ok()
+            })
+            .map_or(1, |n| (n as u32).clamp(1, 100));
+        let mut fields = Vec::new();
+        for (field, f) in meta.fields().filter(|(_, f)| meta.applies(kind, base, f)) {
+            let column = if leveled && kind == w3abdhqtu_rs::Kind::Ability { f.column } else { 0 };
+            let rows: Vec<u32> = if leveled && f.levels { (1..=levels).collect() } else { vec![0] };
+            for level in rows {
+                let default = std.value(&base_text, f, level).unwrap_or_default();
+                let changed = own(field, level, column);
+                fields.push(crate::protocol::FieldRow {
+                    field: field.to_string(),
+                    name: wc3_server::names::plain(&f.name),
+                    category: f.category.clone(),
+                    ty: f.ty.clone(),
+                    level,
+                    column,
+                    value: changed.map_or_else(|| default.clone(), |m| crate::objdata::shown(&m.value)),
+                    default,
+                    changed: changed.is_some(),
+                });
+            }
+        }
+        fields.sort_by(|a, b| (&a.category, &a.name, a.level).cmp(&(&b.category, &b.name, b.level)));
+        let name = self.object_name(kind, object, &base_text);
+        ServerMsg::ObjectFields(crate::protocol::ObjectFieldsMsg { kind: k, id: id.to_string(), base: base_text, name, levels, fields })
+    }
+
+    /// An object data edit of `kind`: its file's state recorded for undo,
+    /// `change` made (refused, said, when it errs; a message it gives
+    /// said), the list again. A map without the file gets one.
+    fn objects_edit(&mut self, k: u8, kind: w3abdhqtu_rs::Kind, change: impl FnOnce(&mut w3abdhqtu_rs::ObjectData, &w3abdhqtu_rs::Metadata) -> Result<String, String>) -> Vec<ServerMsg> {
+        let before = self.placed.objects.get(&kind).cloned();
+        let mut data = before.clone().unwrap_or_else(|| w3abdhqtu_rs::ObjectData { version: self.object_version(), ..w3abdhqtu_rs::ObjectData::new(kind) });
+        let message = match change(&mut data, &self.object_tables.meta[&kind]) {
+            Ok(said) => {
+                self.edits.record(crate::edit::Snapshot::Objects(kind, before));
+                self.placed.objects.insert(kind, data);
+                said
+            }
+            Err(message) => message,
+        };
+        vec![self.object_list(k), ServerMsg::State(self.state(message))]
+    }
+
+    /// Object `id`'s field `field` (an id) at `level` in data `column`
+    /// set to `value` (as text, in World Editor's limits for it), or,
+    /// empty, the game's again. An undo each.
+    pub fn object_set(&mut self, k: u8, id: &str, field: &str, level: u32, column: u32, value: &str) -> Vec<ServerMsg> {
+        let Some(kind) = self.object_kind(k) else { return vec![ServerMsg::State(self.state(format!("no kind {k}")))] };
+        let (Some(code), Some(field_id)) = (parser_rs::bin::Rawcode::parse(id), parser_rs::bin::Rawcode::parse(field)) else {
+            return vec![ServerMsg::State(self.state(format!("{id}'s {field}: not ids")))];
+        };
+        let known = self.object_tables.standard[&kind].has(id) || self.placed.objects.get(&kind).is_some_and(|d| d.customs.iter().any(|o| o.id == code));
+        if !known {
+            return vec![ServerMsg::State(self.state(format!("No object {id}.")))];
+        }
+        let value = value.to_string();
+        self.objects_edit(k, kind, |data, meta| {
+            let f = meta.get(field_id);
+            let name = f.map_or(field_id.to_string(), |f| wc3_server::names::plain(&f.name));
+            let v = if value.is_empty() { None } else { Some(crate::objdata::to_value(&value, f).map_err(|e| format!("{id}'s {name}: {e}."))?) };
+            crate::objdata::set(data, code, field_id, level, column, v);
+            Ok(String::new())
+        })
+    }
+
+    /// A custom object of `kind` based on the game's `base` (with the
+    /// map's changes to it, as World Editor copies them), its id the next
+    /// World Editor would give (`objdata::new_id`).
+    pub fn object_new(&mut self, k: u8, base: &str) -> Vec<ServerMsg> {
+        let Some(kind) = self.object_kind(k) else { return vec![ServerMsg::State(self.state(format!("no kind {k}")))] };
+        let std = &self.object_tables.standard[&kind];
+        let Some(base_code) = parser_rs::bin::Rawcode::parse(base).filter(|_| std.has(base)) else {
+            return vec![ServerMsg::State(self.state(format!("{base} isn't one of the game's objects to base one on.")))];
+        };
+        let taken: std::collections::HashSet<String> = crate::objdata::KINDS
+            .iter()
+            .flat_map(|k| self.object_tables.standard.get(k).map(|s| s.ids.clone()).unwrap_or_default())
+            .chain(self.placed.objects.values().flat_map(|d| d.customs.iter().map(|o| o.id.to_string())))
+            .collect();
+        let Some(id) = crate::objdata::new_id(kind, base_code, |id| taken.contains(&id.to_string())) else {
+            return vec![ServerMsg::State(self.state("No id left.".to_string()))];
+        };
+        let mut out = self.objects_edit(k, kind, |data, _| {
+            // The base's changes, as World Editor copies them.
+            let changed = data.originals.iter().find(|o| o.base == base_code).map(|o| o.sets.clone());
+            let sets = changed.unwrap_or_else(|| if data.version < 3 { vec![w3abdhqtu_rs::Set { flags: 0, mods: Vec::new() }] } else { Vec::new() });
+            data.customs.push(w3abdhqtu_rs::Object { base: base_code, id, sets });
+            Ok(String::new())
+        });
+        out.insert(1, self.object_fields(k, &id.to_string()));
+        out
+    }
+
+    /// Object `id` of `kind` taken away (one of the map's), or its
+    /// changes (one of the game's): the game's again.
+    pub fn object_delete(&mut self, k: u8, id: &str) -> Vec<ServerMsg> {
+        let Some(kind) = self.object_kind(k) else { return vec![ServerMsg::State(self.state(format!("no kind {k}")))] };
+        let Some(code) = parser_rs::bin::Rawcode::parse(id) else { return vec![ServerMsg::State(self.state(format!("{id} isn't an id")))] };
+        self.objects_edit(k, kind, |data, _| {
+            match crate::objdata::find(data, code) {
+                Some((true, i)) => {
+                    data.customs.remove(i);
+                }
+                Some((false, i)) => {
+                    data.originals.remove(i);
+                }
+                None => return Err(format!("{id} has no changes to take out.")),
+            }
+            Ok(String::new())
         })
     }
 

@@ -57,6 +57,13 @@ const EditorProtocol = (() => {
         SOUND_PLAY: 33,
         SOUNDS: 148,
         SOUND_DATA: 149,
+        OBJECT_LIST: 34,
+        OBJECT_ASK: 35,
+        OBJECT_SET: 36,
+        OBJECT_NEW: 37,
+        OBJECT_DELETE: 38,
+        OBJECT_LIST_ANSWER: 150,
+        OBJECT_FIELDS: 151,
         MAP_SETTINGS: 146,
     }
 
@@ -330,6 +337,41 @@ const EditorProtocol = (() => {
             w.string(file)
             return w.frame(KIND.SOUND_PLAY)
         },
+        /** Kind `k`'s objects asked for (`EditorObjectEditor.KINDS`' order). */
+        objectList(k) {
+            const w = new Writer()
+            w.u8(k)
+            return w.frame(KIND.OBJECT_LIST)
+        },
+        objectAsk(k, id) {
+            const w = new Writer()
+            w.u8(k)
+            w.string(id)
+            return w.frame(KIND.OBJECT_ASK)
+        },
+        /** An object's field set: its value as text ('' the game's again). */
+        objectSet(k, id, field, level, column, value) {
+            const w = new Writer()
+            w.u8(k)
+            w.string(id)
+            w.string(field)
+            w.u32(level)
+            w.u32(column)
+            w.string(String(value))
+            return w.frame(KIND.OBJECT_SET)
+        },
+        objectNew(k, base) {
+            const w = new Writer()
+            w.u8(k)
+            w.string(base)
+            return w.frame(KIND.OBJECT_NEW)
+        },
+        objectDelete(k, id) {
+            const w = new Writer()
+            w.u8(k)
+            w.string(id)
+            return w.frame(KIND.OBJECT_DELETE)
+        },
         mapAsk: () => new Writer().frame(KIND.MAP_ASK),
         /** Cells added on each side {left, right, bottom, top}, the playable area's margins [l, r, b, t] or null. */
         resize(sides, margins) {
@@ -463,6 +505,13 @@ const EditorProtocol = (() => {
                 const on = r.u8() !== 0
                 const p = [r.f32(), r.f32(), r.f32()]
                 return {...m, ground: on ? p : null}
+            }
+            case KIND.OBJECT_LIST_ANSWER:
+                return {kind: 'objectList', objectKind: r.u8(), objects: r.list(r => ({id: r.string(), name: r.string(), group: r.string(), state: r.u8()}))}
+            case KIND.OBJECT_FIELDS: {
+                const m = {kind: 'objectFields', objectKind: r.u8(), id: r.string(), base: r.string(), name: r.string(), levels: r.u32()}
+                m.fields = r.list(r => ({field: r.string(), name: r.string(), category: r.string(), ty: r.string(), level: r.u32(), column: r.u32(), value: r.string(), default: r.string(), changed: r.u8() !== 0}))
+                return m
             }
             case KIND.SOUNDS:
                 // `numbers` as `w3s_rs::Sound::numbers` has them.
