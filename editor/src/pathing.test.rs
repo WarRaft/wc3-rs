@@ -42,11 +42,11 @@ fn a_pathing_texture_turned_onto_the_cells() {
     let mut cells = vec![0u8; 4 * 4];
     blit(&mut cells, 4, 4, (2.0, 2.0), 0, (2, 1, &rgba));
     assert_eq!((cells[2 * 4 + 1], cells[2 * 4 + 2]), (NO_WALK, NO_BUILD));
-    // Green (no flying) isn't taken.
+    // Green: no flying.
     let green = vec![0, 255, 0, 255, 0, 255, 0, 255];
-    let mut none = vec![0u8; 16];
-    blit(&mut none, 4, 4, (2.0, 2.0), 0, (2, 1, &green));
-    assert!(none.iter().all(|c| *c == 0));
+    let mut flyers = vec![0u8; 16];
+    blit(&mut flyers, 4, 4, (2.0, 2.0), 0, (2, 1, &green));
+    assert_eq!((flyers[2 * 4 + 1], flyers[2 * 4 + 2]), (NO_FLY, NO_FLY));
     let mut turned = vec![0u8; 4 * 4];
     blit(&mut turned, 4, 4, (2.0, 2.0), 90, (2, 1, &rgba));
     assert_eq!((turned[4 + 2], turned[2 * 4 + 2]), (NO_WALK, NO_BUILD));

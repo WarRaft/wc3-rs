@@ -1772,8 +1772,19 @@ step), this list updated.
      (`pathing::Manual`, against what the files made when they were in
      step); 0x80 where nothing walks on land (`wpm-rs` calls it
      "boundary": every map has it so). On the Diablo III beta map 97 to
-     100% of each flag's cells as its own file has them; cliffs' rims
-     and walkable doodads (bridges) are what's left.
+     100% of each flag's cells as its own file has them at first; then
+     (after the terrain's text form), measured against the map's file
+     cell by cell: only solid doodads (flags 2) lay their pathing
+     texture, no destructable does (blockers, barrels, trees' walls,
+     bridges: the game lays theirs when they stand; the "rims" were
+     these, the cliffs themselves were right), green is no flying;
+     water is deep water (over 0.4 layers) at the nearest point or
+     water over every corner of the cell, shallower at the nearest point
+     a shore (dry, no building); the edge has no water. Now 99.45 to 100%
+     (walking 99.86, building 99.46, water 99.45); LastGuards and
+     CruiserCommand no worse, what's left there and here painted by
+     hand, kept as a brush's paint is. Measured by `pathing::tests::
+     as_the_map_has_it` (`WC3_PROJECT`, `WPM_DIFF` for pictures).
    - **The shadow map** (`war3map.shd`) isn't made: HiveWE keeps the
      file as it is, and how World Editor bakes it (which doodads, which
      direction) isn't known here; a guess would be wrong on every save.

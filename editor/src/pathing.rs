@@ -7,19 +7,23 @@
 //!   `walkable`, `flyable`, `buildable` (0: forbidden);
 //! - a cliff (not a whole ramp): no walking, no building;
 //! - blight: blight;
-//! - water over the ground: not "no water"; deeper than 0.4 layers, no
-//!   walking and no building; shallower, no building;
-//! - a boundary or past the camera bounds: nothing allowed;
+//! - water: deeper than 0.4 layers at the nearest point (no walking, no
+//!   building), or over every corner of the cell (no building): not "no
+//!   water"; shallower water at the nearest point alone is a shore, dry
+//!   land with no building;
+//! - a boundary or the map's edge: nothing allowed, no water;
 //! - 0x80 where nothing walks on land (no walking, no water);
-//! - each doodad's and destructable's pathing texture (`pathTex`, a TGA:
-//!   red no walking, blue no building; its green, no flying, not taken:
-//!   no map World Editor saved has it), turned to the nearest quarter of
-//!   its angle, centred on it.
+//! - each solid doodad's pathing texture (`pathTex`, a TGA:
+//!   red no walking, green no flying, blue no building), turned to the
+//!   nearest quarter of its angle, centred on it.
 //!
-//! On the Diablo III beta map this makes 97 to 100% of each flag's
-//! cells as its own `war3map.wpm` has them; the rest are cliffs' rims
-//! and what walkable doodads (bridges) change under them, not worked
-//! out yet.
+//! On the Diablo III beta map this makes 99.45 to 100% of each flag's
+//! cells as its own `war3map.wpm` has them (walking 99.86, building
+//! 99.46, water 99.45); what's left looks painted by hand (straight
+//! bars of water in dry halls, walkable deep water), which is kept as a
+//! brush's paint is. Bridges and other walkable destructables aren't in
+//! the file at all: the game lays a destructable's pathing when it
+//! stands.
 //!
 //! What a pathing brush changed is kept over it: [`Manual`], the cells'
 //! flags set and cleared against what the map's files make.
@@ -75,15 +79,29 @@ pub fn compute_with(game: &Game, t: &Terrain, draw: &Draw, tileset: &Tileset, ty
             if near.blight(v) {
                 f |= BLIGHT;
             }
-            let k = ny.min(h - 1) * w + nx.min(w - 1);
-            let depth = draw.water[k] - draw.heights[k];
-            if near.has_water(v) && depth > 0.0 {
-                f |= if depth > 0.4 { NO_BUILD | NO_WALK } else { NO_BUILD };
+            // Water: deep (over 0.4 layers) at the nearest point, or
+            // over every corner of the cell; shallow water at the nearest
+            // point alone isn't (World Editor's shores are a cell
+            // narrower than the nearest point's).
+            let depth = |x: usize, y: usize| {
+                let k = y.min(h - 1) * w + x.min(w - 1);
+                if t.points[k].has_water(v) { draw.water[k] - draw.heights[k] } else { f32::NEG_INFINITY }
+            };
+            let deep = depth(nx, ny) > 0.4;
+            let whole = (0..4).all(|k| depth(cx + k % 2, cy + k / 2) > 0.0);
+            let bl = at(cx, cy);
+            let edge = bl.edge() || bl.boundary(v);
+            if (deep || whole) && !edge {
+                f |= if deep { NO_BUILD | NO_WALK } else { NO_BUILD };
             } else {
                 f |= NO_WATER;
+                // A shore: dry land, but nothing's built at the water.
+                if depth(nx, ny) > 0.0 {
+                    f |= NO_BUILD;
+                }
             }
-            let bl = at(cx, cy);
-            if bl.edge() || bl.boundary(v) {
+            // The edge and boundaries: nothing allowed, no water either.
+            if edge {
                 f |= NO_BUILD | NO_FLY | NO_WALK;
             }
             cells[j * pw + i] = f;
@@ -94,7 +112,14 @@ pub fn compute_with(game: &Game, t: &Terrain, draw: &Draw, tileset: &Tileset, ty
     for d in files.doodads.iter().flat_map(|d| &d.doodads) {
         let p = &d.placement;
         let id = p.id.to_string();
-        let kind = if types.has(w3abdhqtu_rs::Kind::Doodad, &id) { w3abdhqtu_rs::Kind::Doodad } else { w3abdhqtu_rs::Kind::Destructable };
+        // Doodads alone, solid ones (flags 2): a destructable's pathing
+        // the game lays when it stands (blockers, barrels, trees' walls
+        // aren't in any war3map.wpm World Editor saved), a non-solid
+        // doodad has none.
+        if !types.has(w3abdhqtu_rs::Kind::Doodad, &id) || d.flags & 2 == 0 {
+            continue;
+        }
+        let kind = w3abdhqtu_rs::Kind::Doodad;
         let Some(path) = types.get(kind, &id, "pathTex").filter(|p| !p.eq_ignore_ascii_case("none")) else { continue };
         let tex = textures.entry(path.to_ascii_lowercase()).or_insert_with(|| crate::textures::capped(game, path, 1 << 16).ok());
         let Some((tw, th, rgba)) = tex else { continue };
@@ -133,9 +158,7 @@ fn blit(cells: &mut [u8], pw: usize, ph: usize, at: (f32, f32), rotation: i64, (
             }
             let px = (((th - 1 - j) * tw + i) * 4) as usize;
             let on = |c: usize, bit: u8| if rgba[px + c] > 250 { bit } else { 0 };
-            // Green (no flying) left out: what stands on the ground
-            // doesn't stop flyers in the maps World Editor saves.
-            cells[yy as usize * pw + xx as usize] |= on(0, NO_WALK) | on(2, NO_BUILD);
+            cells[yy as usize * pw + xx as usize] |= on(0, NO_WALK) | on(1, NO_FLY) | on(2, NO_BUILD);
         }
     }
 }
