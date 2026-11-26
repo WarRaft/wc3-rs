@@ -687,8 +687,8 @@
         if (index === null || !name.trim()) return
         cameraRenameTimer = setTimeout(() => send(encode.cameraRename(index, name)), 250)
     }
-    // A new one's field of view World Editor's 70; one set to the view keeps its own.
-    const fromView = index => send(encode.cameraView(index, camera.position, camera.distance, camera.horizontal, camera.vertical, index < 0 ? 70 : cameras[index].view[3]))
+    // A new one's field of view the view's (70, World Editor's); one set to the view keeps its own.
+    const fromView = index => send(encode.cameraView(index, camera.position, camera.distance, camera.horizontal, camera.vertical, index < 0 ? camera.fov : cameras[index].view[3]))
     $('camera-new').onclick = () => {
         selectNewCamera = true
         fromView(-1)

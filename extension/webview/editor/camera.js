@@ -2,8 +2,9 @@
 
 /**
  * The view's camera, HiveWE's (`camera.ixx`): it looks at a point from a
- * distance, at two angles, with a field of view of 50°. Distances are in
- * cells (128 units), as everything the editor draws, z up.
+ * distance, at two angles, with a field of view of 70° (World Editor's,
+ * a new camera's; HiveWE's is 50°). Distances are in cells (128 units),
+ * as everything the editor draws, z up.
  *
  * Right drag moves it, Ctrl + right drag (or middle drag) turns it, the
  * wheel brings it nearer or further, the arrow keys and WASD move it.
@@ -52,7 +53,7 @@ const EditorCamera = (() => {
             this.distance = 20
             this.horizontal = 0
             this.vertical = -0.977
-            this.fov = 50
+            this.fov = 70
             /** The ground's height under a point, to keep the camera on it. */
             this.heightAt = () => 0
         }
