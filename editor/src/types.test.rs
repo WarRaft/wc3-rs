@@ -39,3 +39,16 @@ fn custom_objects_with_the_games_metadata() {
     assert_eq!(t.get(Kind::Unit, "h001", "file"), t.get(Kind::Unit, "hfoo", "file"));
     assert!(t.get(Kind::Unit, "hfoo", "file").unwrap().to_lowercase().contains("footman"));
 }
+
+#[test]
+fn a_skins_art_over_the_table_its_hd_when_asked() {
+    let dir = TestDir::new("types-skins");
+    dir.write("Doodads/Doodads.slk", &testdir::slk(&[&["doodID", "numVar"], &["YOgr", "4"]]));
+    dir.write("Doodads/DoodadSkins.txt", b"[YOgr]\nfile=Doodads\\Grave\nfile:hd=Doodads\\GraveHD\nvertR=255,128,64\n");
+    let lookup = wc3_server::game::Lookup { roots: vec![dir.path().to_path_buf()], ..Default::default() };
+    let mut t = Types::load(&lookup.open().0);
+    assert_eq!((t.get(Kind::Doodad, "YOgr", "file"), t.number(Kind::Doodad, "YOgr", "numVar")), (Some("Doodads\\Grave"), Some(4.0)));
+    assert_eq!(t.item(Kind::Doodad, "YOgr", "vertR", 1), Some(128.0));
+    t.hd = true;
+    assert_eq!(t.get(Kind::Doodad, "YOgr", "file"), Some("Doodads\\GraveHD"));
+}

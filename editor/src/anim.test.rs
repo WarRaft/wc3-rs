@@ -71,7 +71,7 @@ fn nothing_moving_nothing_baked_and_the_skin() {
     assert!(bake(&model(vec![], vec![])).is_none());
     let m = model(vec![], vec![]);
     let sk = Skeleton::of(&m);
-    let skin = skin(&m.geosets()[0], &sk.slots);
+    let skin = skin(&m.geosets()[0], &sk.slots, 800);
     // The first vertex: bone 0 alone; the second: bones 0 and 1, half each.
     assert_eq!(&skin[..8], [0, 0, 0, 0, 255, 0, 0, 0]);
     assert_eq!(&skin[8..], [0, 1, 0, 0, 128, 128, 0, 0]);
@@ -152,4 +152,19 @@ fn a_geoset_hidden_halfway_its_colour_as_its_animation_says() {
     assert_eq!(px(15)[3], 0.0);
     // No animation at all: nothing baked.
     assert!(bake(&model(vec![], vec![])).is_none());
+}
+
+#[test]
+fn a_reforged_skins_bones_and_weights() {
+    // The first vertex: bone 1 alone; the second: bones 0 and 1, by the
+    // skin's weights, not halves.
+    let mut m = model(vec![], vec![]);
+    if let Some(Chunk::Geosets(g)) = m.chunks.iter_mut().find(|c| matches!(c, Chunk::Geosets(_))) {
+        g[0].skin = Some(vec![1, 0, 0, 0, 255, 0, 0, 0, 0, 1, 0, 0, 200, 55, 0, 0]);
+    }
+    let sk = Skeleton::of(&m);
+    let s = skin(&m.geosets()[0], &sk.slots, 1100);
+    let (zero, one) = (sk.slots[&0] as u8, sk.slots[&1] as u8);
+    assert_eq!(&s[..8], &[one, 0, 0, 0, 255, 0, 0, 0]);
+    assert_eq!(&s[8..], &[zero, one, 0, 0, 200, 55, 0, 0]);
 }

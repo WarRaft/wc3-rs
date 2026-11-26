@@ -318,7 +318,10 @@ impl Objects {
             let tint = if kind == Kind::Doodad {
                 let v = p.variation + 1;
                 // `vertR01`: two digits.
-                let c = |k: &str| types.number(Kind::Doodad, &id, &format!("vert{k}{v:02}")).unwrap_or(255.0) / 255.0;
+                // The table's `vertR01`, or a skin's list `vertR`.
+                let c = |k: &str| {
+                    types.number(Kind::Doodad, &id, &format!("vert{k}{v:02}")).or_else(|| types.item(Kind::Doodad, &id, &format!("vert{k}"), v as usize - 1)).unwrap_or(255.0) / 255.0
+                };
                 [c("R"), c("G"), c("B")]
             } else {
                 let c = |k: &str| types.number(Kind::Destructable, &id, &format!("color{k}")).unwrap_or(255.0) / 255.0;
@@ -549,6 +552,7 @@ fn load_model(
     });
     model.ribbons = crate::particles::ribbons(&m, &mut |id| texs.get(id as usize).copied().unwrap_or(texture::NONE));
     let slots = crate::anim::Skeleton::of(&m).slots;
+    let version = m.version();
     let (mut min, mut max) = ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]);
     // A geoset hidden all through Stand (its alpha 0 in every frame
     // baked, or at its start when nothing is): not drawn.
@@ -577,7 +581,7 @@ fn load_model(
                 mat.layers
                     .iter()
                     .map(|l| Layer {
-                        texture: texs.get(l.texture_id as usize).copied().unwrap_or(texture::NONE),
+                        texture: texs.get(l.diffuse(version) as usize).copied().unwrap_or(texture::NONE),
                         filter_mode: l.filter_mode,
                         shading: l.shading,
                         alpha: l.alpha,
@@ -591,7 +595,7 @@ fn load_model(
             uvs: g.uv_sets[0].iter().flatten().copied().collect(),
             indices: g.faces.clone(),
             layers,
-            skin: if skinned { crate::anim::skin(g, &slots) } else { Vec::new() },
+            skin: if skinned { crate::anim::skin(g, &slots, version) } else { Vec::new() },
             index: gi as u32,
         });
     }

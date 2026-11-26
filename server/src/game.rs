@@ -225,7 +225,7 @@ pub use storm_rs::archive::Source;
 /// The game's files, layered: see the module docs. Built on
 /// `storm_rs::archive::Layers`, with the game's archives in its order.
 #[derive(Debug, Default)]
-pub struct Game(storm_rs::archive::Layers);
+pub struct Game(storm_rs::archive::Layers, bool);
 
 impl Game {
     /// Opens the game folders, lowest first. Never fails: an archive that
@@ -252,7 +252,13 @@ impl Game {
             layers.extend(l);
             errors.extend(e);
         }
-        (Game(layers), errors)
+        (Game(layers, hd), errors)
+    }
+
+    /// Opened with a Reforged folder's HD files over the rest
+    /// (`[project] hd=1`): what a type's `file:hd` is read for.
+    pub fn hd(&self) -> bool {
+        self.1
     }
 
     /// Where `name` comes from: the topmost layer that has it.

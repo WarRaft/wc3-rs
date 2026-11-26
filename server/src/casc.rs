@@ -7,7 +7,8 @@
 //! 2. `War3.w3mod:_Locales/<locale>.w3mod:`;
 //! 3. `War3.w3mod:`, the game's files.
 //!
-//! A `.blp` the storage hasn't is read as its `.dds` (Reforged's
+//! A picture (`.blp`, an HD model's `.tif` ...) the storage hasn't is
+//! read as its `.dds` (Reforged's
 //! textures are DDS; the game reads the one for the other).
 //!
 //! The locale: `[project] locale=` (`ruRU`), else the one installed (the
@@ -88,14 +89,17 @@ impl Mods {
         Ok(Mods { storage: o.storage.clone(), folder: folder.to_path_buf(), prefixes })
     }
 
-    /// The name of `name` in the first mod that has it on disk; a `.blp`
+    /// The name of `name` in the first mod that has it on disk; a picture
+    /// (`.blp`, `.tif`, `.tga`, `.png`, `.jpg`: HD models name `.tif`s)
     /// the storage hasn't, its `.dds` (Reforged keeps its textures so, and
     /// the game reads the one for the other).
     fn full(&self, name: &str) -> Option<String> {
         let name = name.replace('\\', "/");
         let find = |name: &str| self.prefixes.iter().map(|p| format!("{p}{name}")).find(|n| self.storage.has(n));
         find(&name).or_else(|| {
-            let dot = name.rfind('.').filter(|d| name[*d..].eq_ignore_ascii_case(".blp"))?;
+            let dot = name.rfind('.')?;
+            let ext = name[dot..].to_ascii_lowercase();
+            [".blp", ".tif", ".tga", ".png", ".jpg"].contains(&ext.as_str()).then_some(())?;
             find(&format!("{}.dds", &name[..dot]))
         })
     }

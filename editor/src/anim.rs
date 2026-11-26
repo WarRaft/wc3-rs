@@ -210,8 +210,12 @@ impl<'a> Skeleton<'a> {
             visit(id, &all, &mut placed, &mut order, 0);
         }
         let mut slots = HashMap::new();
+        let version = m.version();
         for g in m.geosets() {
-            for id in &g.matrix_indices {
+            // The bones a vertex has: its matrix group's, or (Reforged's)
+            // its skin's, each with some weight.
+            let skin: Vec<u32> = g.skin_of(version).into_iter().flatten().flat_map(|e| (0..4).filter(move |k| e[4 + k] > 0).map(move |k| e[k] as u32)).collect();
+            for id in g.matrix_indices.iter().chain(&skin) {
                 let next = slots.len();
                 slots.entry(*id).or_insert(next);
             }
@@ -454,8 +458,21 @@ pub fn identity() -> Mat {
 }
 
 /// A geoset's vertices' bones (slots) and weights, eight bytes each: four
-/// slots, four weights out of 255.
-pub fn skin(g: &mdx_rs::Geoset, slots: &HashMap<u32, usize>) -> Vec<u8> {
+/// slots, four weights out of 255: Reforged's skin's (`SKIN`, a model of
+/// `version`), else its matrix groups' (the same weight each).
+pub fn skin(g: &mdx_rs::Geoset, slots: &HashMap<u32, usize>, version: u32) -> Vec<u8> {
+    if let Some(entries) = g.skin_of(version).filter(|e| e.len() == g.vertices.len()) {
+        let mut out = Vec::with_capacity(entries.len() * 8);
+        for e in entries {
+            for k in 0..4 {
+                out.push(if e[4 + k] > 0 { slots.get(&(e[k] as u32)).copied().unwrap_or(0) as u8 } else { 0 });
+            }
+            for k in 0..4 {
+                out.push(e[4 + k].min(255) as u8);
+            }
+        }
+        return out;
+    }
     let mut starts = Vec::with_capacity(g.matrix_groups.len());
     let mut at = 0usize;
     for size in &g.matrix_groups {

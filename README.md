@@ -23,8 +23,8 @@ item's details are in its section below):
   5 (overlays), 6 (editing: terrain brushes, things placed, regions and
   pathing), 7 (in step with the rest), 8a (animation), 8b (particles),
   8c (light), 8d (the map's size and tiles), the leftovers; Reforged HD
-  a (the storage), b (the game's layers), c (`.dds`). Next: Reforged
-  HD d.
+  a (the storage), b (the game's layers), c (`.dds`), d (its
+  models). Next: Reforged HD e.
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1942,8 +1942,24 @@ step), this list updated.
        RGBA by masks, its blocks the BLP2 DXT decoder's; `wc3_server::
        texture::decode` takes a DDS by its `DDS `; the storage's layer
        reads a `.blp` it hasn't as its `.dds`, as the game does.
-     - **d, Reforged's models**: MDX 1100 and later (a layer's several
-       textures, its shader), `mdx-rs`.
+     - **d, Reforged's models** (done): 3.0.1's are MDX 1800 (15088;
+       one 1600, one 1700); `mdx-rs` reads and writes back all of them
+       byte for byte: from 1400 a skin's entries are `u16`
+       (`Geoset::skin_of`: four bones, node ids, four weights), a
+       layer's textures by slot after its emissive gain, fresnel and
+       shader (`Layer::textures`, `diffuse`; as HiveWE and Retera's
+       Model Studio read them). The editor skins a vertex by its skin
+       when it has one (the skeleton's bones those it names too), draws
+       a layer with its diffuse slot's texture, reads an HD model's
+       `.tif` as its `.dds`. Since 1.32 a type's art is in its skins'
+       files (`Doodads\DoodadSkins.txt`, `Units\UnitSkin.txt` ...:
+       `file`, `numVar`, `vertR` as lists, `file:hd` taken with HD):
+       `editor/src/types.rs` reads them over the tables. The Diablo III
+       beta map with Reforged HD: all 13221 things placed, 103 models
+       and 326 textures read, none failing (`e2e/editor-look.js`,
+       `E2E_HD=1`). Its trees come out reddish-orange where the
+       classic's are green-yellow: their texture as Reforged names it,
+       not looked into yet.
      - **e, the HD shaders**: diffuse, normal, ORM, emissive, team
        colour, as the game draws them.
 

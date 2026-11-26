@@ -17,11 +17,13 @@ use crate::tileset::Slk;
 pub const PLACED: [Kind; 4] = [Kind::Doodad, Kind::Destructable, Kind::Unit, Kind::Item];
 
 /// Each kind's tables: SLKs (a row per id) and profile files (a section
-/// per id), lower ones first.
+/// per id), lower ones first; since 1.32 (Reforged) a kind's art is in
+/// its skins' files (`Doodads\\DoodadSkins.txt`, `Units\\UnitSkin.txt`
+/// ...), over the rest.
 fn files(kind: Kind) -> (&'static [&'static str], &'static [&'static str]) {
     match kind {
-        Kind::Doodad => (&["Doodads\\Doodads.slk"], &[]),
-        Kind::Destructable => (&["Units\\DestructableData.slk"], &[]),
+        Kind::Doodad => (&["Doodads\\Doodads.slk"], &["Doodads\\DoodadSkins.txt", "Doodads\\DoodadSkinsAddons.txt"]),
+        Kind::Destructable => (&["Units\\DestructableData.slk"], &["Units\\DestructableSkin.txt"]),
         Kind::Unit => (
             &["Units\\UnitData.slk", "Units\\UnitBalance.slk", "Units\\UnitUI.slk"],
             &[
@@ -31,9 +33,10 @@ fn files(kind: Kind) -> (&'static [&'static str], &'static [&'static str]) {
                 "Units\\NightElfUnitFunc.txt",
                 "Units\\OrcUnitFunc.txt",
                 "Units\\UndeadUnitFunc.txt",
+                "Units\\UnitSkin.txt",
             ],
         ),
-        Kind::Item => (&["Units\\ItemData.slk"], &["Units\\ItemFunc.txt"]),
+        Kind::Item => (&["Units\\ItemData.slk"], &["Units\\ItemFunc.txt", "Units\\ItemSkin.txt"]),
         _ => (&[], &[]),
     }
 }
@@ -42,12 +45,14 @@ fn files(kind: Kind) -> (&'static [&'static str], &'static [&'static str]) {
 #[derive(Debug, Default)]
 pub struct Types {
     of: HashMap<Kind, HashMap<String, HashMap<String, String>>>,
+    /// A field's HD value (`file:hd`) over its own (`Game::hd`).
+    pub hd: bool,
 }
 
 impl Types {
     pub fn load(game: &Game) -> Types {
         let text = |name: &str| game.read(name).map(|(b, _)| String::from_utf8_lossy(&b).into_owned());
-        let mut out = Types::default();
+        let mut out = Types { hd: game.hd(), ..Types::default() };
         for kind in PLACED {
             let objects = out.of.entry(kind).or_default();
             let (slks, profiles) = files(kind);
@@ -68,8 +73,12 @@ impl Types {
                     let id = section.name.text.trim().to_string();
                     let fields = objects.entry(id).or_default();
                     for item in section.items {
-                        if let (Some(k), Some(v)) = (&item.key, item.fields.first()) {
-                            fields.insert(k.text.trim().to_ascii_lowercase(), v.text().trim().trim_matches('"').to_string());
+                        // Every field: a list (a skin's `vertR=255,255`) whole.
+                        if let Some(k) = &item.key
+                            && !item.fields.is_empty()
+                        {
+                            let v: Vec<String> = item.fields.iter().map(|f| f.text().trim().trim_matches('"').to_string()).collect();
+                            fields.insert(k.text.trim().to_ascii_lowercase(), v.join(","));
                         }
                     }
                 }
@@ -103,10 +112,24 @@ impl Types {
         out
     }
 
-    /// Field `key` (any case) of type `id` of `kind`; `None` for no value,
-    /// or `_` (the tables' empty).
+    /// Field `key` (any case) of type `id` of `kind` (its `key:hd` first
+    /// when [`hd`](Self::hd)); `None` for no value, or `_` (the tables'
+    /// empty).
     pub fn get(&self, kind: Kind, id: &str, key: &str) -> Option<&str> {
-        self.of.get(&kind)?.get(id)?.get(&key.to_ascii_lowercase()).map(String::as_str).filter(|v| !v.is_empty() && *v != "_")
+        let fields = self.of.get(&kind)?.get(id)?;
+        let key = key.to_ascii_lowercase();
+        let value = |k: &str| fields.get(k).map(String::as_str).filter(|v| !v.is_empty() && *v != "_");
+        if self.hd
+            && let Some(v) = value(&format!("{key}:hd"))
+        {
+            return Some(v);
+        }
+        value(&key)
+    }
+
+    /// Item `n` (from 0) of a list field (`vertR=255,128`).
+    pub fn item(&self, kind: Kind, id: &str, key: &str, n: usize) -> Option<f32> {
+        self.get(kind, id, key)?.split(',').nth(n)?.trim().parse().ok()
     }
 
     /// [`get`](Self::get) as a number.
