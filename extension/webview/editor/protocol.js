@@ -379,6 +379,7 @@ const EditorProtocol = (() => {
                 return {
                     kind: 'overlays',
                     pathing: grid(r),
+                    destructables: grid(r),
                     regionPicture: grid(r),
                     regions: r.list(r => ({name: r.string(), bounds: [r.f32(), r.f32(), r.f32(), r.f32()], color: [r.u8(), r.u8(), r.u8()]})),
                     bounds: r.f32s(),

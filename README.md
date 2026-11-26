@@ -1787,7 +1787,16 @@ step), this list updated.
      (walking 99.86, building 99.46, water 99.45); LastGuards and
      CruiserCommand no worse, what's left there and here painted by
      hand, kept as a brush's paint is. Measured by `pathing::tests::
-     as_the_map_has_it` (`WC3_PROJECT`, `WPM_DIFF` for pictures).
+     as_the_map_has_it` (`WC3_PROJECT`, `WPM_DIFF` for pictures); all
+     five maps of `../maps` open and measure (their `wc3.bni` fixed).
+     The destructables' pathing, a layer of its own (done after the
+     start locations; HiveWE's "dynamic" pathing): what they lay when
+     they stand (`pathing::destructables`: each solid one's `pathTex`,
+     a dead one's `pathTexDeath`, a walkable one's cells without red its
+     deck, `DECK` 1) in `Overlays`; the page's Destructables (O) puts it
+     over the pathing shown, a bridge's deck walked on over the water
+     under it. On the Diablo III beta map 12572 cells, 2320 of them
+     bridges' decks.
    - **The shadow map** (`war3map.shd`) isn't made: HiveWE keeps the
      file as it is, and how World Editor bakes it (which doodads, which
      direction) isn't known here; a guess would be wrong on every save.

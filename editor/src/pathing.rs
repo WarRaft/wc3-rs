@@ -140,7 +140,16 @@ pub fn compute_with(game: &Game, t: &Terrain, draw: &Draw, tileset: &Tileset, ty
 
 /// A pathing texture (rows top to bottom) onto `cells` (rows from the
 /// bottom), centred on `at` (cells), turned `rotation` degrees.
-fn blit(cells: &mut [u8], pw: usize, ph: usize, at: (f32, f32), rotation: i64, (tw, th, rgba): (u32, u32, &Vec<u8>)) {
+fn blit(cells: &mut [u8], pw: usize, ph: usize, at: (f32, f32), rotation: i64, texture: (u32, u32, &Vec<u8>)) {
+    lay(cells, pw, ph, at, rotation, texture, |px| {
+        let on = |c: usize, bit: u8| if px[c] > 250 { bit } else { 0 };
+        on(0, NO_WALK) | on(1, NO_FLY) | on(2, NO_BUILD)
+    });
+}
+
+/// Each pixel of a pathing texture laid as [`blit`] lays it: `flags` of
+/// its RGBA or'd onto its cell.
+fn lay(cells: &mut [u8], pw: usize, ph: usize, at: (f32, f32), rotation: i64, (tw, th, rgba): (u32, u32, &Vec<u8>), flags: impl Fn(&[u8]) -> u8) {
     let (tw, th) = (tw as i64, th as i64);
     let (dw, dh) = if rotation % 180 != 0 { (th, tw) } else { (tw, th) };
     for j in 0..th {
@@ -157,10 +166,43 @@ fn blit(cells: &mut [u8], pw: usize, ph: usize, at: (f32, f32), rotation: i64, (
                 continue;
             }
             let px = (((th - 1 - j) * tw + i) * 4) as usize;
-            let on = |c: usize, bit: u8| if rgba[px + c] > 250 { bit } else { 0 };
-            cells[yy as usize * pw + xx as usize] |= on(0, NO_WALK) | on(1, NO_FLY) | on(2, NO_BUILD);
+            cells[yy as usize * pw + xx as usize] |= flags(&rgba[px..px + 4]);
         }
     }
+}
+
+/// A walkable destructable's deck in [`destructables`]: a cell of its
+/// pathing texture without red, walked on over what's under it.
+pub const DECK: u8 = 0x01;
+
+/// The pathing the destructables lay when they stand, as the game does
+/// (none of it is in `war3map.wpm`): each solid one's (flags 2) pathing
+/// texture (`pathTex`; a dead one's, life 0, `pathTexDeath`), turned to
+/// the nearest quarter of its angle; a walkable one's (a bridge) cells
+/// without red its [`DECK`].
+pub fn destructables(game: &Game, t: &Terrain, types: &Types, files: &Files) -> Vec<u8> {
+    let (pw, ph) = ((t.width as usize).saturating_sub(1) * 4, (t.height as usize).saturating_sub(1) * 4);
+    let mut cells = vec![0u8; pw * ph];
+    let mut textures: std::collections::HashMap<String, Option<(u32, u32, Vec<u8>)>> = Default::default();
+    let kind = w3abdhqtu_rs::Kind::Destructable;
+    for d in files.doodads.iter().flat_map(|d| &d.doodads) {
+        let p = &d.placement;
+        let id = p.id.to_string();
+        if !types.has(kind, &id) || types.has(w3abdhqtu_rs::Kind::Doodad, &id) || d.flags & 2 == 0 {
+            continue;
+        }
+        let key = if d.life == 0 { "pathTexDeath" } else { "pathTex" };
+        let Some(path) = types.get(kind, &id, key).filter(|p| !p.eq_ignore_ascii_case("none") && !p.is_empty() && *p != "_") else { continue };
+        let tex = textures.entry(path.to_ascii_lowercase()).or_insert_with(|| crate::textures::capped(game, path, 1 << 16).ok());
+        let Some((tw, th, rgba)) = tex else { continue };
+        let rotation = (((p.angle.to_degrees() + 90.0) / 90.0).round() as i64).rem_euclid(4) * 90;
+        let at = ((p.x - t.offset_x) / 32.0, (p.y - t.offset_y) / 32.0);
+        blit(&mut cells, pw, ph, at, rotation, (*tw, *th, rgba));
+        if types.number(kind, &id, "walkable").is_some_and(|w| w != 0.0) && d.life != 0 {
+            lay(&mut cells, pw, ph, at, rotation, (*tw, *th, rgba), |px| if px[0] > 250 { 0 } else { DECK });
+        }
+    }
+    cells
 }
 
 /// What a pathing brush changed, against what the files make: the flags

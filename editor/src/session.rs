@@ -253,7 +253,8 @@ impl Session {
         let objects = self.objects.as_ref().unwrap();
         let (_, grounds, textures, layers) = self.ground_cache.as_ref().unwrap();
         let minimap = crate::picture::paint(&self.terrain, grounds, textures, layers, &draw, self.tileset.water.as_ref(), 1);
-        let overlays = crate::overlays::Overlays::load(&self.game, &self.terrain, &draw, objects, &self.placed, self.info.as_ref(), minimap);
+        let mut overlays = crate::overlays::Overlays::load(&self.game, &self.terrain, &draw, objects, &self.placed, self.info.as_ref(), minimap);
+        overlays.destructables = self.destructables_pathing();
         self.overlays = Some(overlays.clone());
         terrain.extend(objects_msg);
         terrain.push(ServerMsg::Overlays(overlays));
@@ -956,6 +957,14 @@ impl Session {
         out
     }
 
+    /// What the destructables lay when they stand (not in
+    /// `war3map.wpm`), at the pathing's size.
+    fn destructables_pathing(&self) -> crate::overlays::Grid {
+        let Some(types) = self.types.as_ref() else { return Default::default() };
+        let (w, h) = ((self.terrain.width.saturating_sub(1)) * 4, (self.terrain.height.saturating_sub(1)) * 4);
+        crate::overlays::Grid { width: w, height: h, data: crate::pathing::destructables(&self.game, &self.terrain, types, &self.placed) }
+    }
+
     /// The overlays worked out again (the regions, the pathing, the
     /// minimap as they are now), kept for picks.
     fn overlays(&mut self) -> crate::overlays::Overlays {
@@ -964,7 +973,8 @@ impl Session {
         let minimap = crate::picture::paint(&self.terrain, grounds, textures, layers, &draw, self.tileset.water.as_ref(), 1);
         let empty = crate::placed::Objects::default();
         let objects = self.objects.as_ref().unwrap_or(&empty);
-        let o = crate::overlays::Overlays::load(&self.game, &self.terrain, &draw, objects, &self.placed, self.info.as_ref(), minimap);
+        let mut o = crate::overlays::Overlays::load(&self.game, &self.terrain, &draw, objects, &self.placed, self.info.as_ref(), minimap);
+        o.destructables = self.destructables_pathing();
         self.overlays = Some(o.clone());
         o
     }

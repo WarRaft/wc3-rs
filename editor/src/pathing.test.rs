@@ -68,3 +68,51 @@ fn flag_0x80_against_the_others() {
         eprintln!("{rest:#04x}: with 0x80 {with}, without {without}");
     }
 }
+
+#[test]
+fn the_destructables_pathing_a_blockers_and_a_bridges_deck() {
+    let dir = crate::testdir::TestDir::new("pathing-destructables");
+    dir.write("Units/DestructableData.slk", &crate::testdir::slk(&[
+        &["DestructableID", "pathTex", "pathTexDeath", "walkable"],
+        &["YTpb", "PathTextures\\Block.tga", "_", "0"],
+        &["YT00", "PathTextures\\Bridge.tga", "PathTextures\\Gone.tga", "1"],
+    ]));
+    // A blocker: 2 by 2, no walking and no flying; a bridge: 2 by 3,
+    // its rails (top and bottom rows) no walking, its deck no building.
+    dir.write("PathTextures/Block.tga", &crate::testdir::tga(2, 2, |_, _| [255, 255, 0, 255]));
+    dir.write("PathTextures/Bridge.tga", &crate::testdir::tga(2, 3, |_, y| if y == 1 { [0, 0, 255, 255] } else { [255, 0, 255, 255] }));
+    dir.write("PathTextures/Gone.tga", &crate::testdir::tga(2, 3, |_, _| [255, 0, 255, 255]));
+    let game = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()] }.open().0;
+    let types = Types::load(&game);
+    // A terrain of 4 by 2 cells: 16 by 8 pathing cells, from (0, 0).
+    let mut t = w3e_rs::parse(&crate::testdir::terrain()).unwrap();
+    t.width = 5;
+    t.height = 3;
+    t.points = vec![t.points[0]; 15];
+    (t.offset_x, t.offset_y) = (0.0, 0.0);
+    let thing = |id: &[u8; 4], x: f32, flags: u8, life: u8| doo_rs::Doodad {
+        placement: doo_rs::Placement::new(parser_rs::bin::Rawcode(*id), x, 128.0),
+        flags,
+        life,
+        item_table: -1,
+        item_sets: Vec::new(),
+        number: 0,
+    };
+    let mut doodads = crate::edit::new_doodads(Default::default());
+    // At cells (4, 4) and (12, 4); a non-solid blocker at (8, 4): nothing.
+    doodads.doodads = vec![thing(b"YTpb", 128.0, 2, 100), thing(b"YT00", 384.0, 2, 100), thing(b"YTpb", 256.0, 0, 100)];
+    let files = Files { doodads: Some(doodads), ..Default::default() };
+    let cells = destructables(&game, &t, &types, &files);
+    let at = |x: usize, y: usize| cells[y * 16 + x];
+    assert_eq!(at(4, 4), NO_WALK | NO_FLY);
+    assert_eq!(at(8, 4), 0);
+    // The bridge turned a quarter (angle 0: as World Editor places it,
+    // + 90): its rails and its deck.
+    let bridge: Vec<u8> = (2..6).flat_map(|y| (10..14).map(move |x| (x, y))).map(|(x, y)| at(x, y)).filter(|c| *c != 0).collect();
+    assert!(bridge.contains(&(NO_WALK | NO_BUILD)) && bridge.contains(&(NO_BUILD | DECK)), "{bridge:?}");
+    // Dead: its death's texture, no deck.
+    let mut dead = files.clone();
+    dead.doodads.as_mut().unwrap().doodads[1].life = 0;
+    let cells = destructables(&game, &t, &types, &dead);
+    assert!(cells.iter().all(|c| c & DECK == 0));
+}

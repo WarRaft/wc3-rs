@@ -47,6 +47,10 @@ pub struct Overlays {
     /// A cell's pathing flags each (`wpm_rs`: 2 no walking, 4 no flying,
     /// 8 no building).
     pub pathing: Grid,
+    /// What the destructables lay when they stand (`pathing::
+    /// destructables`: the same flags, and 1 a walkable one's deck), the
+    /// pathing's size.
+    pub destructables: Grid,
     pub regions: Vec<Region>,
     /// The regions' colours, RGBA.
     pub region_picture: Grid,

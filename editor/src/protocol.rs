@@ -310,7 +310,8 @@ pub struct PickedMsg {
 }
 
 /// Kind 136's body: the pathing (`u32` width, height, a byte a cell, an
-/// array), the regions' picture (`u32` width, height, RGBA), a list of
+/// array), the destructables' (the same; 1 a walkable one's deck,
+/// `pathing::DECK`), the regions' picture (`u32` width, height, RGBA), a list of
 /// regions (name, `f32` left, bottom, right, top, `u8` r, g, b), lines of
 /// the bounds and of the cameras (`f32`, `overlays::POINT` a point), a
 /// list of cameras (name, `f32` target x, y, z, eye x, y, z), the
@@ -754,7 +755,7 @@ impl ServerMsg {
                 kind::PICKED
             }
             ServerMsg::Overlays(o) => {
-                for g in [&o.pathing, &o.region_picture] {
+                for g in [&o.pathing, &o.destructables, &o.region_picture] {
                     w.u32(g.width);
                     w.u32(g.height);
                     w.bytes(&g.data);
@@ -1007,6 +1008,7 @@ impl ServerMsg {
                 use crate::overlays::{Camera, Grid, Overlays, Region};
                 let grid = |r: &mut Reader| -> Result<Grid, DecodeError> { Ok(Grid { width: r.u32()?, height: r.u32()?, data: r.bytes()? }) };
                 let pathing = grid(&mut r)?;
+                let destructables = grid(&mut r)?;
                 let region_picture = grid(&mut r)?;
                 let regions = r.list(|r| {
                     Ok(Region { name: r.string()?, bounds: [r.f32()?, r.f32()?, r.f32()?, r.f32()?], color: [r.u8()?, r.u8()?, r.u8()?] })
@@ -1016,7 +1018,7 @@ impl ServerMsg {
                 let cameras = r.list(|r| Ok(Camera { name: r.string()?, target: [r.f32()?, r.f32()?, r.f32()?], eye: [r.f32()?, r.f32()?, r.f32()?] }))?;
                 let minimap = grid(&mut r)?;
                 let notes = r.list(|r| r.string())?;
-                ServerMsg::Overlays(Overlays { pathing, regions, region_picture, bounds, camera_lines, cameras, minimap, notes })
+                ServerMsg::Overlays(Overlays { pathing, destructables, regions, region_picture, bounds, camera_lines, cameras, minimap, notes })
             }
             kind::PALETTE => {
                 let entry = |r: &mut Reader| -> Result<PaletteEntry, DecodeError> {

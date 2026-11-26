@@ -72,7 +72,7 @@ const VIEW = 'wc3.editors'
  * @property {import('child_process').ChildProcess | null} child
  * @property {{name: string, width: number, height: number} | null} map  what the page last said of the map
  * @property {string | null} error  what the page last said went wrong
- * @property {{pathing: number, regions: number, cameras: number, bounds: number, minimap: number, region?: {name: string, x: number, y: number}} | undefined} overlays  what the page has of the overlays
+ * @property {{pathing: number, destructables: number, decks: number, regions: number, cameras: number, bounds: number, minimap: number, region?: {name: string, x: number, y: number}} | undefined} overlays  what the page has of the overlays
  * @property {{dirty: boolean, undo: boolean, redo: boolean, message: string} | undefined} state  the edits' state the page last showed
  * @property {{name: string, bounds: number[]} | null | undefined} region  the region picked (the Regions tool)
  * @property {{frames: number, blocks: number, blinks: number, where: object[]} | undefined} flicker  blinks the page counted over a run of frames

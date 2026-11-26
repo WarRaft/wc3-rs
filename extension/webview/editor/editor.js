@@ -200,6 +200,7 @@
     // with the page's state.
     const TOGGLES = [
         {key: 'pathing', label: 'Pathing', code: 'KeyP'},
+        {key: 'destructables', label: 'Destructables', code: 'KeyO', title: 'The destructables\' pathing over it, as the game lays it (not in war3map.wpm): blockers, a bridge\'s deck walked on'},
         {key: 'regions', label: 'Regions', code: 'KeyR'},
         {key: 'cameras', label: 'Cameras', code: 'KeyC'},
         {key: 'bounds', label: 'Bounds', code: 'KeyB'},
@@ -209,10 +210,10 @@
         {key: 'fog', label: 'Fog', code: 'KeyF'},
         {key: 'cycle', label: 'Day cycle', code: 'KeyT'},
     ]
-    const show = {pathing: false, regions: false, cameras: false, bounds: true, minimap: true, animate: true, shadows: true, fog: false, cycle: false, ...(vscode.getState()?.show ?? {})}
+    const show = {pathing: false, destructables: true, regions: false, cameras: false, bounds: true, minimap: true, animate: true, shadows: true, fog: false, cycle: false, ...(vscode.getState()?.show ?? {})}
     const toggles = $('toggles')
     function applyShow() {
-        if (terrain) terrain.show = {pathing: show.pathing, regions: show.regions}
+        if (terrain) terrain.show = {pathing: show.pathing, regions: show.regions, destructables: show.destructables}
         if (objects) objects.animate = show.animate
         $('minimap').hidden = !show.minimap
         for (const b of toggles.children) b.classList.toggle('on', !!show[b.dataset.key])
@@ -223,7 +224,7 @@
         b.className = 'toggle'
         b.dataset.key = t.key
         b.textContent = t.label
-        b.title = `${t.label} (${t.code.slice(3)})`
+        b.title = `${t.title ?? t.label} (${t.code.slice(3)})`
         b.onclick = () => {
             show[t.key] = !show[t.key]
             applyShow()
@@ -735,6 +736,9 @@
             showNotes()
             vscode.postMessage({type: 'overlays', overlays: {
                 pathing: msg.pathing.width,
+                // The destructables' cells, and their walkable decks.
+                destructables: msg.destructables.data.reduce((n, c) => n + ((c & 14) !== 0 ? 1 : 0), 0),
+                decks: msg.destructables.data.reduce((n, c) => n + (c & 1), 0),
                 regions: msg.regions.length,
                 cameras: msg.cameras.length,
                 bounds: msg.bounds.length / 7,

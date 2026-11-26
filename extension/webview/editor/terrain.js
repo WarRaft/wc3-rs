@@ -79,18 +79,27 @@ float shadowed(vec2 pos) {
 uniform bool u_grid;
 uniform vec3 u_brush;
 uniform highp usampler2D u_pathing;
+uniform highp usampler2D u_destructables;
+uniform bool u_showDestructables;
 uniform sampler2D u_regions;
 uniform bool u_showPathing;
 uniform bool u_showRegions;
 // The pathing's colours as the game's pathing textures draw them (red no
-// walking, green no flying, blue no building), half over; the regions'
-// picture over that.
+// walking, green no flying, blue no building), half over (with the
+// destructables' when they're shown); the regions' picture over that.
 vec3 overlays(vec3 c, vec2 pos) {
     ivec2 cell = ivec2(floor(pos * 4.0));
     if (u_showPathing) {
         ivec2 size = textureSize(u_pathing, 0);
         if (all(greaterThanEqual(cell, ivec2(0))) && all(lessThan(cell, size))) {
             uint f = texelFetch(u_pathing, cell, 0).r;
+            // What the destructables lay when they stand: their flags
+            // over, a bridge's deck (1) walked on.
+            if (u_showDestructables) {
+                uint d = texelFetch(u_destructables, cell, 0).r;
+                if ((d & 1u) != 0u) f &= ~2u;
+                f |= d & 14u;
+            }
             vec3 p = vec3((f & 2u) >> 1, (f & 4u) >> 2, (f & 8u) >> 3);
             if ((f & 14u) != 0u) c = mix(c, p, 0.5);
         }
@@ -186,18 +195,27 @@ float shadowed(vec2 pos) {
     return 1.0 - 0.45 * texelFetch(u_shadows, cell, 0).r;
 }
 uniform highp usampler2D u_pathing;
+uniform highp usampler2D u_destructables;
+uniform bool u_showDestructables;
 uniform sampler2D u_regions;
 uniform bool u_showPathing;
 uniform bool u_showRegions;
 // The pathing's colours as the game's pathing textures draw them (red no
-// walking, green no flying, blue no building), half over; the regions'
-// picture over that.
+// walking, green no flying, blue no building), half over (with the
+// destructables' when they're shown); the regions' picture over that.
 vec3 overlays(vec3 c, vec2 pos) {
     ivec2 cell = ivec2(floor(pos * 4.0));
     if (u_showPathing) {
         ivec2 size = textureSize(u_pathing, 0);
         if (all(greaterThanEqual(cell, ivec2(0))) && all(lessThan(cell, size))) {
             uint f = texelFetch(u_pathing, cell, 0).r;
+            // What the destructables lay when they stand: their flags
+            // over, a bridge's deck (1) walked on.
+            if (u_showDestructables) {
+                uint d = texelFetch(u_destructables, cell, 0).r;
+                if ((d & 1u) != 0u) f &= ~2u;
+                f |= d & 14u;
+            }
             vec3 p = vec3((f & 2u) >> 1, (f & 4u) >> 2, (f & 8u) >> 3);
             if ((f & 14u) != 0u) c = mix(c, p, 0.5);
         }
@@ -337,8 +355,9 @@ void main() {
             this.cliffTextures = null
             /** The pathing's and the regions' pictures, and which show. */
             this.pathing = dataTexture(gl, gl.R8UI, gl.RED_INTEGER, gl.UNSIGNED_BYTE, 1, 1, new Uint8Array(1))
+            this.destructables = dataTexture(gl, gl.R8UI, gl.RED_INTEGER, gl.UNSIGNED_BYTE, 1, 1, new Uint8Array(1))
             this.regions = dataTexture(gl, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, 1, 1, new Uint8Array(4))
-            this.show = {pathing: false, regions: false}
+            this.show = {pathing: false, regions: false, destructables: false}
             this.shadows = dataTexture(gl, gl.R8, gl.RED, gl.UNSIGNED_BYTE, 1, 1, new Uint8Array(1))
             this.showShadows = true
             /** The light (`EditorLight.Light`), the hour, the camera's place: set before drawing. */
@@ -426,8 +445,11 @@ void main() {
         setOverlays(msg) {
             const gl = this.gl
             gl.deleteTexture(this.pathing)
+            gl.deleteTexture(this.destructables)
             gl.deleteTexture(this.regions)
             const p = msg.pathing.width ? msg.pathing : {width: 1, height: 1, data: new Uint8Array(1)}
+            const d = msg.destructables.width ? msg.destructables : {width: 1, height: 1, data: new Uint8Array(1)}
+            this.destructables = dataTexture(gl, gl.R8UI, gl.RED_INTEGER, gl.UNSIGNED_BYTE, d.width, d.height, d.data)
             const r = msg.regionPicture.width ? msg.regionPicture : {width: 1, height: 1, data: new Uint8Array(4)}
             this.pathing = dataTexture(gl, gl.R8UI, gl.RED_INTEGER, gl.UNSIGNED_BYTE, p.width, p.height, p.data)
             this.regions = dataTexture(gl, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, r.width, r.height, r.data)
@@ -452,7 +474,7 @@ void main() {
             else gl.uniform1i(p.uniforms.u_daylight, 0)
         }
 
-        /** Binds the overlays' pictures (units 6 and 7) for program `p`. */
+        /** Binds the overlays' pictures (units 6, 7 and 9) for program `p`. */
         bindOverlays(p) {
             const gl = this.gl
             gl.activeTexture(gl.TEXTURE6)
@@ -461,6 +483,10 @@ void main() {
             gl.activeTexture(gl.TEXTURE7)
             gl.bindTexture(gl.TEXTURE_2D, this.regions)
             gl.uniform1i(p.uniforms.u_regions, 7)
+            gl.activeTexture(gl.TEXTURE9)
+            gl.bindTexture(gl.TEXTURE_2D, this.destructables)
+            gl.uniform1i(p.uniforms.u_destructables, 9)
+            gl.uniform1i(p.uniforms.u_showDestructables, this.show.destructables ? 1 : 0)
             gl.uniform1i(p.uniforms.u_showPathing, this.show.pathing ? 1 : 0)
             gl.uniform1i(p.uniforms.u_showRegions, this.show.regions ? 1 : 0)
         }

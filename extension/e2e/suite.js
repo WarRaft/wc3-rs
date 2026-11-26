@@ -140,9 +140,16 @@ async function steps() {
     log('the overlays: pathing, regions, cameras, bounds, the minimap; a click in a region says it')
     const ov = await until(() => we.overlays, 'the overlays')
     check(ov.pathing > 0 && ov.regions > 0 && ov.cameras > 0 && ov.bounds > 0 && ov.minimap > 0, `pathing ${ov.pathing} wide, ${ov.regions} regions, ${ov.cameras} cameras, ${ov.bounds} points of bounds, a minimap ${ov.minimap} wide`)
-    await we.panel.webview.postMessage({type: 'show', show: {pathing: true, regions: true, cameras: true, bounds: true, minimap: true}})
+    check(ov.destructables > 0, `the destructables' pathing: ${ov.destructables} cells, ${ov.decks} of bridges' decks`)
+    await we.panel.webview.postMessage({type: 'show', show: {pathing: true, destructables: true, regions: true, cameras: true, bounds: true, minimap: true}})
     await we.panel.webview.postMessage({type: 'look', x: 96, y: 64, distance: 150, horizontal: 0, vertical: -1.1})
     await shot('world-editor-overlays')
+    // A bridge over the falls: its deck walked on, its rails not.
+    await we.panel.webview.postMessage({type: 'show', show: {regions: false}})
+    await we.panel.webview.postMessage({type: 'look', x: 27, y: 78, distance: 18, horizontal: 0, vertical: -1.4})
+    await sleep(300)
+    await shot('world-editor-bridge')
+    await we.panel.webview.postMessage({type: 'show', show: {regions: true}})
     we.picked = undefined
     await we.panel.webview.postMessage({type: 'look', world: true, x: ov.region.x, y: ov.region.y, distance: 6, horizontal: 0, vertical: -1.55})
     await sleep(500)
