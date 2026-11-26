@@ -29,7 +29,7 @@ fs.rmSync(path.join(out, 'workspace'), {recursive: true, force: true})
 const workspace = path.join(out, 'workspace')
 fs.mkdirSync(workspace, {recursive: true})
 fs.copyFileSync(map, path.join(workspace, 'map.w3x'))
-fs.writeFileSync(path.join(workspace, 'wc3.bni'), `[project]\ngame=${JSON.stringify(game)}\n${process.env.E2E_HD ? 'hd=1\n' : ''}\n[map]\nroot=map.w3x\n\n[build]\n\n[build]\nname=release\nuglify=1\n`)
+fs.writeFileSync(path.join(workspace, 'wc3.bni'), `[project]\ngame=${JSON.stringify(game)}\n${process.env.E2E_HD ? 'hd=1\n' : ''}${process.env.E2E_DE ? 'de=1\n' : ''}\n[map]\nroot=map.w3x\n\n[build]\n\n[build]\nname=release\nuglify=1\n`)
 fs.rmSync(path.join(out, 'log.txt'), {force: true})
 // A trigger of custom text taken out with its code.
 fs.mkdirSync(path.join(workspace, 'triggers'), {recursive: true})

@@ -70,6 +70,9 @@ pub struct Project {
     /// `[project] hd=1|0`: a Reforged game folder's HD files over its
     /// others (`crate::casc`); 0 by default.
     pub hd: bool,
+    /// `[project] de=1|0`: 2.0's Definitive graphics (`_DE.w3mod`) in
+    /// HD's place, drawn as HD.
+    pub de: bool,
     /// `[project] locale=`: a Reforged game folder's locale (`ruRU`);
     /// the one installed by default.
     pub locale: Option<String>,
@@ -323,12 +326,17 @@ pub fn load(root: &Path, src: &str) -> (Project, Vec<Issue>) {
                 for item in items {
                     match key_of(item, &mut issues) {
                         Some("game") => read_game(root, item, &mut project, &mut issues),
-                        Some("hd") => {
+                        Some(name @ ("hd" | "de")) => {
                             let key = item.key.as_ref().expect("key_of returned a key");
-                            match item.fields.as_slice() {
-                                [field] if field.text().trim() == "1" => project.hd = true,
-                                [field] if field.text().trim() == "0" => project.hd = false,
-                                _ => issues.push(at_name(key, Level::Error, "'hd' is 1 or 0".into())),
+                            let value = match item.fields.as_slice() {
+                                [field] if field.text().trim() == "1" => Some(true),
+                                [field] if field.text().trim() == "0" => Some(false),
+                                _ => None,
+                            };
+                            match (value, name) {
+                                (Some(v), "hd") => project.hd = v,
+                                (Some(v), _) => project.de = v,
+                                (None, _) => issues.push(at_name(key, Level::Error, format!("'{name}' is 1 or 0"))),
                             }
                         }
                         Some("locale") => {
@@ -459,7 +467,7 @@ fn key_of<'a>(item: &'a Item, issues: &mut Vec<Issue>) -> Option<&'a str> {
 fn unknown_key(item: &Item, section: &str, issues: &mut Vec<Issue>) {
     let key = item.key.as_ref().expect("key_of returned a key");
     let expected = match section {
-        "project" => "game', 'hd' or 'locale",
+        "project" => "game', 'hd', 'de' or 'locale",
         "code" => "sources' or 'exclude",
         "map" => "root",
         "build" => "name', 'out', 'script', 'uglify', 'inline', 'dead_code' or 'string_hash",

@@ -62,6 +62,9 @@ fn hd_ground_textures_their_diffuse() {
     assert_eq!(&layers.rgba[(16 * 2 * 2 * 4) as usize..][..4], [0, 0, 0, 255]);
     let (_, layers) = ground(&open(false), &paths);
     assert_eq!(&layers.rgba[..4], [0, 0, 0, 255]);
+    // A cliff's texture the same way.
+    let (layers, errors) = whole(&open(true), &["TerrainArt\\Lordc_GrassTrim.blp".to_string()]);
+    assert_eq!((&layers.rgba[..4], errors), ([10, 20, 30, 255].as_slice(), vec![String::new()]));
 }
 
 /// An uncompressed RGBA DDS of one colour.

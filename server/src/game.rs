@@ -153,6 +153,8 @@ pub struct Lookup {
     /// hd=1`), and its locale (`locale=`; `None`: the one installed):
     /// see `crate::casc`.
     pub hd: bool,
+    /// 2.0's Definitive graphics over the rest (`de=1`, HD as well).
+    pub de: bool,
     pub locale: Option<String>,
 }
 
@@ -163,6 +165,7 @@ impl Lookup {
             game: project.game.clone(),
             roots: project.roots.clone(),
             hd: project.hd,
+            de: project.de,
             locale: project.locale.clone(),
         }
     }
@@ -177,7 +180,7 @@ impl Lookup {
         // By the path, so it holds for a map the project names nowhere.
         let map = path.ancestors().skip(1).find(|a| crate::map::is_map_name(a));
         match map.filter(|m| !project.roots.iter().any(|r| r == m)) {
-            Some(map) => Lookup { game: project.game.clone(), roots: vec![map.to_path_buf()], hd: project.hd, locale: project.locale.clone() },
+            Some(map) => Lookup { game: project.game.clone(), roots: vec![map.to_path_buf()], hd: project.hd, de: project.de, locale: project.locale.clone() },
             None => Lookup::of(project),
         }
     }
@@ -189,14 +192,28 @@ impl Lookup {
     /// Opens every layer. Never fails: a game archive or a root that can't
     /// be opened is left out and reported (`path: error`), and the rest
     /// still apply; a game folder or root that doesn't exist adds nothing.
+    /// A Reforged folder's tileset mod is the map's: its `war3map.w3e`'s
+    /// tileset, of the roots.
     pub fn open(&self) -> (Game, Vec<String>) {
-        let (mut game, mut errors) = Game::open_with(&self.game, self.hd, self.locale.as_deref());
+        let tileset = if self.game.iter().any(|f| crate::casc::is_storage(f)) { self.tileset() } else { None };
+        let graphics = crate::casc::Graphics::of(self.hd, self.de);
+        let (mut game, mut errors) = Game::open_with(&self.game, graphics, tileset, self.locale.as_deref());
         for root in self.roots.iter().filter(|r| r.exists()) {
             if let Err(e) = game.0.push(root) {
                 errors.push(e);
             }
         }
         (game, errors)
+    }
+
+    /// The map's tileset letter: its `war3map.w3e`'s, the roots' alone.
+    fn tileset(&self) -> Option<char> {
+        let mut roots = Game::default();
+        for root in self.roots.iter().filter(|r| r.exists()) {
+            let _ = roots.0.push(root);
+        }
+        let (w3e, _) = roots.read("war3map.w3e")?;
+        (w3e.get(..4) == Some(b"W3E!")).then(|| w3e.get(8).map(|b| *b as char)).flatten().filter(char::is_ascii_alphabetic)
     }
 
     /// Does a change to `path` change the game's scripts ([`scripts`]):
@@ -232,17 +249,17 @@ impl Game {
     /// can't be opened is left out and reported (`path: error`), and the
     /// rest still apply. A folder that doesn't exist adds nothing.
     pub fn open(folders: &[PathBuf]) -> (Game, Vec<String>) {
-        Game::open_with(folders, false, None)
+        Game::open_with(folders, crate::casc::Graphics::Sd, None, None)
     }
 
     /// [`open`](Self::open), a Reforged folder (`crate::casc`) its
-    /// storage's mods for `hd` and `locale`.
-    pub fn open_with(folders: &[PathBuf], hd: bool, locale: Option<&str>) -> (Game, Vec<String>) {
+    /// storage's mods for `graphics`, the map's `tileset` and `locale`.
+    pub fn open_with(folders: &[PathBuf], graphics: crate::casc::Graphics, tileset: Option<char>, locale: Option<&str>) -> (Game, Vec<String>) {
         let mut layers = storm_rs::archive::Layers::default();
         let mut errors = Vec::new();
         for folder in folders {
             if crate::casc::is_storage(folder) {
-                match crate::casc::Mods::open(folder, hd, locale) {
+                match crate::casc::Mods::open(folder, graphics, tileset, locale) {
                     Ok(mods) => layers.push_store(Box::new(mods)),
                     Err(e) => errors.push(e),
                 }
@@ -252,11 +269,11 @@ impl Game {
             layers.extend(l);
             errors.extend(e);
         }
-        (Game(layers, hd), errors)
+        (Game(layers, graphics != crate::casc::Graphics::Sd), errors)
     }
 
     /// Opened with a Reforged folder's HD files over the rest
-    /// (`[project] hd=1`): what a type's `file:hd` is read for.
+    /// (`[project] hd=1`, or `de=1`): what a type's `file:hd` is read for.
     pub fn hd(&self) -> bool {
         self.1
     }

@@ -81,7 +81,7 @@ fn unknown_sections_and_keys_are_warnings() {
         messages,
         vec![
             (1, "unknown section [jas] (expected [project], [code], [map], [build], [jass], [lint] or [external])"),
-            (4, "unknown setting 'source' in [project] (expected 'game', 'hd' or 'locale')"),
+            (4, "unknown setting 'source' in [project] (expected 'game', 'hd', 'de' or 'locale')"),
             (5, "setting without a name"),
         ]
     );
@@ -467,6 +467,8 @@ fn a_reforged_games_hd_and_locale() {
     assert_eq!((p.hd, p.locale.as_deref()), (true, Some("enUS")));
     let (p, _) = load(Path::new("/p"), "[project]\n");
     assert_eq!((p.hd, p.locale), (false, None));
-    let (_, issues) = load(Path::new("/p"), "[project]\nhd=yes\nlocale=russian\n");
-    assert_eq!(issues.iter().map(|i| i.message.as_str()).collect::<Vec<_>>(), ["'hd' is 1 or 0", "'locale' is a locale's four letters: ruRU, enUS ..."]);
+    let (p, _) = load(Path::new("/p"), "[project]\nde=1\n");
+    assert_eq!((p.hd, p.de), (false, true));
+    let (_, issues) = load(Path::new("/p"), "[project]\nhd=yes\nde=true\nlocale=russian\n");
+    assert_eq!(issues.iter().map(|i| i.message.as_str()).collect::<Vec<_>>(), ["'hd' is 1 or 0", "'de' is 1 or 0", "'locale' is a locale's four letters: ruRU, enUS ..."]);
 }

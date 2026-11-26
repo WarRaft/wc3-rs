@@ -1984,6 +1984,14 @@ step), this list updated.
        ORM with no team colour, no glow. Not yet: roughness and
        metalness (the ORM's G, B: no specular light here), reflections
        (slot 5).
+     - **f, 2.0's mods and HD terrain** (done): the mods in HiveWE's
+       order (`casc::prefixes`): the graphics mod's tileset, locale and
+       itself, then the game's tileset, locale and itself, then
+       `_Deprecated.w3mod`; the tileset the map's (its `war3map.w3e`,
+       `Lookup::open`). `[project] de=1`: 2.0's Definitive graphics
+       (`_DE.w3mod`) in `_HD.w3mod`'s place, drawn as HD. In HD a ground
+       or cliff texture is its `_Diffuse.dds` first (2.0's Lordaeron
+       Capital and Undercity have no other).
 
 ## MCP
 

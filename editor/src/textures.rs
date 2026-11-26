@@ -69,11 +69,12 @@ fn picture(game: &Game, path: &str) -> Result<Picture, String> {
     Ok((mip.width, mip.height, mip.rgba))
 }
 
-/// A ground texture's picture: in HD (Reforged), its `_Diffuse` first
-/// (`TerrainArt\LordaeronCapital\Lordc_GrassTrim.blp` is
-/// `Lordc_GrassTrim_Diffuse.dds`; 2.0's tilesets have no other), as the
-/// game and HiveWE read it.
-fn ground_picture(game: &Game, path: &str) -> Result<Picture, String> {
+/// A ground or cliff texture's picture: in HD (Reforged), its `_Diffuse`
+/// first (`TerrainArt\LordaeronCapital\Lordc_GrassTrim.blp` is
+/// `Lordc_GrassTrim_Diffuse.dds`, 2.0's tilesets have no other;
+/// `Lords_Cliff0.blp` is `Lords_Cliff0_Diffuse.dds`), as the game and
+/// HiveWE read it.
+fn terrain_picture(game: &Game, path: &str) -> Result<Picture, String> {
     if game.hd() {
         let file = path.rfind(['\\', '/']).map_or(0, |i| i + 1);
         let stem = path[file..].rfind('.').map_or(path, |dot| &path[..file + dot]);
@@ -156,10 +157,11 @@ fn stretch(rgba: &[u8], w: u32, h: u32, to: u32) -> Vec<u8> {
     out
 }
 
-/// Whole pictures as layers, each stretched to the biggest one's size
-/// (a square); one that can't be read is a grey checker, its error said.
+/// Whole pictures as layers (the cliffs' textures: in HD their
+/// `_Diffuse`), each stretched to the biggest one's size (a square); one
+/// that can't be read is a grey checker, its error said.
 pub fn whole(game: &Game, paths: &[String]) -> (Layers, Vec<String>) {
-    let pictures: Vec<Result<Picture, String>> = paths.iter().map(|p| picture(game, p)).collect();
+    let pictures: Vec<Result<Picture, String>> = paths.iter().map(|p| terrain_picture(game, p)).collect();
     let size = pictures.iter().filter_map(|p| p.as_ref().ok()).map(|(w, h, _)| *w.max(h)).max().unwrap_or(64);
     let mut layers = Layers { size, ..Default::default() };
     let mut errors = Vec::new();
@@ -186,7 +188,7 @@ pub fn ground(game: &Game, paths: &[(String, Option<String>)]) -> (Vec<GroundTex
         .iter()
         .map(|(id, path)| match path {
             None => Err(format!("{id}: not in TerrainArt\\Terrain.slk")),
-            Some(p) => ground_picture(game, p).and_then(|pic| {
+            Some(p) => terrain_picture(game, p).and_then(|pic| {
                 let (w, h, _) = &pic;
                 if *h < 4 || (*w != *h && *w != 2 * *h) {
                     Err(format!("{p}: {w} by {h}, neither 4 by 4 cells nor 8 by 4"))

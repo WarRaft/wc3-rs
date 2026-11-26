@@ -3,7 +3,7 @@
  * Editor opened, its map drawn, what it drew said, and screenshots: all
  * of it, then close up over the first thing of each model whose path has
  * one of `E2E_LOOK` (`|`-separated; a footman and the cliffs by default).
- * For the game as another project has it (`E2E_HD=1`: Reforged's HD).
+ * For the game as another project has it (`E2E_HD=1`: Reforged's HD; `E2E_DE=1`: 2.0's Definitive).
  */
 const vscode = require('vscode')
 const fs = require('fs')

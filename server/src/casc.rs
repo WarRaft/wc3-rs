@@ -2,10 +2,17 @@
 //! over the rest as one layer of `game::Game`, its mods in the order the
 //! game reads them (the first that has a file wins):
 //!
-//! 1. with HD (`[project] hd=1`): `War3.w3mod:_HD.w3mod:_Locales/<locale>.w3mod:`,
-//!    `War3.w3mod:_HD.w3mod:`;
-//! 2. `War3.w3mod:_Locales/<locale>.w3mod:`;
-//! 3. `War3.w3mod:`, the game's files.
+//! 1. with HD (`[project] hd=1`; `de=1`, 2.0's Definitive mode, its
+//!    `_DE.w3mod` in `_HD.w3mod`'s place): `War3.w3mod:_HD.w3mod:` and in
+//!    it the map's tileset's `_Tilesets/<letter>.w3mod:`, then the
+//!    locale's `_Locales/<locale>.w3mod:`, then the mod itself;
+//! 2. `War3.w3mod:_Tilesets/<letter>.w3mod:`;
+//! 3. `War3.w3mod:_Locales/<locale>.w3mod:`;
+//! 4. `War3.w3mod:`, the game's files;
+//! 5. `War3.w3mod:_Deprecated.w3mod:`, files the game keeps for old maps.
+//!
+//! The order HiveWE reads them in. The tileset: the map's (`war3map.w3e`
+//! of the roots, `game::Lookup::open`), none without one.
 //!
 //! A picture (`.blp`, an HD model's `.tif` ...) the storage hasn't is
 //! read as its `.dds` (Reforged's
@@ -69,23 +76,63 @@ impl std::fmt::Debug for Mods {
     }
 }
 
+/// Which of the game's graphics a project reads: SD's alone, Reforged's
+/// HD (`[project] hd=1`), or 2.0's Definitive (`de=1`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+pub enum Graphics {
+    #[default]
+    Sd,
+    Hd,
+    De,
+}
+
+impl Graphics {
+    pub fn of(hd: bool, de: bool) -> Graphics {
+        match (hd, de) {
+            (_, true) => Graphics::De,
+            (true, _) => Graphics::Hd,
+            _ => Graphics::Sd,
+        }
+    }
+
+    /// Its mod: `_HD.w3mod`, `_DE.w3mod`; none for SD.
+    fn mod_name(self) -> Option<&'static str> {
+        match self {
+            Graphics::Sd => None,
+            Graphics::Hd => Some("_HD.w3mod"),
+            Graphics::De => Some("_DE.w3mod"),
+        }
+    }
+}
+
+/// The mods' prefixes for `graphics`, `tileset` (its letter) and
+/// `locale`, the first first (see the module docs).
+pub fn prefixes(graphics: Graphics, tileset: Option<char>, locale: Option<&str>) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut layer = |base: String| {
+        if let Some(t) = tileset {
+            out.push(format!("{base}_Tilesets/{t}.w3mod:"));
+        }
+        if let Some(l) = locale {
+            out.push(format!("{base}_Locales/{l}.w3mod:"));
+        }
+        out.push(base);
+    };
+    if let Some(m) = graphics.mod_name() {
+        layer(format!("War3.w3mod:{m}:"));
+    }
+    layer("War3.w3mod:".into());
+    out.push("War3.w3mod:_Deprecated.w3mod:".into());
+    out
+}
+
 impl Mods {
-    /// The storage of `folder`, its mods for `hd` and `locale` (`None`:
-    /// the one installed).
-    pub fn open(folder: &Path, hd: bool, locale: Option<&str>) -> Result<Mods, String> {
+    /// The storage of `folder`, its mods for `graphics`, the map's
+    /// `tileset` and `locale` (`None`: the one installed).
+    pub fn open(folder: &Path, graphics: Graphics, tileset: Option<char>, locale: Option<&str>) -> Result<Mods, String> {
         let o = open(folder)?;
         let locale = locale.map(str::to_string).or_else(|| o.installed.clone());
-        let mut prefixes = Vec::new();
-        if hd {
-            if let Some(l) = &locale {
-                prefixes.push(format!("War3.w3mod:_HD.w3mod:_Locales/{l}.w3mod:"));
-            }
-            prefixes.push("War3.w3mod:_HD.w3mod:".into());
-        }
-        if let Some(l) = &locale {
-            prefixes.push(format!("War3.w3mod:_Locales/{l}.w3mod:"));
-        }
-        prefixes.push("War3.w3mod:".into());
+        let prefixes = prefixes(graphics, tileset, locale.as_deref());
         Ok(Mods { storage: o.storage.clone(), folder: folder.to_path_buf(), prefixes })
     }
 
