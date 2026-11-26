@@ -151,8 +151,8 @@ coming is listed below.
   works out everything drawn. A text form of war3map.doo,
   war3mapUnits.doo or war3map.w3r open beside it is in step with it both
   ways; what changes on disk is read again; the pathing is made again on
-  every save. Animation comes next (the repository README, "World
-  Editor").
+  every save. Models play their Stand (the Animate button). Particles
+  and light come next (the repository README, "World Editor").
 
 ## Not yet
 

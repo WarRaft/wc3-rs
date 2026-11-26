@@ -323,9 +323,11 @@ const EditorProtocol = (() => {
                         uvs: r.f32s(),
                         indices: r.u16s(),
                         layers: r.list(r => ({texture: r.i32(), filterMode: r.u32(), shading: r.u32(), alpha: r.f32()})),
+                        skin: r.bytes(),
                     })),
                     instances: r.f32s(),
                     error: r.string(),
+                    anim: {bones: r.u32(), frames: r.u32(), fps: r.f32(), matrices: r.f32s()},
                 }))
                 return {kind: 'objects', firstTexture, firstModel, textures, models, notes: r.list(r => r.string())}
             }

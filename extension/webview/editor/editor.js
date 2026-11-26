@@ -51,7 +51,7 @@
         if (terrain?.ready) {
             const mvp = camera.matrix(w / h)
             terrain.draw(mvp, now / 1000)
-            objects?.draw(mvp)
+            objects?.draw(mvp, now / 1000)
             lines?.draw(mvp, show)
         }
     }
@@ -151,11 +151,13 @@
         {key: 'cameras', label: 'Cameras', code: 'KeyC'},
         {key: 'bounds', label: 'Bounds', code: 'KeyB'},
         {key: 'minimap', label: 'Minimap', code: 'KeyM'},
+        {key: 'animate', label: 'Animate', code: 'KeyN'},
     ]
-    const show = {pathing: false, regions: false, cameras: false, bounds: true, minimap: true, ...(vscode.getState()?.show ?? {})}
+    const show = {pathing: false, regions: false, cameras: false, bounds: true, minimap: true, animate: true, ...(vscode.getState()?.show ?? {})}
     const toggles = $('toggles')
     function applyShow() {
         if (terrain) terrain.show = {pathing: show.pathing, regions: show.regions}
+        if (objects) objects.animate = show.animate
         $('minimap').hidden = !show.minimap
         for (const b of toggles.children) b.classList.toggle('on', !!show[b.dataset.key])
         vscode.setState({...(vscode.getState() ?? {}), show})
@@ -623,6 +625,7 @@
                         water: terrain.water?.count ?? 0,
                         cliffs: terrain.cliffs.reduce((n, c) => n + c.instances, 0),
                         objects: objects.count,
+                        animated: objects.models.filter(m => m.anim).length,
                         error: gl.getError(),
                     },
                 }))

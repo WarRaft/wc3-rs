@@ -107,6 +107,9 @@ fn a_real_map_draws_with_its_textures() {
                 let placed: usize = o.models.iter().map(|m| m.instances.len() / crate::placed::INSTANCE).sum();
                 let pixels: usize = o.textures.iter().map(|t| t.rgba.len()).sum();
                 eprintln!("  objects: {} models, {placed} placed, {} textures ({pixels} bytes), notes {:?}", o.models.len(), o.textures.len(), o.notes);
+                let animated: Vec<_> = o.models.iter().filter_map(|m| m.anim.as_ref()).collect();
+                let floats: usize = animated.iter().map(|a| a.matrices.len()).sum();
+                eprintln!("  animated: {} models, {} matrix bytes, frames max {:?}", animated.len(), floats * 4, animated.iter().map(|a| a.frames).max());
                 for e in o.models.iter().filter(|m| !m.error.is_empty()).map(|m| &m.error).chain(o.textures.iter().filter(|t| !t.error.is_empty()).map(|t| &t.error)).take(10) {
                     eprintln!("    {e}");
                 }

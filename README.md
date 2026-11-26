@@ -21,7 +21,7 @@ item's details are in its section below):
 - **The World Editor** (see [World Editor](#world-editor)): its steps,
   in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs), 4 (doodads and units),
   5 (overlays), 6 (editing: terrain brushes, things placed, regions and
-  pathing), 7 (in step with the rest). Next: 8.
+  pathing), 7 (in step with the rest), 8a (animation). Next: 8b.
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1768,8 +1768,28 @@ step), this list updated.
      direction) isn't known here; a guess would be wrong on every save.
      Left as it is, until its algorithm is.
 
-8. **Later.** Animations and particles, lighting and shadows, the
-   terrain's resize, the tile setter and pather, Reforged HD assets.
+8. **Later.** In parts:
+   - **8a, animation** (done): `mdx-rs` reads the skeleton (`BONE`,
+     `HELP`: nodes and their tracks, written back byte for byte, all
+     3320 models still); `editor/src/anim.rs` bakes each model's `Stand`
+     (or first sequence) into its bones' matrices, 20 frames a second
+     and 120 at most (a node moved, turned and scaled about its pivot,
+     under its parent; keys as the game interpolates them, its own way
+     past the last key; global sequences in their own loops), and each
+     vertex's bones and weights (its matrix group, four at most, the
+     same weight each); the page puts the matrices in a texture once and
+     moves the vertices on the GPU, each thing at its own place in the
+     loop (no work a frame); the Animate button (N) turns it off. On the
+     Diablo III beta map 85 of 298 models move (2.5 MB of matrices).
+     Billboarded nodes (facing the camera) and geosets shown or hidden
+     as the sequence goes are next. MCP: `mdx_info` says the skeleton.
+   - **8b, particles** (`PRE2`, `RIBB`): emitters read and drawn.
+   - **8c, light**: the day and night (`Environment\DNC`), the map's
+     light, fog, shadows.
+   - **8d, the terrain's size and tiles**: resize, the tile setter
+     (the map's ground textures) and pather.
+   - **Reforged HD assets** (CASC, `.dds`, the HD shaders): when a
+     Reforged game is at hand.
 
 ## MCP
 

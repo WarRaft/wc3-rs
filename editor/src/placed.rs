@@ -56,6 +56,9 @@ pub struct Geoset {
     pub uvs: Vec<f32>,
     pub indices: Vec<u16>,
     pub layers: Vec<Layer>,
+    /// Each vertex's bones and weights (`anim::skin`), when the model is
+    /// animated.
+    pub skin: Vec<u8>,
 }
 
 /// A model and where it stands.
@@ -72,6 +75,8 @@ pub struct Model {
     /// destructable, 2 unit, 3 item), its index in its file, 0.
     pub instances: Vec<f32>,
     pub error: String,
+    /// Its `Stand`, baked (`anim::bake`); `None` when nothing moves.
+    pub anim: Option<crate::anim::Baked>,
 }
 
 /// Floats per instance.
@@ -492,6 +497,8 @@ fn load_model(
             },
         })
         .collect();
+    model.anim = crate::anim::bake(&m);
+    let slots = crate::anim::Skeleton::of(&m).slots;
     let (mut min, mut max) = ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]);
     for (gi, g) in m.geosets().iter().enumerate() {
         if !m.shown(gi, "Stand") || g.uv_sets.is_empty() || g.uv_sets[0].len() != g.vertices.len() || g.normals.len() != g.vertices.len() {
@@ -524,6 +531,7 @@ fn load_model(
             uvs: g.uv_sets[0].iter().flatten().copied().collect(),
             indices: g.faces.clone(),
             layers,
+            skin: if model.anim.is_some() { crate::anim::skin(g, &slots) } else { Vec::new() },
         });
     }
     // Nothing shown (a model of particles alone): nothing to draw yet,

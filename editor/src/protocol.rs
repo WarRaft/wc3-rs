@@ -222,7 +222,10 @@ pub struct CliffsMsg {
 /// y, z, a list of geosets: `f32` positions, normals, texture
 /// coordinates, `u16` triangles, a list of layers: `i32` texture
 /// (`placed::texture`), `u32` filter mode, `u32` shading, `f32` alpha;
-/// then `f32` instances, `placed::INSTANCE` each; error), notes.
+/// the vertices' bones and weights, 8 bytes each (none when the model
+/// doesn't move); then `f32` instances, `placed::INSTANCE` each; error;
+/// its animation, `u32` bones, `u32` frames, `f32` frames a second, `f32`
+/// matrices, 12 a bone a frame, 0 bones when it doesn't move), notes.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ObjectsMsg {
     pub first_texture: u32,
@@ -606,9 +609,15 @@ impl ServerMsg {
                             w.u32(l.shading);
                             w.f32(l.alpha);
                         });
+                        w.bytes(&g.skin);
                     });
                     w.f32s(&m.instances);
                     w.string(&m.error);
+                    let a = m.anim.clone().unwrap_or_default();
+                    w.u32(a.bones);
+                    w.u32(a.frames);
+                    w.f32(a.fps);
+                    w.f32s(&a.matrices);
                 });
                 w.list(&o.notes, |w, n| w.string(n));
                 kind::OBJECTS
@@ -800,9 +809,13 @@ impl ServerMsg {
                             layers: r.list(|r| {
                                 Ok(crate::placed::Layer { texture: r.u32()? as i32, filter_mode: r.u32()?, shading: r.u32()?, alpha: r.f32()? })
                             })?,
+                            skin: r.bytes()?,
                         })
                     })?;
-                    Ok(crate::placed::Model { path, min, max, geosets, instances: r.f32s()?, error: r.string()? })
+                    let (instances, error) = (r.f32s()?, r.string()?);
+                    let anim = crate::anim::Baked { bones: r.u32()?, frames: r.u32()?, fps: r.f32()?, matrices: r.f32s()? };
+                    let anim = (anim.bones > 0).then_some(anim);
+                    Ok(crate::placed::Model { path, min, max, geosets, instances, error, anim })
                 })?;
                 ServerMsg::Objects(ObjectsMsg { first_texture, first_model, textures, models, notes: r.list(|r| r.string())? })
             }

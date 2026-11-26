@@ -95,6 +95,7 @@ async function steps() {
     check(drawn.layers && drawn.water > 0 && drawn.error === 0, `with its ground textures and ${drawn.water} water frames, no GL error (${drawn.error})`)
     check(drawn.cliffs > 1000, `its cliffs and ramps: ${drawn.cliffs}`)
     check(drawn.objects > 10000, `what it places: ${drawn.objects} doodads, destructables, units and items`)
+    check(drawn.animated > 10, `${drawn.animated} of their models move (their Stand)`)
     const again = await vscode.commands.executeCommand('wc3.editor.open', {root})
     check(again === we && api.worldEditors.size === 1, 'opened again from the WC3 Editors view: the same editor')
     await shot('world-editor')
