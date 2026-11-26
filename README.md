@@ -1750,8 +1750,8 @@ step), this list updated.
      World Editor's; the view's was HiveWE's 50), Set to view sets the
      one picked so (its field of view kept), Look through it (a double
      click in the list) puts the view where it looks from, at its field
-     of view (Home: 70 again); its rotation, angle of attack, distance
-     and field of view set in the panel as they're typed (`CameraSet`:
+     of view (Home: 70 again); its height (z offset), rotation, angle
+     of attack, distance, roll and field of view set in the panel as they're typed (`CameraSet`:
      any of `w3c_rs::Camera`'s fields by name; a distance over 0, a
      field of view 1 to 179); its name changed as it's
      typed; Delete. Undo (`Snapshot::Cameras`), saved into its layer; a
@@ -1759,8 +1759,8 @@ step), this list updated.
      2.0 map's version 3). Its text form in step as the regions' is.
      Messages `Camera`, `CameraView`, `CameraRename`, `CameraDelete`,
      `CameraSet`;
-     `Overlays` says each camera's rotation, angle of attack, distance
-     and field of view. MCP: the `w3c_*` tools already change the file.
+     `Overlays` says each camera's rotation, angle of attack, distance,
+     field of view, height and roll. MCP: the `w3c_*` tools already change the file.
 
 7. **In step with the rest** (done). Decided with the user: a text form
    open in VS Code and the editor are one (the text is the truth, as

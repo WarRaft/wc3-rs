@@ -621,14 +621,16 @@
     let cameraRenameTimer = 0
     let selectNewCamera = false
     /**
-     * Its fields in the panel, in the order `Overlays` gives a camera's
-     * `view`: each set as it's typed (in its range) by `CameraSet`.
+     * Its fields in the panel, each `at` its place in a camera's `view`
+     * (`Overlays`'): each set as it's typed (in its range) by `CameraSet`.
      */
     const CAMERA_FIELDS = [
-        {field: 'rotation', label: 'Rotation', min: 0, max: 360, step: 1},
-        {field: 'angle_of_attack', label: 'Angle of attack', min: 0, max: 360, step: 1},
-        {field: 'distance', label: 'Distance', min: 1, max: 100000, step: 50},
-        {field: 'field_of_view', label: 'Field of view', min: 1, max: 179, step: 1},
+        {field: 'z_offset', label: 'Height', at: 4, min: -100000, max: 100000, step: 10},
+        {field: 'rotation', label: 'Rotation', at: 0, min: 0, max: 360, step: 1},
+        {field: 'angle_of_attack', label: 'Angle of attack', at: 1, min: 0, max: 360, step: 1},
+        {field: 'distance', label: 'Distance', at: 2, min: 1, max: 100000, step: 50},
+        {field: 'roll', label: 'Roll', at: 5, min: 0, max: 360, step: 1},
+        {field: 'field_of_view', label: 'Field of view', at: 3, min: 1, max: 179, step: 1},
     ]
     for (const f of CAMERA_FIELDS) {
         const label = Object.assign(document.createElement('label'), {className: 'camera-field', textContent: f.label + ' '})
@@ -679,10 +681,10 @@
         const c = selectedCamera !== null ? cameras[selectedCamera] : null
         for (const id of ['camera-name', 'camera-set', 'camera-look', 'camera-delete']) $(id).disabled = !c
         if (document.activeElement !== $('camera-name')) $('camera-name').value = c ? c.name : ''
-        CAMERA_FIELDS.forEach((f, i) => {
+        for (const f of CAMERA_FIELDS) {
             f.input.disabled = !c
-            if (document.activeElement !== f.input) f.input.value = c ? String(Math.round(c.view[i] * 100) / 100) : ''
-        })
+            if (document.activeElement !== f.input) f.input.value = c ? String(Math.round(c.view[f.at] * 100) / 100) : ''
+        }
         $('camera-hint').hidden = !!c
         $('camera-hint').textContent = 'Click a camera, or make one from the view'
         const list = $('camera-list')

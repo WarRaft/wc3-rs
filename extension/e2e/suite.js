@@ -284,10 +284,11 @@ async function steps() {
     check(lookedNarrow.looking.fov === 45, `the view's field of view from 70 to ${lookedNarrow.looking.fov}`)
     await we.panel.webview.postMessage({type: 'fov', fov: 70})
     // Its fields typed in the panel.
-    const fields = [['rotation', 45], ['angle_of_attack', 320], ['distance', 2000], ['field_of_view', 60]]
+    // In the order of a camera's `view`: rotation, angle of attack, distance, field of view, height, roll.
+    const fields = [['rotation', 45], ['angle_of_attack', 320], ['distance', 2000], ['field_of_view', 60], ['z_offset', -150], ['roll', 10]]
     for (const [field, value] of fields) await we.panel.webview.postMessage({type: 'camera', action: 'field', field, value})
-    const typedCam = await until(() => we.camera?.view[3] === 60 && we.camera, 'its fields typed')
-    check(typedCam.view.join() === fields.map(t => t[1]).join(), `rotation, angle of attack, distance, field of view typed: ${typedCam.view.join(', ')}`)
+    const typedCam = await until(() => we.camera?.view[5] === 10 && we.camera, 'its fields typed')
+    check(typedCam.view.join() === fields.map(t => t[1]).join(), `rotation, angle of attack, distance, field of view, height, roll typed: ${typedCam.view.join(', ')}`)
     await we.panel.webview.postMessage({type: 'camera', action: 'delete'})
     await until(() => we.overlays?.cameras === camsAt + 1, 'deleted')
 

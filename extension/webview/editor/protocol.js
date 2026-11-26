@@ -424,7 +424,7 @@ const EditorProtocol = (() => {
                     regions: r.list(r => ({name: r.string(), bounds: [r.f32(), r.f32(), r.f32(), r.f32()], color: [r.u8(), r.u8(), r.u8()]})),
                     bounds: r.f32s(),
                     cameraLines: r.f32s(),
-                    cameras: r.list(r => ({name: r.string(), target: [r.f32(), r.f32(), r.f32()], eye: [r.f32(), r.f32(), r.f32()], view: [r.f32(), r.f32(), r.f32(), r.f32()]})),
+                    cameras: r.list(r => ({name: r.string(), target: [r.f32(), r.f32(), r.f32()], eye: [r.f32(), r.f32(), r.f32()], view: [r.f32(), r.f32(), r.f32(), r.f32(), r.f32(), r.f32()]})),
                     minimap: grid(r),
                     notes: r.list(r => r.string()),
                 }
