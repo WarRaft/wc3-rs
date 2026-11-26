@@ -1012,6 +1012,7 @@ dependencies = [
  "bni-rs",
  "doo-rs",
  "mdx-rs",
+ "notify",
  "parser-rs",
  "slk-rs",
  "w3abdhqtu-rs",

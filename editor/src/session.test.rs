@@ -54,8 +54,11 @@ fn the_terrain_drawn_with_the_tables_of_the_roots() {
     dir.write("map/T/Dirt.blp", &testdir::tga(8, 4, |_, _| [9, 9, 9, 255]));
     let mut s = Session::open(dir.path()).unwrap();
     let msgs = s.draw();
-    let [ServerMsg::Ground(g), ServerMsg::Water(w), ServerMsg::Cliffs(c), ServerMsg::Terrain(t), ServerMsg::Objects(o), ServerMsg::Instances(_), ServerMsg::Overlays(v), ServerMsg::Palette(_), ServerMsg::ObjectPalette(_), ServerMsg::State(st)] = &msgs[..] else { panic!("{} messages", msgs.len()) };
+    let [ServerMsg::Ground(g), ServerMsg::Water(w), ServerMsg::Cliffs(c), ServerMsg::Terrain(t), ServerMsg::Objects(o), ServerMsg::Instances(_), ServerMsg::Overlays(v), ServerMsg::Palette(_), ServerMsg::ObjectPalette(_), ServerMsg::Follow(f), ServerMsg::State(st)] = &msgs[..] else { panic!("{} messages", msgs.len()) };
     assert_eq!(st, &StateMsg::default());
+    // The pieces with a text form, at the top root (the map has none of them).
+    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.doo", "war3mapUnits.doo", "war3map.w3r"]);
+    assert!(f[0].1.ends_with("map/war3map.doo"), "{f:?}");
     // Nothing placed; the minimap a pixel a corner.
     assert!(o.models.is_empty() && o.notes.is_empty());
     assert_eq!((v.minimap.width, v.minimap.height, v.minimap.data.len()), (3, 2, 24));
@@ -137,9 +140,13 @@ fn a_brush_then_undo_then_save_where_the_terrain_came_from() {
     let msgs = s.undo(false);
     assert!(matches!(msgs.last(), Some(ServerMsg::State(st)) if st.redo && !st.undo));
     s.undo(true);
-    // Saved into base, where it came from, not over it.
+    // Saved into base, where it came from, not over it; the pathing made
+    // with it (the map had none: into the top root), the overlays again.
     let saved = s.save();
-    assert!(matches!(&saved[..], [ServerMsg::State(st)] if !st.dirty && st.message.contains("base")), "{saved:?}");
+    assert!(
+        matches!(&saved[..], [ServerMsg::Overlays(_), ServerMsg::State(st)] if !st.dirty && st.message.contains("base") && st.message.contains("over/war3map.wpm")),
+        "{saved:?}"
+    );
     let back = w3e_rs::parse(&std::fs::read(dir.path().join("base/war3map.w3e")).unwrap()).unwrap();
     assert!(back.point(1, 0).unwrap().height > 0x2000);
     assert!(!dir.path().join("over/war3map.w3e").exists());
@@ -188,9 +195,13 @@ fn things_placed_moved_turned_deleted_undone_and_saved() {
     s.delete(0, 0);
     assert!(s.placed.doodads.as_ref().unwrap().doodads.is_empty());
     s.undo(false);
-    // Saved: the doodads' file made, into the root, the terrain untouched.
+    // Saved: the doodads' file made, into the root, and the pathing; the
+    // terrain untouched.
     let saved = s.save();
-    assert!(matches!(&saved[..], [ServerMsg::State(st)] if st.message.contains("war3map.doo") && !st.message.contains("w3e")), "{saved:?}");
+    assert!(
+        matches!(saved.last(), Some(ServerMsg::State(st)) if st.message.contains("war3map.doo") && st.message.contains("war3map.wpm") && !st.message.contains("w3e")),
+        "{saved:?}"
+    );
     let back = doo_rs::parse_doodads_any(&std::fs::read(dir.path().join("map/war3map.doo")).unwrap()).unwrap();
     assert_eq!(back.doodads.len(), 1);
     assert_eq!(back.doodads[0].placement.x, 128.0);
@@ -241,4 +252,107 @@ fn regions_drawn_moved_resized_renamed_deleted_and_pathing_painted() {
     assert!(matches!(&saved[..], [ServerMsg::State(st)] if st.message.contains("war3map.w3r") && st.message.contains("war3map.wpm") && !st.message.contains("w3e")), "{saved:?}");
     let back = wpm_rs::parse(&std::fs::read(dir.path().join("map/war3map.wpm")).unwrap()).unwrap();
     assert!(back.cells.contains(&8));
+}
+
+#[test]
+fn the_pathing_made_again_on_save_with_the_paint_over_it() {
+    let dir = TestDir::new("session-pathing");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let down = [0.0, 0.0, -1.0];
+    // Painted: no walking around (1, 0.5) cells.
+    let paint = crate::edit::Brush { tool: crate::edit::Tool::PathingOn, size: 0.5, strength: 0.0, texture: None, cliff: -1, flags: wpm_rs::NO_WALK };
+    // The map had no war3map.wpm: a brush has nothing to paint until a
+    // save made one.
+    assert!(matches!(s.brush([1.0, 0.5, 9.0], down, &paint, true).last(), Some(ServerMsg::State(st)) if st.message.contains("no war3map.wpm")));
+    let raise = crate::edit::Brush { tool: crate::edit::Tool::Raise, size: 2.0, strength: 0.1, texture: None, cliff: -1, flags: 0 };
+    s.brush([1.0, 0.5, 9.0], down, &raise, true);
+    s.stroke_end();
+    s.save();
+    let made = wpm_rs::parse(&std::fs::read(dir.path().join("map/war3map.wpm")).unwrap()).unwrap();
+    assert_eq!((made.width, made.height), (8, 4));
+    // Dry land everywhere: "no water" on every cell, nothing forbidden.
+    assert!(made.cells.iter().all(|c| *c == wpm_rs::NO_WATER));
+    s.brush([1.0, 0.5, 9.0], down, &paint, true);
+    s.stroke_end();
+    // The terrain changed again, then saved: the paint kept over it.
+    s.brush([1.0, 0.5, 9.0], down, &raise, true);
+    s.stroke_end();
+    s.save();
+    let again = wpm_rs::parse(&std::fs::read(dir.path().join("map/war3map.wpm")).unwrap()).unwrap();
+    assert!(again.cells.iter().any(|c| c & wpm_rs::NO_WALK != 0) && again.cells.iter().any(|c| c & wpm_rs::NO_WALK == 0));
+}
+
+#[test]
+fn a_change_on_disk_taken_in_unless_the_editor_has_its_own() {
+    let dir = TestDir::new("session-disk");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    // Regions written by someone else: read again, said.
+    let mut regions = w3r_rs::Regions::new();
+    regions.regions.push(w3r_rs::Region::new("Outside", 0.0, 0.0, 64.0, 64.0, 0));
+    dir.write("map/war3map.w3r", &regions.to_bytes().unwrap());
+    let msgs = s.disk_changed(&[dir.path().join("map/war3map.w3r")]);
+    assert!(matches!(msgs.last(), Some(ServerMsg::State(st)) if st.message.contains("Read again") && st.message.contains("war3map.w3r")), "{msgs:?}");
+    assert_eq!(s.placed.regions.as_ref().unwrap().regions[0].name, "Outside");
+    // A change elsewhere: nothing.
+    assert!(s.disk_changed(&[dir.path().join("elsewhere.txt")]).is_empty());
+    // The editor's own save isn't a change on disk.
+    s.region_rename(0, "Ours");
+    s.save();
+    assert!(s.disk_changed(&[dir.path().join("map/war3map.w3r")]).is_empty());
+    // Changed by both: the editor's kept, said.
+    s.region_rename(0, "Ours again");
+    regions.regions[0].name = "Theirs".into();
+    dir.write("map/war3map.w3r", &regions.to_bytes().unwrap());
+    let msgs = s.disk_changed(&[dir.path().join("map/war3map.w3r")]);
+    assert!(matches!(msgs.last(), Some(ServerMsg::State(st)) if st.message.contains("your changes to it kept")), "{msgs:?}");
+    assert_eq!(s.placed.regions.as_ref().unwrap().regions[0].name, "Ours again");
+}
+
+#[test]
+fn a_text_form_open_follows_the_editor_and_the_editor_it() {
+    let dir = TestDir::new("session-text");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    let mut regions = w3r_rs::Regions::new();
+    regions.regions.push(w3r_rs::Region::new("A", 0.0, 0.0, 64.0, 64.0, 0));
+    dir.write("map/war3map.w3r", &regions.to_bytes().unwrap());
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let path = dir.path().join("map/war3map.w3r").display().to_string();
+    let text = String::from_utf8(wc3_server::regions::convert(wc3_server::objects::TO_TEXT, &path, &regions.to_bytes().unwrap()).unwrap()).unwrap();
+    // Opened as it is: nothing to take in.
+    assert!(s.text_changed(&path, &text).is_empty());
+    // Typed in it: taken in (an undo), the editor not the one with it unsaved.
+    let typed = text.replace("[A]", "[Typed]");
+    assert_ne!(typed, text);
+    let msgs = s.text_changed(&path, &typed);
+    assert!(matches!(msgs.last(), Some(ServerMsg::State(st)) if !st.dirty && st.undo), "{msgs:?}");
+    assert_eq!(s.placed.regions.as_ref().unwrap().regions[0].name, "Typed");
+    // An error in it: said, nothing taken.
+    let msgs = s.text_changed(&path, &typed.replace("left=0", "left=what"));
+    assert!(matches!(msgs.last(), Some(ServerMsg::State(st)) if st.message.contains("line")), "{msgs:?}");
+    assert_eq!(s.placed.regions.as_ref().unwrap().regions[0].name, "Typed");
+    s.text_changed(&path, &typed);
+    // Changed in the editor: given to the document; it's the document's to save.
+    s.region_rename(0, "Renamed");
+    let out = s.sync_docs();
+    assert!(matches!(&out[..], [ServerMsg::TextOut { path: p, text }] if *p == path && text.contains("Renamed")), "{out:?}");
+    assert!(!s.edits.dirty.regions);
+    // Its echo: nothing.
+    let ServerMsg::TextOut { text: given, .. } = &out[0] else { unreachable!() };
+    assert!(s.text_changed(&path, given).is_empty());
+    // Save: VS Code saves it.
+    s.edits.dirty.regions = true;
+    let saved = s.save();
+    assert!(saved.iter().any(|m| matches!(m, ServerMsg::SaveDocs(p) if p == &vec![path.clone()])), "{saved:?}");
+    // Closed: the editor's own again.
+    s.text_closed(&path);
+    s.region_rename(0, "Mine");
+    assert!(s.sync_docs().is_empty() && s.edits.dirty.regions);
 }

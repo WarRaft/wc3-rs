@@ -36,6 +36,9 @@
 //! | 13 | `Region` | a region drawn, moved or resized by a drag: `u8` the drag's first, `u8` mode (0 a new one, 1 moved, 2 a corner moved), `i32` its index (a new one's: -1), the rays where the drag started and where it is (six `f32` each); answered by `Overlays` and `State` |
 //! | 14 | `RegionRename` | `u32` index, its name; answered the same |
 //! | 15 | `RegionDelete` | `u32` index; answered the same |
+//! | 16 | `Reload` | the editor's changes dropped, the map read again; answered as `Hello` is |
+//! | 17 | `Text` | a piece's text form opened or changed in VS Code: its path, its text; answered by what changed and `State` (nothing when it's what the editor gave it) |
+//! | 18 | `TextClosed` | its path |
 //! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id); answered by `Icons` |
 //!
 //! Editor → page:
@@ -55,6 +58,9 @@
 //! | 138 | `State` | the edits' state: see [`StateMsg`] |
 //! | 139 | `Instances` | where every model stands: a list, a model each, of its instances (`f32` array, `placed::INSTANCE` each) |
 //! | 140 | `ObjectPalette` | a list of types to place: see [`ObjectEntry`] |
+//! | 142 | `Follow` | the pieces that have a text form and where their files are: a list of (name, path); the extension sends their documents' texts |
+//! | 143 | `TextOut` | a piece's text form as the editor changed it: path, text; the extension puts it in the open document |
+//! | 144 | `SaveDocs` | the documents VS Code saves (their paths), the rest the editor saved |
 //! | 141 | `Icons` | a list of (`u8` kind, id, `u32` width, height, RGBA; 0 by 0 for none) |
 //!
 //! After an edit the terrain's messages come again: `Cliffs` with no
@@ -90,6 +96,12 @@ mod kind {
     pub const REGION: u8 = 13;
     pub const REGION_RENAME: u8 = 14;
     pub const REGION_DELETE: u8 = 15;
+    pub const RELOAD: u8 = 16;
+    pub const TEXT: u8 = 17;
+    pub const TEXT_CLOSED: u8 = 18;
+    pub const FOLLOW: u8 = 142;
+    pub const TEXT_OUT: u8 = 143;
+    pub const SAVE_DOCS: u8 = 144;
     pub const ICONS_ANSWER: u8 = 141;
     pub const OBJECTS: u8 = 134;
     pub const PICKED: u8 = 135;
@@ -135,6 +147,12 @@ pub enum ClientMsg {
     RegionRename { index: u32, name: String },
     /// Kind 15.
     RegionDelete { index: u32 },
+    /// Kind 16.
+    Reload,
+    /// Kind 17.
+    Text { path: String, text: String },
+    /// Kind 18.
+    TextClosed { path: String },
 }
 
 /// What the page is told of the map: kind 128's body, in this order.
@@ -316,6 +334,12 @@ pub enum ServerMsg {
     ObjectPalette(Vec<ObjectEntry>),
     /// Kind 141.
     Icons(Vec<IconEntry>),
+    /// Kind 142.
+    Follow(Vec<(String, String)>),
+    /// Kind 143.
+    TextOut { path: String, text: String },
+    /// Kind 144.
+    SaveDocs(Vec<String>),
 }
 
 /// A frame's body was shorter than its fields, or not UTF-8.
@@ -384,6 +408,9 @@ impl ClientMsg {
             }
             kind::REGION_RENAME => Some(ClientMsg::RegionRename { index: r.u32()?, name: r.string()? }),
             kind::REGION_DELETE => Some(ClientMsg::RegionDelete { index: r.u32()? }),
+            kind::RELOAD => Some(ClientMsg::Reload),
+            kind::TEXT => Some(ClientMsg::Text { path: r.string()?, text: r.string()? }),
+            kind::TEXT_CLOSED => Some(ClientMsg::TextClosed { path: r.string()? }),
             _ => None,
         })
     }
@@ -454,6 +481,16 @@ impl ClientMsg {
             ClientMsg::RegionDelete { index } => {
                 w.u32(*index);
                 kind::REGION_DELETE
+            }
+            ClientMsg::Reload => kind::RELOAD,
+            ClientMsg::Text { path, text } => {
+                w.string(path);
+                w.string(text);
+                kind::TEXT
+            }
+            ClientMsg::TextClosed { path } => {
+                w.string(path);
+                kind::TEXT_CLOSED
             }
             ClientMsg::Icons(list) => {
                 w.list(list, |w, (k, id)| {
@@ -637,6 +674,22 @@ impl ServerMsg {
                 });
                 kind::OBJECT_PALETTE
             }
+            ServerMsg::Follow(list) => {
+                w.list(list, |w, (n, p)| {
+                    w.string(n);
+                    w.string(p);
+                });
+                kind::FOLLOW
+            }
+            ServerMsg::TextOut { path, text } => {
+                w.string(path);
+                w.string(text);
+                kind::TEXT_OUT
+            }
+            ServerMsg::SaveDocs(paths) => {
+                w.list(paths, |w, p| w.string(p));
+                kind::SAVE_DOCS
+            }
             ServerMsg::Icons(list) => {
                 w.list(list, |w, e| {
                     w.u8(e.kind);
@@ -789,6 +842,9 @@ impl ServerMsg {
             kind::OBJECT_PALETTE => ServerMsg::ObjectPalette(r.list(|r| {
                 Ok(ObjectEntry { kind: r.u8()?, id: r.string()?, name: r.string()?, group: r.string()?, custom: r.u8()? != 0 })
             })?),
+            kind::FOLLOW => ServerMsg::Follow(r.list(|r| Ok((r.string()?, r.string()?)))?),
+            kind::TEXT_OUT => ServerMsg::TextOut { path: r.string()?, text: r.string()? },
+            kind::SAVE_DOCS => ServerMsg::SaveDocs(r.list(|r| r.string())?),
             kind::ICONS_ANSWER => ServerMsg::Icons(r.list(|r| {
                 Ok(IconEntry { kind: r.u8()?, id: r.string()?, icon: crate::textures::Icon { width: r.u32()?, height: r.u32()?, rgba: r.bytes()? } })
             })?),

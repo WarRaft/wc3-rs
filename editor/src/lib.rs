@@ -14,6 +14,7 @@ pub mod cliffs;
 pub mod edit;
 pub mod lock;
 pub mod overlays;
+pub mod pathing;
 pub mod picture;
 pub mod placed;
 pub mod protocol;
@@ -44,9 +45,55 @@ pub fn run(root: &Path) -> i32 {
             return EXIT_LOCKED;
         }
     };
-    let stdin = io::stdin();
+    // The page's frames and the disk's changes, one after another.
+    let (tx, rx) = std::sync::mpsc::channel::<Event>();
+    let frames = tx.clone();
+    std::thread::spawn(move || {
+        let stdin = io::stdin();
+        let mut input = stdin.lock();
+        loop {
+            let event = match protocol::read_frame(&mut input) {
+                Ok(Some((kind, body))) => Event::Frame(kind, body),
+                Ok(None) => Event::End,
+                Err(e) => Event::Failed(e),
+            };
+            let end = !matches!(event, Event::Frame(..));
+            if frames.send(event).is_err() || end {
+                return;
+            }
+        }
+    });
+    let _watcher = watch(root, tx);
     let stdout = io::stdout();
-    match serve(&mut stdin.lock(), &mut stdout.lock(), root) {
+    let mut output = stdout.lock();
+    let mut editor = Editor { root: root.to_path_buf(), session: None };
+    let result = (|| -> io::Result<()> {
+        // An event that came while the disk's were gathered: next.
+        let mut next: Option<Event> = None;
+        while let Some(event) = next.take().or_else(|| rx.recv().ok()) {
+            match event {
+                Event::Frame(kind, body) => editor.frame(kind, &body, &mut output)?,
+                Event::Disk(mut paths) => {
+                    // A save writes several files: the rest of them first.
+                    loop {
+                        match rx.recv_timeout(std::time::Duration::from_millis(200)) {
+                            Ok(Event::Disk(more)) => paths.extend(more),
+                            Ok(other) => {
+                                next = Some(other);
+                                break;
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                    editor.disk(&paths, &mut output)?;
+                }
+                Event::End => return Ok(()),
+                Event::Failed(e) => return Err(e),
+            }
+        }
+        Ok(())
+    })();
+    match result {
         Ok(()) => 0,
         Err(e) => {
             eprintln!("wc3 editor: {e}");
@@ -55,26 +102,86 @@ pub fn run(root: &Path) -> i32 {
     }
 }
 
-/// Answers frames from `input` on `output` until `input` ends.
+/// What the editor answers: a frame of the page's, a change on disk.
+enum Event {
+    Frame(u8, Vec<u8>),
+    Disk(Vec<std::path::PathBuf>),
+    End,
+    Failed(io::Error),
+}
+
+/// Watches the project's roots (a folder and what's in it; a map, its
+/// file) and its `wc3.bni`; `None` when the system can't.
+fn watch(root: &Path, tx: std::sync::mpsc::Sender<Event>) -> Option<notify::RecommendedWatcher> {
+    use notify::Watcher;
+    let src = std::fs::read_to_string(root.join("wc3.bni")).ok()?;
+    let (project, _) = wc3_server::project::load(root, &src);
+    let mut watcher = notify::recommended_watcher(move |e: notify::Result<notify::Event>| {
+        if let Ok(e) = e
+            && !matches!(e.kind, notify::EventKind::Access(_))
+        {
+            let _ = tx.send(Event::Disk(e.paths));
+        }
+    })
+    .ok()?;
+    for r in &project.roots {
+        let (at, mode) = if r.is_dir() { (r.as_path(), notify::RecursiveMode::Recursive) } else { (r.parent()?, notify::RecursiveMode::NonRecursive) };
+        if let Err(e) = watcher.watch(at, mode) {
+            eprintln!("wc3 editor: can't watch {}: {e}", at.display());
+        }
+    }
+    Some(watcher)
+}
+
+/// Answers frames from `input` on `output` until `input` ends (no disk
+/// watched: for tests).
 pub fn serve(input: &mut impl io::Read, output: &mut impl Write, root: &Path) -> io::Result<()> {
-    let mut session: Option<session::Session> = None;
+    let mut editor = Editor { root: root.to_path_buf(), session: None };
     while let Some((kind, body)) = protocol::read_frame(input)? {
-        let msg = match ClientMsg::decode(kind, &body) {
+        editor.frame(kind, &body, output)?;
+    }
+    Ok(())
+}
+
+/// The project's map open, or not yet.
+pub struct Editor {
+    root: std::path::PathBuf,
+    session: Option<session::Session>,
+}
+
+impl Editor {
+    /// Files of the project changed on disk: the map's pieces read again
+    /// (`Session::disk_changed`).
+    pub fn disk(&mut self, paths: &[std::path::PathBuf], output: &mut impl Write) -> io::Result<()> {
+        let Some(s) = self.session.as_mut() else { return Ok(()) };
+        for msg in s.disk_changed(paths) {
+            write(output, &msg)?;
+        }
+        Ok(())
+    }
+
+    /// Answers one frame.
+    pub fn frame(&mut self, kind: u8, body: &[u8], output: &mut impl Write) -> io::Result<()> {
+        let (root, session) = (&self.root, &mut self.session);
+        let root = root.as_path();
+        let msg = match ClientMsg::decode(kind, body) {
             Ok(Some(msg)) => msg,
             // A kind this side doesn't know yet: skipped.
-            Ok(None) => continue,
+            Ok(None) => return Ok(()),
             Err(e) => {
                 write(output, &ServerMsg::Error { message: e.to_string() })?;
-                continue;
+                return Ok(());
             }
         };
         match msg {
-            ClientMsg::Hello => {
+            ClientMsg::Hello | ClientMsg::Reload => {
                 // The page (re)loaded: the map open, with its changes
-                // (unsaved ones too); the first time, read.
+                // (unsaved ones too); the first time, or to drop them,
+                // read.
+                let reload = matches!(msg, ClientMsg::Reload);
                 let opened = match session.take() {
-                    Some(s) => Ok(s),
-                    None => session::Session::open(root),
+                    Some(s) if !reload => Ok(s),
+                    _ => session::Session::open(root),
                 };
                 match opened {
                     Ok(mut s) => {
@@ -84,7 +191,7 @@ pub fn serve(input: &mut impl io::Read, output: &mut impl Write, root: &Path) ->
                         for msg in s.draw() {
                             write(output, &msg)?;
                         }
-                        session = Some(s);
+                        *session = Some(s);
                     }
                     Err(message) => write(output, &ServerMsg::Error { message })?,
                 }
@@ -94,7 +201,7 @@ pub fn serve(input: &mut impl io::Read, output: &mut impl Write, root: &Path) ->
                 write(output, &ServerMsg::Picked(picked))?;
             }
             edit => {
-                let Some(s) = session.as_mut() else { continue };
+                let Some(s) = session.as_mut() else { return Ok(()) };
                 let answers = match edit {
                     ClientMsg::Brush { start, origin, dir, brush } => s.brush(origin, dir, &brush, start),
                     ClientMsg::StrokeEnd => s.stroke_end(),
@@ -109,16 +216,24 @@ pub fn serve(input: &mut impl io::Read, output: &mut impl Write, root: &Path) ->
                     ClientMsg::Region { start, mode, index, from, to } => s.region_drag(start, mode, index, from, to),
                     ClientMsg::RegionRename { index, name } => s.region_rename(index, &name),
                     ClientMsg::RegionDelete { index } => s.region_delete(index),
-                    ClientMsg::Hello | ClientMsg::Pick { .. } => unreachable!("answered above"),
+                    ClientMsg::Text { path, text } => s.text_changed(&path, &text),
+                    ClientMsg::TextClosed { path } => {
+                        s.text_closed(&path);
+                        Vec::new()
+                    }
+                    ClientMsg::Hello | ClientMsg::Reload | ClientMsg::Pick { .. } => unreachable!("answered above"),
                 };
-                for msg in &answers {
+                // What changed of the pieces with a text form open, to
+                // them, before the state (which says who has it unsaved).
+                let synced = s.sync_docs();
+                let (state, rest): (Vec<_>, Vec<_>) = answers.into_iter().partition(|m| matches!(m, ServerMsg::State(_)));
+                for msg in rest.iter().chain(&synced).chain(&state) {
                     write(output, msg)?;
                 }
             }
         }
+        Ok(())
     }
-    drop(session);
-    Ok(())
 }
 
 fn write(output: &mut impl Write, msg: &ServerMsg) -> io::Result<()> {

@@ -122,7 +122,7 @@ async function steps() {
     check(inRegion.includes(`in ${ov.region.name}`), `picked in ${ov.region.name}: ${inRegion}`)
     await we.panel.webview.postMessage({type: 'show', show: {pathing: false, regions: false, cameras: false}})
 
-    log('the terrain edited: a stroke raises it, undo and redo, a texture, saved into the map')
+    log('the terrain edited: a stroke raises it, undo and redo, a texture, saved into the map with the pathing made again')
     const stamp0 = fs.statSync(map).mtimeMs
     await we.panel.webview.postMessage({type: 'look', x: 60, y: 60, distance: 30, horizontal: 0, vertical: -1.2})
     await sleep(300)
@@ -140,7 +140,7 @@ async function steps() {
     we.state = undefined
     await we.panel.webview.postMessage({type: 'save'})
     const saved = await until(() => we.state?.message && we.state, 'saved')
-    check(!saved.dirty && /^Saved .*map\.w3x.war3map\.w3e$/.test(saved.message), saved.message)
+    check(!saved.dirty && /^Saved .*map\.w3x.war3map\.w3e, .*map\.w3x.war3map\.wpm$/.test(saved.message), saved.message)
     check(fs.statSync(map).mtimeMs > stamp0 && !we.panel.title.startsWith('● '), 'the map on disk written, the tab clean')
 
     log('things placed: a footman placed, picked, turned, dragged, deleted and back, saved into the map')
@@ -193,6 +193,24 @@ async function steps() {
     const savedOverlays = await until(() => we.state?.message && we.state, 'saved')
     check(!savedOverlays.dirty && savedOverlays.message.includes('war3map.w3r') && savedOverlays.message.includes('war3map.wpm'), savedOverlays.message)
     check(fs.statSync(map).mtimeMs > stamp2, 'the map on disk written')
+
+    log("a text form in step: war3map.w3r open as text follows the editor, and the editor it; saved by VS Code")
+    const w3rDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(map, 'war3map.w3r')).with({scheme: api.OBJECTS_SCHEME}))
+    await vscode.window.showTextDocument(w3rDoc, {viewColumn: vscode.ViewColumn.Beside, preserveFocus: true})
+    await sleep(500)
+    await we.panel.webview.postMessage({type: 'regionRename', name: 'From The Editor'})
+    await until(() => w3rDoc.getText().includes('[From The Editor]'), 'the document has the editor\'s name')
+    check(w3rDoc.isDirty, 'the document has it, not saved')
+    const typed = new vscode.WorkspaceEdit()
+    const at = w3rDoc.getText().indexOf('[From The Editor]')
+    typed.replace(w3rDoc.uri, new vscode.Range(w3rDoc.positionAt(at), w3rDoc.positionAt(at + '[From The Editor]'.length)), '[Typed In Text]')
+    await vscode.workspace.applyEdit(typed)
+    await until(() => we.region?.name === 'Typed In Text', 'the editor has the typed name')
+    check(true, 'typed in the text: the editor follows')
+    await shot('world-editor-text')
+    await we.panel.webview.postMessage({type: 'save'})
+    await until(() => !w3rDoc.isDirty, 'the document saved by VS Code')
+    check(!w3rDoc.isDirty, 'saved: the document')
     await vscode.commands.executeCommand('wc3.editor.close', {root})
     check(!api.worldEditors.has(root), 'closed: no editor of the project')
     await vscode.commands.executeCommand('workbench.action.closeAllEditors')

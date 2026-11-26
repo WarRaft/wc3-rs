@@ -20,6 +20,7 @@ mdx-rs = { path = "../../mdx-rs" }
 doo-rs = { path = "../../doo-rs" }
 w3abdhqtu-rs = { path = "../../w3abdhqtu-rs" }
 wpm-rs = { path = "../../wpm-rs" }
+notify = "8.2.0"
 w3r-rs = { path = "../../w3r-rs" }
 w3c-rs = { path = "../../w3c-rs" }
 bni-rs = { path = "../../bni-rs" }

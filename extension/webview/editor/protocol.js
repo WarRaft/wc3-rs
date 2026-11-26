@@ -37,6 +37,7 @@ const EditorProtocol = (() => {
         REGION: 13,
         REGION_RENAME: 14,
         REGION_DELETE: 15,
+        RELOAD: 16,
     }
 
     /** The tools by their code (`edit::TOOLS`). */
@@ -178,6 +179,7 @@ const EditorProtocol = (() => {
         undo: () => new Writer().frame(KIND.UNDO),
         redo: () => new Writer().frame(KIND.REDO),
         save: () => new Writer().frame(KIND.SAVE),
+        reload: () => new Writer().frame(KIND.RELOAD),
         /** A thing placed: kind (0 doodad, 1 destructable, 2 unit, 3 item), type id, player, the ray. */
         place(kind, id, player, origin, dir) {
             const w = new Writer()

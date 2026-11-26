@@ -276,6 +276,7 @@
     $('undo').onclick = () => send(encode.undo())
     $('redo').onclick = () => send(encode.redo())
     $('save').onclick = () => send(encode.save())
+    $('reload').onclick = () => send(encode.reload())
     showTools()
 
     function showPalette(p) {

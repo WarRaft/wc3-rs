@@ -43,10 +43,10 @@ fn cube(texture: mdx_rs::Texture) -> Vec<u8> {
 #[test]
 fn doodads_and_units_with_their_models_and_what_a_ray_meets() {
     let dir = TestDir::new("placed");
-    dir.write("Doodads/Doodads.slk", &testdir::slk(&[&["doodID", "file", "numVar", "vertR2"], &["LTrc", "Doodads\\Rock", "2", "128"]]));
+    dir.write("Doodads/Doodads.slk", &testdir::slk(&[&["doodID", "dir", "file", "numVar", "vertR02"], &["LTrc", "Doodads", "Rock", "2", "128"]]));
     dir.write("Units/UnitUI.slk", &testdir::slk(&[&["unitUIID", "file", "modelScale"], &["hfoo", "Units\\Footman", "2"]]));
     // The doodad's second variation: its name and the number.
-    dir.write("Doodads/Rock1.mdx", &cube(mdx_rs::Texture { replaceable_id: 0, path: Fixed::new("Textures\\Rock.blp", 260), flags: 0 }));
+    dir.write("Doodads/Rock/Rock1.mdx", &cube(mdx_rs::Texture { replaceable_id: 0, path: Fixed::new("Textures\\Rock.blp", 260), flags: 0 }));
     dir.write("Textures/Rock.blp", &testdir::tga(2, 2, |_, _| [9, 9, 9, 255]));
     dir.write("Units/Footman.mdx", &cube(mdx_rs::Texture { replaceable_id: 1, path: Fixed::new("", 260), flags: 0 }));
     dir.write("ReplaceableTextures/TeamColor/TeamColor01.blp", &testdir::tga(2, 2, |_, _| [0, 0, 255, 255]));
@@ -80,7 +80,7 @@ fn doodads_and_units_with_their_models_and_what_a_ray_meets() {
     let draw = Draw { offset: [0.0, 0.0], ..crate::terrain::Draw::new(&t, &crate::terrain::Grounds { ids: vec![], blight: 0, cliff_ground: vec![] }, crate::terrain::tile_flags(&t), &|_| false, 0.0) };
     let o = Objects::load(&game, &types, &draw);
     assert_eq!(o.notes, ["Not drawn, types the game's tables and the map's object data don't have: XXXX"]);
-    assert_eq!(o.models.iter().map(|m| m.path.as_str()).collect::<Vec<_>>(), ["Doodads\\Rock1.mdx", "Units\\Footman.mdx"]);
+    assert_eq!(o.models.iter().map(|m| m.path.as_str()).collect::<Vec<_>>(), ["Doodads\\Rock\\Rock1.mdx", "Units\\Footman.mdx"]);
     // The rock: at (2, 1) cells, 0.5 up, tinted by its
     // variation's vertR (its number one more than the variation); its texture decoded.
     let rock = &o.models[0].instances;

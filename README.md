@@ -21,7 +21,7 @@ item's details are in its section below):
 - **The World Editor** (see [World Editor](#world-editor)): its steps,
   in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs), 4 (doodads and units),
   5 (overlays), 6 (editing: terrain brushes, things placed, regions and
-  pathing). Next: 7.
+  pathing), 7 (in step with the rest). Next: 8.
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1727,9 +1727,47 @@ step), this list updated.
      once (some 20 ms for 64); doodads and destructables have none.
      Names shown without the game's colours (`names::plain`).
 
-7. **In step with the rest.** Disk changes read again piece by piece;
-   the editor and open text forms of the same file; the language server
-   and the build see what the editor saved.
+7. **In step with the rest** (done). Decided with the user: a text form
+   open in VS Code and the editor are one (the text is the truth, as
+   with `.trg`), and the pathing is made again on every save, as World
+   Editor does.
+   - **Text forms**: the editor says where its pieces with a text form
+     are (`Follow`: `war3map.doo`, `war3mapUnits.doo`, `war3map.w3r`);
+     the extension sends what's typed in their documents (`Text`,
+     `TextClosed`; debounced), the editor takes it in with the server's
+     converters (an undo; an error in the text said, nothing taken), and
+     gives its changes to the open document (`TextOut`: then the
+     document has them unsaved, not the editor); its Save has VS Code
+     save those documents (`SaveDocs`) and writes the rest itself. What
+     comes back as the editor gave it is an echo, left. The terrain's
+     text form is its header alone (no points): not in step yet.
+   - **The disk**: the process watches the project's roots (`notify`:
+     a folder and what's in it, a map's file), gathers a save's changes
+     (200 ms), reads its pieces again through the layers and takes in
+     each that changed and has no changes of the editor's (the terrain,
+     what's placed, the regions, the pathing; the page gets what changed
+     of it); one with changes of the editor's is kept, and said, and
+     Reload (`Reload`) drops the editor's changes and reads the map
+     again. Its own saves aren't changes on disk (each piece's bytes
+     hashed). A frame of the page's that comes while a change is
+     gathered waits its turn (it was dropped at first).
+   - **What follows the terrain**: the bounds' lines and the minimap
+     after a stroke (`StrokeEnd`) and an undo; what's placed after every
+     step (6b).
+   - **The pathing** (`editor/src/pathing.rs`): made on every save that
+     changes the terrain, what's placed or the pathing, from the
+     terrain and the doodads' and destructables' pathing textures, as
+     HiveWE makes it; what a pathing brush painted kept over it
+     (`pathing::Manual`, against what the files made when they were in
+     step); 0x80 where nothing walks on land (`wpm-rs` calls it
+     "boundary": every map has it so). On the Diablo III beta map 97 to
+     100% of each flag's cells as its own file has them; cliffs' rims
+     and walkable doodads (bridges) are what's left.
+   - **The shadow map** (`war3map.shd`) isn't made: HiveWE keeps the
+     file as it is, and how World Editor bakes it (which doodads, which
+     direction) isn't known here; a guess would be wrong on every save.
+     Left as it is, until its algorithm is.
+
 8. **Later.** Animations and particles, lighting and shadows, the
    terrain's resize, the tile setter and pather, Reforged HD assets.
 

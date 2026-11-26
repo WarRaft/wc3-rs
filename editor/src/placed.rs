@@ -2,9 +2,10 @@
 //! of `war3map.doo`, the units and items of `war3mapUnits.doo`, each with
 //! its type's model, as HiveWE finds it (`doodads.ixx`, `units.ixx`):
 //!
-//! - a doodad's `file`, with its variation added to the name (even after
+//! - a doodad's `file` (in the game's tables a name in its folder `dir`:
+//!   `dir\file\file`), with its variation added to the name (even after
 //!   an extension) when its type has more than one (`numVar`), else the
-//!   file without one;
+//!   file without one; tinted by its variation's `vertR01` ...;
 //! - a destructable's `file`, its variation in place of the extension;
 //!   its `texFile` in place of the model's replaceable texture `texID`
 //!   (trees: 31);
@@ -152,7 +153,15 @@ pub fn model_of(types: &Types, id: Rawcode, variation: u32, units: bool) -> Opti
     let id = id.to_string();
     let kinds: [Kind; 2] = if units { [Kind::Unit, Kind::Item] } else { [Kind::Doodad, Kind::Destructable] };
     let kind = kinds.into_iter().find(|k| types.has(*k, &id))?;
-    let file = types.get(kind, &id, "file");
+    // The game's tables name a doodad's or destructable's model by its
+    // folder and name (`dir` Doodads\\Terrain, `file` LordaeronTree:
+    // Doodads\\Terrain\\LordaeronTree\\LordaeronTree); a path of the
+    // map's object data is a path.
+    let file = types.get(kind, &id, "file").map(|f| match types.get(kind, &id, "dir") {
+        Some(dir) if !f.contains(['\\', '/']) => format!("{dir}\\{f}\\{f}"),
+        _ => f.to_string(),
+    });
+    let file = file.as_deref();
     let vars = types.number(kind, &id, "numVar").unwrap_or(1.0) as u32;
     let paths = file.map(|file| match kind {
         // The variation after the name, even after an extension.
@@ -282,7 +291,8 @@ impl Objects {
             let kind = found.kind;
             let tint = if kind == Kind::Doodad {
                 let v = p.variation + 1;
-                let c = |k: &str| types.number(Kind::Doodad, &id, &format!("vert{k}{v}")).unwrap_or(255.0) / 255.0;
+                // `vertR01`: two digits.
+                let c = |k: &str| types.number(Kind::Doodad, &id, &format!("vert{k}{v:02}")).unwrap_or(255.0) / 255.0;
                 [c("R"), c("G"), c("B")]
             } else {
                 let c = |k: &str| types.number(Kind::Destructable, &id, &format!("color{k}")).unwrap_or(255.0) / 255.0;

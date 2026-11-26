@@ -148,8 +148,10 @@ coming is listed below.
   turned (Q, E), deleted, and saved the same way; regions are drawn,
   moved, resized, renamed and deleted, and the pathing painted. Its
   process (`wc3 editor`) reads the map through the project's roots and
-  works out everything drawn. Animation and the files World Editor makes
-  with the terrain come step by step (the repository README, "World
+  works out everything drawn. A text form of war3map.doo,
+  war3mapUnits.doo or war3map.w3r open beside it is in step with it both
+  ways; what changes on disk is read again; the pathing is made again on
+  every save. Animation comes next (the repository README, "World
   Editor").
 
 ## Not yet

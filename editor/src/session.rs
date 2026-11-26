@@ -41,6 +41,20 @@ pub struct Session {
     /// A region's drag: the region (`None` until a new one is made) and
     /// its bounds when it started.
     region_drag: Option<(Option<usize>, [f32; 4])>,
+    /// The pieces with a text form open in VS Code: each one's path and
+    /// the text last taken from it or given to it (what comes back the
+    /// same is an echo).
+    docs: std::collections::HashMap<&'static str, (String, String)>,
+    /// Each piece's bytes as the editor last read or wrote them, hashed:
+    /// a change on disk is one that isn't the editor's.
+    disk: std::collections::HashMap<&'static str, Option<u64>>,
+    /// The pathing the files made when the map's `war3map.wpm` (and the
+    /// brush's paint since) was last in step with them: what a pathing
+    /// brush's paint is measured against.
+    pathing_made: Option<wpm_rs::Pathing>,
+    /// A terrain brush's stroke is going on (its end works out the
+    /// overlays again).
+    terrain_stroke: bool,
     /// Icons read, by path in lower case (`None`: not there).
     icon_cache: std::collections::HashMap<String, Option<crate::textures::Icon>>,
     /// The models and textures the page has (the ones after are new);
@@ -90,6 +104,7 @@ impl Session {
         // a pick says.
         let names = wc3_server::names::with_objects(&Lookup::of(&project));
         let tileset = Tileset::load(&game, terrain.tileset as char);
+        let disk = Self::disk_hashes(&game);
         notes.extend(tileset.notes.iter().cloned());
         Ok(Session {
             project,
@@ -110,6 +125,10 @@ impl Session {
             sent: None,
             icon_cache: Default::default(),
             region_drag: None,
+            terrain_stroke: false,
+            pathing_made: None,
+            disk,
+            docs: Default::default(),
             notes,
         })
     }
@@ -217,6 +236,9 @@ impl Session {
             self.notes.extend(notes);
             self.types = Some(crate::types::Types::load(&self.game));
         }
+        if self.pathing_made.is_none() {
+            self.pathing_made = Some(self.made_pathing());
+        }
         // All of it again: the page (re)loaded.
         self.objects = None;
         self.sent = None;
@@ -230,6 +252,7 @@ impl Session {
         terrain.push(ServerMsg::Overlays(overlays));
         terrain.push(ServerMsg::Palette(self.palette()));
         terrain.push(ServerMsg::ObjectPalette(self.object_palette()));
+        terrain.push(ServerMsg::Follow(self.follow()));
         terrain.push(ServerMsg::State(self.state(String::new())));
         terrain
     }
@@ -311,6 +334,7 @@ impl Session {
         }
         match self.edits.apply(&mut self.terrain, x, y, brush, start) {
             Ok(()) => {
+                self.terrain_stroke = true;
                 let mut out = self.terrain_msgs(false);
                 // What stands on the ground stands on it as it is now.
                 out.extend(self.place_objects());
@@ -321,9 +345,17 @@ impl Session {
         }
     }
 
+    /// A stroke done: what follows the terrain once it's done (the
+    /// bounds' lines, the minimap) worked out again after a terrain
+    /// brush's.
     pub fn stroke_end(&mut self) -> Vec<ServerMsg> {
         self.edits.end();
-        vec![ServerMsg::State(self.state(String::new()))]
+        let mut out = Vec::new();
+        if std::mem::take(&mut self.terrain_stroke) {
+            out.push(ServerMsg::Overlays(self.overlays()));
+        }
+        out.push(ServerMsg::State(self.state(String::new())));
+        out
     }
 
     /// Undo (or redo): the terrain as it was, worked out again.
@@ -337,6 +369,7 @@ impl Session {
                 crate::edit::Snapshot::Terrain(..) => {
                     out.extend(self.terrain_msgs(false));
                     out.extend(self.place_objects());
+                    out.push(ServerMsg::Overlays(self.overlays()));
                 }
                 _ => out.extend(self.place_objects()),
             }
@@ -348,8 +381,32 @@ impl Session {
     /// Writes the terrain where it came from: the root folder's file, or
     /// into the root map; a terrain only the game has, into the top root.
     /// Where it went, or why it didn't.
+    /// The pathing the map's files make as they are now.
+    fn made_pathing(&mut self) -> wpm_rs::Pathing {
+        let types = self.types.get_or_insert_with(|| crate::types::Types::load(&self.game));
+        let draw = self.drawn.as_ref().expect("drawn");
+        crate::pathing::compute(&self.game, &self.terrain, draw, &self.tileset, types, &self.placed)
+    }
+
     pub fn save(&mut self) -> Vec<ServerMsg> {
+        // The pathing made again, as World Editor makes it when it saves,
+        // with what a brush painted over it.
+        let d = self.edits.dirty;
+        let mut pathing_redone = false;
+        if d.terrain || d.doodads || d.pathing {
+            let made = self.made_pathing();
+            let mut now = made.clone();
+            if let (Some(before), Some(painted)) = (&self.pathing_made, &self.placed.pathing) {
+                crate::pathing::Manual::of(before, painted).apply(&mut now);
+            }
+            pathing_redone = self.placed.pathing.as_ref() != Some(&now);
+            self.placed.pathing = Some(now);
+            self.pathing_made = Some(made);
+            self.edits.dirty.pathing = true;
+        }
         let dirty = self.edits.dirty;
+        // The pieces with a text form open: VS Code saves them.
+        let docs: Vec<String> = self.docs.values().map(|(p, _)| p.clone()).collect();
         let mut saved = Vec::new();
         let mut failed = Vec::new();
         let files: [FileToSave; 5] = [
@@ -363,7 +420,15 @@ impl Session {
             if !changed {
                 continue;
             }
-            match bytes.and_then(|b| self.write_file(name, b)) {
+            match bytes.and_then(|b| {
+                let h = hash(&b);
+                let to = self.write_file(name, b)?;
+                // Our own: not a change on disk.
+                if let Some(piece) = Self::PIECES.iter().find(|p| **p == name) {
+                    self.disk.insert(piece, Some(h));
+                }
+                Ok(to)
+            }) {
                 Ok(to) => {
                     saved.push(to.display().to_string());
                     let d = &mut self.edits.dirty;
@@ -377,7 +442,15 @@ impl Session {
             (true, true) => "Nothing to save.".to_string(),
             (false, true) => format!("Saved {}", saved.join(", ")),
         };
-        vec![ServerMsg::State(self.state(message))]
+        let mut out = Vec::new();
+        if pathing_redone {
+            out.push(ServerMsg::Overlays(self.overlays()));
+        }
+        if !docs.is_empty() {
+            out.push(ServerMsg::SaveDocs(docs));
+        }
+        out.push(ServerMsg::State(self.state(message)));
+        out
     }
 
     /// Writes `bytes` as the map's file `name` where it came from: a root
@@ -463,6 +536,201 @@ impl Session {
                 IconEntry { kind: *kind, id: id.clone(), icon: icon.unwrap_or_default() }
             })
             .collect()
+    }
+
+    /// The map's pieces the editor changes, by name.
+    pub const PIECES: [&'static str; 5] = ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.wpm"];
+
+    /// Each piece's bytes as the layers have it now, hashed (`None`: no
+    /// layer has it).
+    fn disk_hashes(game: &Game) -> std::collections::HashMap<&'static str, Option<u64>> {
+        Self::PIECES.iter().map(|n| (*n, game.read(n).map(|(b, _)| hash(&b)))).collect()
+    }
+
+    /// Files changed on disk (`paths`): if any is in a root, the pieces
+    /// read again through the layers as they are now; each that changed
+    /// (not by this editor's save) taken in when it has no changes of
+    /// the editor's, else said: the editor's kept, Reload takes the
+    /// disk's. The page gets what changed of it.
+    pub fn disk_changed(&mut self, paths: &[PathBuf]) -> Vec<ServerMsg> {
+        let roots: Vec<PathBuf> = self.project.roots.iter().map(|r| project::normalize(r)).collect();
+        let ours = |p: &PathBuf| {
+            let p = project::normalize(p);
+            roots.iter().any(|r| p == *r || p.starts_with(r))
+        };
+        if !paths.iter().any(ours) {
+            return Vec::new();
+        }
+        let (game, _) = Lookup::of(&self.project).open();
+        let now = Self::disk_hashes(&game);
+        let changed: Vec<&str> = Self::PIECES.iter().copied().filter(|n| now.get(n) != self.disk.get(n)).collect();
+        if changed.is_empty() {
+            return Vec::new();
+        }
+        self.game = game;
+        let d = self.edits.dirty;
+        let dirty = |n: &str| match n {
+            "war3map.w3e" => d.terrain,
+            "war3map.doo" => d.doodads,
+            "war3mapUnits.doo" => d.units,
+            "war3map.w3r" => d.regions,
+            _ => d.pathing,
+        };
+        let (kept, taken): (Vec<&str>, Vec<&str>) = changed.iter().partition(|n| dirty(n));
+        let (files, notes) = crate::placed::Files::read(&self.game);
+        self.notes.extend(notes);
+        let mut terrain = false;
+        for name in &taken {
+            self.disk.insert(name, now[name]);
+            match *name {
+                "war3map.w3e" => {
+                    match self.game.read(name).map(|(b, _)| w3e_rs::parse(&b)) {
+                        Some(Ok(t)) => {
+                            self.terrain = t;
+                            terrain = true;
+                        }
+                        _ => continue,
+                    }
+                }
+                "war3map.doo" => self.placed.doodads = files.doodads.clone(),
+                "war3mapUnits.doo" => self.placed.units = files.units.clone(),
+                "war3map.w3r" => self.placed.regions = files.regions.clone(),
+                _ => {
+                    self.placed.pathing = files.pathing.clone();
+                    self.pathing_made = None;
+                }
+            }
+        }
+        let mut out = Vec::new();
+        if terrain {
+            out.extend(self.terrain_msgs(false));
+        }
+        if !taken.is_empty() {
+            out.extend(self.place_objects());
+            if self.pathing_made.is_none() {
+                self.pathing_made = Some(self.made_pathing());
+            }
+            out.push(ServerMsg::Overlays(self.overlays()));
+        }
+        let message = match (taken.is_empty(), kept.is_empty()) {
+            (_, false) => format!("Changed on disk: {}; your changes to it kept (Reload takes the disk's).", kept.join(", ")),
+            (false, true) => format!("Read again, changed on disk: {}.", taken.join(", ")),
+            _ => String::new(),
+        };
+        out.push(ServerMsg::State(self.state(message)));
+        out
+    }
+
+    /// The pieces that have a text form (`war3map.doo`,
+    /// `war3mapUnits.doo`, `war3map.w3r`), each with the path its file
+    /// is at (or would be written to): what the page's text forms are
+    /// matched by.
+    pub fn follow(&self) -> Vec<(String, String)> {
+        ["war3map.doo", "war3mapUnits.doo", "war3map.w3r"].iter().filter_map(|n| Some((n.to_string(), self.path_of(n)?.display().to_string()))).collect()
+    }
+
+    /// Where the map's file `name` is (on disk, or inside a root map), or
+    /// would be written: the top root's.
+    fn path_of(&self, name: &str) -> Option<PathBuf> {
+        let roots: Vec<PathBuf> = self.project.roots.iter().map(|r| project::normalize(r)).collect();
+        Some(match self.game.read(name).map(|(_, s)| s) {
+            Some(wc3_server::game::Source::File(f)) if roots.iter().any(|r| project::normalize(&f).starts_with(r)) => f,
+            Some(wc3_server::game::Source::Archive(map)) if roots.contains(&project::normalize(&map)) => map.join(name),
+            _ => roots.last()?.join(name),
+        })
+    }
+
+    /// A piece's bytes as the editor has it.
+    fn piece_bytes(&self, name: &str) -> Option<Vec<u8>> {
+        match name {
+            "war3map.doo" => self.placed.doodads.as_ref()?.to_bytes().ok(),
+            "war3mapUnits.doo" => self.placed.units.as_ref()?.to_bytes().ok(),
+            "war3map.w3r" => self.placed.regions.as_ref()?.to_bytes().ok(),
+            _ => None,
+        }
+    }
+
+    /// A piece's text form, as the editor has it (`name` its file's, for
+    /// the layout `war3map.w3i` beside it says).
+    fn piece_text(&self, name: &'static str, path: &str) -> Option<String> {
+        let bytes = self.piece_bytes(name)?;
+        let text = if name == "war3map.w3r" {
+            wc3_server::regions::convert(wc3_server::objects::TO_TEXT, path, &bytes)
+        } else {
+            wc3_server::placement::convert(wc3_server::objects::TO_TEXT, path, &bytes)
+        };
+        text.ok().and_then(|t| String::from_utf8(t).ok())
+    }
+
+    /// The text of a piece's text form, opened or changed in VS Code: taken
+    /// in as that piece (an undo), unless it's what the editor gave it or
+    /// it has an error (said).
+    pub fn text_changed(&mut self, path: &str, text: &str) -> Vec<ServerMsg> {
+        let Some((name, _)) = self.follow().into_iter().find(|(_, p)| p.eq_ignore_ascii_case(path)) else { return Vec::new() };
+        let name: &'static str = Self::PIECES.iter().find(|p| **p == name).copied().unwrap();
+        let echo = self.docs.get(name).is_some_and(|(_, last)| last == text);
+        self.docs.insert(name, (path.to_string(), text.to_string()));
+        if echo || self.piece_text(name, path).as_deref() == Some(text) {
+            return Vec::new();
+        }
+        let bytes = if name == "war3map.w3r" {
+            wc3_server::regions::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
+        } else {
+            wc3_server::placement::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
+        };
+        let bytes = match bytes {
+            Ok(b) => b,
+            Err(e) => return vec![ServerMsg::State(self.state(e))],
+        };
+        let layout = self.placed.layout;
+        let taken = match name {
+            "war3map.doo" => doo_rs::parse_doodads(&bytes, layout).map(|d| {
+                let before = self.placed.doodads.replace(d);
+                crate::edit::Snapshot::Doodads(before.map(|d| d.doodads).unwrap_or_default())
+            }),
+            "war3mapUnits.doo" => doo_rs::parse_units(&bytes, layout).map(|u| {
+                let before = self.placed.units.replace(u);
+                crate::edit::Snapshot::Units(before.map(|u| u.units).unwrap_or_default())
+            }),
+            _ => w3r_rs::parse(&bytes).map(|r| {
+                let before = self.placed.regions.replace(r);
+                crate::edit::Snapshot::Regions(before.map(|r| r.regions).unwrap_or_default())
+            }),
+        };
+        let Ok(before) = taken else { return vec![ServerMsg::State(self.state(format!("Can't read {name}'s text")))] };
+        self.edits.record(before);
+        let mut out = if name == "war3map.w3r" { vec![ServerMsg::Overlays(self.overlays())] } else { self.place_objects() };
+        out.extend(self.sync_docs());
+        out.push(ServerMsg::State(self.state(String::new())));
+        out
+    }
+
+    /// A piece's text form closed: the editor's own again.
+    pub fn text_closed(&mut self, path: &str) {
+        self.docs.retain(|_, (p, _)| !p.eq_ignore_ascii_case(path));
+    }
+
+    /// What the editor changed of the pieces with a text form open, given
+    /// to them (the documents then have the changes not saved, not the
+    /// editor).
+    pub fn sync_docs(&mut self) -> Vec<ServerMsg> {
+        let mut out = Vec::new();
+        let names: Vec<&'static str> = self.docs.keys().copied().collect();
+        for name in names {
+            let path = self.docs[name].0.clone();
+            let Some(text) = self.piece_text(name, &path) else { continue };
+            if self.docs[name].1 != text {
+                self.docs.insert(name, (path.clone(), text.clone()));
+                out.push(ServerMsg::TextOut { path, text });
+            }
+            let d = &mut self.edits.dirty;
+            match name {
+                "war3map.doo" => d.doodads = false,
+                "war3mapUnits.doo" => d.units = false,
+                _ => d.regions = false,
+            }
+        }
+        out
     }
 
     /// The overlays worked out again (the regions, the pathing, the
@@ -774,4 +1042,11 @@ fn placement(files: &mut crate::placed::Files, file: u8, index: u32) -> Result<&
         files.units.as_mut().and_then(|u| u.units.get_mut(i)).map(|u| &mut u.placement)
     };
     p.ok_or_else(|| format!("no thing {index} in {}", if file == 0 { "war3map.doo" } else { "war3mapUnits.doo" }))
+}
+
+fn hash(bytes: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut h);
+    h.finish()
 }

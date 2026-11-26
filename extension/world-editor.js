@@ -18,8 +18,48 @@
 
 const path = require('path')
 const {spawn} = require('child_process')
-const {window, workspace, commands, Uri, ViewColumn, EventEmitter, TreeItem, TreeItemCollapsibleState, ThemeIcon, ThemeColor} = require('vscode')
+const {window, workspace, commands, Uri, ViewColumn, EventEmitter, TreeItem, TreeItemCollapsibleState, ThemeIcon, ThemeColor, WorkspaceEdit, Range} = require('vscode')
 const {FrameReader} = require('./protocol.js')
+
+/**
+ * The editor protocol's kinds this file reads or writes itself (the rest
+ * pass between the process and the page as they are): the text forms of
+ * the map's pieces, kept in step with the editor (`editor/src/protocol.rs`).
+ */
+const KIND = {TEXT: 17, TEXT_CLOSED: 18, FOLLOW: 142, TEXT_OUT: 143, SAVE_DOCS: 144}
+/** The scheme text forms of binary files open under (`extension.js`). */
+const OBJECTS_SCHEME = 'wc3obj'
+
+/** A frame of `kind` with strings. */
+function frame(kind, ...strings) {
+    const parts = strings.map(s => Buffer.from(s, 'utf8'))
+    const body = Buffer.alloc(parts.reduce((n, p) => n + 4 + p.length, 0))
+    let at = 0
+    for (const p of parts) {
+        body.writeUInt32LE(p.length, at)
+        p.copy(body, at + 4)
+        at += 4 + p.length
+    }
+    const head = Buffer.alloc(5)
+    head.writeUInt32LE(body.length, 0)
+    head[4] = kind
+    return Buffer.concat([head, body])
+}
+
+/** The strings of a body, `n` of them, or a list of them (`list`). */
+function strings(body, n, list = false) {
+    let at = 0
+    const one = () => {
+        const len = body.readUInt32LE(at)
+        const s = body.toString('utf8', at + 4, at + 4 + len)
+        at += 4 + len
+        return s
+    }
+    if (!list) return Array.from({length: n}, one)
+    const count = body.readUInt32LE(0)
+    at = 4
+    return Array.from({length: count}, () => Array.from({length: n}, one))
+}
 
 /** `wc3_editor::EXIT_LOCKED`: another window has the project's editor. */
 const EXIT_LOCKED = 3
@@ -36,6 +76,7 @@ const VIEW = 'wc3.editors'
  * @property {{dirty: boolean, undo: boolean, redo: boolean, message: string} | undefined} state  the edits' state the page last showed
  * @property {{name: string, bounds: number[]} | null | undefined} region  the region picked (the Regions tool)
  * @property {number | undefined} icons  how many of the object palette's icons the page has
+ * @property {Map<string, string> | undefined} follow  the paths of the pieces with a text form, by their lower case
  * @property {string | undefined} picked  what the last click picked, said ('' nothing)
  * @property {{width: number, height: number, layers: number, water: number, cliffs: number, objects: number, error: number} | null} drawn  what the page drew of the terrain first
  */
@@ -96,7 +137,7 @@ function registerWorldEditor(context, binary, pickManifest) {
     <select id="object-player"></select>
     <div id="object-list" class="object-list"></div>
   </div>
-  <div class="edits"><button id="undo" title="Undo (Ctrl+Z)" disabled>Undo</button><button id="redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button><button id="save" title="Save the terrain (Ctrl+S)" disabled>Save</button></div>
+  <div class="edits"><button id="undo" title="Undo (Ctrl+Z)" disabled>Undo</button><button id="redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button><button id="save" title="Save the files changed (Ctrl+S)" disabled>Save</button><button id="reload" title="Read the map again, the changes not saved dropped">Reload</button></div>
 </div>
 <div id="message" class="message" hidden><h2 id="message-title"></h2><p id="message-text"></p><button id="reopen" hidden>Reopen</button></div>
 </div>
@@ -119,7 +160,10 @@ function registerWorldEditor(context, binary, pickManifest) {
         const frames = new FrameReader()
         child.stdout.on('data', chunk => {
             for (const {kind, body} of frames.push(chunk)) {
-                editor.panel.webview.postMessage({type: 'frame', kind, body: new Uint8Array(body)})
+                if (kind === KIND.FOLLOW) follow(editor, strings(body, 2, true))
+                else if (kind === KIND.TEXT_OUT) textOut(...strings(body, 2))
+                else if (kind === KIND.SAVE_DOCS) saveDocs(strings(body, 1, true).map(([p]) => p))
+                else editor.panel.webview.postMessage({type: 'frame', kind, body: new Uint8Array(body)})
             }
         })
         child.stderr.on('data', d => {
@@ -152,6 +196,45 @@ function registerWorldEditor(context, binary, pickManifest) {
         child.stdin.end()
         setTimeout(() => { if (child.exitCode === null) child.kill() }, 3000)
     }
+
+    // The text forms of the map's pieces (war3map.doo ... open as text):
+    // what's typed in them goes to the editor, what the editor changes
+    // goes into them (they have it unsaved then), saving them is theirs.
+    const key = p => p.toLowerCase()
+    const docOf = path => workspace.textDocuments.find(d => d.uri.scheme === OBJECTS_SCHEME && key(d.uri.fsPath) === key(path))
+    const editorOf = doc => doc.uri.scheme === OBJECTS_SCHEME && [...editors.values()].find(e => e.follow?.has(key(doc.uri.fsPath)))
+    const sendText = doc => {
+        const e = editorOf(doc)
+        if (e?.child) e.child.stdin.write(frame(KIND.TEXT, doc.uri.fsPath, doc.getText()))
+    }
+    function follow(editor, pieces) {
+        editor.follow = new Map(pieces.map(([, p]) => [key(p), p]))
+        for (const d of workspace.textDocuments) if (editorOf(d) === editor) sendText(d)
+    }
+    async function textOut(path, text) {
+        const doc = docOf(path)
+        if (!doc || doc.getText() === text) return
+        const edit = new WorkspaceEdit()
+        edit.replace(doc.uri, new Range(doc.positionAt(0), doc.positionAt(doc.getText().length)), text)
+        await workspace.applyEdit(edit)
+    }
+    function saveDocs(paths) {
+        for (const p of paths) docOf(p)?.save()
+    }
+    const timers = new Map()
+    context.subscriptions.push(
+        workspace.onDidOpenTextDocument(sendText),
+        workspace.onDidChangeTextDocument(e => {
+            if (!editorOf(e.document)) return
+            const k = e.document.uri.toString()
+            clearTimeout(timers.get(k))
+            timers.set(k, setTimeout(() => sendText(e.document), 150))
+        }),
+        workspace.onDidCloseTextDocument(doc => {
+            const e = editorOf(doc)
+            if (e?.child) e.child.stdin.write(frame(KIND.TEXT_CLOSED, doc.uri.fsPath))
+        }),
+    )
 
     /** Opens the editor of the project of `arg`, or shows it if it's open. */
     const open = async arg => {
