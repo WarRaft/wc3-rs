@@ -112,6 +112,14 @@ async function steps() {
         if (animate) check(fl.blinks === 0, `no model blinks: ${fl.blinks} blinks in ${fl.frames} frames`)
     }
     we.focused = undefined
+    check(drawn.startLocations > 0, `its start locations drawn: ${drawn.startLocations}`)
+    we.focused = undefined
+    await we.panel.webview.postMessage({type: 'focusEffect', path: 'StartLocation', distance: 5})
+    await until(() => we.focused !== undefined, 'focused')
+    await sleep(500)
+    await shot('world-editor-start-location')
+    await we.panel.webview.postMessage({type: 'unfocus'})
+    we.focused = undefined
     await we.panel.webview.postMessage({type: 'focusEffect', tails: true})
     const focused = await until(() => we.focused !== undefined && we.focused, 'focused')
     check(!!focused, `the camera over a thing whose particles have tails: ${focused}`)

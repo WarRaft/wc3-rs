@@ -1651,8 +1651,11 @@ step), this list updated.
    the game's filter modes, the picked one lighter, said under the
    view). Models are drawn as the file has their vertices: no bones,
    so no animation and no pose (step 8); start locations (`sloc`) have
-   no model in the tables, said in a note. MCP: `doo_list` names each
-   thing and its model with the game's files
+   no model in the tables: World Editor's own (`UI\WorldEditData.txt`
+   `[WorldEditArt] StartLocation`, `placed::world_edit_art`; done after
+   the pathing), in its player's colour, picked as
+   `WESTRING_STARTLOCATION` says; HiveWE leaves them out. MCP:
+   `doo_list` names each thing and its model with the game's files
    (`wc3_server::names::with_objects`).
 5. **Overlays** (done). Pathing (`war3map.wpm`), regions (`war3map.w3r`),
    cameras (`war3map.w3c`), the map's bounds (`war3map.w3i`), a

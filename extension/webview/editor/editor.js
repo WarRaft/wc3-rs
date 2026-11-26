@@ -705,6 +705,7 @@
                         objects: objects.count,
                         animated: objects.models.filter(m => m.anim).length,
                         billboards: objects.models.filter(m => m.billboards).length,
+                        startLocations: objects.models.filter(m => /startlocation/i.test(m.path ?? '')).reduce((n, m) => n + m.instances, 0),
                         geosetAnimated: objects.models.filter(m => m.geosetAnimated).length,
                         emitters: objects.particles.count,
                         tails: objects.particles.models.flat().filter(x => x.e.params[14] !== 0).length,

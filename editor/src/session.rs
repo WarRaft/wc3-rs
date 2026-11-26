@@ -1204,7 +1204,12 @@ impl Session {
             return PickedMsg { text: format!("({wx:.0}, {wy:.0}, {wz:.0}){}", in_regions(wx, wy)), ground, region, ..Default::default() };
         };
         let id = t.id.to_string();
-        let name = self.names.objects.get(t.kind, &id).map(|n| wc3_server::names::plain(&n.shown())).unwrap_or_else(|| id.clone());
+        let name = if id == crate::placed::START_LOCATION {
+            // World Editor's name for it.
+            wc3_server::names::plain(&self.names.resolve("WESTRING_STARTLOCATION"))
+        } else {
+            self.names.objects.get(t.kind, &id).map(|n| wc3_server::names::plain(&n.shown())).unwrap_or_else(|| id.clone())
+        };
         let what = match t.kind {
             w3abdhqtu_rs::Kind::Doodad => "doodad".to_string(),
             w3abdhqtu_rs::Kind::Destructable => "destructable".to_string(),

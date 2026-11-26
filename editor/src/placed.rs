@@ -124,6 +124,21 @@ pub struct Objects {
     model_of: HashMap<ModelKey, Option<usize>>,
     texture_of: HashMap<String, usize>,
     colors: HashMap<u32, [f32; 3]>,
+    /// A start location's model (`UI\WorldEditData.txt` `[WorldEditArt]`
+    /// `StartLocation`), once read.
+    start_location: Option<Option<String>>,
+}
+
+/// A start location's type id in `war3mapUnits.doo`.
+pub const START_LOCATION: &str = "sloc";
+
+/// World Editor's art `key` (`UI\WorldEditData.txt` `[WorldEditArt]`),
+/// a model's path as the game reads it.
+pub fn world_edit_art(game: &Game, key: &str) -> Option<String> {
+    let doc = bni_rs::parse(&game.read_patched("UI\\WorldEditData.txt")?);
+    let item = doc.section("WorldEditArt")?.items.iter().find(|i| i.key.as_ref().is_some_and(|k| k.text.trim().eq_ignore_ascii_case(key)))?;
+    let path = item.value_text().trim().trim_matches('"').to_string();
+    (!path.is_empty()).then(|| model_path(&path))
 }
 
 /// `path` as the game reads a model: `.mdl` as `.mdx`, `.mdx` added to a
@@ -327,6 +342,29 @@ impl Objects {
         for (index, u) in files.units.iter().flat_map(|u| u.units.iter().enumerate()) {
             let p = &u.placement;
             let id = p.id.to_string();
+            // A start location: World Editor's own model, in its
+            // player's colour.
+            if id == START_LOCATION {
+                let art = self.start_location.get_or_insert_with(|| world_edit_art(game, "StartLocation")).clone();
+                let Some(path) = art else {
+                    *unknown.entry(id).or_default() += 1;
+                    continue;
+                };
+                places.push(Place {
+                    kind: Kind::Unit,
+                    id: p.id,
+                    index,
+                    paths: vec![path],
+                    replaceable: None,
+                    world: [p.x, p.y, p.z],
+                    on_ground: true,
+                    angle: p.angle,
+                    scale: [1.0; 3],
+                    tint: [1.0; 3],
+                    player: Some(u.player),
+                });
+                continue;
+            }
             let Some(found) = model_of(types, p.id, 0, true) else {
                 *unknown.entry(id).or_default() += 1;
                 continue;

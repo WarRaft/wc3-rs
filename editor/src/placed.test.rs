@@ -101,3 +101,15 @@ fn doodads_and_units_with_their_models_and_what_a_ray_meets() {
     // Along the ground from the left: the footman first, then the rock.
     assert_eq!(o.pick([-5.0, 1.0, 0.6], [1.0, 0.0, 0.0]).unwrap().kind, Kind::Unit);
 }
+
+#[test]
+fn a_start_locations_model_world_edit_art_says() {
+    let dir = crate::testdir::TestDir::new("placed-sloc");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &crate::testdir::terrain());
+    dir.write("map/UI/WorldEditData.txt", b"[WorldEditArt]\nStartLocation=Objects\\StartLocation\\StartLocation.mdl\n");
+    let s = crate::session::Session::open(dir.path()).unwrap();
+    // The .mdl as the game reads it.
+    assert_eq!(world_edit_art(&s.game, "StartLocation").as_deref(), Some("Objects\\StartLocation\\StartLocation.mdx"));
+    assert_eq!(world_edit_art(&s.game, "Nothing"), None);
+}
