@@ -115,6 +115,7 @@ void main() {
 
         clear() {
             const gl = this.gl
+            this.instanceData = []
             for (const t of this.textures) if (t !== this.white) gl.deleteTexture(t)
             for (const m of this.models) for (const g of m.geosets) {
                 gl.deleteVertexArray(g.vao)
@@ -126,20 +127,25 @@ void main() {
             this.count = 0
         }
 
+        /**
+         * Models and textures added at `firstModel`, `firstTexture` (0: all
+         * anew); where they stand comes with `instances`.
+         */
         set(msg) {
             const gl = this.gl
-            this.clear()
-            this.textures = msg.textures.map(t => t.error || !t.width ? this.white : this.texture(t))
+            if (msg.firstModel === 0 && msg.firstTexture === 0) this.clear()
+            this.textures.length = msg.firstTexture
+            this.textures.push(...msg.textures.map(t => t.error || !t.width ? this.white : this.texture(t)))
+            this.models.length = msg.firstModel
+            this.notes = msg.notes
             for (const m of msg.models) {
-                const instances = m.instances.length / INSTANCE
-                const model = {geosets: [], instances, instanceBuffer: null}
+                const model = {geosets: [], instances: 0, instanceBuffer: null}
                 this.models.push(model)
-                if (m.error) this.notes.push(m.error)
-                if (!instances || m.error) continue
-                this.count += instances
+                if (m.error) {
+                    this.notes.push(m.error)
+                    continue
+                }
                 const ib = gl.createBuffer()
-                gl.bindBuffer(gl.ARRAY_BUFFER, ib)
-                gl.bufferData(gl.ARRAY_BUFFER, m.instances, gl.STATIC_DRAW)
                 model.instanceBuffer = ib
                 for (const g of m.geosets) {
                     const vao = gl.createVertexArray()
@@ -171,6 +177,32 @@ void main() {
                     model.geosets.push({vao, buffers, count: g.indices.length, layers: g.layers})
                 }
             }
+        }
+
+        /** Where every model stands: a list, a model each, of its instances. */
+        setInstances(list) {
+            const gl = this.gl
+            this.instanceData = list
+            this.count = 0
+            list.forEach((data, i) => {
+                const m = this.models[i]
+                if (!m?.instanceBuffer) return
+                gl.bindBuffer(gl.ARRAY_BUFFER, m.instanceBuffer)
+                gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW)
+                m.instances = data.length / INSTANCE
+                this.count += m.instances
+            })
+        }
+
+        /** The model and instance of thing `index` of `file` (0 `war3map.doo`, 1 `war3mapUnits.doo`), if it's drawn. */
+        find(file, index) {
+            for (const [mi, data] of (this.instanceData ?? []).entries()) {
+                for (let i = 0; i < data.length / INSTANCE; i++) {
+                    const kind = data[i * INSTANCE + 13]
+                    if ((kind < 2 ? 0 : 1) === file && data[i * INSTANCE + 14] === index) return {model: mi, instance: i}
+                }
+            }
+            return null
         }
 
         select(model, instance) {

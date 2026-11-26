@@ -117,6 +117,17 @@
             return
         }
         if (mod || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
+        if (selected && (e.code === 'Delete' || e.code === 'Backspace')) {
+            send(encode.delete(selected.file, selected.index))
+            selected = null
+            objects?.select(-1, -1)
+            $('status').textContent = ''
+            return
+        }
+        if (selected && (e.code === 'KeyQ' || e.code === 'KeyE')) {
+            send(encode.rotate(selected.file, selected.index, (e.code === 'KeyQ' ? 1 : -1) * Math.PI / 12))
+            return
+        }
         const toggle = TOGGLES.find(t => t.code === e.code)
         if (toggle) {
             show[toggle.key] = !show[toggle.key]
@@ -194,6 +205,7 @@
         {tool: 'cliffDown', label: 'Cliff −'},
         {tool: 'water', label: 'Water'},
         {tool: 'dry', label: 'Dry'},
+        {tool: 'place', label: 'Place'},
     ]
     const brush = {tool: 'select', size: 4, strength: 0.25, texture: '', cliff: 0, ...(vscode.getState()?.brush ?? {})}
     const keep = () => vscode.setState({...(vscode.getState() ?? {}), brush})
@@ -202,11 +214,13 @@
         for (const b of tools.querySelectorAll('[data-tool]')) b.classList.toggle('on', b.dataset.tool === brush.tool)
         $('textures').hidden = brush.tool !== 'texture'
         $('cliff-types').hidden = !brush.tool.startsWith('cliff')
+        $('objects-palette').hidden = brush.tool !== 'place'
+        $('size-label').hidden = $('strength-label').hidden = brush.tool === 'place' || brush.tool === 'select'
         for (const b of $('textures').children) b.classList.toggle('on', b.dataset.id === brush.texture)
         $('size-value').textContent = brush.size
         $('strength-value').textContent = brush.strength.toFixed(2)
         canvas.style.cursor = brush.tool === 'select' ? '' : 'crosshair'
-        if (brush.tool === 'select' && terrain) terrain.brush = [0, 0, 0]
+        if ((brush.tool === 'select' || brush.tool === 'place') && terrain) terrain.brush = [0, 0, 0]
     }
     for (const t of TOOL_LIST) {
         const b = document.createElement('button')
@@ -282,7 +296,7 @@
         stroke.first = false
     }
     canvas.addEventListener('mousedown', e => {
-        if (e.button !== 0 || brush.tool === 'select' || !terrain?.ready) return
+        if (e.button !== 0 || brush.tool === 'select' || brush.tool === 'place' || !terrain?.ready) return
         stroke = {first: true, pending: false}
         Object.assign(mouse, {x: e.clientX, y: e.clientY})
         step()
@@ -294,13 +308,114 @@
     })
     canvas.addEventListener('mousemove', e => {
         Object.assign(mouse, {x: e.clientX, y: e.clientY})
-        if (brush.tool !== 'select' && terrain?.ready) {
+        if (thingDrag) return
+        if (brush.tool !== 'select' && brush.tool !== 'place' && terrain?.ready) {
             const {origin, dir} = rayAt(e.clientX, e.clientY)
             const p = terrain.groundHit(origin, dir)
             terrain.brush = p ? [p[0], p[1], brush.size / 2] : [0, 0, 0]
         }
     })
     setInterval(step, 50)
+
+    // What's placed: the object palette (a kind, a search, a type), the
+    // thing picked; Place lays the type where a click meets the ground,
+    // a drag of the thing picked moves it, Q and E turn it, Delete takes
+    // it away.
+    let selected = null
+    let objectEntries = []
+    const KINDS = ['Doodads', 'Destructables', 'Units', 'Items']
+    const placing = {kind: 2, id: '', player: 0, filter: '', ...(vscode.getState()?.placing ?? {})}
+    const keepPlacing = () => vscode.setState({...(vscode.getState() ?? {}), placing})
+    for (const [k, label] of KINDS.entries()) {
+        const b = document.createElement('button')
+        b.textContent = label
+        b.dataset.kind = k
+        b.onclick = () => {
+            placing.kind = k
+            keepPlacing()
+            showObjectList()
+        }
+        $('object-kinds').append(b)
+    }
+    $('object-search').value = placing.filter
+    $('object-search').oninput = () => {
+        placing.filter = $('object-search').value
+        keepPlacing()
+        showObjectList()
+    }
+    // Players 1 to 12, neutral hostile (12) and passive (15).
+    $('object-player').replaceChildren(...[...Array(12).keys(), 12, 15].map(p => Object.assign(document.createElement('option'), {
+        value: p,
+        textContent: p < 12 ? `Player ${p + 1}` : p === 12 ? 'Neutral Hostile' : 'Neutral Passive',
+    })))
+    $('object-player').value = String(placing.player)
+    $('object-player').onchange = () => {
+        placing.player = Number($('object-player').value)
+        keepPlacing()
+    }
+    function showObjectPalette(entries) {
+        objectEntries = entries
+        showObjectList()
+    }
+    function showObjectList() {
+        for (const b of $('object-kinds').children) b.classList.toggle('on', Number(b.dataset.kind) === placing.kind)
+        $('object-player').hidden = placing.kind !== 2
+        const words = placing.filter.toLowerCase().split(/\s+/).filter(Boolean)
+        const shown = objectEntries
+            .filter(e => e.kind === placing.kind)
+            .filter(e => words.every(w => `${e.name} ${e.id} ${e.group}`.toLowerCase().includes(w)))
+            .slice(0, 300)
+        $('object-list').replaceChildren(...shown.map(e => {
+            const row = document.createElement('div')
+            row.className = 'object' + (e.id === placing.id ? ' on' : '') + (e.custom ? ' custom' : '')
+            row.textContent = e.name
+            row.title = `${e.name} (${e.id})${e.group ? ' · ' + e.group : ''}${e.custom ? ' · the map\'s' : ''}`
+            row.onclick = () => {
+                placing.id = e.id
+                keepPlacing()
+                showObjectList()
+            }
+            return row
+        }))
+    }
+
+    // Place: a click lays the type picked.
+    canvas.addEventListener('click', e => {
+        if (brush.tool !== 'place' || !placing.id || !terrain?.ready) return
+        const {origin, dir} = rayAt(e.clientX, e.clientY)
+        send(encode.place(placing.kind, placing.id, placing.player, origin, dir))
+    })
+    // Select: a drag of the thing picked moves it.
+    let thingDrag = null
+    canvas.addEventListener('mousedown', e => {
+        if (e.button !== 0 || brush.tool !== 'select' || !selected) return
+        thingDrag = {first: true, pending: false, moved: false, x: e.clientX, y: e.clientY}
+    })
+    canvas.addEventListener('mousemove', e => {
+        if (!thingDrag || (Math.abs(e.clientX - thingDrag.x) + Math.abs(e.clientY - thingDrag.y) < 4 && !thingDrag.moved)) return
+        thingDrag.moved = true
+        if (thingDrag.pending) return
+        const {origin, dir} = rayAt(e.clientX, e.clientY)
+        thingDrag.pending = true
+        send(encode.move(thingDrag.first, selected.file, selected.index, origin, dir))
+        thingDrag.first = false
+    })
+    window.addEventListener('mouseup', () => {
+        if (!thingDrag) return
+        const moved = thingDrag.moved
+        thingDrag = null
+        if (moved) {
+            send(encode.strokeEnd())
+            suppressClick = true
+        }
+    })
+    let suppressClick = false
+    canvas.addEventListener('click', e => {
+        if (suppressClick) {
+            suppressClick = false
+            e.stopImmediatePropagation()
+        }
+    }, true)
 
     function showState(st) {
         $('undo').disabled = !st.undo
@@ -365,9 +480,14 @@
             }
             showNotes()
         } else if (msg.kind === 'objects' && objects) {
-            objects.notes = []
             objects.set(msg)
             showNotes()
+        } else if (msg.kind === 'instances' && objects) {
+            objects.setInstances(msg.models)
+            // What's picked, where it is now (an edit moves the instances).
+            const found = selected && objects.find(selected.file, selected.index)
+            if (selected && !found) selected = null
+            objects.select(found ? found.model : -1, found ? found.instance : -1)
             if (!drawnSaid) {
                 drawnSaid = true
                 requestAnimationFrame(() => vscode.postMessage({
@@ -407,8 +527,12 @@
             showPalette(msg)
         } else if (msg.kind === 'state') {
             if (stroke) stroke.pending = false
+            if (thingDrag) thingDrag.pending = false
             showState(msg)
+        } else if (msg.kind === 'objectPalette') {
+            showObjectPalette(msg.entries)
         } else if (msg.kind === 'picked' && objects) {
+            selected = msg.found ? {file: msg.file, index: msg.index} : null
             objects.select(msg.found ? msg.model : -1, msg.found ? msg.instance : -1)
             $('status').textContent = msg.found ? msg.text : ''
             vscode.postMessage({type: 'picked', text: msg.found ? msg.text : ''})
@@ -447,6 +571,23 @@
                 send(encode.brush(i === 0, origin, dir, brush))
             })
             send(encode.strokeEnd())
+        } else if (msg.type === 'place') {
+            // A type placed at a point of the view: for the tests.
+            const r = canvas.getBoundingClientRect()
+            const {origin, dir} = camera.ray(msg.x, msg.y, r.width / r.height)
+            send(encode.place(msg.kind, msg.id, msg.player ?? 0, origin, dir))
+        } else if (msg.type === 'drag') {
+            // The thing picked dragged to a point of the view: for the tests.
+            if (!selected) return
+            const r = canvas.getBoundingClientRect()
+            const {origin, dir} = camera.ray(msg.x, msg.y, r.width / r.height)
+            send(encode.move(true, selected.file, selected.index, origin, dir))
+            send(encode.strokeEnd())
+        } else if (msg.type === 'rotate' && selected) {
+            send(encode.rotate(selected.file, selected.index, msg.delta))
+        } else if (msg.type === 'delete' && selected) {
+            send(encode.delete(selected.file, selected.index))
+            selected = null
         } else if (msg.type === 'undo' || msg.type === 'redo' || msg.type === 'save') {
             send(encode[msg.type]())
         } else if (msg.type === 'show') {

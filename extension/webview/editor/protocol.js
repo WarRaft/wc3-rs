@@ -26,6 +26,12 @@ const EditorProtocol = (() => {
         SAVE: 7,
         PALETTE: 137,
         STATE: 138,
+        PLACE: 8,
+        MOVE: 9,
+        ROTATE: 10,
+        DELETE: 11,
+        INSTANCES: 139,
+        OBJECT_PALETTE: 140,
     }
 
     /** The tools by their code (`edit::TOOLS`). */
@@ -166,6 +172,37 @@ const EditorProtocol = (() => {
         undo: () => new Writer().frame(KIND.UNDO),
         redo: () => new Writer().frame(KIND.REDO),
         save: () => new Writer().frame(KIND.SAVE),
+        /** A thing placed: kind (0 doodad, 1 destructable, 2 unit, 3 item), type id, player, the ray. */
+        place(kind, id, player, origin, dir) {
+            const w = new Writer()
+            w.u8(kind)
+            w.string(id)
+            w.u32(player)
+            for (const v of [...origin, ...dir]) w.f32(v)
+            return w.frame(KIND.PLACE)
+        },
+        /** Thing `index` of `file` moved where the ray meets the ground; `start` a drag's first. */
+        move(start, file, index, origin, dir) {
+            const w = new Writer()
+            w.u8(start ? 1 : 0)
+            w.u8(file)
+            w.u32(index)
+            for (const v of [...origin, ...dir]) w.f32(v)
+            return w.frame(KIND.MOVE)
+        },
+        rotate(file, index, delta) {
+            const w = new Writer()
+            w.u8(file)
+            w.u32(index)
+            w.f32(delta)
+            return w.frame(KIND.ROTATE)
+        },
+        delete(file, index) {
+            const w = new Writer()
+            w.u8(file)
+            w.u32(index)
+            return w.frame(KIND.DELETE)
+        },
     }
 
     /**
@@ -235,6 +272,8 @@ const EditorProtocol = (() => {
                 return {kind: 'cliffs', size, count, rgba, textures, meshes, notes: r.list(r => r.string())}
             }
             case KIND.OBJECTS: {
+                const firstTexture = r.u32()
+                const firstModel = r.u32()
                 const textures = r.list(r => ({path: r.string(), width: r.u32(), height: r.u32(), rgba: r.bytes(), error: r.string()}))
                 const models = r.list(r => ({
                     path: r.string(),
@@ -250,10 +289,10 @@ const EditorProtocol = (() => {
                     instances: r.f32s(),
                     error: r.string(),
                 }))
-                return {kind: 'objects', textures, models, notes: r.list(r => r.string())}
+                return {kind: 'objects', firstTexture, firstModel, textures, models, notes: r.list(r => r.string())}
             }
             case KIND.PICKED: {
-                const m = {kind: 'picked', found: r.u8() !== 0, model: r.u32(), instance: r.u32(), text: r.string()}
+                const m = {kind: 'picked', found: r.u8() !== 0, model: r.u32(), instance: r.u32(), file: r.u8(), index: r.u32(), text: r.string()}
                 const on = r.u8() !== 0
                 const p = [r.f32(), r.f32(), r.f32()]
                 return {...m, ground: on ? p : null}
@@ -276,6 +315,10 @@ const EditorProtocol = (() => {
                 const entry = r => ({id: r.string(), name: r.string(), icon: {width: r.u32(), height: r.u32(), rgba: r.bytes()}})
                 return {kind: 'palette', grounds: r.list(entry), cliffs: r.list(entry)}
             }
+            case KIND.INSTANCES:
+                return {kind: 'instances', models: r.list(r => r.f32s())}
+            case KIND.OBJECT_PALETTE:
+                return {kind: 'objectPalette', entries: r.list(r => ({kind: r.u8(), id: r.string(), name: r.string(), group: r.string(), custom: r.u8() !== 0}))}
             case KIND.STATE:
                 return {kind: 'state', dirty: r.u8() !== 0, undo: r.u8() !== 0, redo: r.u8() !== 0, message: r.string()}
             default:

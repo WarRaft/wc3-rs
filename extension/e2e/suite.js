@@ -142,6 +142,33 @@ async function steps() {
     const saved = await until(() => we.state?.message && we.state, 'saved')
     check(!saved.dirty && /^Saved .*map\.w3x.war3map\.w3e$/.test(saved.message), saved.message)
     check(fs.statSync(map).mtimeMs > stamp0 && !we.panel.title.startsWith('● '), 'the map on disk written, the tab clean')
+
+    log('things placed: a footman placed, picked, turned, dragged, deleted and back, saved into the map')
+    await we.panel.webview.postMessage({type: 'look', x: 40, y: 40, distance: 12, horizontal: 0, vertical: -1.5})
+    await sleep(300)
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'place', kind: 2, id: 'hfoo', player: 1, x: 0, y: 0})
+    await until(() => we.state?.undo && we.state.dirty, 'placed')
+    we.picked = undefined
+    await we.panel.webview.postMessage({type: 'click', x: 0, y: 0})
+    const footman = await until(() => we.picked !== undefined && we.picked, 'the footman picked')
+    check(/^Footman \(hfoo\) · Player 2 · .* war3mapUnits\.doo #\d+/.test(footman), `picked: ${footman}`)
+    await shot('world-editor-placed')
+    for (const m of [{type: 'rotate', delta: Math.PI / 2}, {type: 'drag', x: 0.2, y: 0}, {type: 'delete'}]) {
+        we.state = undefined
+        await we.panel.webview.postMessage(m)
+        await until(() => we.state, m.type)
+        check(!we.state.message, `${m.type}: done`)
+    }
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'undo'})
+    await until(() => we.state?.redo, 'the delete undone')
+    const stamp1 = fs.statSync(map).mtimeMs
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'save'})
+    const savedUnits = await until(() => we.state?.message && we.state, 'saved')
+    check(!savedUnits.dirty && /^Saved .*map\.w3x.war3mapUnits\.doo$/.test(savedUnits.message), savedUnits.message)
+    check(fs.statSync(map).mtimeMs > stamp1, 'the map on disk written')
     await vscode.commands.executeCommand('wc3.editor.close', {root})
     check(!api.worldEditors.has(root), 'closed: no editor of the project')
     await vscode.commands.executeCommand('workbench.action.closeAllEditors')

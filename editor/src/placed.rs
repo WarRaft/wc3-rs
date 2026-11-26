@@ -107,6 +107,11 @@ pub struct Objects {
     pub textures: Vec<Texture>,
     pub things: Vec<Thing>,
     pub notes: Vec<String>,
+    /// The models read, by path and replaceable texture (`None`: not
+    /// there); the textures read, by path; the players' colours.
+    model_of: HashMap<ModelKey, Option<usize>>,
+    texture_of: HashMap<String, usize>,
+    colors: HashMap<u32, [f32; 3]>,
 }
 
 /// `path` as the game reads a model: `.mdl` as `.mdx`, `.mdx` added to a
@@ -187,117 +192,150 @@ struct Place {
     player: Option<u32>,
 }
 
+/// What a map places, its files read: `war3map.doo` (doodads and
+/// destructables) and `war3mapUnits.doo` (units and items); what the
+/// editor changes.
+#[derive(Debug, Clone, Default)]
+pub struct Files {
+    pub doodads: Option<doo_rs::Doodads>,
+    pub units: Option<doo_rs::Units>,
+    /// The layout the map's `war3map.w3i` says (1.32's skins), for new
+    /// files.
+    pub layout: doo_rs::Layout,
+}
+
+impl Files {
+    /// The files through `game`, and what couldn't be read.
+    pub fn read(game: &Game) -> (Files, Vec<String>) {
+        let mut notes = Vec::new();
+        let layout = game.read("war3map.w3i").and_then(|(b, _)| doo_rs::Layout::from_w3i(&b));
+        let doodads = game.read("war3map.doo").and_then(|(bytes, _)| {
+            match layout.map_or_else(|| doo_rs::parse_doodads_any(&bytes), |l| doo_rs::parse_doodads(&bytes, l)) {
+                Ok(d) => Some(d),
+                Err(e) => {
+                    notes.push(format!("Can't read war3map.doo: {e}"));
+                    None
+                }
+            }
+        });
+        let units = game.read("war3mapUnits.doo").and_then(|(bytes, _)| {
+            match layout.map_or_else(|| doo_rs::parse_units_any(&bytes), |l| doo_rs::parse_units(&bytes, l)) {
+                Ok(u) => Some(u),
+                Err(e) => {
+                    notes.push(format!("Can't read war3mapUnits.doo: {e}"));
+                    None
+                }
+            }
+        });
+        (Files { doodads, units, layout: layout.unwrap_or_default() }, notes)
+    }
+}
+
 impl Objects {
     /// What `game` places on the terrain `draw` (heights for what stands
     /// on the ground), with `types`.
     pub fn load(game: &Game, types: &Types, draw: &Draw) -> Objects {
+        let (files, notes) = Files::read(game);
         let mut out = Objects::default();
-        let layout = game.read("war3map.w3i").and_then(|(b, _)| doo_rs::Layout::from_w3i(&b));
+        out.place(game, types, draw, &files);
+        out.notes.splice(0..0, notes);
+        out
+    }
+
+    /// Everything placed again from `files` on `draw`: each thing where
+    /// it is now, a model or texture not read yet read (the ones read
+    /// kept, so a change costs what it changes).
+    pub fn place(&mut self, game: &Game, types: &Types, draw: &Draw, files: &Files) {
+        self.things.clear();
+        self.notes.clear();
+        for m in &mut self.models {
+            m.instances.clear();
+        }
         let mut places = Vec::new();
         let mut unknown: HashMap<String, usize> = HashMap::new();
-
-        if let Some((bytes, _)) = game.read("war3map.doo") {
-            match layout.map_or_else(|| doo_rs::parse_doodads_any(&bytes), |l| doo_rs::parse_doodads(&bytes, l)) {
-                Err(e) => out.notes.push(format!("Can't read war3map.doo: {e}")),
-                Ok(doo) => {
-                    for (index, d) in doo.doodads.iter().enumerate() {
-                        let p = &d.placement;
-                        let id = p.id.to_string();
-                        let Some(found) = model_of(types, p.id, p.variation, false) else {
-                            *unknown.entry(id).or_default() += 1;
-                            continue;
-                        };
-                        let Some(paths) = found.paths else { continue };
-                        let kind = found.kind;
-                        let replaceable = found.replaceable;
-                        let tint = if kind == Kind::Doodad {
-                            let v = p.variation + 1;
-                            let c = |k: &str| types.number(Kind::Doodad, &id, &format!("vert{k}{v}")).unwrap_or(255.0) / 255.0;
-                            [c("R"), c("G"), c("B")]
-                        } else {
-                            let c = |k: &str| types.number(Kind::Destructable, &id, &format!("color{k}")).unwrap_or(255.0) / 255.0;
-                            [c("R"), c("G"), c("B")]
-                        };
-                        let scale = if kind == Kind::Doodad { types.number(Kind::Doodad, &id, "defScale").unwrap_or(1.0) } else { 1.0 };
-                        places.push(Place {
-                            kind,
-                            id: p.id,
-                            index,
-                            paths,
-                            replaceable,
-                            world: [p.x, p.y, p.z],
-                            on_ground: false,
-                            angle: p.angle,
-                            scale: p.scale.map(|s| s * scale),
-                            tint,
-                            player: None,
-                        });
-                    }
-                }
-            }
+        for (index, d) in files.doodads.iter().flat_map(|d| d.doodads.iter().enumerate()) {
+            let p = &d.placement;
+            let id = p.id.to_string();
+            let Some(found) = model_of(types, p.id, p.variation, false) else {
+                *unknown.entry(id).or_default() += 1;
+                continue;
+            };
+            let Some(paths) = found.paths else { continue };
+            let kind = found.kind;
+            let tint = if kind == Kind::Doodad {
+                let v = p.variation + 1;
+                let c = |k: &str| types.number(Kind::Doodad, &id, &format!("vert{k}{v}")).unwrap_or(255.0) / 255.0;
+                [c("R"), c("G"), c("B")]
+            } else {
+                let c = |k: &str| types.number(Kind::Destructable, &id, &format!("color{k}")).unwrap_or(255.0) / 255.0;
+                [c("R"), c("G"), c("B")]
+            };
+            let scale = if kind == Kind::Doodad { types.number(Kind::Doodad, &id, "defScale").unwrap_or(1.0) } else { 1.0 };
+            places.push(Place {
+                kind,
+                id: p.id,
+                index,
+                paths,
+                replaceable: found.replaceable,
+                world: [p.x, p.y, p.z],
+                on_ground: false,
+                angle: p.angle,
+                scale: p.scale.map(|s| s * scale),
+                tint,
+                player: None,
+            });
         }
-        if let Some((bytes, _)) = game.read("war3mapUnits.doo") {
-            match layout.map_or_else(|| doo_rs::parse_units_any(&bytes), |l| doo_rs::parse_units(&bytes, l)) {
-                Err(e) => out.notes.push(format!("Can't read war3mapUnits.doo: {e}")),
-                Ok(units) => {
-                    for (index, u) in units.units.iter().enumerate() {
-                        let p = &u.placement;
-                        let id = p.id.to_string();
-                        let Some(found) = model_of(types, p.id, 0, true) else {
-                            *unknown.entry(id).or_default() += 1;
-                            continue;
-                        };
-                        let (kind, Some(paths)) = (found.kind, found.paths) else { continue };
-                        let (scale, tint) = if kind == Kind::Unit {
-                            let c = |k: &str| types.number(kind, &id, k).unwrap_or(255.0) / 255.0;
-                            (types.number(kind, &id, "modelScale").unwrap_or(1.0), [c("red"), c("green"), c("blue")])
-                        } else {
-                            (types.number(kind, &id, "scale").unwrap_or(1.0), [1.0; 3])
-                        };
-                        places.push(Place {
-                            kind,
-                            id: p.id,
-                            index,
-                            paths,
-                            replaceable: None,
-                            world: [p.x, p.y, p.z],
-                            on_ground: true,
-                            angle: p.angle,
-                            scale: [scale; 3],
-                            tint,
-                            player: (kind == Kind::Unit).then_some(u.player),
-                        });
-                    }
-                }
-            }
+        for (index, u) in files.units.iter().flat_map(|u| u.units.iter().enumerate()) {
+            let p = &u.placement;
+            let id = p.id.to_string();
+            let Some(found) = model_of(types, p.id, 0, true) else {
+                *unknown.entry(id).or_default() += 1;
+                continue;
+            };
+            let (kind, Some(paths)) = (found.kind, found.paths) else { continue };
+            let (scale, tint) = if kind == Kind::Unit {
+                let c = |k: &str| types.number(kind, &id, k).unwrap_or(255.0) / 255.0;
+                (types.number(kind, &id, "modelScale").unwrap_or(1.0), [c("red"), c("green"), c("blue")])
+            } else {
+                (types.number(kind, &id, "scale").unwrap_or(1.0), [1.0; 3])
+            };
+            places.push(Place {
+                kind,
+                id: p.id,
+                index,
+                paths,
+                replaceable: None,
+                world: [p.x, p.y, p.z],
+                on_ground: true,
+                angle: p.angle,
+                scale: [scale; 3],
+                tint,
+                player: (kind == Kind::Unit).then_some(u.player),
+            });
         }
         let mut unknown: Vec<_> = unknown.into_iter().collect();
         unknown.sort();
         if !unknown.is_empty() {
             let list: Vec<String> = unknown.iter().map(|(id, n)| if *n > 1 { format!("{id} ({n})") } else { id.clone() }).collect();
-            out.notes.push(format!("Not drawn, types the game's tables and the map's object data don't have: {}", list.join(", ")));
+            self.notes.push(format!("Not drawn, types the game's tables and the map's object data don't have: {}", list.join(", ")));
         }
 
-        // The players' colours, from their team colour textures.
-        let mut colors: HashMap<u32, [f32; 3]> = HashMap::new();
-        let mut color = |player: u32| -> [f32; 3] {
-            *colors.entry(player).or_insert_with(|| {
-                crate::textures::average(game, &format!("ReplaceableTextures\\TeamColor\\TeamColor{player:02}.blp"))
-                    .map_or([0.5; 3], |c| c.map(|v| v as f32 / 255.0))
-            })
-        };
-
-        let mut model_of: HashMap<ModelKey, Option<usize>> = HashMap::new();
-        let mut texture_of: HashMap<String, usize> = HashMap::new();
         let mut missing: Vec<String> = Vec::new();
         for place in places {
             let key = (place.paths[0].to_ascii_lowercase(), place.replaceable.clone());
-            let model = *model_of.entry(key).or_insert_with(|| {
-                let (path, bytes) = place.paths.iter().find_map(|p| game.read(p).map(|(b, _)| (p.clone(), b)))?;
-                let m = load_model(&path, &bytes, place.replaceable.as_ref(), game, &mut out.textures, &mut texture_of);
-                out.models.push(m);
-                Some(out.models.len() - 1)
-            });
+            let model = match self.model_of.get(&key) {
+                Some(m) => *m,
+                None => {
+                    let found = place.paths.iter().find_map(|p| game.read(p).map(|(b, _)| (p.clone(), b)));
+                    let m = found.map(|(path, bytes)| {
+                        let m = load_model(&path, &bytes, place.replaceable.as_ref(), game, &mut self.textures, &mut self.texture_of);
+                        self.models.push(m);
+                        self.models.len() - 1
+                    });
+                    self.model_of.insert(key, m);
+                    m
+                }
+            };
             let Some(model) = model else {
                 if !missing.contains(&place.paths[0]) {
                     missing.push(place.paths[0].clone());
@@ -306,18 +344,23 @@ impl Objects {
             };
             let [x, y] = [(place.world[0] - draw.offset[0]) / 128.0, (place.world[1] - draw.offset[1]) / 128.0];
             let z = if place.on_ground { ground_at(draw, x, y) } else { place.world[2] / 128.0 };
-            let team = place.player.map_or([1.0; 3], &mut color);
+            let team = match place.player {
+                Some(player) => *self.colors.entry(player).or_insert_with(|| {
+                    crate::textures::average(game, &format!("ReplaceableTextures\\TeamColor\\TeamColor{player:02}.blp"))
+                        .map_or([0.5; 3], |c| c.map(|v| v as f32 / 255.0))
+                }),
+                None => [1.0; 3],
+            };
             let kind = PLACED_CODES.iter().position(|k| *k == place.kind).unwrap_or(0) as f32;
-            let m = &mut out.models[model];
+            let m = &mut self.models[model];
             let instance = m.instances.len() / INSTANCE;
             let s = place.scale.map(|v| v / 128.0);
             m.instances.extend([x, y, z, place.angle, s[0], s[1], s[2], place.tint[0], place.tint[1], place.tint[2], team[0], team[1], team[2], kind, place.index as f32, 0.0]);
-            out.things.push(Thing { kind: place.kind, id: place.id, index: place.index, player: place.player, world: place.world, model, instance });
+            self.things.push(Thing { kind: place.kind, id: place.id, index: place.index, player: place.player, world: place.world, model, instance });
         }
         if !missing.is_empty() {
-            out.notes.push(format!("Models not in the game's files or the roots: {}", missing.join(", ")));
+            self.notes.push(format!("Models not in the game's files or the roots: {}", missing.join(", ")));
         }
-        out
     }
 
     /// What the ray from `origin` along `dir` (cells, layers) meets

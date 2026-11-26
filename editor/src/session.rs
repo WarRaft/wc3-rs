@@ -8,7 +8,7 @@ use wc3_server::game::{Game, Lookup};
 use wc3_server::names::Names;
 use wc3_server::project::{self, Project};
 
-use crate::protocol::{CliffsMsg, GroundMsg, MapInfo, ObjectsMsg, PaletteEntry, PaletteMsg, PickedMsg, ServerMsg, StateMsg, WaterMsg};
+use crate::protocol::{CliffsMsg, GroundMsg, MapInfo, ObjectEntry, ObjectsMsg, PaletteEntry, PaletteMsg, PickedMsg, ServerMsg, StateMsg, WaterMsg};
 use crate::terrain::{Draw, Grounds};
 use crate::tileset::Tileset;
 
@@ -34,6 +34,13 @@ pub struct Session {
     ground_cache: Option<(Vec<parser_rs::bin::Rawcode>, Grounds, Vec<crate::textures::GroundTexture>, crate::textures::Layers)>,
     /// Files read (the cliffs' models), by path in lower case.
     files: std::collections::HashMap<String, Option<Vec<u8>>>,
+    /// What's placed, as its files have it (and the edits change it).
+    pub placed: crate::placed::Files,
+    /// The types of what's placed, once read.
+    types: Option<crate::types::Types>,
+    /// The models and textures the page has (the ones after are new);
+    /// `None` before it has any.
+    sent: Option<(usize, usize)>,
     /// What was read with a problem, gone past.
     pub notes: Vec<String>,
 }
@@ -93,6 +100,9 @@ impl Session {
             edits: Default::default(),
             ground_cache: None,
             files: Default::default(),
+            placed: Default::default(),
+            types: None,
+            sent: None,
             notes,
         })
     }
@@ -194,19 +204,51 @@ impl Session {
         // Water before the cliffs and the terrain, after the ground.
         terrain.insert(1, ServerMsg::Water(water));
         let draw = self.drawn.clone().expect("drawn just now");
-        let types = crate::types::Types::load(&self.game);
-        let objects = crate::placed::Objects::load(&self.game, &types, &draw);
-        let objects_msg = ObjectsMsg { textures: objects.textures.clone(), models: objects.models.clone(), notes: objects.notes.clone() };
+        if self.types.is_none() {
+            let (files, notes) = crate::placed::Files::read(&self.game);
+            self.placed = files;
+            self.notes.extend(notes);
+            self.types = Some(crate::types::Types::load(&self.game));
+        }
+        // All of it again: the page (re)loaded.
+        self.objects = None;
+        self.sent = None;
+        let objects_msg = self.place_objects();
+        let objects = self.objects.as_ref().unwrap();
         let (_, grounds, textures, layers) = self.ground_cache.as_ref().unwrap();
         let minimap = crate::picture::paint(&self.terrain, grounds, textures, layers, &draw, self.tileset.water.as_ref(), 1);
-        let overlays = crate::overlays::Overlays::load(&self.game, &self.terrain, &draw, &objects, minimap);
-        self.objects = Some(objects);
+        let overlays = crate::overlays::Overlays::load(&self.game, &self.terrain, &draw, objects, minimap);
         self.overlays = Some(overlays.clone());
-        terrain.push(ServerMsg::Objects(objects_msg));
+        terrain.extend(objects_msg);
         terrain.push(ServerMsg::Overlays(overlays));
         terrain.push(ServerMsg::Palette(self.palette()));
+        terrain.push(ServerMsg::ObjectPalette(self.object_palette()));
         terrain.push(ServerMsg::State(self.state(String::new())));
         terrain
+    }
+
+    /// Everything placed, placed again on the terrain as it is: the
+    /// models and textures the page hasn't (`Objects`), then where each
+    /// stands (`Instances`).
+    fn place_objects(&mut self) -> Vec<ServerMsg> {
+        let draw = self.drawn.clone().expect("the terrain drawn first");
+        let types = self.types.get_or_insert_with(|| crate::types::Types::load(&self.game));
+        let objects = self.objects.get_or_insert_with(Default::default);
+        objects.place(&self.game, types, &draw, &self.placed);
+        let (models, textures) = self.sent.unwrap_or((0, 0));
+        let mut out = Vec::new();
+        if objects.models.len() > models || objects.textures.len() > textures || self.sent.is_none() {
+            out.push(ServerMsg::Objects(ObjectsMsg {
+                first_texture: textures as u32,
+                first_model: models as u32,
+                textures: objects.textures[textures..].to_vec(),
+                models: objects.models[models..].iter().map(|m| crate::placed::Model { instances: Vec::new(), ..m.clone() }).collect(),
+                notes: objects.notes.clone(),
+            }));
+            self.sent = Some((objects.models.len(), objects.textures.len()));
+        }
+        out.push(ServerMsg::Instances(objects.models.iter().map(|m| m.instances.clone()).collect()));
+        out
     }
 
     /// What the terrain palette offers: the tileset's ground textures
@@ -244,7 +286,7 @@ impl Session {
 
     /// The edits' state, with `message` (what a save or a brush said).
     pub fn state(&self, message: String) -> StateMsg {
-        StateMsg { dirty: self.edits.dirty, undo: self.edits.can_undo(), redo: self.edits.can_redo(), message }
+        StateMsg { dirty: self.edits.dirty.any(), undo: self.edits.can_undo(), redo: self.edits.can_redo(), message }
     }
 
     /// A brush laid where the ray meets the ground: the terrain worked
@@ -256,6 +298,8 @@ impl Session {
         match self.edits.apply(&mut self.terrain, x, y, brush, start) {
             Ok(()) => {
                 let mut out = self.terrain_msgs(false);
+                // What stands on the ground stands on it as it is now.
+                out.extend(self.place_objects());
                 out.push(ServerMsg::State(self.state(String::new())));
                 out
             }
@@ -270,8 +314,15 @@ impl Session {
 
     /// Undo (or redo): the terrain as it was, worked out again.
     pub fn undo(&mut self, redo: bool) -> Vec<ServerMsg> {
-        let done = if redo { self.edits.redo(&mut self.terrain) } else { self.edits.undo(&mut self.terrain) };
-        let mut out = if done { self.terrain_msgs(false) } else { Vec::new() };
+        let target = crate::edit::Target { terrain: &mut self.terrain, files: &mut self.placed };
+        let done = if redo { self.edits.redo(target) } else { self.edits.undo(target) };
+        let mut out = Vec::new();
+        if let Some(what) = done {
+            if matches!(what, crate::edit::Snapshot::Terrain(..)) {
+                out.extend(self.terrain_msgs(false));
+            }
+            out.extend(self.place_objects());
+        }
         out.push(ServerMsg::State(self.state(String::new())));
         out
     }
@@ -280,23 +331,46 @@ impl Session {
     /// into the root map; a terrain only the game has, into the top root.
     /// Where it went, or why it didn't.
     pub fn save(&mut self) -> Vec<ServerMsg> {
-        let message = match self.write_terrain() {
-            Ok(to) => {
-                self.edits.dirty = false;
-                format!("Saved {}", to.display())
+        let dirty = self.edits.dirty;
+        let mut saved = Vec::new();
+        let mut failed = Vec::new();
+        let files: [FileToSave; 3] = [
+            (dirty.terrain, "war3map.w3e", self.terrain.to_bytes().map_err(|e| e.to_string())),
+            (dirty.doodads, "war3map.doo", self.placed.doodads.as_ref().map_or(Ok(Vec::new()), |d| d.to_bytes().map_err(|e| e.to_string()))),
+            (dirty.units, "war3mapUnits.doo", self.placed.units.as_ref().map_or(Ok(Vec::new()), |u| u.to_bytes().map_err(|e| e.to_string()))),
+        ];
+        for (i, (changed, name, bytes)) in files.into_iter().enumerate() {
+            if !changed {
+                continue;
             }
-            Err(e) => format!("Not saved: {e}"),
+            match bytes.and_then(|b| self.write_file(name, b)) {
+                Ok(to) => {
+                    saved.push(to.display().to_string());
+                    match i {
+                        0 => self.edits.dirty.terrain = false,
+                        1 => self.edits.dirty.doodads = false,
+                        _ => self.edits.dirty.units = false,
+                    }
+                }
+                Err(e) => failed.push(format!("{name}: {e}")),
+            }
+        }
+        let message = match (saved.is_empty(), failed.is_empty()) {
+            (_, false) => format!("Not saved: {}", failed.join("; ")),
+            (true, true) => "Nothing to save.".to_string(),
+            (false, true) => format!("Saved {}", saved.join(", ")),
         };
         vec![ServerMsg::State(self.state(message))]
     }
 
-    fn write_terrain(&self) -> Result<PathBuf, String> {
-        const NAME: &str = "war3map.w3e";
-        let bytes = self.terrain.to_bytes().map_err(|e| e.to_string())?;
+    /// Writes `bytes` as the map's file `name` where it came from: a root
+    /// folder's file, or into the root map; one only the game has (or
+    /// none has), into the top root. Where it went.
+    fn write_file(&self, name: &str, bytes: Vec<u8>) -> Result<PathBuf, String> {
         let roots: Vec<PathBuf> = self.project.roots.iter().map(|r| project::normalize(r)).collect();
-        let source = self.game.read(NAME).map(|(_, s)| s);
+        let source = self.game.read(name).map(|(_, s)| s);
         let into_map = |map: &Path| -> Result<PathBuf, String> {
-            let path = map.join(NAME);
+            let path = map.join(name);
             wc3_server::mapfs::MapFs::default().write(&path, bytes.clone(), true, true).map_err(|e| format!("{}: {e:?}", path.display()))?;
             Ok(path)
         };
@@ -304,7 +378,7 @@ impl Session {
             if wc3_server::map::is_map_name(root) {
                 into_map(root)
             } else {
-                let path = root.join(NAME);
+                let path = root.join(name);
                 std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
                 Ok(path)
             }
@@ -317,6 +391,139 @@ impl Session {
             Some(wc3_server::game::Source::Archive(map)) if roots.contains(&project::normalize(&map)) => into_map(&map),
             _ => into_root(roots.last().ok_or("the project has no root")?),
         }
+    }
+
+    /// What the object palette offers: every type of doodad, destructable,
+    /// unit and item, the game's and the map's (its object data), with
+    /// its name and group (a unit's race, a doodad's or destructable's
+    /// category, an item's class); those World Editor hides left out.
+    pub fn object_palette(&self) -> Vec<ObjectEntry> {
+        let types = self.types.as_ref();
+        let mut out = Vec::new();
+        for (code, kind) in crate::placed::PLACED_CODES.iter().enumerate() {
+            let Some(objects) = self.names.objects.of.get(kind) else { continue };
+            for (id, named) in objects {
+                let get = |k: &str| types.and_then(|t| t.get(*kind, id, k)).unwrap_or_default().to_string();
+                if get("hiddenInEditor") == "1" || get("inEditor") == "0" {
+                    continue;
+                }
+                let group = match kind {
+                    w3abdhqtu_rs::Kind::Unit => get("race"),
+                    w3abdhqtu_rs::Kind::Item => get("class"),
+                    _ => get("category"),
+                };
+                out.push(ObjectEntry { kind: code as u8, id: id.clone(), name: named.shown(), group, custom: named.custom });
+            }
+        }
+        out
+    }
+
+    /// The ground's point a ray meets, in the game's units.
+    fn ground_point(&self, origin: [f32; 3], dir: [f32; 3]) -> Option<[f32; 3]> {
+        let d = self.drawn.as_ref()?;
+        let [x, y, z] = crate::overlays::ground_hit(d, origin, dir)?;
+        Some([d.offset[0] + x * 128.0, d.offset[1] + y * 128.0, z * 128.0])
+    }
+
+    /// An edit of what's placed in file `file` (0 `war3map.doo`, 1
+    /// `war3mapUnits.doo`): its state recorded for undo, `change` made,
+    /// everything placed again.
+    fn things_edit(&mut self, file: u8, change: impl FnOnce(&mut crate::placed::Files) -> Result<(), String>) -> Vec<ServerMsg> {
+        let layout = self.placed.layout;
+        let before = if file == 0 {
+            crate::edit::Snapshot::Doodads(self.placed.doodads.get_or_insert_with(|| crate::edit::new_doodads(layout)).doodads.clone())
+        } else {
+            crate::edit::Snapshot::Units(self.placed.units.get_or_insert_with(|| crate::edit::new_units(layout)).units.clone())
+        };
+        let mut probe = self.placed.clone();
+        if let Err(message) = change(&mut probe) {
+            return vec![ServerMsg::State(self.state(message))];
+        }
+        self.edits.record(before);
+        self.placed = probe;
+        let mut out = self.place_objects();
+        out.push(ServerMsg::State(self.state(String::new())));
+        out
+    }
+
+    /// A thing of type `id` (`kind`: 0 doodad, 1 destructable, 2 unit, 3
+    /// item) placed where the ray meets the ground, facing 270° as World
+    /// Editor places them; a unit owned by `player`; a doodad a variation
+    /// of its type's, by chance.
+    pub fn place(&mut self, kind: u8, id: &str, player: u32, origin: [f32; 3], dir: [f32; 3]) -> Vec<ServerMsg> {
+        let Some([x, y, z]) = self.ground_point(origin, dir) else { return vec![ServerMsg::State(self.state(String::new()))] };
+        let Some(code) = parser_rs::bin::Rawcode::parse(id) else { return vec![ServerMsg::State(self.state(format!("{id} isn't a type id")))] };
+        let file = if kind < 2 { 0 } else { 1 };
+        let k = crate::placed::PLACED_CODES.get(kind as usize).copied().unwrap_or(w3abdhqtu_rs::Kind::Doodad);
+        let variations = self.types.as_ref().and_then(|t| t.number(k, id, "numVar")).unwrap_or(1.0).max(1.0) as u32;
+        let variation = ((x.abs() as u32).wrapping_mul(31).wrapping_add(y.abs() as u32)) % variations;
+        let angle = 270f32.to_radians();
+        self.things_edit(file, |files| {
+            if file == 0 {
+                let list = &mut files.doodads.as_mut().unwrap().doodads;
+                let mut placement = doo_rs::Placement::new(code, x, y);
+                (placement.z, placement.angle, placement.variation) = (z, angle, variation);
+                let number = list.iter().map(|d| d.number).max().unwrap_or(-1) + 1;
+                list.push(doo_rs::Doodad { placement, flags: 2, life: 100, item_table: -1, item_sets: Vec::new(), number });
+            } else {
+                let list = &mut files.units.as_mut().unwrap().units;
+                let mut unit = doo_rs::Unit::new(code, x, y, if kind == 3 { 15 } else { player });
+                (unit.placement.z, unit.placement.angle) = (z, angle);
+                unit.number = list.iter().map(|u| u.number).max().unwrap_or(-1) + 1;
+                list.push(unit);
+            }
+            Ok(())
+        })
+    }
+
+    /// Thing `index` of `file` moved to where the ray meets the ground;
+    /// `start`: a drag's first, which is what undo goes back to (the
+    /// steps after it change what the first recorded).
+    pub fn move_thing(&mut self, file: u8, index: u32, origin: [f32; 3], dir: [f32; 3], start: bool) -> Vec<ServerMsg> {
+        let Some([x, y, z]) = self.ground_point(origin, dir) else { return vec![ServerMsg::State(self.state(String::new()))] };
+        let set = move |files: &mut crate::placed::Files| -> Result<(), String> {
+            let p = placement(files, file, index)?;
+            (p.x, p.y) = (x, y);
+            if file == 0 {
+                p.z = z;
+            }
+            Ok(())
+        };
+        if start {
+            return self.things_edit(file, set);
+        }
+        if let Err(message) = set(&mut self.placed) {
+            return vec![ServerMsg::State(self.state(message))];
+        }
+        let mut out = self.place_objects();
+        out.push(ServerMsg::State(self.state(String::new())));
+        out
+    }
+
+    /// Thing `index` of `file` turned by `delta` radians.
+    pub fn rotate(&mut self, file: u8, index: u32, delta: f32) -> Vec<ServerMsg> {
+        self.things_edit(file, |files| {
+            let p = placement(files, file, index)?;
+            p.angle = (p.angle + delta).rem_euclid(std::f32::consts::TAU);
+            Ok(())
+        })
+    }
+
+    /// Thing `index` of `file` taken away: the ones after it move up.
+    pub fn delete(&mut self, file: u8, index: u32) -> Vec<ServerMsg> {
+        self.things_edit(file, |files| {
+            let i = index as usize;
+            let len = if file == 0 { files.doodads.as_ref().map_or(0, |d| d.doodads.len()) } else { files.units.as_ref().map_or(0, |u| u.units.len()) };
+            if i >= len {
+                return Err(format!("no thing {index} to delete"));
+            }
+            if file == 0 {
+                files.doodads.as_mut().unwrap().doodads.remove(i);
+            } else {
+                files.units.as_mut().unwrap().units.remove(i);
+            }
+            Ok(())
+        })
     }
 
     /// What a ray from the camera meets first, said.
@@ -346,6 +553,8 @@ impl Session {
             found: true,
             model: t.model as u32,
             instance: t.instance as u32,
+            file: if matches!(t.kind, w3abdhqtu_rs::Kind::Doodad | w3abdhqtu_rs::Kind::Destructable) { 0 } else { 1 },
+            index: t.index as u32,
             text: format!(
                 "{name} ({id}) · {what} · ({:.0}, {:.0}, {:.0}) · {file} #{}{}",
                 t.world[0],
@@ -378,3 +587,18 @@ impl Session {
 #[cfg(test)]
 #[path = "session.test.rs"]
 mod tests;
+
+/// A file maybe to save: changed, its name, its bytes.
+type FileToSave<'a> = (bool, &'a str, Result<Vec<u8>, String>);
+
+/// Thing `index`'s placement in `file` (0 `war3map.doo`, 1
+/// `war3mapUnits.doo`).
+fn placement(files: &mut crate::placed::Files, file: u8, index: u32) -> Result<&mut doo_rs::Placement, String> {
+    let i = index as usize;
+    let p = if file == 0 {
+        files.doodads.as_mut().and_then(|d| d.doodads.get_mut(i)).map(|d| &mut d.placement)
+    } else {
+        files.units.as_mut().and_then(|u| u.units.get_mut(i)).map(|u| &mut u.placement)
+    };
+    p.ok_or_else(|| format!("no thing {index} in {}", if file == 0 { "war3map.doo" } else { "war3mapUnits.doo" }))
+}

@@ -22,13 +22,14 @@ fn raise_most_in_the_middle_then_undo_and_redo() {
     assert_eq!(h(&t, 4, 4), 0x2000 + 512);
     assert!(h(&t, 5, 4) > 0x2000 && h(&t, 5, 4) < 0x2000 + 512);
     assert_eq!(h(&t, 7, 4), 0x2000, "out of the brush");
-    assert!(e.dirty && !e.can_undo(), "the stroke goes on");
+    assert!(e.dirty.terrain && !e.dirty.doodads && !e.can_undo(), "the stroke goes on");
     e.end();
-    assert!(e.undo(&mut t));
+    let mut files = crate::placed::Files::default();
+    assert!(e.undo(Target { terrain: &mut t, files: &mut files }).is_some());
     assert_eq!(h(&t, 4, 4), 0x2000);
-    assert!(e.redo(&mut t));
+    assert!(e.redo(Target { terrain: &mut t, files: &mut files }).is_some());
     assert_eq!(h(&t, 4, 4), 0x2000 + 512);
-    assert!(!e.redo(&mut t));
+    assert!(e.redo(Target { terrain: &mut t, files: &mut files }).is_none());
 }
 
 #[test]
@@ -65,7 +66,37 @@ fn texture_added_to_the_list_cliffs_and_water() {
     assert!(t.point(4, 4).unwrap().has_water(v));
     // Undone: the list as it was too (the step that failed is no stroke).
     e.end();
-    assert!(e.undo(&mut t) && e.undo(&mut t) && e.undo(&mut t));
+    let mut files = crate::placed::Files::default();
+    for _ in 0..3 {
+        assert!(e.undo(Target { terrain: &mut t, files: &mut files }).is_some());
+    }
     assert!(!e.can_undo());
     assert!(!t.ground.contains(&grass));
+}
+
+#[test]
+fn the_things_placed_undone_and_redone_with_the_terrain() {
+    let mut t = flat(9);
+    let mut files = crate::placed::Files::default();
+    let mut e = Edits::default();
+    // A doodad added to a map that had none: the file made.
+    e.record(Snapshot::Doodads(Vec::new()));
+    files.doodads = Some(new_doodads(doo_rs::Layout::Classic));
+    files.doodads.as_mut().unwrap().doodads.push(doo_rs::Doodad {
+        placement: doo_rs::Placement::new(Rawcode(*b"LTlt"), 0.0, 0.0),
+        flags: 2,
+        life: 100,
+        item_table: -1,
+        item_sets: vec![],
+        number: 0,
+    });
+    e.apply(&mut t, 4.0, 4.0, &brush(Tool::Raise), true).unwrap();
+    e.end();
+    assert_eq!(e.dirty, Dirty { terrain: true, doodads: true, units: false });
+    // The terrain's stroke undone first, then the doodad.
+    assert!(matches!(e.undo(Target { terrain: &mut t, files: &mut files }), Some(Snapshot::Terrain(..))));
+    assert!(matches!(e.undo(Target { terrain: &mut t, files: &mut files }), Some(Snapshot::Doodads(_))));
+    assert!(files.doodads.as_ref().unwrap().doodads.is_empty());
+    assert!(e.redo(Target { terrain: &mut t, files: &mut files }).is_some());
+    assert_eq!(files.doodads.as_ref().unwrap().doodads.len(), 1);
 }

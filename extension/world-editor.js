@@ -70,14 +70,20 @@ function registerWorldEditor(context, binary, pickManifest) {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'">
 <link rel="stylesheet" href="${asset('editor.css')}">
 </head><body>
-<div class="bar"><span id="name" class="name">Opening…</span><span id="meta" class="meta"></span><span class="spacer"></span><span id="toggles" class="toggles"></span><span class="hint">Click: pick · Right drag: move · Ctrl + right drag: turn · Wheel: zoom · WASD · G: grid · Home: all of it</span></div>
+<div class="bar"><span id="name" class="name">Opening…</span><span id="meta" class="meta"></span><span class="spacer"></span><span id="toggles" class="toggles"></span><span class="hint">Click: pick (drag it to move, Q/E turn, Delete) · Right drag: move · Ctrl + right drag: turn · Wheel: zoom · WASD · G: grid · Home: all of it</span></div>
 <div class="stage"><canvas id="view"></canvas><canvas id="minimap" class="minimap" hidden></canvas>
 <div id="tools" class="tools">
   <div id="tool-buttons" class="tool-buttons"></div>
-  <label>Size <span id="size-value"></span><input id="size" type="range" min="1" max="32" step="1"></label>
-  <label>Strength <span id="strength-value"></span><input id="strength" type="range" min="0.05" max="1" step="0.05"></label>
+  <label id="size-label">Size <span id="size-value"></span><input id="size" type="range" min="1" max="32" step="1"></label>
+  <label id="strength-label">Strength <span id="strength-value"></span><input id="strength" type="range" min="0.05" max="1" step="0.05"></label>
   <div id="textures" class="textures" hidden></div>
   <select id="cliff-types" hidden></select>
+  <div id="objects-palette" class="objects-palette" hidden>
+    <div id="object-kinds" class="object-kinds"></div>
+    <input id="object-search" type="search" placeholder="Search">
+    <select id="object-player"></select>
+    <div id="object-list" class="object-list"></div>
+  </div>
   <div class="edits"><button id="undo" title="Undo (Ctrl+Z)" disabled>Undo</button><button id="redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button><button id="save" title="Save the terrain (Ctrl+S)" disabled>Save</button></div>
 </div>
 <div id="message" class="message" hidden><h2 id="message-title"></h2><p id="message-text"></p><button id="reopen" hidden>Reopen</button></div>

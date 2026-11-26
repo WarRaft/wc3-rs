@@ -28,7 +28,11 @@
 //! | 4 | `StrokeEnd` | the mouse let go; answered by `State` |
 //! | 5 | `Undo` | answered by what changed and `State` |
 //! | 6 | `Redo` | the same |
-//! | 7 | `Save` | the terrain written where it came from; answered by `State` (where, or why not) |
+//! | 7 | `Save` | the files changed written where they came from; answered by `State` (where, or why not) |
+//! | 8 | `Place` | a thing placed: `u8` kind (0 doodad, 1 destructable, 2 unit, 3 item), its type id, `u32` player, the ray; answered by `Objects` (new models), `Instances`, `State` |
+//! | 9 | `Move` | a thing moved where a ray meets the ground: `u8` a drag's first, `u8` file (0 `war3map.doo`, 1 `war3mapUnits.doo`), `u32` index, the ray; answered the same |
+//! | 10 | `Rotate` | `u8` file, `u32` index, `f32` radians; answered the same |
+//! | 11 | `Delete` | `u8` file, `u32` index; answered the same |
 //!
 //! Editor → page:
 //!
@@ -45,9 +49,13 @@
 //! | 136 | `Overlays` | pathing, regions, bounds, cameras, minimap: see [`OverlaysMsg`] |
 //! | 137 | `Palette` | the terrain palette: see [`PaletteMsg`] |
 //! | 138 | `State` | the edits' state: see [`StateMsg`] |
+//! | 139 | `Instances` | where every model stands: a list, a model each, of its instances (`f32` array, `placed::INSTANCE` each) |
+//! | 140 | `ObjectPalette` | a list of types to place: see [`ObjectEntry`] |
 //!
 //! After an edit the terrain's messages come again: `Cliffs` with no
-//! textures keeps the ones the page has.
+//! textures keeps the ones the page has. `Objects` adds models and
+//! textures to the page's (from `first_model`, `first_texture`; 0: all
+//! anew); `Instances` says where each model stands, every time.
 //!
 //! `Hello` is answered by `Map`, then `Ground`, `Water` and `Cliffs`
 //! (what the terrain's layers index, and what stands on it), then
@@ -67,6 +75,12 @@ mod kind {
     pub const SAVE: u8 = 7;
     pub const PALETTE: u8 = 137;
     pub const STATE: u8 = 138;
+    pub const PLACE: u8 = 8;
+    pub const MOVE: u8 = 9;
+    pub const ROTATE: u8 = 10;
+    pub const DELETE: u8 = 11;
+    pub const INSTANCES: u8 = 139;
+    pub const OBJECT_PALETTE: u8 = 140;
     pub const OBJECTS: u8 = 134;
     pub const PICKED: u8 = 135;
     pub const OVERLAYS: u8 = 136;
@@ -95,6 +109,14 @@ pub enum ClientMsg {
     Redo,
     /// Kind 7.
     Save,
+    /// Kind 8.
+    Place { kind: u8, id: String, player: u32, origin: [f32; 3], dir: [f32; 3] },
+    /// Kind 9.
+    Move { start: bool, file: u8, index: u32, origin: [f32; 3], dir: [f32; 3] },
+    /// Kind 10.
+    Rotate { file: u8, index: u32, delta: f32 },
+    /// Kind 11.
+    Delete { file: u8, index: u32 },
 }
 
 /// What the page is told of the map: kind 128's body, in this order.
@@ -158,7 +180,8 @@ pub struct CliffsMsg {
     pub notes: Vec<String>,
 }
 
-/// Kind 134's body: a list of textures (path, `u32` width, height, RGBA
+/// Kind 134's body: `u32` first texture, `u32` first model (where these
+/// go in the page's lists), a list of textures (path, `u32` width, height, RGBA
 /// array, error), a list of models (path, `f32` box min x, y, z, max x,
 /// y, z, a list of geosets: `f32` positions, normals, texture
 /// coordinates, `u16` triangles, a list of layers: `i32` texture
@@ -166,20 +189,25 @@ pub struct CliffsMsg {
 /// then `f32` instances, `placed::INSTANCE` each; error), notes.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ObjectsMsg {
+    pub first_texture: u32,
+    pub first_model: u32,
     pub textures: Vec<crate::placed::Texture>,
     pub models: Vec<crate::placed::Model>,
     pub notes: Vec<String>,
 }
 
 /// Kind 135's body: `u8` found (a thing), `u32` model, `u32` instance,
-/// what it is (a line to show: the thing, else the ground's point and
-/// its regions); `u8` on the ground, its point `f32` x, y, z (cells,
+/// `u8` its file (0 `war3map.doo`, 1 `war3mapUnits.doo`), `u32` its index
+/// there, what it is (a line to show: the thing, else the ground's point
+/// and its regions); `u8` on the ground, its point `f32` x, y, z (cells,
 /// layers).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PickedMsg {
     pub found: bool,
     pub model: u32,
     pub instance: u32,
+    pub file: u8,
+    pub index: u32,
     pub text: String,
     pub ground: Option<[f32; 3]>,
 }
@@ -218,6 +246,17 @@ pub struct StateMsg {
     pub message: String,
 }
 
+/// A type to place (kind 140's list): `u8` kind (0 doodad, 1
+/// destructable, 2 unit, 3 item), id, name, group, `u8` the map's own.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ObjectEntry {
+    pub kind: u8,
+    pub id: String,
+    pub name: String,
+    pub group: String,
+    pub custom: bool,
+}
+
 /// Editor → page.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServerMsg {
@@ -243,6 +282,10 @@ pub enum ServerMsg {
     Palette(PaletteMsg),
     /// Kind 138.
     State(StateMsg),
+    /// Kind 139.
+    Instances(Vec<Vec<f32>>),
+    /// Kind 140.
+    ObjectPalette(Vec<ObjectEntry>),
 }
 
 /// A frame's body was shorter than its fields, or not UTF-8.
@@ -284,6 +327,22 @@ impl ClientMsg {
             kind::UNDO => Some(ClientMsg::Undo),
             kind::REDO => Some(ClientMsg::Redo),
             kind::SAVE => Some(ClientMsg::Save),
+            kind::PLACE => Some(ClientMsg::Place {
+                kind: r.u8()?,
+                id: r.string()?,
+                player: r.u32()?,
+                origin: [r.f32()?, r.f32()?, r.f32()?],
+                dir: [r.f32()?, r.f32()?, r.f32()?],
+            }),
+            kind::MOVE => Some(ClientMsg::Move {
+                start: r.u8()? != 0,
+                file: r.u8()?,
+                index: r.u32()?,
+                origin: [r.f32()?, r.f32()?, r.f32()?],
+                dir: [r.f32()?, r.f32()?, r.f32()?],
+            }),
+            kind::ROTATE => Some(ClientMsg::Rotate { file: r.u8()?, index: r.u32()?, delta: r.f32()? }),
+            kind::DELETE => Some(ClientMsg::Delete { file: r.u8()?, index: r.u32()? }),
             _ => None,
         })
     }
@@ -311,6 +370,31 @@ impl ClientMsg {
             ClientMsg::Undo => kind::UNDO,
             ClientMsg::Redo => kind::REDO,
             ClientMsg::Save => kind::SAVE,
+            ClientMsg::Place { kind, id, player, origin, dir } => {
+                w.u8(*kind);
+                w.string(id);
+                w.u32(*player);
+                origin.iter().chain(dir).for_each(|v| w.f32(*v));
+                kind::PLACE
+            }
+            ClientMsg::Move { start, file, index, origin, dir } => {
+                w.u8(*start as u8);
+                w.u8(*file);
+                w.u32(*index);
+                origin.iter().chain(dir).for_each(|v| w.f32(*v));
+                kind::MOVE
+            }
+            ClientMsg::Rotate { file, index, delta } => {
+                w.u8(*file);
+                w.u32(*index);
+                w.f32(*delta);
+                kind::ROTATE
+            }
+            ClientMsg::Delete { file, index } => {
+                w.u8(*file);
+                w.u32(*index);
+                kind::DELETE
+            }
         };
         w.frame(kind)
     }
@@ -395,6 +479,8 @@ impl ServerMsg {
                 kind::CLIFFS
             }
             ServerMsg::Objects(o) => {
+                w.u32(o.first_texture);
+                w.u32(o.first_model);
                 w.list(&o.textures, |w, t| {
                     w.string(&t.path);
                     w.u32(t.width);
@@ -427,6 +513,8 @@ impl ServerMsg {
                 w.u8(p.found as u8);
                 w.u32(p.model);
                 w.u32(p.instance);
+                w.u8(p.file);
+                w.u32(p.index);
                 w.string(&p.text);
                 w.u8(p.ground.is_some() as u8);
                 p.ground.unwrap_or_default().iter().for_each(|v| w.f32(*v));
@@ -466,6 +554,20 @@ impl ServerMsg {
                     });
                 }
                 kind::PALETTE
+            }
+            ServerMsg::Instances(list) => {
+                w.list(list, |w, i| w.f32s(i));
+                kind::INSTANCES
+            }
+            ServerMsg::ObjectPalette(list) => {
+                w.list(list, |w, e| {
+                    w.u8(e.kind);
+                    w.string(&e.id);
+                    w.string(&e.name);
+                    w.string(&e.group);
+                    w.u8(e.custom as u8);
+                });
+                kind::OBJECT_PALETTE
             }
             ServerMsg::State(st) => {
                 w.u8(st.dirty as u8);
@@ -550,6 +652,7 @@ impl ServerMsg {
                 ServerMsg::Cliffs(CliffsMsg { textures, texture_paths, meshes, notes: r.list(|r| r.string())? })
             }
             kind::OBJECTS => {
+                let (first_texture, first_model) = (r.u32()?, r.u32()?);
                 let textures = r.list(|r| {
                     Ok(crate::placed::Texture { path: r.string()?, width: r.u32()?, height: r.u32()?, rgba: r.bytes()?, error: r.string()? })
                 })?;
@@ -570,13 +673,13 @@ impl ServerMsg {
                     })?;
                     Ok(crate::placed::Model { path, min, max, geosets, instances: r.f32s()?, error: r.string()? })
                 })?;
-                ServerMsg::Objects(ObjectsMsg { textures, models, notes: r.list(|r| r.string())? })
+                ServerMsg::Objects(ObjectsMsg { first_texture, first_model, textures, models, notes: r.list(|r| r.string())? })
             }
             kind::PICKED => {
-                let (found, model, instance, text) = (r.u8()? != 0, r.u32()?, r.u32()?, r.string()?);
+                let (found, model, instance, file, index, text) = (r.u8()? != 0, r.u32()?, r.u32()?, r.u8()?, r.u32()?, r.string()?);
                 let on = r.u8()? != 0;
                 let p = [r.f32()?, r.f32()?, r.f32()?];
-                ServerMsg::Picked(PickedMsg { found, model, instance, text, ground: on.then_some(p) })
+                ServerMsg::Picked(PickedMsg { found, model, instance, file, index, text, ground: on.then_some(p) })
             }
             kind::OVERLAYS => {
                 use crate::overlays::{Camera, Grid, Overlays, Region};
@@ -603,6 +706,10 @@ impl ServerMsg {
                 };
                 ServerMsg::Palette(PaletteMsg { grounds: r.list(entry)?, cliffs: r.list(entry)? })
             }
+            kind::INSTANCES => ServerMsg::Instances(r.list(|r| r.f32s())?),
+            kind::OBJECT_PALETTE => ServerMsg::ObjectPalette(r.list(|r| {
+                Ok(ObjectEntry { kind: r.u8()?, id: r.string()?, name: r.string()?, group: r.string()?, custom: r.u8()? != 0 })
+            })?),
             kind::STATE => ServerMsg::State(StateMsg { dirty: r.u8()? != 0, undo: r.u8()? != 0, redo: r.u8()? != 0, message: r.string()? }),
             _ => return Ok(None),
         }))

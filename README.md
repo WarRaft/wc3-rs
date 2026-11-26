@@ -20,7 +20,7 @@ item's details are in its section below):
     checked against it.
 - **The World Editor** (see [World Editor](#world-editor)): its steps,
   in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs), 4 (doodads and units),
-  5 (overlays), 6a (terrain brushes). Next: 6b.
+  5 (overlays), 6a (terrain brushes), 6b (things placed). Next: 6c.
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1682,17 +1682,32 @@ step), this list updated.
      without textures keeps the page's). The page's tool panel, the
      brush's ring, Ctrl+Z, Ctrl+Shift+Z, Ctrl+S, the tab's `●`; closing
      it with changes not saved says they're lost. What the terrain
-     changes doesn't follow yet: units' heights, the bounds' lines,
+     changes doesn't follow yet: the bounds' lines,
      the minimap, and the files World Editor makes with the terrain
      (`war3map.wpm`, `war3map.shd`): step 7. The whole terrain is
      worked out again after each step (fast enough for 193 by 129;
      the changed rectangle alone, when a bigger map needs it). MCP:
      `w3e_brush`.
-   - **6b, things placed**: the palettes of doodads, destructables,
-     units and items (their lists from the game's data and the map's
-     object data, their names from `UI\WorldEditStrings.txt` and the
-     profiles); placing, moving, rotating, deleting what's selected;
-     saved to `war3map.doo` and `war3mapUnits.doo` the same way.
+   - **6b, things placed** (done): the object palette (every type of
+     doodad, destructable, unit and item, the game's and the map's
+     object data's, named as World Editor names them, with its group:
+     a unit's race, a doodad's category, an item's class; those it
+     hides left out), a search, the owner of a unit; Place lays the
+     type where a click meets the ground (facing 270°, a doodad's
+     variation by chance, a number no other has); the thing picked is
+     dragged to move it, Q and E turn it, Delete takes it away; each
+     an undo (a drag one), with the terrain's in one list
+     (`edit::Snapshot`: the terrain, the doodads, the units); Save
+     writes each file changed (`war3map.w3e`, `war3map.doo`,
+     `war3mapUnits.doo`) into its layer. The session keeps the files
+     (`placed::Files`) and the models read: an edit places everything
+     again (some 30 ms for 13 000 things) and sends where each model
+     stands (`Instances`) and only the models the page hasn't
+     (`Objects` from `first_model`); so units stand on the ground as a
+     brush leaves it. Messages `Place`, `Move`, `Rotate`, `Delete`,
+     `Instances`, `ObjectPalette`; `Picked` says the thing's file and
+     index. MCP: the `doo_*` tools already place, change and delete in
+     the files.
    - **6c, regions and pathing**: regions drawn, moved, resized,
      renamed (`war3map.w3r`); the pathing brush (`war3map.wpm`).
 

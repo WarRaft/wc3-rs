@@ -58,14 +58,43 @@ struct Stroke {
     start: Option<i32>,
 }
 
-/// The terrain's changes: undo and redo, what's unsaved.
+/// What an edit changed, as it was before: the terrain's points and
+/// ground list, the doodads, the units.
+#[derive(Debug, Clone)]
+pub enum Snapshot {
+    Terrain(Vec<Point>, Vec<Rawcode>),
+    Doodads(Vec<doo_rs::Doodad>),
+    Units(Vec<doo_rs::Unit>),
+}
+
+/// Which files have changes not saved.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Dirty {
+    pub terrain: bool,
+    pub doodads: bool,
+    pub units: bool,
+}
+
+impl Dirty {
+    pub fn any(self) -> bool {
+        self.terrain || self.doodads || self.units
+    }
+}
+
+/// What an undo or redo works on.
+pub struct Target<'a> {
+    pub terrain: &'a mut Terrain,
+    pub files: &'a mut crate::placed::Files,
+}
+
+/// The changes: undo and redo, what's unsaved.
 #[derive(Debug, Default)]
 pub struct Edits {
-    undo: Vec<(Vec<Point>, Vec<Rawcode>)>,
-    redo: Vec<(Vec<Point>, Vec<Rawcode>)>,
+    undo: Vec<Snapshot>,
+    redo: Vec<Snapshot>,
     stroke: Option<Stroke>,
-    /// Changes since the last save (or the file as read).
-    pub dirty: bool,
+    /// Changes since the last save (or the files as read).
+    pub dirty: Dirty,
     seed: u32,
 }
 
@@ -166,8 +195,21 @@ impl Edits {
                 }
             }
         }
-        self.dirty = true;
+        self.dirty.terrain = true;
         Ok(())
+    }
+
+    /// An edit of the things placed about to be made: what it changes, as
+    /// it is, to undo it.
+    pub fn record(&mut self, before: Snapshot) {
+        self.end();
+        match &before {
+            Snapshot::Terrain(..) => self.dirty.terrain = true,
+            Snapshot::Doodads(_) => self.dirty.doodads = true,
+            Snapshot::Units(_) => self.dirty.units = true,
+        }
+        self.undo.push(before);
+        self.redo.clear();
     }
 
     /// A step that changed nothing: a stroke it started is no stroke.
@@ -181,27 +223,58 @@ impl Edits {
     /// The stroke done: it can be undone.
     pub fn end(&mut self) {
         if let Some(s) = self.stroke.take() {
-            self.undo.push((s.before, s.ground));
+            self.undo.push(Snapshot::Terrain(s.before, s.ground));
             self.redo.clear();
         }
     }
 
-    /// Back to before the last stroke; whether there was one.
-    pub fn undo(&mut self, t: &mut Terrain) -> bool {
+    /// Back to before the last edit: what it was of (the snapshot of
+    /// the state undone, for redo), or `None` with nothing to undo.
+    pub fn undo(&mut self, target: Target) -> Option<Snapshot> {
         self.end();
-        let Some((points, ground)) = self.undo.pop() else { return false };
-        self.redo.push((std::mem::replace(&mut t.points, points), std::mem::replace(&mut t.ground, ground)));
-        self.dirty = true;
-        true
+        let before = self.undo.pop()?;
+        let now = self.swap(before, target);
+        self.redo.push(now.clone());
+        Some(now)
     }
 
-    pub fn redo(&mut self, t: &mut Terrain) -> bool {
+    pub fn redo(&mut self, target: Target) -> Option<Snapshot> {
         self.end();
-        let Some((points, ground)) = self.redo.pop() else { return false };
-        self.undo.push((std::mem::replace(&mut t.points, points), std::mem::replace(&mut t.ground, ground)));
-        self.dirty = true;
-        true
+        let after = self.redo.pop()?;
+        let now = self.swap(after, target);
+        self.undo.push(now.clone());
+        Some(now)
     }
+
+    /// Puts `s` in place; what was there.
+    fn swap(&mut self, s: Snapshot, t: Target) -> Snapshot {
+        match s {
+            Snapshot::Terrain(points, ground) => {
+                self.dirty.terrain = true;
+                Snapshot::Terrain(std::mem::replace(&mut t.terrain.points, points), std::mem::replace(&mut t.terrain.ground, ground))
+            }
+            Snapshot::Doodads(d) => {
+                self.dirty.doodads = true;
+                let file = t.files.doodads.get_or_insert_with(|| new_doodads(t.files.layout));
+                Snapshot::Doodads(std::mem::replace(&mut file.doodads, d))
+            }
+            Snapshot::Units(u) => {
+                self.dirty.units = true;
+                let file = t.files.units.get_or_insert_with(|| new_units(t.files.layout));
+                Snapshot::Units(std::mem::replace(&mut file.units, u))
+            }
+        }
+    }
+}
+
+/// An empty `war3map.doo`, as The Frozen Throne writes it.
+pub fn new_doodads(layout: doo_rs::Layout) -> doo_rs::Doodads {
+    doo_rs::Doodads { version: 8, subversion: 11, layout, doodads: Vec::new(), special_version: 0, specials: Vec::new() }
+}
+
+/// An empty `war3mapUnits.doo`.
+pub fn new_units(layout: doo_rs::Layout) -> doo_rs::Units {
+    doo_rs::Units { version: 8, subversion: 11, layout, units: Vec::new() }
 }
 
 #[cfg(test)]

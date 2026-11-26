@@ -54,7 +54,7 @@ fn the_terrain_drawn_with_the_tables_of_the_roots() {
     dir.write("map/T/Dirt.blp", &testdir::tga(8, 4, |_, _| [9, 9, 9, 255]));
     let mut s = Session::open(dir.path()).unwrap();
     let msgs = s.draw();
-    let [ServerMsg::Ground(g), ServerMsg::Water(w), ServerMsg::Cliffs(c), ServerMsg::Terrain(t), ServerMsg::Objects(o), ServerMsg::Overlays(v), ServerMsg::Palette(_), ServerMsg::State(st)] = &msgs[..] else { panic!("{} messages", msgs.len()) };
+    let [ServerMsg::Ground(g), ServerMsg::Water(w), ServerMsg::Cliffs(c), ServerMsg::Terrain(t), ServerMsg::Objects(o), ServerMsg::Instances(_), ServerMsg::Overlays(v), ServerMsg::Palette(_), ServerMsg::ObjectPalette(_), ServerMsg::State(st)] = &msgs[..] else { panic!("{} messages", msgs.len()) };
     assert_eq!(st, &StateMsg::default());
     // Nothing placed; the minimap a pixel a corner.
     assert!(o.models.is_empty() && o.notes.is_empty());
@@ -131,7 +131,8 @@ fn a_brush_then_undo_then_save_where_the_terrain_came_from() {
     s.draw();
     let msgs = raise(&mut s, true);
     // The terrain again (no new ground textures), and the state.
-    assert!(matches!(&msgs[..], [ServerMsg::Cliffs(c), ServerMsg::Terrain(t), ServerMsg::State(st)] if c.textures.count == 0 && t.heights[1] > 0.0 && st.dirty && !st.undo));
+    // (and what's placed, on it as it is now).
+    assert!(matches!(&msgs[..], [ServerMsg::Cliffs(c), ServerMsg::Terrain(t), ServerMsg::Instances(_), ServerMsg::State(st)] if c.textures.count == 0 && t.heights[1] > 0.0 && st.dirty && !st.undo), "{msgs:?}");
     s.stroke_end();
     let msgs = s.undo(false);
     assert!(matches!(msgs.last(), Some(ServerMsg::State(st)) if st.redo && !st.undo));
@@ -155,4 +156,42 @@ fn a_terrain_from_the_game_saves_into_the_top_root() {
     raise(&mut s, true);
     s.save();
     assert!(dir.path().join("map/war3map.w3e").exists());
+}
+
+#[test]
+fn things_placed_moved_turned_deleted_undone_and_saved() {
+    let dir = TestDir::new("session-things");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    dir.write("map/Doodads/Doodads.slk", &testdir::slk(&[&["doodID", "file", "numVar"], &["LTrc", "Doodads\\Rock", "1"]]));
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let down = [0.0, 0.0, -1.0];
+    // Placed at (1, 0.5) cells: (0, 0) in the game's units.
+    let msgs = s.place(0, "LTrc", 0, [1.0, 0.5, 10.0], down);
+    assert!(matches!(msgs.last(), Some(ServerMsg::State(st)) if st.dirty && st.undo && st.message.is_empty()), "{msgs:?}");
+    let d = &s.placed.doodads.as_ref().unwrap().doodads;
+    assert_eq!((d.len(), d[0].placement.x, d[0].placement.y, d[0].number), (1, 0.0, 0.0, 0));
+    // Moved in a drag of two steps: one undo for it.
+    s.move_thing(0, 0, [1.5, 0.5, 10.0], down, true);
+    s.move_thing(0, 0, [2.0, 0.5, 10.0], down, false);
+    s.stroke_end();
+    assert_eq!(s.placed.doodads.as_ref().unwrap().doodads[0].placement.x, 128.0);
+    s.rotate(0, 0, std::f32::consts::PI);
+    assert!((s.placed.doodads.as_ref().unwrap().doodads[0].placement.angle - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+    s.undo(false);
+    s.undo(false);
+    assert_eq!(s.placed.doodads.as_ref().unwrap().doodads[0].placement.x, 0.0);
+    s.undo(true);
+    s.undo(true);
+    assert!(matches!(s.delete(0, 9).last(), Some(ServerMsg::State(st)) if st.message.contains("no thing 9")));
+    s.delete(0, 0);
+    assert!(s.placed.doodads.as_ref().unwrap().doodads.is_empty());
+    s.undo(false);
+    // Saved: the doodads' file made, into the root, the terrain untouched.
+    let saved = s.save();
+    assert!(matches!(&saved[..], [ServerMsg::State(st)] if st.message.contains("war3map.doo") && !st.message.contains("w3e")), "{saved:?}");
+    let back = doo_rs::parse_doodads_any(&std::fs::read(dir.path().join("map/war3map.doo")).unwrap()).unwrap();
+    assert_eq!(back.doodads.len(), 1);
+    assert_eq!(back.doodads[0].placement.x, 128.0);
 }

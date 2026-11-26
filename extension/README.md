@@ -143,10 +143,12 @@ coming is listed below.
   right drag turns, the wheel zooms, G shows the grid. The terrain is
   edited with brushes (raise, lower, plateau, smooth, texture, cliff
   level, water), undone and redone, and saved where its file came from
-  (Ctrl+Z, Ctrl+Shift+Z, Ctrl+S). Its process (`wc3 editor`) reads the
+  (Ctrl+Z, Ctrl+Shift+Z, Ctrl+S); doodads, destructables, units and
+  items are placed from a palette with a search, dragged, turned (Q, E),
+  deleted, and saved the same way. Its process (`wc3 editor`) reads the
   map through the project's roots and works out everything drawn.
-  Placing things and animation come step by step (the repository README,
-  "World Editor").
+  Regions, pathing and animation come step by step (the repository
+  README, "World Editor").
 
 ## Not yet
 

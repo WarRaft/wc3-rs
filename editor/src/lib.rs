@@ -101,6 +101,10 @@ pub fn serve(input: &mut impl io::Read, output: &mut impl Write, root: &Path) ->
                     ClientMsg::Undo => s.undo(false),
                     ClientMsg::Redo => s.undo(true),
                     ClientMsg::Save => s.save(),
+                    ClientMsg::Place { kind, id, player, origin, dir } => s.place(kind, &id, player, origin, dir),
+                    ClientMsg::Move { start, file, index, origin, dir } => s.move_thing(file, index, origin, dir, start),
+                    ClientMsg::Rotate { file, index, delta } => s.rotate(file, index, delta),
+                    ClientMsg::Delete { file, index } => s.delete(file, index),
                     ClientMsg::Hello | ClientMsg::Pick { .. } => unreachable!("answered above"),
                 };
                 for msg in &answers {
