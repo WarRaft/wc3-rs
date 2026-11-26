@@ -43,14 +43,14 @@ TAG="v$VERSION"
 
 # The bumped version is committed (that file alone) and pushed, so the tag
 # names the commit whose package.json says $VERSION.
-msg "\n📝 Committing $TAG…"
+msg "\n📝 Committing ${TAG}…"
 git -C "$EXT_DIR" commit --quiet -m "$TAG" -- package.json
 git -C "$EXT_DIR" push --quiet
 HEAD_SHA="$(git -C "$EXT_DIR" rev-parse HEAD)"
 ASSETS=("$BIN_DIR/wc3-macos" "$BIN_DIR/wc3-linux" "$BIN_DIR/wc3-windows.exe")
 for f in "${ASSETS[@]}"; do [[ -f "$f" ]] || { echo "❌ Missing: $f"; exit 1; }; done
 
-msg "\n🏷  GitHub release $TAG…"
+msg "\n🏷  GitHub release ${TAG}…"
 if gh release view "$TAG" >/dev/null 2>&1; then
   gh release upload "$TAG" "${ASSETS[@]}" --clobber
 else

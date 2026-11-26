@@ -94,6 +94,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "casc-rs"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1031,6 +1038,7 @@ name = "wc3-mcp"
 version = "0.1.0"
 dependencies = [
  "bni-rs",
+ "casc-rs",
  "doo-rs",
  "flate2",
  "imp-rs",
@@ -1066,6 +1074,7 @@ dependencies = [
  "as-rs",
  "blp",
  "bni-rs",
+ "casc-rs",
  "doo-rs",
  "image",
  "imp-rs",
