@@ -276,8 +276,11 @@ pub struct CliffsMsg {
 /// its animation, `u32` bones, `u32` frames, `f32` frames a second, `f32`
 /// matrices, 12 a bone a frame, 0 bones when it doesn't move; a list of
 /// its particle emitters, each `f32` arrays of its parameters (16), its
-/// segments (15), its head's cells (6), `i32` texture, `f32` frames a
-/// second, its frames (`particles::FRAME` each)), notes.
+/// segments (15), its head's cells (6), its tail's (6), `i32` texture,
+/// `f32` frames a second, its frames (`particles::FRAME` each); a list
+/// of its ribbons, each `f32` arrays of its parameters (8), its colour
+/// (3), `i32` texture, `f32` frames a second, its frames
+/// (`particles::RIBBON_FRAME` each)), notes.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ObjectsMsg {
     pub first_texture: u32,
@@ -719,9 +722,17 @@ impl ServerMsg {
                         w.f32s(&e.params);
                         w.f32s(&e.segments);
                         w.f32s(&e.head);
+                        w.f32s(&e.tail);
                         w.u32(e.texture as u32);
                         w.f32(e.fps);
                         w.f32s(&e.frames);
+                    });
+                    w.list(&m.ribbons, |w, r| {
+                        w.f32s(&r.params);
+                        w.f32s(&r.color);
+                        w.u32(r.texture as u32);
+                        w.f32(r.fps);
+                        w.f32s(&r.frames);
                     });
                 });
                 w.list(&o.notes, |w, n| w.string(n));
@@ -962,12 +973,22 @@ impl ServerMsg {
                             params: array(r.f32s()?)?,
                             segments: r.f32s()?.try_into().map_err(|_| DecodeError("segments".into()))?,
                             head: r.f32s()?.try_into().map_err(|_| DecodeError("head".into()))?,
+                            tail: r.f32s()?.try_into().map_err(|_| DecodeError("tail".into()))?,
                             texture: r.u32()? as i32,
                             fps: r.f32()?,
                             frames: r.f32s()?,
                         })
                     })?;
-                    Ok(crate::placed::Model { path, min, max, geosets, instances, error, anim, emitters })
+                    let ribbons = r.list(|r| {
+                        Ok(crate::particles::Ribbon {
+                            params: r.f32s()?.try_into().map_err(|_| DecodeError("a ribbon's parameters".into()))?,
+                            color: r.f32s()?.try_into().map_err(|_| DecodeError("a ribbon's colour".into()))?,
+                            texture: r.u32()? as i32,
+                            fps: r.f32()?,
+                            frames: r.f32s()?,
+                        })
+                    })?;
+                    Ok(crate::placed::Model { path, min, max, geosets, instances, error, anim, emitters, ribbons })
                 })?;
                 ServerMsg::Objects(ObjectsMsg { first_texture, first_model, textures, models, notes: r.list(|r| r.string())? })
             }

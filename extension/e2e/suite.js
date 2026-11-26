@@ -96,7 +96,7 @@ async function steps() {
     check(drawn.cliffs > 1000, `its cliffs and ramps: ${drawn.cliffs}`)
     check(drawn.objects > 10000, `what it places: ${drawn.objects} doodads, destructables, units and items`)
     check(drawn.animated > 10, `${drawn.animated} of their models move (their Stand)`)
-    check(drawn.emitters > 0 && drawn.error === 0, `${drawn.emitters} particle emitters, no GL error`)
+    check(drawn.emitters > 0 && drawn.error === 0, `${drawn.emitters} particle emitters (${drawn.tails} with tails), ${drawn.ribbons} ribbons, no GL error`)
     const lit = await until(() => we.light, 'the light')
     check(lit.day && lit.shadows > 0, `the day and night of its tileset, its shadows (${lit.shadows} wide)${lit.fog ? ', its fog' : ''}`)
     const again = await vscode.commands.executeCommand('wc3.editor.open', {root})
@@ -104,6 +104,13 @@ async function steps() {
     await shot('world-editor')
     await we.panel.webview.postMessage({type: 'look', x: 30, y: 100, distance: 32, horizontal: 0.4, vertical: -0.85})
     await shot('world-editor-cliffs')
+    we.focused = undefined
+    await we.panel.webview.postMessage({type: 'focusEffect', tails: true})
+    const focused = await until(() => we.focused !== undefined && we.focused, 'focused')
+    check(!!focused, `the camera over a thing whose particles have tails: ${focused}`)
+    await sleep(800)
+    await shot('world-editor-tails')
+    await we.panel.webview.postMessage({type: 'unfocus'})
     await we.panel.webview.postMessage({type: 'hours', hours: 0})
     await shot('world-editor-midnight')
     await we.panel.webview.postMessage({type: 'hours', hours: 12})
@@ -149,6 +156,23 @@ async function steps() {
     const saved = await until(() => we.state?.message && we.state, 'saved')
     check(!saved.dirty && /^Saved .*map\.w3x.war3map\.w3e, .*map\.w3x.war3map\.wpm$/.test(saved.message), saved.message)
     check(fs.statSync(map).mtimeMs > stamp0 && !we.panel.title.startsWith('● '), 'the map on disk written, the tab clean')
+
+    log("a phoenix placed: its ribbons drawn; undone")
+    await we.panel.webview.postMessage({type: 'look', x: 40, y: 40, distance: 12, horizontal: 0, vertical: -1.5})
+    await sleep(300)
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'place', kind: 2, id: 'hphx', player: 0, x: 0, y: 0})
+    await until(() => we.state?.undo, 'placed')
+    we.focused = undefined
+    await we.panel.webview.postMessage({type: 'focusEffect', path: 'Phoenix', distance: 6})
+    const phoenix = await until(() => we.focused !== undefined && we.focused, 'focused')
+    check(/phoenix/i.test(phoenix || ''), `the camera over it: ${phoenix}`)
+    await sleep(1500)
+    await shot('world-editor-ribbons')
+    await we.panel.webview.postMessage({type: 'unfocus'})
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'undo'})
+    await until(() => we.state, 'undone')
 
     log('things placed: a footman placed, picked, turned, dragged, deleted and back, saved into the map')
     await we.panel.webview.postMessage({type: 'look', x: 40, y: 40, distance: 12, horizontal: 0, vertical: -1.5})

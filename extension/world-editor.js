@@ -75,12 +75,13 @@ const VIEW = 'wc3.editors'
  * @property {{pathing: number, regions: number, cameras: number, bounds: number, minimap: number, region?: {name: string, x: number, y: number}} | undefined} overlays  what the page has of the overlays
  * @property {{dirty: boolean, undo: boolean, redo: boolean, message: string} | undefined} state  the edits' state the page last showed
  * @property {{name: string, bounds: number[]} | null | undefined} region  the region picked (the Regions tool)
+ * @property {string | false | undefined} focused  the model of the thing the camera was put over (one with ribbons, or else tails)
  * @property {{width: number, height: number, margins: number[], tileset: string, mapTiles: string[], tiles: number} | undefined} mapSettings  the map's settings the page was last sent
  * @property {{day: boolean, shadows: number, fog: boolean} | undefined} light  the map's light the page has
  * @property {number | undefined} icons  how many of the object palette's icons the page has
  * @property {Map<string, string> | undefined} follow  the paths of the pieces with a text form, by their lower case
  * @property {string | undefined} picked  what the last click picked, said ('' nothing)
- * @property {{width: number, height: number, layers: number, water: number, cliffs: number, objects: number, animated: number, emitters: number, error: number} | null} drawn  what the page drew of the terrain first
+ * @property {{width: number, height: number, layers: number, water: number, cliffs: number, objects: number, animated: number, emitters: number, tails: number, ribbons: number, error: number} | null} drawn  what the page drew of the terrain first
  */
 
 /**
@@ -282,6 +283,8 @@ function registerWorldEditor(context, binary, pickManifest) {
                 editor.drawn = msg.terrain
             } else if (msg.type === 'picked') {
                 editor.picked = msg.text
+            } else if (msg.type === 'focused') {
+                editor.focused = msg.found && msg.path
             } else if (msg.type === 'mapSettings') {
                 editor.mapSettings = msg.settings
             } else if (msg.type === 'light') {

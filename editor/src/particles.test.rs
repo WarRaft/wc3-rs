@@ -56,6 +56,58 @@ fn an_emitter_at_its_pivot_its_particles_described() {
 }
 
 #[test]
+fn a_tail_its_length_and_cells() {
+    let mut x = emitter(vec![]);
+    x.head_or_tail = 2;
+    x.tail_length = 0.5;
+    x.tail_intervals = [8, 11, 1];
+    x.tail_decay_intervals = [12, 15, 2];
+    let e = &emitters(&model(x), &mut |_, _| 0)[0];
+    assert_eq!((e.params[14], e.params[15]), (2.0, 0.5));
+    assert_eq!(e.tail, [8.0, 11.0, 1.0, 12.0, 15.0, 2.0]);
+}
+
+#[test]
+fn a_ribbon_at_its_pivot_with_its_materials_texture() {
+    let key = |frame, value| Key { frame, value, tangents: None };
+    let ribbon = mdx_rs::Ribbon {
+        node: Node { name: Fixed::new("Trail", 80), object_id: 0, parent_id: u32::MAX, flags: 0x4000, tracks: vec![] },
+        height_above: 25.0,
+        height_below: 10.0,
+        alpha: 1.0,
+        color: [1.0, 0.5, 0.1],
+        life_span: 0.4,
+        texture_slot: 0,
+        emission_rate: 25,
+        rows: 1,
+        columns: 2,
+        material_id: 0,
+        gravity: 0.0,
+        tracks: vec![(*b"KRAL", mdx_rs::RibbonTrack::Number(Track { interpolation: 0, global_sequence: -1, keys: vec![key(0, 0.5)] }))],
+    };
+    let layer = mdx_rs::Layer { filter_mode: 3, shading: 0, texture_id: 1, texture_animation_id: u32::MAX, coord_id: 0, alpha: 1.0, rest: vec![] };
+    let stand = Sequence { name: Fixed::new("Stand", 80), start: 0, end: 1000, move_speed: 0.0, flags: 0, rarity: 0.0, sync_point: 0, extent: Extent::default() };
+    let m = Model {
+        chunks: vec![
+            Chunk::Version(800),
+            Chunk::Sequences(vec![stand]),
+            Chunk::Materials(vec![mdx_rs::Material { priority_plane: 0, flags: 0, shader: None, layers: vec![layer] }]),
+            Chunk::Ribbons(vec![ribbon]),
+            Chunk::Pivots(vec![[0.0, 0.0, 50.0]]),
+        ],
+    };
+    let list = ribbons(&m, &mut |id| id as i32 + 3);
+    let r = &list[0];
+    // 25 a second for 0.4 seconds: 11 segments; additive; its texture
+    // the layer's.
+    assert_eq!(r.params, [0.4, 25.0, 1.0, 2.0, 0.0, 0.0, 1.0, 11.0]);
+    assert_eq!((r.texture, r.color), (4, [1.0, 0.5, 0.1]));
+    assert_eq!(r.frames.len(), RIBBON_FRAME);
+    assert_eq!(r.frames[11], 50.0);
+    assert_eq!(&r.frames[12..16], [1.0, 25.0, 10.0, 0.5]);
+}
+
+#[test]
 fn shown_and_made_as_its_tracks_say() {
     let key = |frame, value| Key { frame, value, tangents: None };
     let hidden = Track { interpolation: 0, global_sequence: -1, keys: vec![key(0, 1.0), key(500, 0.0)] };

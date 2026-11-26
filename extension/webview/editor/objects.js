@@ -184,7 +184,7 @@ void main() {
             this.models.length = msg.firstModel
             this.notes = msg.notes
             for (const m of msg.models) {
-                const model = {geosets: [], instances: 0, instanceBuffer: null}
+                const model = {path: m.path, geosets: [], instances: 0, instanceBuffer: null}
                 this.models.push(model)
                 if (m.error) {
                     this.notes.push(m.error)

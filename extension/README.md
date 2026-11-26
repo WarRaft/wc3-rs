@@ -151,12 +151,12 @@ coming is listed below.
   works out everything drawn. A text form of war3map.doo,
   war3mapUnits.doo or war3map.w3r open beside it is in step with it both
   ways; what changes on disk is read again; the pathing is made again on
-  every save. Models play their Stand, their particles too (the Animate
-  button). Its light is the game's day and night (a time of day, or the
-  day going round), with the map's shadows and fog. Its Map… panel makes
-  the map bigger or smaller and sets its playable area, its tiles (the
-  tile setter) and their pathing (the tile pather) (the repository
-  README, "World Editor").
+  every save. Models play their Stand, their particles (with their
+  tails) and ribbons too (the Animate button). Its light is the game's
+  day and night (a time of day, or the day going round), with the map's
+  shadows and fog. Its Map… panel makes the map bigger or smaller and
+  sets its playable area, its tiles (the tile setter) and their pathing
+  (the tile pather) (the repository README, "World Editor").
 
 ## Not yet
 

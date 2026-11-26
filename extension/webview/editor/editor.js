@@ -30,6 +30,8 @@
         shaderError = e.message
     }
     const light = new EditorLight.Light()
+    /** Where the camera was before `focusEffect`. */
+    let focusedFrom = null
     let lightNotes = []
     const camera = new EditorCamera.Camera()
     camera.heightAt = (x, y) => terrain?.heightAt(x, y) ?? 0
@@ -663,6 +665,8 @@
                         objects: objects.count,
                         animated: objects.models.filter(m => m.anim).length,
                         emitters: objects.particles.count,
+                        tails: objects.particles.models.flat().filter(x => x.e.params[14] !== 0).length,
+                        ribbons: objects.particles.ribbonCount,
                         error: gl.getError(),
                     },
                 }))
@@ -801,6 +805,28 @@
             selected = null
         } else if (msg.type === 'undo' || msg.type === 'redo' || msg.type === 'save') {
             send(encode[msg.type]())
+        } else if (msg.type === 'unfocus' && focusedFrom) {
+            Object.assign(camera, focusedFrom)
+            focusedFrom = null
+        } else if (msg.type === 'focusEffect' && objects) {
+            // The camera close over the first thing whose model's path
+            // has `path`, or has tails (`tails`), or ribbons (or else
+            // tails): for the tests' pictures.
+            const p = objects.particles
+            const has = mi => (p.ribbons[mi]?.length ?? 0) > 0
+            const tails = mi => (p.models[mi] ?? []).some(x => x.e.params[14] !== 0)
+            const data = objects.instanceData ?? []
+            const named = mi => !!msg.path && (objects.models[mi]?.path ?? '').toLowerCase().includes(msg.path.toLowerCase())
+            const order = msg.path ? [named] : msg.tails ? [tails] : [has, tails]
+            const mi = order.map(f => data.findIndex((d, i) => d.length && f(i))).find(i => i >= 0)
+            if (mi !== undefined) {
+                focusedFrom = {position: [...camera.position], distance: camera.distance, vertical: camera.vertical, horizontal: camera.horizontal}
+                const d = data[mi]
+                camera.position = [d[0], d[1], d[2] + 1]
+                camera.distance = msg.distance ?? 8
+                camera.vertical = -0.6
+            }
+            vscode.postMessage({type: 'focused', found: mi !== undefined, path: mi !== undefined ? objects.models[mi]?.path : ''})
         } else if (msg.type === 'mapOpen') {
             mapPanel.open()
         } else if (msg.type === 'mapResize') {

@@ -185,7 +185,7 @@ pub struct Skeleton<'a> {
 impl<'a> Skeleton<'a> {
     pub fn of(m: &'a Model) -> Skeleton<'a> {
         let all: HashMap<u32, &Node> =
-            m.bones().iter().map(|b| &b.node).chain(m.helpers()).chain(m.emitters2().iter().map(|e| &e.node)).chain(m.lights().iter().map(|l| &l.node)).map(|n| (n.object_id, n)).collect();
+            m.bones().iter().map(|b| &b.node).chain(m.helpers()).chain(m.emitters2().iter().map(|e| &e.node)).chain(m.lights().iter().map(|l| &l.node)).chain(m.ribbons().iter().map(|r| &r.node)).map(|n| (n.object_id, n)).collect();
         // Parents first.
         let mut order: Vec<&Node> = Vec::new();
         let mut placed = std::collections::HashSet::new();

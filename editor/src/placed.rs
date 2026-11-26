@@ -79,6 +79,8 @@ pub struct Model {
     pub anim: Option<crate::anim::Baked>,
     /// Its particle emitters (`particles::emitters`).
     pub emitters: Vec<crate::particles::Emitter>,
+    /// Its ribbons (`particles::ribbons`).
+    pub ribbons: Vec<crate::particles::Ribbon>,
 }
 
 /// Floats per instance.
@@ -505,6 +507,7 @@ fn load_model(
         0 => texs.get(id as usize).copied().unwrap_or(texture::NONE),
         _ => texture::NONE,
     });
+    model.ribbons = crate::particles::ribbons(&m, &mut |id| texs.get(id as usize).copied().unwrap_or(texture::NONE));
     let slots = crate::anim::Skeleton::of(&m).slots;
     let (mut min, mut max) = ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]);
     for (gi, g) in m.geosets().iter().enumerate() {

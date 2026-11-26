@@ -1797,8 +1797,20 @@ step), this list updated.
      HiveWE makes them) and where it is, a square facing the camera, the
      game's filter modes; one draw an emitter of a model for all its
      things. On the Diablo III beta map 137 emitters (waterfalls' spray,
-     torches). Tails (`head_or_tail` 1, 2), emitters in model space, and
-     ribbons (`RIBB`) are next. MCP: `mdx_info` says the emitters.
+     torches). Tails (`head_or_tail` 1, 2): a second draw, a quad from
+     the particle back along its velocity now (`tail_length` seconds
+     of it), the tail's cells. Ribbons (`RIBB`, read by `mdx-rs`): at
+     every frame where the emitter is (its node at its pivot), shown
+     (`KRVS`), its height above and below (`KRHA`, `KRHB`), its alpha
+     (`KRAL`); its material's first layer's texture and filter mode;
+     the page keeps no segment: a quad between two, each the time it
+     was made (one every `1 / rate`, the newest the emitter now), the
+     emitter's place then from the baked frames, gravity since, the
+     texture along it by age; 390 ribbons of the game's models read and
+     written back, Phoenix, Graveyard, Shade's shown in `Stand` (many
+     units' only in Attack). Emitters in model space and `KRCO`/`KRTX`
+     animated are not yet. MCP: `mdx_info` says the emitters and
+     ribbons.
    - **8c, light** (done): `mdx-rs` reads lights (`LITE`, up to 1100);
      `editor/src/light.rs` finds the day and night models of the tileset
      whose light the map uses (`war3map.w3i`'s, else its terrain's) in
