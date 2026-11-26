@@ -356,3 +356,83 @@ button:hover {
 .hours input {
     width: 90px;
 }
+.map-panel {
+    position: absolute;
+    right: 12px;
+    top: 12px;
+    width: 300px;
+    max-height: calc(100% - 24px);
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    background: color-mix(in srgb, var(--vscode-editor-background) 92%, transparent);
+    border: 1px solid var(--vscode-panel-border, #444);
+    font-size: .9em;
+}
+
+.map-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.map-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border-top: 1px solid var(--vscode-panel-border, #444);
+    padding-top: 6px;
+}
+
+.map-section h3 {
+    margin: 0;
+    font-size: 1em;
+}
+
+.map-hint {
+    color: var(--vscode-descriptionForeground);
+}
+
+.map-grid {
+    display: grid;
+    grid-template-columns: auto 1fr auto 1fr;
+    gap: 4px;
+    align-items: center;
+}
+
+.map-number, .map-panel select {
+    min-width: 0;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, #555);
+    font: inherit;
+}
+
+.map-tile, .map-row, .map-flags {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.map-flags {
+    flex-wrap: wrap;
+}
+
+.map-tile-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.map-tile-icon {
+    width: 20px;
+    height: 20px;
+    flex: none;
+}
+
+.map-row select {
+    flex: 1;
+}

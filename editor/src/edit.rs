@@ -84,6 +84,8 @@ pub enum Snapshot {
     Units(Vec<doo_rs::Unit>),
     Regions(Vec<w3r_rs::Region>),
     Pathing(Vec<u8>),
+    /// The whole terrain (the tile setter's: its list, cliffs, tileset).
+    Whole(Box<Terrain>),
 }
 
 /// Which files have changes not saved.
@@ -94,11 +96,14 @@ pub struct Dirty {
     pub units: bool,
     pub regions: bool,
     pub pathing: bool,
+    /// `war3map.w3i` (its playable area, its tileset) and `war3map.shd`.
+    pub info: bool,
+    pub shadows: bool,
 }
 
 impl Dirty {
     pub fn any(self) -> bool {
-        self.terrain || self.doodads || self.units || self.regions || self.pathing
+        self.terrain || self.doodads || self.units || self.regions || self.pathing || self.info || self.shadows
     }
 }
 
@@ -227,7 +232,7 @@ impl Edits {
     pub fn record(&mut self, before: Snapshot) {
         self.end();
         match &before {
-            Snapshot::Terrain(..) => self.dirty.terrain = true,
+            Snapshot::Terrain(..) | Snapshot::Whole(_) => self.dirty.terrain = true,
             Snapshot::Doodads(_) => self.dirty.doodads = true,
             Snapshot::Units(_) => self.dirty.units = true,
             Snapshot::Regions(_) => self.dirty.regions = true,
@@ -267,6 +272,14 @@ impl Edits {
         message
     }
 
+    /// Nothing to undo or redo any more (a resize's: as World Editor's,
+    /// the changes before it can't be undone over it).
+    pub fn forget(&mut self) {
+        self.stroke = None;
+        self.undo.clear();
+        self.redo.clear();
+    }
+
     /// The stroke done: it can be undone.
     pub fn end(&mut self) {
         if let Some(s) = self.stroke.take() {
@@ -299,6 +312,10 @@ impl Edits {
             Snapshot::Terrain(points, ground) => {
                 self.dirty.terrain = true;
                 Snapshot::Terrain(std::mem::replace(&mut t.terrain.points, points), std::mem::replace(&mut t.terrain.ground, ground))
+            }
+            Snapshot::Whole(terrain) => {
+                self.dirty.terrain = true;
+                Snapshot::Whole(Box::new(std::mem::replace(t.terrain, *terrain)))
             }
             Snapshot::Doodads(d) => {
                 self.dirty.doodads = true;

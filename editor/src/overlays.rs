@@ -101,8 +101,8 @@ const CAMERA: [f32; 4] = [1.0, 0.4, 0.9, 1.0];
 
 impl Overlays {
     /// The overlays of the map through `game`, its regions and pathing
-    /// `files`' (as the editor has them).
-    pub fn load(game: &Game, t: &Terrain, draw: &Draw, objects: &Objects, files: &crate::placed::Files, minimap: (u32, u32, Vec<u8>)) -> Overlays {
+    /// `files`' and its bounds `info`'s (as the editor has them).
+    pub fn load(game: &Game, t: &Terrain, draw: &Draw, objects: &Objects, files: &crate::placed::Files, info: Option<&w3i_rs::Info>, minimap: (u32, u32, Vec<u8>)) -> Overlays {
         let mut out = Overlays::default();
         let cells = |wx: f32, wy: f32| [(wx - draw.offset[0]) / 128.0, (wy - draw.offset[1]) / 128.0];
         let read = |name: &str| game.read(name).map(|(b, _)| b);
@@ -141,7 +141,7 @@ impl Overlays {
         out.region_picture = Grid { width: gw, height: gh, data: picture.iter().map(|v| (v * 255.0).round() as u8).collect() };
 
         // The bounds.
-        if let Some(Ok(info)) = w3i.as_ref().map(|b| w3i_rs::parse(b)) {
+        if let Some(info) = info {
             let b = info.camera_bounds;
             let [l, bo] = cells(b[0], b[1]);
             let [r, tp] = cells(b[2], b[3]);

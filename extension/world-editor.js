@@ -75,6 +75,7 @@ const VIEW = 'wc3.editors'
  * @property {{pathing: number, regions: number, cameras: number, bounds: number, minimap: number, region?: {name: string, x: number, y: number}} | undefined} overlays  what the page has of the overlays
  * @property {{dirty: boolean, undo: boolean, redo: boolean, message: string} | undefined} state  the edits' state the page last showed
  * @property {{name: string, bounds: number[]} | null | undefined} region  the region picked (the Regions tool)
+ * @property {{width: number, height: number, margins: number[], tileset: string, mapTiles: string[], tiles: number} | undefined} mapSettings  the map's settings the page was last sent
  * @property {{day: boolean, shadows: number, fog: boolean} | undefined} light  the map's light the page has
  * @property {number | undefined} icons  how many of the object palette's icons the page has
  * @property {Map<string, string> | undefined} follow  the paths of the pieces with a text form, by their lower case
@@ -139,7 +140,9 @@ function registerWorldEditor(context, binary, pickManifest) {
     <div id="object-list" class="object-list"></div>
   </div>
   <div class="edits"><button id="undo" title="Undo (Ctrl+Z)" disabled>Undo</button><button id="redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button><button id="save" title="Save the files changed (Ctrl+S)" disabled>Save</button><button id="reload" title="Read the map again, the changes not saved dropped">Reload</button></div>
+  <button id="map-open" title="The map's size, its tiles and their pathing">Map…</button>
 </div>
+<div id="map-panel" class="map-panel" hidden></div>
 <div id="message" class="message" hidden><h2 id="message-title"></h2><p id="message-text"></p><button id="reopen" hidden>Reopen</button></div>
 </div>
 <ul id="notes" class="notes" hidden></ul>
@@ -147,6 +150,7 @@ function registerWorldEditor(context, binary, pickManifest) {
 <script nonce="${nonce}" src="${asset('protocol.js')}"></script>
 <script nonce="${nonce}" src="${asset('camera.js')}"></script>
 <script nonce="${nonce}" src="${asset('light.js')}"></script>
+<script nonce="${nonce}" src="${asset('mapsettings.js')}"></script>
 <script nonce="${nonce}" src="${asset('terrain.js')}"></script>
 <script nonce="${nonce}" src="${asset('particles.js')}"></script>
 <script nonce="${nonce}" src="${asset('objects.js')}"></script>
@@ -278,6 +282,8 @@ function registerWorldEditor(context, binary, pickManifest) {
                 editor.drawn = msg.terrain
             } else if (msg.type === 'picked') {
                 editor.picked = msg.text
+            } else if (msg.type === 'mapSettings') {
+                editor.mapSettings = msg.settings
             } else if (msg.type === 'light') {
                 editor.light = msg.light
             } else if (msg.type === 'icons') {

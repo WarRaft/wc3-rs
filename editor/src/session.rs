@@ -8,7 +8,7 @@ use wc3_server::game::{Game, Lookup};
 use wc3_server::names::Names;
 use wc3_server::project::{self, Project};
 
-use crate::protocol::{CliffsMsg, GroundMsg, IconEntry, LightMsg, MapInfo, ObjectEntry, ObjectsMsg, PaletteEntry, PaletteMsg, PickedMsg, ServerMsg, StateMsg, WaterMsg};
+use crate::protocol::{CliffsMsg, GroundMsg, IconEntry, LightMsg, MapInfo, MapSettingsMsg, TileEntry, ObjectEntry, ObjectsMsg, PaletteEntry, PaletteMsg, PickedMsg, ServerMsg, StateMsg, WaterMsg};
 use crate::terrain::{Draw, Grounds};
 use crate::tileset::Tileset;
 
@@ -60,6 +60,9 @@ pub struct Session {
     /// The models and textures the page has (the ones after are new);
     /// `None` before it has any.
     sent: Option<(usize, usize)>,
+    /// The map's shadows (`war3map.shd`), when it has them at the
+    /// terrain's size.
+    pub shadows: Option<shd_rs::Shadows>,
     /// What was read with a problem, gone past.
     pub notes: Vec<String>,
 }
@@ -106,6 +109,15 @@ impl Session {
         let tileset = Tileset::load(&game, terrain.tileset as char);
         let disk = Self::disk_hashes(&game);
         notes.extend(tileset.notes.iter().cloned());
+        let (sw, sh) = shd_rs::size_for_terrain(terrain.width, terrain.height);
+        let shadows = match read("war3map.shd").map(|b| shd_rs::parse(&b, sw, sh)) {
+            Some(Ok(s)) => Some(s),
+            Some(Err(e)) => {
+                notes.push(format!("Can't read war3map.shd: {e}"));
+                None
+            }
+            None => None,
+        };
         Ok(Session {
             project,
             game,
@@ -129,6 +141,7 @@ impl Session {
             pathing_made: None,
             disk,
             docs: Default::default(),
+            shadows,
             notes,
         })
     }
@@ -219,13 +232,7 @@ impl Session {
     /// its cliffs, then the terrain, whose layers index those textures;
     /// what's placed; the overlays; the palette and the state.
     pub fn draw(&mut self) -> Vec<ServerMsg> {
-        let water = match &self.tileset.water {
-            Some(w) => {
-                let (frames, error) = crate::textures::water(&self.game, &w.texture, w.count);
-                WaterMsg { rate: w.rate, colors: w.colors, frames, error }
-            }
-            None => WaterMsg { error: "No water for this tileset in TerrainArt\\Water.slk.".into(), ..Default::default() },
-        };
+        let water = self.water();
         let mut terrain = self.terrain_msgs(true);
         // Water before the cliffs and the terrain, after the ground.
         terrain.insert(1, ServerMsg::Water(water));
@@ -246,7 +253,7 @@ impl Session {
         let objects = self.objects.as_ref().unwrap();
         let (_, grounds, textures, layers) = self.ground_cache.as_ref().unwrap();
         let minimap = crate::picture::paint(&self.terrain, grounds, textures, layers, &draw, self.tileset.water.as_ref(), 1);
-        let overlays = crate::overlays::Overlays::load(&self.game, &self.terrain, &draw, objects, &self.placed, minimap);
+        let overlays = crate::overlays::Overlays::load(&self.game, &self.terrain, &draw, objects, &self.placed, self.info.as_ref(), minimap);
         self.overlays = Some(overlays.clone());
         terrain.extend(objects_msg);
         terrain.push(ServerMsg::Overlays(overlays));
@@ -256,6 +263,168 @@ impl Session {
         terrain.push(ServerMsg::Light(self.light()));
         terrain.push(ServerMsg::State(self.state(String::new())));
         terrain
+    }
+
+    /// The letter of the tileset whose tables are read.
+    fn tileset_letter(&self) -> u8 {
+        self.tileset.letter
+    }
+
+    /// The tileset's water.
+    fn water(&self) -> WaterMsg {
+        match &self.tileset.water {
+            Some(w) => {
+                let (frames, error) = crate::textures::water(&self.game, &w.texture, w.count);
+                WaterMsg { rate: w.rate, colors: w.colors, frames, error }
+            }
+            None => WaterMsg { error: "No water for this tileset in TerrainArt\\Water.slk.".into(), ..Default::default() },
+        }
+    }
+
+    /// All of the map drawn again on the page as it is (its size or
+    /// tiles changed), the models the page has kept: the map, the
+    /// terrain (the water too when the tileset changed), what's placed,
+    /// the overlays, the palette, the light, the map's settings, the
+    /// state with `message`.
+    fn redraw(&mut self, water: bool, message: String) -> Vec<ServerMsg> {
+        let mut out = vec![self.map_msg()];
+        out.extend(self.terrain_msgs(true));
+        if water {
+            out.insert(2, ServerMsg::Water(self.water()));
+        }
+        out.extend(self.place_objects());
+        out.push(ServerMsg::Overlays(self.overlays()));
+        out.push(ServerMsg::Palette(self.palette()));
+        out.push(ServerMsg::Light(self.light()));
+        out.push(ServerMsg::MapSettings(self.map_settings()));
+        out.push(ServerMsg::State(self.state(message)));
+        out
+    }
+
+    /// What the map's settings show: its size and playable area, its
+    /// tiles, the game's tilesets and tiles.
+    pub fn map_settings(&self) -> MapSettingsMsg {
+        let mut tilesets: Vec<(String, String)> = self.names.tilesets.iter().map(|(l, n)| (l.to_string(), n.clone())).collect();
+        tilesets.sort();
+        let tiles = crate::tiles::all(&self.tileset)
+            .into_iter()
+            .map(|t| TileEntry { name: self.names.ground.get(&t.id).cloned().unwrap_or_else(|| t.id.clone()), cliff: t.cliff.is_some(), pathing: t.pathing, id: t.id })
+            .collect();
+        MapSettingsMsg {
+            width: self.terrain.width,
+            height: self.terrain.height,
+            info: self.info.is_some(),
+            margins: self.info.as_ref().map_or([0; 4], |i| i.camera_complements),
+            tileset: (self.terrain.tileset as char).to_string(),
+            max_tiles: self.terrain.flags_version().textures() as u32,
+            tilesets,
+            map_tiles: self.terrain.ground.iter().map(|g| g.to_string()).collect(),
+            tiles,
+        }
+    }
+
+    /// The map made bigger or smaller by `sides`, its playable area set
+    /// to `margins` (or kept): the terrain, the pathing, the shadows,
+    /// `war3map.w3i`, what's placed off it removed; nothing to undo
+    /// after it (as World Editor's).
+    pub fn resize(&mut self, sides: crate::resize::Sides, margins: Option<[i32; 4]>) -> Vec<ServerMsg> {
+        let mut terrain = self.terrain.clone();
+        let mut seed = self.terrain.points.len() as u32;
+        if let Err(e) = crate::resize::terrain(&mut terrain, sides, &mut seed) {
+            return vec![ServerMsg::State(self.state(e))];
+        }
+        let mut info = self.info.clone();
+        if let Some(i) = info.as_mut() {
+            crate::resize::info(i, &terrain, sides);
+        }
+        if let Some(m) = margins
+            && let Err(e) = crate::resize::set_playable(&mut terrain, info.as_mut(), m)
+        {
+            return vec![ServerMsg::State(self.state(e))];
+        }
+        let resized = sides != crate::resize::Sides::default();
+        let removed = crate::resize::placed(&mut self.placed, &terrain, sides);
+        for p in [self.placed.pathing.as_mut(), self.pathing_made.as_mut()].into_iter().flatten() {
+            crate::resize::pathing(p, sides);
+        }
+        if let Some(sh) = self.shadows.as_mut() {
+            crate::resize::shadows(sh, sides);
+        }
+        self.terrain = terrain;
+        self.info = info;
+        self.edits.forget();
+        let d = &mut self.edits.dirty;
+        d.terrain = true;
+        d.info |= self.info.is_some();
+        d.pathing |= resized && self.placed.pathing.is_some();
+        d.shadows |= resized && self.shadows.is_some();
+        // The doodads: some removed, or the special ones moved.
+        d.doodads |= (removed.things > 0 || sides.left != 0 || sides.bottom != 0) && self.placed.doodads.is_some();
+        d.units |= removed.things > 0 && self.placed.units.is_some();
+        d.regions |= removed.regions > 0;
+        let message = format!(
+            "The map is {} by {} cells{}.",
+            self.terrain.width - 1,
+            self.terrain.height - 1,
+            if removed.things + removed.regions > 0 { format!("; off it, removed: {} things, {} regions", removed.things, removed.regions) } else { String::new() }
+        );
+        self.redraw(false, message)
+    }
+
+    /// The tile setter's: the terrain's tiles `ids`, each old tile's
+    /// points to `to[old]`, the tileset `letter`'s (its tables read
+    /// again when it changes); undone as one.
+    pub fn set_tiles(&mut self, ids: &[String], to: &[u8], letter: u8) -> Vec<ServerMsg> {
+        let mut terrain = self.terrain.clone();
+        if let Err(e) = crate::tiles::set(&mut terrain, &self.tileset, ids, to, letter) {
+            return vec![ServerMsg::State(self.state(e))];
+        }
+        let before = std::mem::replace(&mut self.terrain, terrain);
+        let changed = before.tileset != letter;
+        self.edits.record(crate::edit::Snapshot::Whole(Box::new(before)));
+        self.retileset(changed);
+        self.redraw(changed, format!("The map's tiles: {}.", ids.join(", ")))
+    }
+
+    /// The tileset's tables read again (`changed`) after the terrain's
+    /// tileset did, and `war3map.w3i`'s with it.
+    fn retileset(&mut self, changed: bool) {
+        if !changed {
+            return;
+        }
+        let letter = self.terrain.tileset;
+        self.tileset = Tileset::load(&self.game, letter as char);
+        self.ground_cache = None;
+        if let Some(i) = self.info.as_mut()
+            && i.tileset != letter
+        {
+            i.tileset = letter;
+            self.edits.dirty.info = true;
+        }
+    }
+
+    /// The tile pather's: ground tile `index` of the terrain's list
+    /// forbids `forbids` (walking, flying, building) where it lies; the
+    /// rest of the pathing as it is. Undone as a pathing brush is.
+    pub fn tile_pathing(&mut self, index: u8, forbids: u8) -> Vec<ServerMsg> {
+        if index as usize >= self.terrain.ground.len() {
+            return vec![ServerMsg::State(self.state(format!("The terrain has no tile {index}.")))];
+        }
+        if self.placed.pathing.is_none() {
+            return vec![ServerMsg::State(self.state("The map has no war3map.wpm to change.".into()))];
+        }
+        let types = self.types.get_or_insert_with(|| crate::types::Types::load(&self.game));
+        let draw = self.drawn.as_ref().expect("drawn");
+        let made = crate::pathing::compute_with(&self.game, &self.terrain, draw, &self.tileset, types, &self.placed, Some((index as usize, forbids)));
+        let cells = crate::tiles::cells_of(&self.terrain, draw, index as usize);
+        let p = self.placed.pathing.as_mut().expect("checked");
+        if p.cells.len() != made.cells.len() {
+            return vec![ServerMsg::State(self.state("war3map.wpm isn't the terrain's size.".into()))];
+        }
+        self.edits.record(crate::edit::Snapshot::Pathing(p.cells.clone()));
+        crate::tiles::repath(p, &made, &cells);
+        let id = self.terrain.ground[index as usize].to_string();
+        vec![ServerMsg::Overlays(self.overlays()), ServerMsg::State(self.state(format!("{id}'s pathing set on {} cells.", cells.len())))]
     }
 
     /// Everything placed, placed again on the terrain as it is: the
@@ -288,16 +457,8 @@ impl Session {
     /// colour stored blue, green, red, alpha).
     pub fn light(&self) -> LightMsg {
         let letter = self.info.as_ref().map(|i| i.light_tileset).filter(|l| *l != 0).unwrap_or(self.terrain.tileset) as char;
-        let (terrain, units, mut notes) = crate::light::load(&self.game, letter);
-        let (w, h) = shd_rs::size_for_terrain(self.terrain.width, self.terrain.height);
-        let shadows = match self.game.read("war3map.shd").map(|(b, _)| shd_rs::parse(&b, w, h)) {
-            Some(Ok(s)) => crate::overlays::Grid { width: s.width, height: s.height, data: s.cells },
-            Some(Err(e)) => {
-                notes.push(format!("Can't read war3map.shd: {e}"));
-                Default::default()
-            }
-            None => Default::default(),
-        };
+        let (terrain, units, notes) = crate::light::load(&self.game, letter);
+        let shadows = self.shadows.as_ref().map(|s| crate::overlays::Grid { width: s.width, height: s.height, data: s.cells.clone() }).unwrap_or_default();
         let fog = self.info.as_ref().filter(|i| i.flags & 0x2000 != 0 && i.fog.style != 0).map(|i| {
             let [b, g, r, a] = i.fog.color;
             (i.fog.style, i.fog.start_z, i.fog.end_z, i.fog.density, [r, g, b, a])
@@ -390,6 +551,11 @@ impl Session {
         if let Some(what) = done {
             match what {
                 crate::edit::Snapshot::Regions(_) | crate::edit::Snapshot::Pathing(_) => out.push(ServerMsg::Overlays(self.overlays())),
+                crate::edit::Snapshot::Whole(_) => {
+                    let changed = self.tileset_letter() != self.terrain.tileset;
+                    self.retileset(changed);
+                    return self.redraw(changed, String::new());
+                }
                 crate::edit::Snapshot::Terrain(..) => {
                     out.extend(self.terrain_msgs(false));
                     out.extend(self.place_objects());
@@ -433,12 +599,14 @@ impl Session {
         let docs: Vec<String> = self.docs.values().map(|(p, _)| p.clone()).collect();
         let mut saved = Vec::new();
         let mut failed = Vec::new();
-        let files: [FileToSave; 5] = [
+        let files: [FileToSave; 7] = [
             (dirty.terrain, "war3map.w3e", self.terrain.to_bytes().map_err(|e| e.to_string())),
             (dirty.doodads, "war3map.doo", self.placed.doodads.as_ref().map_or(Ok(Vec::new()), |d| d.to_bytes().map_err(|e| e.to_string()))),
             (dirty.units, "war3mapUnits.doo", self.placed.units.as_ref().map_or(Ok(Vec::new()), |u| u.to_bytes().map_err(|e| e.to_string()))),
             (dirty.regions, "war3map.w3r", self.placed.regions.as_ref().map_or(Ok(Vec::new()), |r| r.to_bytes().map_err(|e| e.to_string()))),
             (dirty.pathing, "war3map.wpm", self.placed.pathing.as_ref().map_or(Ok(Vec::new()), |p| p.to_bytes().map_err(|e| e.to_string()))),
+            (dirty.info && self.info.is_some(), "war3map.w3i", self.info.as_ref().map_or(Ok(Vec::new()), |i| i.to_bytes().map_err(|e| e.to_string()))),
+            (dirty.shadows && self.shadows.is_some(), "war3map.shd", Ok(self.shadows.as_ref().map_or(Vec::new(), |s| s.to_bytes()))),
         ];
         for (i, (changed, name, bytes)) in files.into_iter().enumerate() {
             if !changed {
@@ -456,7 +624,7 @@ impl Session {
                 Ok(to) => {
                     saved.push(to.display().to_string());
                     let d = &mut self.edits.dirty;
-                    *[&mut d.terrain, &mut d.doodads, &mut d.units, &mut d.regions, &mut d.pathing][i] = false;
+                    *[&mut d.terrain, &mut d.doodads, &mut d.units, &mut d.regions, &mut d.pathing, &mut d.info, &mut d.shadows][i] = false;
                 }
                 Err(e) => failed.push(format!("{name}: {e}")),
             }
@@ -765,7 +933,7 @@ impl Session {
         let minimap = crate::picture::paint(&self.terrain, grounds, textures, layers, &draw, self.tileset.water.as_ref(), 1);
         let empty = crate::placed::Objects::default();
         let objects = self.objects.as_ref().unwrap_or(&empty);
-        let o = crate::overlays::Overlays::load(&self.game, &self.terrain, &draw, objects, &self.placed, minimap);
+        let o = crate::overlays::Overlays::load(&self.game, &self.terrain, &draw, objects, &self.placed, self.info.as_ref(), minimap);
         self.overlays = Some(o.clone());
         o
     }

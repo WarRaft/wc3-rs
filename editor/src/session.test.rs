@@ -381,3 +381,64 @@ fn the_light_the_shadows_and_the_fog_of_the_map() {
     assert_eq!(l.fog, Some((1, 1000.0, 3000.0, 0.5, [30, 20, 10, 255])));
     assert_eq!((l.shadows.width, l.shadows.height, l.shadows.data[0], l.shadows.data[1]), (8, 4, 255, 0));
 }
+
+/// A terrain of 32 by 32 cells, Lordaeron's dirt.
+fn terrain_32() -> Vec<u8> {
+    let mut t = w3e_rs::parse(&testdir::terrain()).unwrap();
+    t.width = 33;
+    t.height = 33;
+    t.points = vec![t.points[0]; 33 * 33];
+    t.to_bytes().unwrap()
+}
+
+#[test]
+fn the_map_resized_its_tiles_set_and_undone_saved_with_its_info_and_shadows() {
+    let dir = TestDir::new("session-resize");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &terrain_32());
+    let mut info = w3i_rs::parse(&testdir::info()).unwrap();
+    info.camera_complements = [2, 2, 2, 2];
+    dir.write("map/war3map.w3i", &info.to_bytes().unwrap());
+    dir.write("map/war3map.shd", &vec![255u8; 128 * 128]);
+    dir.write("map/TerrainArt/Terrain.slk", &testdir::slk(&[&["tileID", "dir", "file"], &["Ldrt", "T", "Dirt"], &["Lgrs", "T", "Grass"]]));
+    dir.write("map/TerrainArt/CliffTypes.slk", &testdir::slk(&[&["cliffID", "groundTile"], &["CLdi", "Ldrt"], &["CLgr", "Lgrs"]]));
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let settings = s.map_settings();
+    assert_eq!((settings.width, settings.margins, settings.map_tiles.clone(), settings.max_tiles), (33, [2, 2, 2, 2], vec!["Ldrt".to_string()], 16));
+    assert_eq!(settings.tiles.iter().map(|t| (t.id.as_str(), t.cliff)).collect::<Vec<_>>(), [("Ldrt", true), ("Lgrs", true)]);
+
+    // Bigger on the left: all of it again, the margins grown.
+    let msgs = s.resize(crate::resize::Sides { left: 8, ..Default::default() }, None);
+    assert!(matches!(&msgs[0], ServerMsg::Map(m) if m.width == 41), "{:?}", &msgs[0]);
+    assert!(matches!(msgs.last(), Some(ServerMsg::State(st)) if st.dirty && !st.undo && st.message.contains("40 by 32")));
+    assert!(msgs.iter().any(|m| matches!(m, ServerMsg::MapSettings(m) if m.margins == [10, 2, 2, 2])));
+    assert!(msgs.iter().any(|m| matches!(m, ServerMsg::Light(l) if l.shadows.width == 160 && l.shadows.data[0] == 0 && l.shadows.data[40] == 255)));
+
+    // Grass added, dirt's points to it, then undone and done again.
+    s.set_tiles(&["Lgrs".to_string(), "Ldrt".to_string()], &[0], b'L');
+    assert_eq!(s.terrain.ground.len(), 2);
+    assert_eq!(s.terrain.cliffs.len(), 2);
+    s.undo(false);
+    assert_eq!(s.terrain.ground.len(), 1);
+    s.undo(true);
+    let saved = s.save();
+    assert!(matches!(saved.last(), Some(ServerMsg::State(st)) if !st.dirty && st.message.contains("war3map.w3i") && st.message.contains("war3map.shd")), "{saved:?}");
+    let t = w3e_rs::parse(&std::fs::read(dir.path().join("map/war3map.w3e")).unwrap()).unwrap();
+    assert_eq!((t.width, t.offset_x, t.ground.len()), (41, -128.0 - 8.0 * 128.0, 2));
+    let i = w3i_rs::parse(&std::fs::read(dir.path().join("map/war3map.w3i")).unwrap()).unwrap();
+    assert_eq!(i.camera_complements, [10, 2, 2, 2]);
+    assert_eq!(std::fs::read(dir.path().join("map/war3map.shd")).unwrap().len(), 160 * 128);
+    assert_eq!(wpm_rs::parse(&std::fs::read(dir.path().join("map/war3map.wpm")).unwrap()).unwrap().width, 160);
+    // The tile pather: grass (where it lies: everywhere) unwalkable,
+    // undone.
+    let msgs = s.tile_pathing(0, wpm_rs::NO_WALK);
+    assert!(matches!(msgs.last(), Some(ServerMsg::State(st)) if st.undo && st.message.contains("Lgrs")), "{msgs:?}");
+    let p = s.placed.pathing.as_ref().unwrap();
+    assert!(p.cells.iter().all(|c| c & wpm_rs::NO_WALK != 0 || c & wpm_rs::NO_FLY != 0));
+    s.undo(false);
+    assert!(s.placed.pathing.as_ref().unwrap().cells.iter().any(|c| c & wpm_rs::NO_WALK == 0));
+    // Too small: refused, nothing changed.
+    let msgs = s.resize(crate::resize::Sides { right: -20, ..Default::default() }, None);
+    assert!(matches!(&msgs[..], [ServerMsg::State(st)] if st.message.contains("32 to 480")));
+}

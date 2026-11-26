@@ -40,7 +40,8 @@ fn regions_bounds_cameras_and_the_minimap() {
     let (t, d) = draw();
     let minimap = (3, 2, vec![0u8; 3 * 2 * 4]);
     let files = crate::placed::Files::read(&game).0;
-    let o = Overlays::load(&game, &t, &d, &Objects::default(), &files, minimap);
+    let info = game.read("war3map.w3i").and_then(|(b, _)| w3i_rs::parse(&b).ok());
+    let o = Overlays::load(&game, &t, &d, &Objects::default(), &files, info.as_ref(), minimap);
     assert!(o.notes.is_empty(), "{:?}", o.notes);
     // The region's picture: the left cell, four by four pixels, its
     // edge stronger; the right cell clear.

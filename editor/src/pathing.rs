@@ -36,6 +36,12 @@ use crate::types::Types;
 /// The pathing the map's files make: the terrain `t` (drawn as `draw`),
 /// what `files` place on it.
 pub fn compute(game: &Game, t: &Terrain, draw: &Draw, tileset: &Tileset, types: &Types, files: &Files) -> Pathing {
+    compute_with(game, t, draw, tileset, types, files, None)
+}
+
+/// [`compute`] with ground tile `index`'s pathing `forbids` (the tile
+/// pather's) in place of its table's.
+pub fn compute_with(game: &Game, t: &Terrain, draw: &Draw, tileset: &Tileset, types: &Types, files: &Files, tile: Option<(usize, u8)>) -> Pathing {
     let (w, h) = (t.width as usize, t.height as usize);
     let (pw, ph) = ((w.saturating_sub(1)) * 4, (h.saturating_sub(1)) * 4);
     let v = t.flags_version();
@@ -44,7 +50,11 @@ pub fn compute(game: &Game, t: &Terrain, draw: &Draw, tileset: &Tileset, types: 
     let ground: Vec<u8> = t
         .ground
         .iter()
-        .map(|g| {
+        .enumerate()
+        .map(|(i, g)| {
+            if let Some((_, forbids)) = tile.filter(|(n, _)| *n == i) {
+                return forbids;
+            }
             let id = g.to_string();
             let allowed = |k: &str| tileset.terrain.as_ref().and_then(|s| s.number(&id, k)).is_none_or(|n| n != 0.0);
             (if allowed("walkable") { 0 } else { NO_WALK }) | (if allowed("flyable") { 0 } else { NO_FLY }) | (if allowed("buildable") { 0 } else { NO_BUILD })

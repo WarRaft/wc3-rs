@@ -39,6 +39,10 @@
 //! | 16 | `Reload` | the editor's changes dropped, the map read again; answered as `Hello` is |
 //! | 17 | `Text` | a piece's text form opened or changed in VS Code: its path, its text; answered by what changed and `State` (nothing when it's what the editor gave it) |
 //! | 18 | `TextClosed` | its path |
+//! | 19 | `MapAsk` | nothing; answered by `MapSettings` |
+//! | 20 | `Resize` | `i32` cells added left, right, bottom, top (fewer than 0: taken off), `u8` margins given, `i32` the playable area's margins left, right, bottom, top; answered by the map and all of it drawn again (as `Hello`), `MapSettings` |
+//! | 21 | `Tiles` | the tile setter's: a list of tile ids, the new index of each old tile (an array of `u8`), `u8` the tileset's letter; answered as `Resize` |
+//! | 22 | `TilePathing` | the tile pather's: `u8` a tile's index in the terrain's list, `u8` what it forbids (`wpm` flags: 2 walking, 4 flying, 8 building); answered by `Overlays` and `State` |
 //! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id); answered by `Icons` |
 //!
 //! Editor → page:
@@ -61,6 +65,7 @@
 //! | 142 | `Follow` | the pieces that have a text form and where their files are: a list of (name, path); the extension sends their documents' texts |
 //! | 143 | `TextOut` | a piece's text form as the editor changed it: path, text; the extension puts it in the open document |
 //! | 144 | `SaveDocs` | the documents VS Code saves (their paths), the rest the editor saved |
+//! | 146 | `MapSettings` | the map's size, tiles, the game's tiles: see [`MapSettingsMsg`] |
 //! | 145 | `Light` | the light through the day, the shadows, the fog: see [`LightMsg`] |
 //! | 141 | `Icons` | a list of (`u8` kind, id, `u32` width, height, RGBA; 0 by 0 for none) |
 //!
@@ -100,10 +105,15 @@ mod kind {
     pub const RELOAD: u8 = 16;
     pub const TEXT: u8 = 17;
     pub const TEXT_CLOSED: u8 = 18;
+    pub const MAP_ASK: u8 = 19;
+    pub const RESIZE: u8 = 20;
+    pub const TILES: u8 = 21;
+    pub const TILE_PATHING: u8 = 22;
     pub const FOLLOW: u8 = 142;
     pub const TEXT_OUT: u8 = 143;
     pub const SAVE_DOCS: u8 = 144;
     pub const LIGHT: u8 = 145;
+    pub const MAP_SETTINGS: u8 = 146;
     pub const ICONS_ANSWER: u8 = 141;
     pub const OBJECTS: u8 = 134;
     pub const PICKED: u8 = 135;
@@ -155,6 +165,43 @@ pub enum ClientMsg {
     Text { path: String, text: String },
     /// Kind 18.
     TextClosed { path: String },
+    /// Kind 19.
+    MapAsk,
+    /// Kind 20.
+    Resize { sides: crate::resize::Sides, margins: Option<[i32; 4]> },
+    /// Kind 21.
+    Tiles { ids: Vec<String>, to: Vec<u8>, tileset: u8 },
+    /// Kind 22.
+    TilePathing { index: u8, forbids: u8 },
+}
+
+/// A tile the tile setter offers: its id, name, tileset's letter (its
+/// id's first), `u8` whether it's under a cliff type, `u8` what it
+/// forbids (`wpm` flags).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct TileEntry {
+    pub id: String,
+    pub name: String,
+    pub cliff: bool,
+    pub pathing: u8,
+}
+
+/// Kind 146's body: `u32` the terrain's points across and up, `u8` the
+/// map has a `war3map.w3i`, `i32` its playable area's margins (left,
+/// right, bottom, top), the tileset's letter, `u32` the most tiles the
+/// terrain has room for, a list of tilesets (letter, name), the map's
+/// tiles (ids, in order), every tile of the game's ([`TileEntry`]).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MapSettingsMsg {
+    pub width: u32,
+    pub height: u32,
+    pub info: bool,
+    pub margins: [i32; 4],
+    pub tileset: String,
+    pub max_tiles: u32,
+    pub tilesets: Vec<(String, String)>,
+    pub map_tiles: Vec<String>,
+    pub tiles: Vec<TileEntry>,
 }
 
 /// What the page is told of the map: kind 128's body, in this order.
@@ -364,6 +411,8 @@ pub enum ServerMsg {
     SaveDocs(Vec<String>),
     /// Kind 145.
     Light(LightMsg),
+    /// Kind 146.
+    MapSettings(MapSettingsMsg),
 }
 
 /// A frame's body was shorter than its fields, or not UTF-8.
@@ -435,6 +484,15 @@ impl ClientMsg {
             kind::RELOAD => Some(ClientMsg::Reload),
             kind::TEXT => Some(ClientMsg::Text { path: r.string()?, text: r.string()? }),
             kind::TEXT_CLOSED => Some(ClientMsg::TextClosed { path: r.string()? }),
+            kind::MAP_ASK => Some(ClientMsg::MapAsk),
+            kind::RESIZE => {
+                let sides = crate::resize::Sides { left: r.u32()? as i32, right: r.u32()? as i32, bottom: r.u32()? as i32, top: r.u32()? as i32 };
+                let given = r.u8()? != 0;
+                let margins = [r.u32()? as i32, r.u32()? as i32, r.u32()? as i32, r.u32()? as i32];
+                Some(ClientMsg::Resize { sides, margins: given.then_some(margins) })
+            }
+            kind::TILES => Some(ClientMsg::Tiles { ids: r.list(|r| r.string())?, to: r.bytes()?, tileset: r.u8()? }),
+            kind::TILE_PATHING => Some(ClientMsg::TilePathing { index: r.u8()?, forbids: r.u8()? }),
             _ => None,
         })
     }
@@ -515,6 +573,24 @@ impl ClientMsg {
             ClientMsg::TextClosed { path } => {
                 w.string(path);
                 kind::TEXT_CLOSED
+            }
+            ClientMsg::MapAsk => kind::MAP_ASK,
+            ClientMsg::Resize { sides, margins } => {
+                [sides.left, sides.right, sides.bottom, sides.top].iter().for_each(|v| w.u32(*v as u32));
+                w.u8(margins.is_some() as u8);
+                margins.unwrap_or_default().iter().for_each(|v| w.u32(*v as u32));
+                kind::RESIZE
+            }
+            ClientMsg::Tiles { ids, to, tileset } => {
+                w.list(ids, |w, id| w.string(id));
+                w.bytes(to);
+                w.u8(*tileset);
+                kind::TILES
+            }
+            ClientMsg::TilePathing { index, forbids } => {
+                w.u8(*index);
+                w.u8(*forbids);
+                kind::TILE_PATHING
             }
             ClientMsg::Icons(list) => {
                 w.list(list, |w, (k, id)| {
@@ -728,6 +804,26 @@ impl ServerMsg {
                 w.list(paths, |w, p| w.string(p));
                 kind::SAVE_DOCS
             }
+            ServerMsg::MapSettings(m) => {
+                w.u32(m.width);
+                w.u32(m.height);
+                w.u8(m.info as u8);
+                m.margins.iter().for_each(|v| w.u32(*v as u32));
+                w.string(&m.tileset);
+                w.u32(m.max_tiles);
+                w.list(&m.tilesets, |w, (l, n)| {
+                    w.string(l);
+                    w.string(n);
+                });
+                w.list(&m.map_tiles, |w, id| w.string(id));
+                w.list(&m.tiles, |w, t| {
+                    w.string(&t.id);
+                    w.string(&t.name);
+                    w.u8(t.cliff as u8);
+                    w.u8(t.pathing);
+                });
+                kind::MAP_SETTINGS
+            }
             ServerMsg::Light(l) => {
                 w.f32s(&l.terrain);
                 w.f32s(&l.units);
@@ -914,6 +1010,15 @@ impl ServerMsg {
             kind::FOLLOW => ServerMsg::Follow(r.list(|r| Ok((r.string()?, r.string()?)))?),
             kind::TEXT_OUT => ServerMsg::TextOut { path: r.string()?, text: r.string()? },
             kind::SAVE_DOCS => ServerMsg::SaveDocs(r.list(|r| r.string())?),
+            kind::MAP_SETTINGS => {
+                let (width, height, info) = (r.u32()?, r.u32()?, r.u8()? != 0);
+                let margins = [r.u32()? as i32, r.u32()? as i32, r.u32()? as i32, r.u32()? as i32];
+                let (tileset, max_tiles) = (r.string()?, r.u32()?);
+                let tilesets = r.list(|r| Ok((r.string()?, r.string()?)))?;
+                let map_tiles = r.list(|r| r.string())?;
+                let tiles = r.list(|r| Ok(TileEntry { id: r.string()?, name: r.string()?, cliff: r.u8()? != 0, pathing: r.u8()? }))?;
+                ServerMsg::MapSettings(MapSettingsMsg { width, height, info, margins, tileset, max_tiles, tilesets, map_tiles, tiles })
+            }
             kind::LIGHT => {
                 let (terrain, units) = (r.f32s()?, r.f32s()?);
                 let shadows = crate::overlays::Grid { width: r.u32()?, height: r.u32()?, data: r.bytes()? };

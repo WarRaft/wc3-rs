@@ -1,4 +1,4 @@
-/* global acquireVsCodeApi, EditorProtocol, EditorCamera, EditorTerrain, EditorObjects, EditorOverlays, EditorLight */
+/* global acquireVsCodeApi, EditorProtocol, EditorCamera, EditorTerrain, EditorObjects, EditorOverlays, EditorLight, EditorMapSettings */
 
 /**
  * The World Editor's page: it draws what the editor's process
@@ -292,6 +292,8 @@
     $('undo').onclick = () => send(encode.undo())
     $('redo').onclick = () => send(encode.redo())
     $('save').onclick = () => send(encode.save())
+    const mapPanel = new EditorMapSettings.Panel($('map-panel'), send, encode)
+    $('map-open').onclick = () => (mapPanel.isOpen ? mapPanel.close() : mapPanel.open())
     $('reload').onclick = () => send(encode.reload())
     showTools()
 
@@ -628,6 +630,12 @@
             showNotes()
         } else if (msg.kind === 'terrain' && terrain) {
             terrain.setTerrain(msg)
+            // Resized: the view stays over the same ground.
+            if (mapPanel.shift) {
+                camera.position[0] += mapPanel.shift[0]
+                camera.position[1] += mapPanel.shift[1]
+                mapPanel.shift = null
+            }
             if (!placed) {
                 camera.reset(msg.width - 1, msg.height - 1)
                 placed = true
@@ -688,6 +696,10 @@
             }})
         } else if (msg.kind === 'palette') {
             showPalette(msg)
+            mapPanel.setIcons(msg.grounds)
+        } else if (msg.kind === 'mapSettings') {
+            mapPanel.set(msg)
+            vscode.postMessage({type: 'mapSettings', settings: {width: msg.width, height: msg.height, margins: msg.margins, tileset: msg.tileset, mapTiles: msg.mapTiles, tiles: msg.tiles.length}})
         } else if (msg.kind === 'state') {
             if (stroke) stroke.pending = false
             if (thingDrag) thingDrag.pending = false
@@ -789,6 +801,15 @@
             selected = null
         } else if (msg.type === 'undo' || msg.type === 'redo' || msg.type === 'save') {
             send(encode[msg.type]())
+        } else if (msg.type === 'mapOpen') {
+            mapPanel.open()
+        } else if (msg.type === 'mapResize') {
+            // As the panel's buttons do: for the tests.
+            mapPanel.resize(msg.sides, msg.margins ?? null)
+        } else if (msg.type === 'mapTiles') {
+            send(encode.tiles(msg.ids, msg.to, msg.tileset))
+        } else if (msg.type === 'tilePathing') {
+            send(encode.tilePathing(msg.index, msg.forbids))
         } else if (msg.type === 'hours') {
             light.hours = msg.hours
             $('hours').value = String(msg.hours)

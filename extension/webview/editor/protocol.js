@@ -39,6 +39,11 @@ const EditorProtocol = (() => {
         REGION_DELETE: 15,
         RELOAD: 16,
         LIGHT: 145,
+        MAP_ASK: 19,
+        RESIZE: 20,
+        TILES: 21,
+        TILE_PATHING: 22,
+        MAP_SETTINGS: 146,
     }
 
     /** The tools by their code (`edit::TOOLS`). */
@@ -236,6 +241,31 @@ const EditorProtocol = (() => {
             w.u32(index)
             return w.frame(KIND.REGION_DELETE)
         },
+        mapAsk: () => new Writer().frame(KIND.MAP_ASK),
+        /** Cells added on each side {left, right, bottom, top}, the playable area's margins [l, r, b, t] or null. */
+        resize(sides, margins) {
+            const w = new Writer()
+            for (const v of [sides.left, sides.right, sides.bottom, sides.top]) w.u32(v | 0)
+            w.u8(margins ? 1 : 0)
+            for (const v of margins ?? [0, 0, 0, 0]) w.u32(v | 0)
+            return w.frame(KIND.RESIZE)
+        },
+        /** The tile setter's: the tiles' ids, each old tile's new index, the tileset's letter. */
+        tiles(ids, to, tileset) {
+            const w = new Writer()
+            w.u32(ids.length)
+            for (const id of ids) w.string(id)
+            w.u32(to.length)
+            for (const v of to) w.u8(v)
+            w.u8(tileset.charCodeAt(0))
+            return w.frame(KIND.TILES)
+        },
+        tilePathing(index, forbids) {
+            const w = new Writer()
+            w.u8(index)
+            w.u8(forbids)
+            return w.frame(KIND.TILE_PATHING)
+        },
         delete(file, index) {
             const w = new Writer()
             w.u8(file)
@@ -364,6 +394,18 @@ const EditorProtocol = (() => {
                 return {kind: 'instances', models: r.list(r => r.f32s())}
             case KIND.OBJECT_PALETTE:
                 return {kind: 'objectPalette', entries: r.list(r => ({kind: r.u8(), id: r.string(), name: r.string(), group: r.string(), custom: r.u8() !== 0}))}
+            case KIND.MAP_SETTINGS: {
+                const width = r.u32()
+                const height = r.u32()
+                const info = r.u8() !== 0
+                const margins = [r.i32(), r.i32(), r.i32(), r.i32()]
+                const tileset = r.string()
+                const maxTiles = r.u32()
+                const tilesets = r.list(r => ({letter: r.string(), name: r.string()}))
+                const mapTiles = r.list(r => r.string())
+                const tiles = r.list(r => ({id: r.string(), name: r.string(), cliff: r.u8() !== 0, pathing: r.u8()}))
+                return {kind: 'mapSettings', width, height, info, margins, tileset, maxTiles, tilesets, mapTiles, tiles}
+            }
             case KIND.LIGHT: {
                 const terrain = r.f32s()
                 const units = r.f32s()

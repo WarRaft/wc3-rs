@@ -153,8 +153,10 @@ coming is listed below.
   ways; what changes on disk is read again; the pathing is made again on
   every save. Models play their Stand, their particles too (the Animate
   button). Its light is the game's day and night (a time of day, or the
-  day going round), with the map's shadows and fog. The map's size and
-  its tiles come next (the repository README, "World Editor").
+  day going round), with the map's shadows and fog. Its Map… panel makes
+  the map bigger or smaller and sets its playable area, its tiles (the
+  tile setter) and their pathing (the tile pather) (the repository
+  README, "World Editor").
 
 ## Not yet
 

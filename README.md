@@ -22,7 +22,8 @@ item's details are in its section below):
   in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs), 4 (doodads and units),
   5 (overlays), 6 (editing: terrain brushes, things placed, regions and
   pathing), 7 (in step with the rest), 8a (animation), 8b (particles),
-  8c (light). Next: 8d.
+  8c (light), 8d (the map's size and tiles). Next: Reforged HD, or the
+  leftovers below.
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1814,8 +1815,28 @@ step), this list updated.
      slider; Day cycle: eight minutes a day, as the game's), Shadows,
      Fog. MCP: `mdx_info` says the lights. The fog's exponential styles
      are drawn linear for now.
-   - **8d, the terrain's size and tiles**: resize, the tile setter
-     (the map's ground textures) and pather.
+   - **8d, the terrain's size and tiles** (done): `editor/src/resize.rs`
+     resizes as World Editor and HiveWE's `Map::resize` do: cells added
+     or taken off each side, a new point the nearest old one's (a random
+     ground variation), the corner (0, 0) moved so what's placed stays
+     where it is; the pathing and the shadows the same way (four cells a
+     cell, new shadows none); `war3map.w3i`'s margins grow with it (cut
+     into, the playable area set again); what's off the terrain removed,
+     regions cut to it, special doodads moved; nothing to undo over it.
+     The playable area set: the points outside it the edge's, the
+     bounds and camera bounds worked out (four cells in from the sides,
+     two from the bottom and top). `editor/src/tiles.rs`: the tile
+     setter (the list, at most the version's 16 or 64, each a row of
+     `Terrain.slk`; a tile taken out goes to the one picked; the cliffs
+     follow the tiles' `CliffTypes.slk` `groundTile`, at most 15; the
+     tileset, `war3map.w3i`'s too, its tables read again), undone as
+     one (`Snapshot::Whole`); the tile pather (a tile's walking, flying,
+     building where it lies, no cliff over it: the pathing worked out
+     with it, its three flags put on those cells, the rest kept; undone
+     as a pathing brush; kept on save as a brush's paint is). The page's
+     Map… panel (`mapsettings.js`); `war3map.w3i` and `war3map.shd`
+     saved when they changed. MCP: `w3e_tiles`, `map_resize`. Not yet:
+     cameras (`war3map.w3c`) off a cut terrain aren't removed.
    - **Reforged HD assets** (CASC, `.dds`, the HD shaders): when a
      Reforged game is at hand.
 

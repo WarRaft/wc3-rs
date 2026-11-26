@@ -21,9 +21,11 @@ pub mod particles;
 pub mod picture;
 pub mod placed;
 pub mod protocol;
+pub mod resize;
 pub mod session;
 pub mod terrain;
 pub mod textures;
+pub mod tiles;
 pub mod tileset;
 pub mod types;
 
@@ -220,6 +222,10 @@ impl Editor {
                     ClientMsg::RegionRename { index, name } => s.region_rename(index, &name),
                     ClientMsg::RegionDelete { index } => s.region_delete(index),
                     ClientMsg::Text { path, text } => s.text_changed(&path, &text),
+                    ClientMsg::MapAsk => vec![ServerMsg::MapSettings(s.map_settings())],
+                    ClientMsg::Resize { sides, margins } => s.resize(sides, margins),
+                    ClientMsg::Tiles { ids, to, tileset } => s.set_tiles(&ids, &to, tileset),
+                    ClientMsg::TilePathing { index, forbids } => s.tile_pathing(index, forbids),
                     ClientMsg::TextClosed { path } => {
                         s.text_closed(&path);
                         Vec::new()

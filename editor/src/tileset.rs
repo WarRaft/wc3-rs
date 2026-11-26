@@ -86,6 +86,8 @@ pub struct Tileset {
     /// The tileset's ground tiles (`[TileSets]`, after its name and
     /// blight), as World Editor's terrain palette offers them.
     pub tiles: Vec<String>,
+    /// Its letter (`L`).
+    pub letter: u8,
     /// What was missing.
     pub notes: Vec<String>,
 }
@@ -115,7 +117,7 @@ impl Tileset {
             .unwrap_or_default();
         let blight = fields.get(1).filter(|p| !p.is_empty()).map(|p| with_extension(p));
         let tiles = fields.iter().skip(2).filter(|t| t.len() == 4).cloned().collect();
-        Tileset { terrain, cliffs, water, blight, tiles, notes }
+        Tileset { terrain, cliffs, water, blight, tiles, letter: letter as u8, notes }
     }
 
     /// Ground tile `id`'s texture path (`dir\file.blp`).

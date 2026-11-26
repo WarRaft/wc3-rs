@@ -201,6 +201,40 @@ async function steps() {
     check(!savedOverlays.dirty && savedOverlays.message.includes('war3map.w3r') && savedOverlays.message.includes('war3map.wpm'), savedOverlays.message)
     check(fs.statSync(map).mtimeMs > stamp2, 'the map on disk written')
 
+    log("the map's settings: its tiles reordered and undone, a tile's pathing and undone, four cells added on the right, saved")
+    we.mapSettings = undefined
+    await we.panel.webview.postMessage({type: 'mapOpen'})
+    const ms = await until(() => we.mapSettings, "the map's settings")
+    check(ms.mapTiles.length > 1 && ms.tiles > ms.mapTiles.length, `${ms.width - 1} × ${ms.height - 1} cells, margins ${ms.margins.join(', ')}, ${ms.mapTiles.length} tiles of the game's ${ms.tiles}`)
+    await shot('world-editor-map')
+    const swapped = [ms.mapTiles[1], ms.mapTiles[0], ...ms.mapTiles.slice(2)]
+    const to = ms.mapTiles.map((_, i) => (i === 0 ? 1 : i === 1 ? 0 : i))
+    we.mapSettings = undefined
+    await we.panel.webview.postMessage({type: 'mapTiles', ids: swapped, to, tileset: ms.tileset})
+    const set = await until(() => we.mapSettings, 'the tiles set')
+    check(set.mapTiles[0] === ms.mapTiles[1] && we.state?.undo, `the tiles: ${set.mapTiles.join(', ')}`)
+    we.mapSettings = undefined
+    await we.panel.webview.postMessage({type: 'undo'})
+    const back = await until(() => we.mapSettings, 'undone')
+    check(back.mapTiles.join() === ms.mapTiles.join(), 'undone: the tiles as they were')
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'tilePathing', index: 0, forbids: 2})
+    const pathed = await until(() => we.state?.message && we.state, 'the tile pathed')
+    check(pathed.undo && /pathing set on \d+ cells/.test(pathed.message), pathed.message)
+    await we.panel.webview.postMessage({type: 'undo'})
+    we.mapSettings = undefined
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'mapResize', sides: {left: 0, right: 4, bottom: 0, top: 0}})
+    const grown = await until(() => we.mapSettings, 'resized')
+    const resizedState = await until(() => we.state?.message && we.state, 'its state')
+    check(grown.width === ms.width + 4 && grown.margins[1] === ms.margins[1] + 4 && !resizedState.undo, `${resizedState.message} margins ${grown.margins.join(', ')}`)
+    check(we.map.width === ms.width + 4, `the page has it: ${we.map.width} points across`)
+    await shot('world-editor-resized')
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'save'})
+    const savedSize = await until(() => we.state?.message && we.state, 'saved')
+    check(!savedSize.dirty && savedSize.message.includes('war3map.w3e') && savedSize.message.includes('war3map.w3i') && savedSize.message.includes('war3map.wpm'), savedSize.message)
+
     log("a text form in step: war3map.w3r open as text follows the editor, and the editor it; saved by VS Code")
     const w3rDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(map, 'war3map.w3r')).with({scheme: api.OBJECTS_SCHEME}))
     await vscode.window.showTextDocument(w3rDoc, {viewColumn: vscode.ViewColumn.Beside, preserveFocus: true})
