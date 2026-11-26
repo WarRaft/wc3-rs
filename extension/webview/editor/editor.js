@@ -977,6 +977,9 @@
             send(encode.region(true, msg.mode, index, ray(msg.from), ray(msg.to)))
             send(encode.strokeEnd())
             if (msg.mode === 0) selectNewRegion = true
+        } else if (msg.type === 'fov') {
+            // The view's field of view: for the tests.
+            camera.fov = msg.fov
         } else if (msg.type === 'camera') {
             // The Cameras tool's, for the tests: `new` from the view, `pick`
             // one (`index`), `drag` the one picked to a point of the view,

@@ -247,7 +247,7 @@ async function steps() {
     check(!savedOverlays.dirty && savedOverlays.message.includes('war3map.w3r') && savedOverlays.message.includes('war3map.wpm'), savedOverlays.message)
     check(fs.statSync(map).mtimeMs > stamp2, 'the map on disk written')
 
-    log('cameras: one made from the view, renamed, its target dragged, looked through, deleted and undone; saved')
+    log('cameras: one made from the view, renamed, its target dragged, looked through, deleted and undone; saved; one at 45° looked through')
     await we.panel.webview.postMessage({type: 'tool', tool: 'cameras'})
     const camsAt = we.overlays.cameras
     we.camera = undefined
@@ -272,6 +272,19 @@ async function steps() {
     await we.panel.webview.postMessage({type: 'save'})
     const savedCams = await until(() => we.state?.message && we.state, 'saved')
     check(!savedCams.dirty && savedCams.message.includes('war3map.w3c'), savedCams.message)
+    // One made from a view at 45°: its field of view 45; looked through from 70, the view's 45.
+    await we.panel.webview.postMessage({type: 'fov', fov: 45})
+    await we.panel.webview.postMessage({type: 'camera', action: 'new'})
+    const narrow = await until(() => we.camera?.count === camsAt + 2 && we.camera, 'a camera made at 45°')
+    check(narrow.view[3] === 45, `${narrow.name}: field of view ${narrow.view[3]}`)
+    await we.panel.webview.postMessage({type: 'fov', fov: 70})
+    we.camera = undefined
+    await we.panel.webview.postMessage({type: 'camera', action: 'look'})
+    const lookedNarrow = await until(() => we.camera?.looking && we.camera, 'looked through it')
+    check(lookedNarrow.looking.fov === 45, `the view's field of view from 70 to ${lookedNarrow.looking.fov}`)
+    await we.panel.webview.postMessage({type: 'fov', fov: 70})
+    await we.panel.webview.postMessage({type: 'camera', action: 'delete'})
+    await until(() => we.overlays?.cameras === camsAt + 1, 'deleted')
 
     log("the map's settings: its tiles reordered and undone, a tile's pathing and undone, four cells added on the right, saved")
     we.mapSettings = undefined
