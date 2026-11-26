@@ -665,6 +665,7 @@
                         objects: objects.count,
                         animated: objects.models.filter(m => m.anim).length,
                         billboards: objects.models.filter(m => m.billboards).length,
+                        geosetAnimated: objects.models.filter(m => m.geosetAnimated).length,
                         emitters: objects.particles.count,
                         tails: objects.particles.models.flat().filter(x => x.e.params[14] !== 0).length,
                         ribbons: objects.particles.ribbonCount,

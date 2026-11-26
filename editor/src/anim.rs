@@ -28,6 +28,9 @@ pub const MAX_FRAMES: usize = 120;
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Baked {
     pub bones: u32,
+    /// The model's geosets: each a texel a frame after the bones (its
+    /// colour and alpha, `geoset_colors`).
+    pub geosets: u32,
     pub frames: u32,
     pub fps: f32,
     pub matrices: Vec<f32>,
@@ -321,8 +324,11 @@ pub fn billboard(flags: u32) -> u32 {
 }
 
 /// The model's `Stand` (or first sequence) baked; `None` when nothing
-/// moves (no node has a track in it) and nothing faces the camera, or it
-/// has too many bones.
+/// moves (no node has a track in it), nothing faces the camera and no
+/// geoset is animated, or it has too many bones.
+///
+/// A frame's row: each bone's [`BONE`] floats, then each geoset's
+/// colour and alpha (RGBA; white and 1 with no animation of it).
 ///
 /// A bone under a billboarded node (or one itself) is the node's
 /// business: the shader turns the node to the camera, as the game does
@@ -332,7 +338,7 @@ pub fn billboard(flags: u32) -> u32 {
 /// texel the billboard and where the node's pivot is (`N·pivot`).
 pub fn bake(m: &Model) -> Option<Baked> {
     let sk = Skeleton::of(m);
-    if sk.slots.is_empty() || sk.slots.len() > 255 {
+    if sk.slots.len() > 255 {
         return None;
     }
     // Each slot's billboarded node: itself or its nearest above.
@@ -349,17 +355,24 @@ pub fn bake(m: &Model) -> Option<Baked> {
         None
     };
     let anchors: HashMap<u32, (u32, u32)> = sk.slots.keys().filter_map(|id| Some((*id, anchor(*id)?))).collect();
-    if !sk.moves() && anchors.is_empty() {
+    let animations = m.geoset_animations();
+    let geosets_animated = animations.iter().any(|a| a.alpha_track().is_some() || a.color_track().is_some() || a.alpha < 1.0 || a.flags & 2 != 0);
+    let tracks_move = animations.iter().any(|a| a.alpha_track().is_some() || a.color_track().is_some());
+    if !sk.moves() && anchors.is_empty() && !geosets_animated {
         return None;
     }
     let tl = Timeline::of(m);
-    let frames = if sk.moves() { tl.frames } else { 1 };
+    let frames = if sk.moves() || tracks_move { tl.frames } else { 1 };
     let pivots = m.pivots();
-    let mut matrices = vec![0.0f32; frames * sk.slots.len() * BONE];
+    let geosets = m.geosets().len();
+    let row = sk.slots.len() * BONE + geosets * 4;
+    let mut matrices = vec![0.0f32; frames * row];
     for f in 0..frames {
         let world = sk.world(m, &tl, f);
+        let colors = geoset_colors(m, &tl, f);
+        matrices[f * row + sk.slots.len() * BONE..][..geosets * 4].copy_from_slice(&colors);
         for (id, slot) in &sk.slots {
-            let at = (f * sk.slots.len() + slot) * BONE;
+            let at = f * row + slot * BONE;
             let bone = world.get(id).copied().unwrap_or_else(identity);
             let out = &mut matrices[at..at + BONE];
             match anchors.get(id) {
@@ -384,7 +397,25 @@ pub fn bake(m: &Model) -> Option<Baked> {
             }
         }
     }
-    Some(Baked { bones: sk.slots.len() as u32, frames: frames as u32, fps: tl.fps(), matrices })
+    Some(Baked { bones: sk.slots.len() as u32, geosets: geosets as u32, frames: frames as u32, fps: tl.fps(), matrices })
+}
+
+/// Each geoset's colour and alpha at frame `f` of `tl` (RGBA): its
+/// animation's (`KGAO`, and `KGAC` when its flags say the colour
+/// applies, stored blue, green, red), else white and 1.
+pub fn geoset_colors(m: &Model, tl: &Timeline, f: usize) -> Vec<f32> {
+    let (frame, since) = tl.at(f);
+    let globals = m.global_sequences();
+    let mut out = vec![1.0f32; m.geosets().len() * 4];
+    for a in m.geoset_animations() {
+        let Some(px) = out.get_mut(a.geoset_id as usize * 4..a.geoset_id as usize * 4 + 4) else { continue };
+        px[3] = value(a.alpha_track().as_ref(), a.alpha, frame, tl.start, tl.end, since, globals);
+        if a.flags & 2 != 0 {
+            let [b, g, r] = value(a.color_track().as_ref(), a.color, frame, tl.start, tl.end, since, globals);
+            px[..3].copy_from_slice(&[r, g, b]);
+        }
+    }
+    out
 }
 
 /// An affine matrix's inverse (its last row 0, 0, 0, 1); identity when

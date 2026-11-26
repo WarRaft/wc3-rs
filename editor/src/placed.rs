@@ -56,9 +56,11 @@ pub struct Geoset {
     pub uvs: Vec<f32>,
     pub indices: Vec<u16>,
     pub layers: Vec<Layer>,
-    /// Each vertex's bones and weights (`anim::skin`), when the model is
-    /// animated.
+    /// Each vertex's bones and weights (`anim::skin`), when the model's
+    /// bones are baked.
     pub skin: Vec<u8>,
+    /// Its index in the model: its colour's texel (`anim::Baked`).
+    pub index: u32,
 }
 
 /// A model and where it stands.
@@ -510,8 +512,18 @@ fn load_model(
     model.ribbons = crate::particles::ribbons(&m, &mut |id| texs.get(id as usize).copied().unwrap_or(texture::NONE));
     let slots = crate::anim::Skeleton::of(&m).slots;
     let (mut min, mut max) = ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]);
+    // A geoset hidden all through Stand (its alpha 0 in every frame
+    // baked, or at its start when nothing is): not drawn.
+    let hidden = |gi: usize| match &model.anim {
+        Some(a) => {
+            let row = a.bones as usize * crate::anim::BONE + a.geosets as usize * 4;
+            (0..a.frames as usize).all(|f| a.matrices[f * row + a.bones as usize * crate::anim::BONE + gi * 4 + 3] <= 0.0)
+        }
+        None => !m.shown(gi, "Stand"),
+    };
+    let skinned = model.anim.as_ref().is_some_and(|a| a.bones > 0);
     for (gi, g) in m.geosets().iter().enumerate() {
-        if !m.shown(gi, "Stand") || g.uv_sets.is_empty() || g.uv_sets[0].len() != g.vertices.len() || g.normals.len() != g.vertices.len() {
+        if hidden(gi) || g.uv_sets.is_empty() || g.uv_sets[0].len() != g.vertices.len() || g.normals.len() != g.vertices.len() {
             continue;
         }
         for v in &g.vertices {
@@ -541,7 +553,8 @@ fn load_model(
             uvs: g.uv_sets[0].iter().flatten().copied().collect(),
             indices: g.faces.clone(),
             layers,
-            skin: if model.anim.is_some() { crate::anim::skin(g, &slots) } else { Vec::new() },
+            skin: if skinned { crate::anim::skin(g, &slots) } else { Vec::new() },
+            index: gi as u32,
         });
     }
     // Nothing shown (a model of particles alone): nothing to draw yet,

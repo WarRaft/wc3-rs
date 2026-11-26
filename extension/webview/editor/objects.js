@@ -32,6 +32,9 @@ uniform int u_selected;
 // bone (three of the matrix, then its billboard and where it's
 // anchored), a row of the texture a frame (anim::Baked).
 uniform bool u_animated;
+uniform bool u_skinned;
+// This geoset's colour and alpha in the row (anim::Baked), or -1.
+uniform int u_geoset;
 uniform bool u_still;
 uniform highp sampler2D u_matrices;
 uniform float u_time;
@@ -92,16 +95,21 @@ out vec3 v_tint;
 out vec3 v_team;
 out float v_selected;
 out float v_dist;
+out vec4 v_geoset;
 uniform vec3 u_eye;
 void main() {
     vec3 pos = a_pos;
     vec3 normal = a_normal;
+    v_geoset = vec4(1.0);
     if (u_animated) {
         // Each one at its own place in the loop, by where it stands.
         float phase = fract(sin(dot(a_place.xy, vec2(12.9898, 78.233))) * 43758.5453) * float(u_frames);
         int frame = u_still ? 0 : int(mod(floor(u_time * u_fps + phase), float(u_frames)));
-        pos = skinned(vec4(a_pos, 1.0), frame);
-        normal = skinned(vec4(a_normal, 0.0), frame);
+        if (u_skinned) {
+            pos = skinned(vec4(a_pos, 1.0), frame);
+            normal = skinned(vec4(a_normal, 0.0), frame);
+        }
+        if (u_geoset >= 0) v_geoset = texelFetch(u_matrices, ivec2(u_geoset, frame), 0);
     }
     vec3 p = pos * a_scale;
     float c = cos(a_place.w);
@@ -131,11 +139,14 @@ in vec3 v_normal;
 in vec3 v_tint;
 in vec3 v_team;
 in float v_selected;
+in vec4 v_geoset;
 out vec4 color;
 void main() {
+    // Hidden as its animation says at this frame.
+    if (v_geoset.a <= 0.001) discard;
     color = u_source == 1 ? vec4(v_team, 1.0) : texture(u_texture, v_uv);
-    color.rgb *= v_tint;
-    color.a *= u_alpha;
+    color.rgb *= v_tint * v_geoset.rgb;
+    color.a *= u_alpha * v_geoset.a;
     if (u_cutout && color.a < 0.75) discard;
     if (!u_unshaded) {
         color.rgb = lit(color.rgb, v_normal, clamp((dot(-u_light, normalize(v_normal)) + 1.0) * 0.5, 0.0, 1.0) * 1.2);
@@ -165,7 +176,7 @@ void main() {
         if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p))
         const u = name => gl.getUniformLocation(p, name)
         const light = Object.fromEntries(['u_daylight', 'u_sun', 'u_diffuse', 'u_ambient', 'u_fog', 'u_fogStart', 'u_fogEnd', 'u_fogColor', 'u_eye'].map(n => [n, u(n)]))
-        return {...light, program: p, u_animated: u('u_animated'), u_still: u('u_still'), u_camRight: u('u_camRight'), u_camUp: u('u_camUp'), u_camForward: u('u_camForward'), u_matrices: u('u_matrices'), u_time: u('u_time'), u_fps: u('u_fps'), u_frames: u('u_frames'), u_mvp: u('u_mvp'), u_selected: u('u_selected'), u_texture: u('u_texture'), u_source: u('u_source'), u_alpha: u('u_alpha'), u_cutout: u('u_cutout'), u_unshaded: u('u_unshaded'), u_light: u('u_light')}
+        return {...light, program: p, u_animated: u('u_animated'), u_skinned: u('u_skinned'), u_geoset: u('u_geoset'), u_still: u('u_still'), u_camRight: u('u_camRight'), u_camUp: u('u_camUp'), u_camForward: u('u_camForward'), u_matrices: u('u_matrices'), u_time: u('u_time'), u_fps: u('u_fps'), u_frames: u('u_frames'), u_mvp: u('u_mvp'), u_selected: u('u_selected'), u_texture: u('u_texture'), u_source: u('u_source'), u_alpha: u('u_alpha'), u_cutout: u('u_cutout'), u_unshaded: u('u_unshaded'), u_light: u('u_light')}
     }
 
     class Objects {
@@ -232,16 +243,19 @@ void main() {
                 }
                 const ib = gl.createBuffer()
                 model.instanceBuffer = ib
-                if (m.anim.bones) {
+                if (m.anim.frames) {
                     // Three texels a bone, a row a frame.
                     const t = gl.createTexture()
                     gl.bindTexture(gl.TEXTURE_2D, t)
-                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, m.anim.bones * 4, m.anim.frames, 0, gl.RGBA, gl.FLOAT, m.anim.matrices)
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, m.anim.bones * 4 + m.anim.geosets, m.anim.frames, 0, gl.RGBA, gl.FLOAT, m.anim.matrices)
                     for (const k of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, k, gl.NEAREST)
                     model.matrices = t
-                    model.anim = {fps: m.anim.fps, frames: m.anim.frames}
+                    model.anim = {fps: m.anim.fps, frames: m.anim.frames, bones: m.anim.bones}
                     // Any bone of its first frame a billboard's (`anim::BONE`: the 13th float).
                     model.billboards = Array.from({length: m.anim.bones}, (_, b) => m.anim.matrices[b * 16 + 12]).some(k => k > 0)
+                    // A geoset's alpha or colour not 1 in some frame: animated geosets.
+                    const row = m.anim.bones * 16 + m.anim.geosets * 4
+                    model.geosetAnimated = Array.from({length: m.anim.frames * m.anim.geosets * 4}, (_, i) => m.anim.matrices[Math.floor(i / (m.anim.geosets * 4)) * row + m.anim.bones * 16 + (i % (m.anim.geosets * 4))]).some(v => v !== 1)
                 }
                 for (const g of m.geosets) {
                     const vao = gl.createVertexArray()
@@ -280,7 +294,7 @@ void main() {
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, eb)
                     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, g.indices, gl.STATIC_DRAW)
                     gl.bindVertexArray(null)
-                    model.geosets.push({vao, buffers, count: g.indices.length, layers: g.layers})
+                    model.geosets.push({vao, buffers, count: g.indices.length, layers: g.layers, index: g.index})
                 }
             }
             this.particles.set(msg, this.models.map(m => m.instanceBuffer))
@@ -340,6 +354,7 @@ void main() {
                     if (!m.instances) return
                     gl.uniform1i(p.u_selected, this.selected.model === mi ? this.selected.instance : -1)
                     gl.uniform1i(p.u_animated, m.anim ? 1 : 0)
+                    gl.uniform1i(p.u_skinned, m.anim?.bones ? 1 : 0)
                     if (m.anim) {
                         gl.uniform1f(p.u_fps, m.anim.fps)
                         gl.uniform1i(p.u_frames, m.anim.frames)
@@ -349,6 +364,7 @@ void main() {
                     }
                     for (const g of m.geosets) {
                         gl.bindVertexArray(g.vao)
+                        gl.uniform1i(p.u_geoset, m.anim ? m.anim.bones * 4 + g.index : -1)
                         for (const l of g.layers) {
                             const translucent = l.filterMode >= 2
                             if (translucent !== (pass === 1) || l.texture < TEAM_COLOR) continue

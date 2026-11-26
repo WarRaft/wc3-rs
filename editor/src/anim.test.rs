@@ -36,7 +36,8 @@ fn model(first: Vec<NodeTrack>, second: Vec<NodeTrack>) -> Model {
 
 /// Bone `slot`'s translation (the matrix's last column) at frame `f`.
 fn moved(b: &Baked, f: usize, slot: usize) -> [f32; 3] {
-    let m = &b.matrices[(f * b.bones as usize + slot) * BONE..][..12];
+    let row = b.bones as usize * BONE + b.geosets as usize * 4;
+    let m = &b.matrices[f * row + slot * BONE..][..12];
     [m[3], m[7], m[11]]
 }
 
@@ -105,7 +106,8 @@ fn a_billboarded_bone_its_place_and_size_its_turn_left_to_the_shader() {
         b[1].node.flags |= 0x8;
     }
     let b = bake(&m).unwrap();
-    let bone = |f: usize, slot: usize| b.matrices[(f * b.bones as usize + slot) * BONE..][..BONE].to_vec();
+    let row = b.bones as usize * BONE + b.geosets as usize * 4;
+    let bone = |f: usize, slot: usize| b.matrices[f * row + slot * BONE..][..BONE].to_vec();
     // The first as before; the second: billboard 1, its pivot (10, 0, 0)
     // where its node puts it, (20, 0, 50) at frame 10; within it, the
     // vertex about the pivot, doubled.
@@ -123,4 +125,31 @@ fn a_billboarded_bone_its_place_and_size_its_turn_left_to_the_shader() {
     assert_eq!(b.frames, 1);
     // Both under it: the child too.
     assert_eq!((b.matrices[12], b.matrices[BONE + 12]), (4.0, 4.0));
+}
+
+#[test]
+fn a_geoset_hidden_halfway_its_colour_as_its_animation_says() {
+    // KGAO: 1 at 0, 0 at 500 (no interpolation); KGAC a static blue,
+    // green, red.
+    let mut tracks = Vec::new();
+    tracks.extend(b"KGAO");
+    for v in [2u32, 0, u32::MAX] {
+        tracks.extend(v.to_le_bytes());
+    }
+    for (f, a) in [(0i32, 1.0f32), (500, 0.0)] {
+        tracks.extend(f.to_le_bytes());
+        tracks.extend(a.to_le_bytes());
+    }
+    let mut m = model(vec![], vec![]);
+    m.chunks.push(Chunk::GeosetAnimations(vec![mdx_rs::GeosetAnimation { alpha: 1.0, flags: 2, color: [0.25, 0.5, 1.0], geoset_id: 0, tracks }]));
+    let b = bake(&m).unwrap();
+    // Nothing moves, the alpha does: all of Stand, the geoset after the
+    // two bones.
+    assert_eq!((b.bones, b.geosets, b.frames), (2, 1, 20));
+    let row = 2 * BONE + 4;
+    let px = |f: usize| b.matrices[f * row + 2 * BONE..][..4].to_vec();
+    assert_eq!(px(0), [1.0, 0.5, 0.25, 1.0]);
+    assert_eq!(px(15)[3], 0.0);
+    // No animation at all: nothing baked.
+    assert!(bake(&model(vec![], vec![])).is_none());
 }

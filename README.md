@@ -1796,8 +1796,15 @@ step), this list updated.
      same way about the model's axes). A model with a billboard is
      baked if nothing moves too; with Animate off its first frame
      stands still, facing the camera. On the Diablo III beta map 31
-     models have them (torches' flames, glows). Geosets shown or hidden
-     as the sequence goes are next. MCP: `mdx_info` says the skeleton.
+     models have them (torches' flames, glows). Geosets' animations (done
+     after the billboards): each geoset's colour and alpha at every
+     frame (`KGAO`, `KGAC` when its flags have 2; stored blue, green,
+     red, as Retera's Model Studio reads it) baked after the bones in
+     the same row (`anim::geoset_colors`); the shader multiplies the
+     layers by it and leaves out what's at alpha 0; a geoset hidden all
+     through Stand isn't sent. A model is baked for that alone too (no
+     bones then: not skinned). On the Diablo III beta map 64 models
+     have such geosets. MCP: `mdx_info` says the skeleton.
    - **8b, particles** (done): `mdx-rs` reads the particle emitters
      (`PRE2`, all 3320 models still written back as they were);
      `editor/src/particles.rs` describes each (speed, variation,

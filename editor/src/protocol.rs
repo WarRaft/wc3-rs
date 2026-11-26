@@ -271,10 +271,11 @@ pub struct CliffsMsg {
 /// y, z, a list of geosets: `f32` positions, normals, texture
 /// coordinates, `u16` triangles, a list of layers: `i32` texture
 /// (`placed::texture`), `u32` filter mode, `u32` shading, `f32` alpha;
-/// the vertices' bones and weights, 8 bytes each (none when the model
-/// doesn't move); then `f32` instances, `placed::INSTANCE` each; error;
-/// its animation, `u32` bones, `u32` frames, `f32` frames a second, `f32`
-/// matrices, 12 a bone a frame, 0 bones when it doesn't move; a list of
+/// the vertices' bones and weights, 8 bytes each (none when no bone is
+/// baked), `u32` its index in the model; then `f32` instances, `placed::INSTANCE` each; error;
+/// its animation, `u32` bones, `u32` geosets, `u32` frames, `f32` frames
+/// a second, `f32` a row a frame (`anim::BONE` a bone, then 4 a geoset:
+/// its colour and alpha), 0 frames when nothing is animated; a list of
 /// its particle emitters, each `f32` arrays of its parameters (16), its
 /// segments (15), its head's cells (6), its tail's (6), `i32` texture,
 /// `f32` frames a second, its frames (`particles::FRAME` each); a list
@@ -710,11 +711,13 @@ impl ServerMsg {
                             w.f32(l.alpha);
                         });
                         w.bytes(&g.skin);
+                        w.u32(g.index);
                     });
                     w.f32s(&m.instances);
                     w.string(&m.error);
                     let a = m.anim.clone().unwrap_or_default();
                     w.u32(a.bones);
+                    w.u32(a.geosets);
                     w.u32(a.frames);
                     w.f32(a.fps);
                     w.f32s(&a.matrices);
@@ -962,11 +965,12 @@ impl ServerMsg {
                                 Ok(crate::placed::Layer { texture: r.u32()? as i32, filter_mode: r.u32()?, shading: r.u32()?, alpha: r.f32()? })
                             })?,
                             skin: r.bytes()?,
+                            index: r.u32()?,
                         })
                     })?;
                     let (instances, error) = (r.f32s()?, r.string()?);
-                    let anim = crate::anim::Baked { bones: r.u32()?, frames: r.u32()?, fps: r.f32()?, matrices: r.f32s()? };
-                    let anim = (anim.bones > 0).then_some(anim);
+                    let anim = crate::anim::Baked { bones: r.u32()?, geosets: r.u32()?, frames: r.u32()?, fps: r.f32()?, matrices: r.f32s()? };
+                    let anim = (anim.frames > 0).then_some(anim);
                     let emitters = r.list(|r| {
                         let array = |v: Vec<f32>| v.try_into().map_err(|_| DecodeError("an emitter's parameters".into()));
                         Ok(crate::particles::Emitter {

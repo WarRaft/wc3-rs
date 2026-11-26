@@ -95,7 +95,7 @@ async function steps() {
     check(drawn.layers && drawn.water > 0 && drawn.error === 0, `with its ground textures and ${drawn.water} water frames, no GL error (${drawn.error})`)
     check(drawn.cliffs > 1000, `its cliffs and ramps: ${drawn.cliffs}`)
     check(drawn.objects > 10000, `what it places: ${drawn.objects} doodads, destructables, units and items`)
-    check(drawn.animated > 10, `${drawn.animated} of their models move (their Stand), ${drawn.billboards} with billboards`)
+    check(drawn.animated > 10, `${drawn.animated} of their models move (their Stand), ${drawn.billboards} with billboards, ${drawn.geosetAnimated} with geosets shown, hidden or tinted as it goes`)
     check(drawn.emitters > 0 && drawn.error === 0, `${drawn.emitters} particle emitters (${drawn.tails} with tails), ${drawn.ribbons} ribbons, no GL error`)
     const lit = await until(() => we.light, 'the light')
     check(lit.day && lit.shadows > 0, `the day and night of its tileset, its shadows (${lit.shadows} wide)${lit.fog ? ', its fog' : ''}`)

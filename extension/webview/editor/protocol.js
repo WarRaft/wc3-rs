@@ -355,10 +355,11 @@ const EditorProtocol = (() => {
                         indices: r.u16s(),
                         layers: r.list(r => ({texture: r.i32(), filterMode: r.u32(), shading: r.u32(), alpha: r.f32()})),
                         skin: r.bytes(),
+                        index: r.u32(),
                     })),
                     instances: r.f32s(),
                     error: r.string(),
-                    anim: {bones: r.u32(), frames: r.u32(), fps: r.f32(), matrices: r.f32s()},
+                    anim: {bones: r.u32(), geosets: r.u32(), frames: r.u32(), fps: r.f32(), matrices: r.f32s()},
                     emitters: r.list(r => ({params: r.f32s(), segments: r.f32s(), head: r.f32s(), tail: r.f32s(), texture: r.i32(), fps: r.f32(), frames: r.f32s()})),
                     ribbons: r.list(r => ({params: r.f32s(), color: r.f32s(), texture: r.i32(), fps: r.f32(), frames: r.f32s()})),
                 }))
