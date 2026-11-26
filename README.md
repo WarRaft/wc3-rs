@@ -1734,7 +1734,8 @@ step), this list updated.
    with `.trg`), and the pathing is made again on every save, as World
    Editor does.
    - **Text forms**: the editor says where its pieces with a text form
-     are (`Follow`: `war3map.doo`, `war3mapUnits.doo`, `war3map.w3r`);
+     are (`Follow`: `war3map.w3e`, `war3map.doo`, `war3mapUnits.doo`,
+     `war3map.w3r`);
      the extension sends what's typed in their documents (`Text`,
      `TextClosed`; debounced), the editor takes it in with the server's
      converters (an undo; an error in the text said, nothing taken), and
@@ -1742,7 +1743,15 @@ step), this list updated.
      document has them unsaved, not the editor); its Save has VS Code
      save those documents (`SaveDocs`) and writes the rest itself. What
      comes back as the editor gave it is an echo, left. The terrain's
-     text form is its header alone (no points): not in step yet.
+     text form is its header alone (tilesets, the lists, position,
+     version; no points), in step too (done after the ribbons): typed,
+     put onto the terrain as the editor has it (`w3e_rs::text::Header::
+     apply`: another size, or a tile a point uses taken out, refused and
+     said), undone as one, the tileset's tables read again when it
+     changes; the editor's changes (the tile setter, an undo) given to
+     the document. Its points aren't in it, so the editor keeps saving
+     them while it's open; the document saved after puts the same
+     header back on them.
    - **The disk**: the process watches the project's roots (`notify`:
      a folder and what's in it, a map's file), gathers a save's changes
      (200 ms), reads its pieces again through the layers and takes in

@@ -58,9 +58,10 @@ fn the_terrain_drawn_with_the_tables_of_the_roots() {
     assert_eq!(st, &StateMsg::default());
     // No game: no day and night (the view's own light), said.
     assert!(l.terrain.is_empty() && l.notes.iter().any(|n| n.contains("TerrainLights")), "{:?}", l.notes);
-    // The pieces with a text form, at the top root (the map has none of them).
-    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.doo", "war3mapUnits.doo", "war3map.w3r"]);
-    assert!(f[0].1.ends_with("map/war3map.doo"), "{f:?}");
+    // The pieces with a text form, where they are (the terrain) or would
+    // be, at the top root (the map has none of the others).
+    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r"]);
+    assert!(f[1].1.ends_with("map/war3map.doo"), "{f:?}");
     // Nothing placed; the minimap a pixel a corner.
     assert!(o.models.is_empty() && o.notes.is_empty());
     assert_eq!((v.minimap.width, v.minimap.height, v.minimap.data.len()), (3, 2, 24));
@@ -441,4 +442,41 @@ fn the_map_resized_its_tiles_set_and_undone_saved_with_its_info_and_shadows() {
     // Too small: refused, nothing changed.
     let msgs = s.resize(crate::resize::Sides { right: -20, ..Default::default() }, None);
     assert!(matches!(&msgs[..], [ServerMsg::State(st)] if st.message.contains("32 to 480")));
+}
+
+#[test]
+fn the_terrains_text_form_its_header_in_step_its_points_saved_by_the_editor() {
+    let dir = TestDir::new("session-w3e-text");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    dir.write("map/TerrainArt/Terrain.slk", &testdir::slk(&[&["tileID", "dir", "file"], &["Ldrt", "T", "Dirt"], &["Lgrs", "T", "Grass"]]));
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    assert!(s.follow().iter().any(|(n, _)| n == "war3map.w3e"));
+    let path = dir.path().join("map/war3map.w3e").display().to_string();
+    let text = w3e_rs::text::to_text(&s.terrain);
+    // Opened as it is: nothing to take in.
+    assert!(s.text_changed(&path, &text).is_empty());
+    // A tile added and the corner moved, typed: taken in, drawn again,
+    // undone as one.
+    let typed = text.replace("ground=Ldrt", "ground=Ldrt,Lgrs").replace("offset_x=-128", "offset_x=-256");
+    assert_ne!(typed, text);
+    let msgs = s.text_changed(&path, &typed);
+    assert!(matches!(&msgs[0], ServerMsg::Map(_)), "{msgs:?}");
+    assert!(matches!(msgs.last(), Some(ServerMsg::State(st)) if st.undo && st.dirty), "{msgs:?}");
+    assert_eq!((s.terrain.ground.len(), s.terrain.offset_x), (2, -256.0));
+    // Another size: the points don't allow it; said, nothing taken.
+    let msgs = s.text_changed(&path, &typed.replace("width=3", "width=9"));
+    assert!(matches!(msgs.last(), Some(ServerMsg::State(st)) if st.message.contains("width")), "{msgs:?}");
+    assert_eq!(s.terrain.width, 3);
+    s.text_changed(&path, &typed);
+    // Undone in the editor: given to the document; the points still the
+    // editor's to save.
+    s.undo(false);
+    let out = s.sync_docs();
+    assert!(matches!(&out[..], [ServerMsg::TextOut { text, .. }] if text.contains("offset_x=-128")), "{out:?}");
+    assert!(s.edits.dirty.terrain);
+    let saved = s.save();
+    assert!(matches!(saved.last(), Some(ServerMsg::State(st)) if st.message.contains("war3map.w3e")), "{saved:?}");
+    assert!(saved.iter().any(|m| matches!(m, ServerMsg::SaveDocs(p) if p == &vec![path.clone()])), "{saved:?}");
 }

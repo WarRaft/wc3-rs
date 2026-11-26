@@ -818,7 +818,7 @@ impl Session {
     /// is at (or would be written to): what the page's text forms are
     /// matched by.
     pub fn follow(&self) -> Vec<(String, String)> {
-        ["war3map.doo", "war3mapUnits.doo", "war3map.w3r"].iter().filter_map(|n| Some((n.to_string(), self.path_of(n)?.display().to_string()))).collect()
+        ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r"].iter().filter_map(|n| Some((n.to_string(), self.path_of(n)?.display().to_string()))).collect()
     }
 
     /// Where the map's file `name` is (on disk, or inside a root map), or
@@ -838,6 +838,7 @@ impl Session {
             "war3map.doo" => self.placed.doodads.as_ref()?.to_bytes().ok(),
             "war3mapUnits.doo" => self.placed.units.as_ref()?.to_bytes().ok(),
             "war3map.w3r" => self.placed.regions.as_ref()?.to_bytes().ok(),
+            "war3map.w3e" => self.terrain.to_bytes().ok(),
             _ => None,
         }
     }
@@ -848,6 +849,8 @@ impl Session {
         let bytes = self.piece_bytes(name)?;
         let text = if name == "war3map.w3r" {
             wc3_server::regions::convert(wc3_server::objects::TO_TEXT, path, &bytes)
+        } else if name == "war3map.w3e" {
+            wc3_server::terrain::convert(wc3_server::objects::TO_TEXT, path, &bytes)
         } else {
             wc3_server::placement::convert(wc3_server::objects::TO_TEXT, path, &bytes)
         };
@@ -864,6 +867,9 @@ impl Session {
         self.docs.insert(name, (path.to_string(), text.to_string()));
         if echo || self.piece_text(name, path).as_deref() == Some(text) {
             return Vec::new();
+        }
+        if name == "war3map.w3e" {
+            return self.terrain_text_changed(text);
         }
         let bytes = if name == "war3map.w3r" {
             wc3_server::regions::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
@@ -897,6 +903,28 @@ impl Session {
         out
     }
 
+    /// The terrain's text form (its header: tilesets, lists, position,
+    /// version; the points aren't in it) changed: put onto the terrain as
+    /// the editor has it, undone as one; refused, said, when the text has
+    /// an error or the points don't allow it (another size, a tile a
+    /// point uses taken out of the list).
+    fn terrain_text_changed(&mut self, text: &str) -> Vec<ServerMsg> {
+        let parsed = w3e_rs::text::from_text(text);
+        let Some(header) = parsed.header else {
+            let e = &parsed.errors[0];
+            return vec![ServerMsg::State(self.state(format!("war3map.w3e's text, line {}: {}", e.line + 1, e.message)))];
+        };
+        let mut terrain = self.terrain.clone();
+        if let Err(e) = header.apply(&mut terrain) {
+            return vec![ServerMsg::State(self.state(format!("war3map.w3e's text: {e}")))];
+        }
+        let before = std::mem::replace(&mut self.terrain, terrain);
+        let changed = before.tileset != self.terrain.tileset;
+        self.edits.record(crate::edit::Snapshot::Whole(Box::new(before)));
+        self.retileset(changed);
+        self.redraw(changed, String::new())
+    }
+
     /// A piece's text form closed: the editor's own again.
     pub fn text_closed(&mut self, path: &str) {
         self.docs.retain(|_, (p, _)| !p.eq_ignore_ascii_case(path));
@@ -915,11 +943,14 @@ impl Session {
                 self.docs.insert(name, (path.clone(), text.clone()));
                 out.push(ServerMsg::TextOut { path, text });
             }
+            // The document saves them; the terrain's has its header
+            // alone: its points the editor saves.
             let d = &mut self.edits.dirty;
             match name {
                 "war3map.doo" => d.doodads = false,
                 "war3mapUnits.doo" => d.units = false,
-                _ => d.regions = false,
+                "war3map.w3r" => d.regions = false,
+                _ => {}
             }
         }
         out
