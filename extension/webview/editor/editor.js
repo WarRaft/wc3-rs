@@ -1135,6 +1135,9 @@
             showState(msg)
             // A value refused: the thing's fields as they are again.
             if (msg.message && selected) askThing()
+            // The object editor's list and fields as they are now (an undo
+            // of a string of the map's changes no object data).
+            if (objectsPanel.isOpen && !msg.message) send(encode.objectList(objectsPanel.kind))
         } else if (msg.kind === 'light' && terrain) {
             light.set(msg)
             terrain.setShadows(msg.shadows)

@@ -87,6 +87,8 @@ pub enum Snapshot {
     Sounds(Vec<w3s_rs::Sound>),
     /// A kind's object data, whole (`None`: the map had no file).
     Objects(w3abdhqtu_rs::Kind, Option<w3abdhqtu_rs::ObjectData>),
+    /// The map's strings' text, whole (`placed::Files::strings`).
+    Strings(Option<(String, bool)>),
     Pathing(Vec<u8>),
     /// The whole terrain (the tile setter's: its list, cliffs, tileset).
     Whole(Box<Terrain>),
@@ -106,6 +108,8 @@ pub struct Dirty {
     pub sounds: bool,
     /// The object data's files: a bit each, by `objdata::KINDS`' order.
     pub objects: u8,
+    /// `war3map.wts`.
+    pub strings: bool,
     /// `war3map.w3i` (its playable area, its tileset) and `war3map.shd`.
     pub info: bool,
     pub shadows: bool,
@@ -113,7 +117,7 @@ pub struct Dirty {
 
 impl Dirty {
     pub fn any(self) -> bool {
-        self.terrain || self.doodads || self.units || self.regions || self.pathing || self.cameras || self.sounds || self.objects != 0 || self.info || self.shadows
+        self.terrain || self.doodads || self.units || self.regions || self.pathing || self.cameras || self.sounds || self.objects != 0 || self.strings || self.info || self.shadows
     }
 }
 
@@ -249,6 +253,7 @@ impl Edits {
             Snapshot::Cameras(_) => self.dirty.cameras = true,
             Snapshot::Sounds(_) => self.dirty.sounds = true,
             Snapshot::Objects(kind, _) => self.dirty.objects |= crate::objdata::bit(*kind),
+            Snapshot::Strings(_) => self.dirty.strings = true,
             Snapshot::Pathing(_) => self.dirty.pathing = true,
         }
         self.undo.push(before);
@@ -362,6 +367,10 @@ impl Edits {
                     None => t.files.objects.remove(&kind),
                 };
                 Snapshot::Objects(kind, before)
+            }
+            Snapshot::Strings(text) => {
+                self.dirty.strings = true;
+                Snapshot::Strings(std::mem::replace(&mut t.files.strings, text))
             }
             Snapshot::Pathing(cells) => {
                 self.dirty.pathing = true;

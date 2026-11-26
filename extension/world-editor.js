@@ -241,8 +241,11 @@ function registerWorldEditor(context, binary, pickManifest) {
     // what's typed in them goes to the editor, what the editor changes
     // goes into them (they have it unsaved then), saving them is theirs.
     const key = p => p.toLowerCase()
-    const docOf = path => workspace.textDocuments.find(d => d.uri.scheme === OBJECTS_SCHEME && key(d.uri.fsPath) === key(path))
-    const editorOf = doc => doc.uri.scheme === OBJECTS_SCHEME && [...editors.values()].find(e => e.follow?.has(key(doc.uri.fsPath)))
+    // A text form (war3map.doo as text ...), or the map's strings, text
+    // themselves (on disk, or inside the map).
+    const followed = d => d.uri.scheme === OBJECTS_SCHEME || /\.wts$/i.test(d.uri.path)
+    const docOf = path => workspace.textDocuments.find(d => followed(d) && key(d.uri.fsPath) === key(path))
+    const editorOf = doc => followed(doc) && [...editors.values()].find(e => e.follow?.has(key(doc.uri.fsPath)))
     const sendText = doc => {
         const e = editorOf(doc)
         if (e?.child) e.child.stdin.write(frame(KIND.TEXT, doc.uri.fsPath, doc.getText()))

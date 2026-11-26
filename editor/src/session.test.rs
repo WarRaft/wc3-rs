@@ -60,7 +60,7 @@ fn the_terrain_drawn_with_the_tables_of_the_roots() {
     assert!(l.terrain.is_empty() && l.notes.iter().any(|n| n.contains("TerrainLights")), "{:?}", l.notes);
     // The pieces with a text form, where they are (the terrain) or would
     // be, at the top root (the map has none of the others).
-    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c", "war3map.w3s", "war3map.w3u", "war3map.w3t", "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3h", "war3map.w3q"]);
+    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c", "war3map.w3s", "war3map.w3u", "war3map.w3t", "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3h", "war3map.w3q", "war3map.wts"]);
     assert!(f[1].1.ends_with("map/war3map.doo"), "{f:?}");
     // Nothing placed; the minimap a pixel a corner.
     assert!(o.models.is_empty() && o.notes.is_empty());
@@ -802,4 +802,37 @@ fn objects_listed_their_fields_set_reset_made_deleted_undone_saved_and_in_step_w
     let msgs = s.text_changed(&path, &typed);
     assert!(matches!(&msgs[0], ServerMsg::ObjectList(_)), "{msgs:?}");
     assert_eq!(row(&fields(&mut s, "h000"), "uhpm").value, "990");
+}
+
+#[test]
+fn an_objects_string_of_the_map_shown_as_its_text_and_set_in_war3map_wts() {
+    let dir = TestDir::new("session-object-strings");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    dir.write("map/Units/UnitMetaData.slk", &testdir::slk(&[&["ID", "field", "slk", "type", "category"], &["unam", "Name", "Profile", "string", "text"]]));
+    dir.write("map/Units/UnitData.slk", &testdir::slk(&[&["unitID", "race"], &["hfoo", "human"]]));
+    dir.write("map/war3map.wts", "\u{FEFF}STRING 7\n{\nKnight of the Map\n}\n".as_bytes());
+    let mut data = w3abdhqtu_rs::ObjectData::new(w3abdhqtu_rs::Kind::Unit);
+    data.version = 2;
+    crate::objdata::set(&mut data, parser_rs::bin::Rawcode(*b"hfoo"), parser_rs::bin::Rawcode(*b"unam"), 0, 0, Some(w3abdhqtu_rs::Value::Str("TRIGSTR_007".into())));
+    dir.write("map/war3map.w3u", &data.to_bytes().unwrap());
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let name = |s: &mut Session| match s.object_fields(0, "hfoo") {
+        ServerMsg::ObjectFields(f) => (f.name.clone(), f.fields[0].value.clone()),
+        m => panic!("{m:?}"),
+    };
+    assert_eq!(name(&mut s), ("Knight of the Map".into(), "Knight of the Map".into()));
+    // Typed: the string set, the field still naming it.
+    let msgs = s.object_set(0, "hfoo", "unam", 0, 0, "Knight Renamed");
+    assert!(matches!(msgs.last(), Some(ServerMsg::State(st)) if st.message.is_empty() && st.dirty), "{msgs:?}");
+    assert_eq!(name(&mut s), ("Knight Renamed".into(), "Knight Renamed".into()));
+    let mods: Vec<_> = s.placed.objects[&w3abdhqtu_rs::Kind::Unit].originals[0].mods().map(|m| m.value.clone()).collect();
+    assert_eq!(mods, [w3abdhqtu_rs::Value::Str("TRIGSTR_007".into())]);
+    s.undo(false);
+    assert_eq!(name(&mut s).0, "Knight of the Map");
+    s.undo(true);
+    let saved = s.save();
+    assert!(matches!(saved.last(), Some(ServerMsg::State(st)) if st.message.contains("war3map.wts") && !st.message.contains("w3u")), "{saved:?}");
+    assert_eq!(std::fs::read_to_string(dir.path().join("map/war3map.wts")).unwrap(), "\u{FEFF}STRING 7\n{\nKnight Renamed\n}\n");
 }

@@ -430,6 +430,13 @@ async function steps(only) {
             await until(() => we.objects?.custom.length === customs, 'deleted')
             await we.panel.webview.postMessage({type: 'undo'})
             await until(() => we.objects?.custom.length === customs + 1, 'undone: back')
+            // A unit of the map's named by a string of its war3map.wts: shown as its text, typed into the string.
+            await we.panel.webview.postMessage({type: 'object', action: 'pick', id: 'h000'})
+            const named = await until(() => we.objects?.picked?.id === 'h000' && we.objects.picked, 'h000')
+            check(!/TRIGSTR_/.test(named.name) && !/TRIGSTR_/.test(field('unam')?.[2] ?? 'TRIGSTR_'), `h000: ${named.name}, its name field ${field('unam')?.[2]}`)
+            await we.panel.webview.postMessage({type: 'object', action: 'field', field: 'unam', value: 'E2E Elemental'})
+            await until(() => we.objects?.picked?.name.startsWith('E2E Elemental') && field('unam')?.[2] === 'E2E Elemental', 'its string typed')
+            check(true, 'its name typed: war3map.wts\'s string')
             await we.panel.webview.postMessage({type: 'object', action: 'kind', k: 4})
             await until(() => we.objects?.kind === 4 && we.objects.count > 300, 'the abilities listed')
             await we.panel.webview.postMessage({type: 'object', action: 'pick', id: 'AHbz'})
@@ -442,7 +449,7 @@ async function steps(only) {
             we.state = undefined
             await we.panel.webview.postMessage({type: 'save'})
             const saved = await until(() => we.state?.message && we.state, 'saved')
-            check(!saved.dirty && saved.message.includes('war3map.w3u') && saved.message.includes('war3map.w3a'), saved.message)
+            check(!saved.dirty && ['war3map.w3u', 'war3map.w3a', 'war3map.wts'].every(f => saved.message.includes(f)), saved.message)
             await we.panel.webview.postMessage({type: 'object', action: 'close'})
         }},
         {name: 'map', editor: true, run: async () => {

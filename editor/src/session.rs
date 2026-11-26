@@ -562,6 +562,7 @@ impl Session {
             match what {
                 crate::edit::Snapshot::Regions(_) | crate::edit::Snapshot::Cameras(_) | crate::edit::Snapshot::Pathing(_) => out.push(ServerMsg::Overlays(self.overlays())),
                 crate::edit::Snapshot::Sounds(_) => out.push(self.sounds_msg()),
+                crate::edit::Snapshot::Strings(_) => self.strings_changed(),
                 crate::edit::Snapshot::Objects(kind, _) => {
                     let k = crate::objdata::KINDS.iter().position(|x| *x == kind).unwrap_or(0) as u8;
                     out.push(self.object_list(k));
@@ -615,7 +616,7 @@ impl Session {
         let docs: Vec<String> = self.docs.values().map(|(p, _)| p.clone()).collect();
         let mut saved = Vec::new();
         let mut failed = Vec::new();
-        let files: [FileToSave; 9] = [
+        let files: [FileToSave; 10] = [
             (dirty.terrain, "war3map.w3e", self.terrain.to_bytes().map_err(|e| e.to_string())),
             (dirty.doodads, "war3map.doo", self.placed.doodads.as_ref().map_or(Ok(Vec::new()), |d| d.to_bytes().map_err(|e| e.to_string()))),
             (dirty.units, "war3mapUnits.doo", self.placed.units.as_ref().map_or(Ok(Vec::new()), |u| u.to_bytes().map_err(|e| e.to_string()))),
@@ -623,6 +624,7 @@ impl Session {
             (dirty.pathing, "war3map.wpm", self.placed.pathing.as_ref().map_or(Ok(Vec::new()), |p| p.to_bytes().map_err(|e| e.to_string()))),
             (dirty.cameras && self.placed.cameras.is_some(), "war3map.w3c", self.placed.cameras.as_ref().map_or(Ok(Vec::new()), |c| c.to_bytes().map_err(|e| e.to_string()))),
             (dirty.sounds && self.placed.sounds.is_some(), "war3map.w3s", self.placed.sounds.as_ref().map_or(Ok(Vec::new()), |n| n.to_bytes().map_err(|e| e.to_string()))),
+            (dirty.strings && self.placed.strings.is_some(), "war3map.wts", Ok(self.piece_bytes("war3map.wts").unwrap_or_default())),
             (dirty.info && self.info.is_some(), "war3map.w3i", self.info.as_ref().map_or(Ok(Vec::new()), |i| i.to_bytes().map_err(|e| e.to_string()))),
             (dirty.shadows && self.shadows.is_some(), "war3map.shd", Ok(self.shadows.as_ref().map_or(Vec::new(), |s| s.to_bytes()))),
         ];
@@ -642,7 +644,7 @@ impl Session {
                 Ok(to) => {
                     saved.push(to.display().to_string());
                     let d = &mut self.edits.dirty;
-                    *[&mut d.terrain, &mut d.doodads, &mut d.units, &mut d.regions, &mut d.pathing, &mut d.cameras, &mut d.sounds, &mut d.info, &mut d.shadows][i] = false;
+                    *[&mut d.terrain, &mut d.doodads, &mut d.units, &mut d.regions, &mut d.pathing, &mut d.cameras, &mut d.sounds, &mut d.strings, &mut d.info, &mut d.shadows][i] = false;
                 }
                 Err(e) => failed.push(format!("{name}: {e}")),
             }
@@ -777,7 +779,7 @@ impl Session {
     }
 
     /// The map's pieces the editor changes, by name.
-    pub const PIECES: [&'static str; 14] = [
+    pub const PIECES: [&'static str; 15] = [
         "war3map.w3e",
         "war3map.doo",
         "war3mapUnits.doo",
@@ -792,6 +794,7 @@ impl Session {
         "war3map.w3a",
         "war3map.w3h",
         "war3map.w3q",
+        "war3map.wts",
     ];
 
     /// Each piece's bytes as the layers have it now, hashed (`None`: no
@@ -829,6 +832,7 @@ impl Session {
             "war3map.w3r" => d.regions,
             "war3map.w3c" => d.cameras,
             "war3map.w3s" => d.sounds,
+            "war3map.wts" => d.strings,
             n if crate::objdata::kind_of(n).is_some() => d.objects & crate::objdata::bit(crate::objdata::kind_of(n).unwrap()) != 0,
             _ => d.pathing,
         };
@@ -853,6 +857,10 @@ impl Session {
                 "war3map.w3r" => self.placed.regions = files.regions.clone(),
                 "war3map.w3c" => self.placed.cameras = files.cameras.clone(),
                 "war3map.w3s" => self.placed.sounds = files.sounds.clone(),
+                "war3map.wts" => {
+                    self.placed.strings = files.strings.clone();
+                    self.strings_changed();
+                }
                 n if crate::objdata::kind_of(n).is_some() => {
                     let kind = crate::objdata::kind_of(n).unwrap();
                     match files.objects.get(&kind) {
@@ -921,6 +929,7 @@ impl Session {
             "war3map.w3r" => self.placed.regions.as_ref()?.to_bytes().ok(),
             "war3map.w3c" => self.placed.cameras.as_ref()?.to_bytes().ok(),
             "war3map.w3s" => self.placed.sounds.as_ref()?.to_bytes().ok(),
+            "war3map.wts" => self.placed.strings.as_ref().map(|(text, bom)| format!("{}{text}", if *bom { "\u{FEFF}" } else { "" }).into_bytes()),
             n if crate::objdata::kind_of(n).is_some() => self.placed.objects.get(&crate::objdata::kind_of(n)?)?.to_bytes().ok(),
             "war3map.w3e" => self.terrain.to_bytes().ok(),
             _ => None,
@@ -931,7 +940,10 @@ impl Session {
     /// the layout `war3map.w3i` beside it says).
     fn piece_text(&mut self, name: &'static str, path: &str) -> Option<String> {
         let bytes = self.piece_bytes(name)?;
-        let text = if let Some(kind) = crate::objdata::kind_of(name) {
+        let text = if name == "war3map.wts" {
+            // The file is its own text form (without its byte order mark).
+            return self.placed.strings.as_ref().map(|(t, _)| t.clone());
+        } else if let Some(kind) = crate::objdata::kind_of(name) {
             self.object_tables.load(&self.game, kind);
             wc3_server::objects::convert(wc3_server::objects::TO_TEXT, path, &bytes, &self.object_tables.meta[&kind])
         } else if name == "war3map.w3r" {
@@ -964,6 +976,16 @@ impl Session {
         }
         if let Some(kind) = crate::objdata::kind_of(name) {
             return self.objects_text_changed(kind, path, text);
+        }
+        if name == "war3map.wts" {
+            let (src, _) = wts_rs::split_bom(text);
+            let bom = self.placed.strings.as_ref().is_some_and(|(_, b)| *b);
+            let before = self.placed.strings.replace((src.to_string(), bom));
+            self.edits.record(crate::edit::Snapshot::Strings(before));
+            self.strings_changed();
+            let mut out = self.sync_docs();
+            out.push(ServerMsg::State(self.state(String::new())));
+            return out;
         }
         let bytes = if name == "war3map.w3r" {
             wc3_server::regions::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
@@ -1081,6 +1103,7 @@ impl Session {
                 "war3map.w3r" => d.regions = false,
                 "war3map.w3c" => d.cameras = false,
                 "war3map.w3s" => d.sounds = false,
+                "war3map.wts" => d.strings = false,
                 n if crate::objdata::kind_of(n).is_some() => d.objects &= !crate::objdata::bit(crate::objdata::kind_of(n).unwrap()),
                 _ => {}
             }
@@ -1411,6 +1434,12 @@ impl Session {
         ServerMsg::ObjectList(crate::protocol::ObjectListMsg { kind: k, objects })
     }
 
+    /// The map's strings changed (`placed::Files::strings`): read again
+    /// for what resolves `TRIGSTR_`s.
+    fn strings_changed(&mut self) {
+        self.strings = self.placed.strings.as_ref().map(|(t, _)| wts_rs::parse(t));
+    }
+
     /// `kind`'s object data changed: the types of what's placed (a unit's
     /// model, scale ...) as the map's object data has them now, and, for a
     /// kind that's placed, everything placed again.
@@ -1500,7 +1529,8 @@ impl Session {
                     ty: f.ty.clone(),
                     level,
                     column,
-                    value: changed.map_or_else(|| default.clone(), |m| crate::objdata::shown(&m.value)),
+                    // A string of the map's (`TRIGSTR_7`) as its text.
+                    value: changed.map_or_else(|| default.clone(), |m| self.text(&crate::objdata::shown(&m.value))),
                     default,
                     changed: changed.is_some(),
                 });
@@ -1544,6 +1574,22 @@ impl Session {
         if !known {
             return vec![ServerMsg::State(self.state(format!("No object {id}.")))];
         }
+        // A field that's a string of the map's (`TRIGSTR_7`): the string
+        // set, as World Editor does, the field still naming it.
+        let string = self.placed.objects.get(&kind).and_then(|d| {
+            let (custom, i) = crate::objdata::find(d, code)?;
+            let o = if custom { &d.customs[i] } else { &d.originals[i] };
+            let m = o.mods().filter(|m| m.field == field_id && m.level == level && m.column == column).last()?;
+            match &m.value {
+                w3abdhqtu_rs::Value::Str(s) => s.strip_prefix("TRIGSTR_")?.parse::<u32>().ok(),
+                _ => None,
+            }
+        });
+        if let Some(n) = string.filter(|_| !value.is_empty()) {
+            let mut out = self.string_set(n, value);
+            out.insert(0, self.object_list(k));
+            return out;
+        }
         let value = value.to_string();
         self.objects_edit(k, kind, |data, meta| {
             let f = meta.get(field_id);
@@ -1552,6 +1598,21 @@ impl Session {
             crate::objdata::set(data, code, field_id, level, column, v);
             Ok(String::new())
         })
+    }
+
+    /// The map's string `n` (`TRIGSTR_n`) set to `text`, as `war3map.wts`
+    /// writes it; an undo. Said when the map has no such string.
+    fn string_set(&mut self, n: u32, text: &str) -> Vec<ServerMsg> {
+        let Some((src, bom)) = self.placed.strings.clone() else { return vec![ServerMsg::State(self.state(format!("The map has no war3map.wts for string {n}.")))] };
+        let doc = wts_rs::parse(&src);
+        let edits = match wts_rs::set_string(&doc, n, text) {
+            Ok(e) => e,
+            Err(e) => return vec![ServerMsg::State(self.state(format!("String {n}: {e}")))],
+        };
+        let before = self.placed.strings.replace((wts_rs::apply(&src, &edits), bom));
+        self.edits.record(crate::edit::Snapshot::Strings(before));
+        self.strings_changed();
+        vec![ServerMsg::State(self.state(String::new()))]
     }
 
     /// A custom object of `kind` based on the game's `base` (with the

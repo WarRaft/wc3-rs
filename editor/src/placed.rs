@@ -267,6 +267,9 @@ pub struct Files {
     pub sounds: Option<w3s_rs::Sounds>,
     /// The object data (`war3map.w3u` ...: `objdata::KINDS`), by kind.
     pub objects: HashMap<w3abdhqtu_rs::Kind, w3abdhqtu_rs::ObjectData>,
+    /// The map's strings (`war3map.wts`): its text (without a byte order
+    /// mark) and whether it had one.
+    pub strings: Option<(String, bool)>,
     /// The layout the map's `war3map.w3i` says (1.32's skins), for new
     /// files.
     pub layout: doo_rs::Layout,
@@ -338,7 +341,12 @@ impl Files {
                 Err(e) => notes.push(format!("Can't read {name}: {e}")),
             }
         }
-        let files = Files { doodads, units, regions, pathing, cameras, sounds, objects, layout: layout.unwrap_or_default() };
+        let strings = game.read("war3map.wts").map(|(b, _)| {
+            let text = String::from_utf8_lossy(&b);
+            let (src, bom) = wts_rs::split_bom(&text);
+            (src.to_string(), bom)
+        });
+        let files = Files { doodads, units, regions, pathing, cameras, sounds, objects, strings, layout: layout.unwrap_or_default() };
         (files, notes)
     }
 }

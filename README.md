@@ -1844,8 +1844,14 @@ step), this list updated.
      game's tables read once, the map's object data as the editor has it
      over them) and everything placed again (a unit's model, scale), the
      palette's names (the map's own objects) sent again; so too after an
-     undo, the text typed, a change on disk. Not yet: `TRIGSTR_` values
-     shown as their ids. MCP: the `obj_*` tools already change them.
+     undo, the text typed, a change on disk. A field that names a string
+     of the map's (`TRIGSTR_298`) shows its text, and what's typed into
+     it sets that string in `war3map.wts` (`wts_rs::set_string`), the
+     field still naming it, as World Editor does: `war3map.wts` a piece
+     of the session too (`Snapshot::Strings`, the file's text whole, its
+     byte order mark kept; saved; taken in when changed on disk; open in
+     VS Code, on disk or inside the map, in step as a text form is: the
+     file its own). MCP: the `obj_*` tools already change them.
 
 7. **In step with the rest** (done). Decided with the user: a text form
    open in VS Code and the editor are one (the text is the truth, as
