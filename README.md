@@ -22,8 +22,8 @@ item's details are in its section below):
   in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs), 4 (doodads and units),
   5 (overlays), 6 (editing: terrain brushes, things placed, regions and
   pathing), 7 (in step with the rest), 8a (animation), 8b (particles),
-  8c (light), 8d (the map's size and tiles). Next: Reforged HD, or the
-  leftovers below.
+  8c (light), 8d (the map's size and tiles), the leftovers; Reforged HD
+  a (the storage). Next: Reforged HD b.
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1912,8 +1912,24 @@ step), this list updated.
      Map… panel (`mapsettings.js`); `war3map.w3i` and `war3map.shd`
      saved when they changed. MCP: `w3e_tiles`, `map_resize`. Not yet:
      cameras (`war3map.w3c`) off a cut terrain aren't removed.
-   - **Reforged HD assets** (CASC, `.dds`, the HD shaders): when a
-     Reforged game is at hand.
+   - **Reforged HD** (a Reforged install is at hand: 3.0.1, a CASC
+     storage), in parts:
+     - **a, the storage** (done): `../casc-rs` (its own repository,
+       WarRaft/casc-rs) reads a local CASC storage (`.build.info`, the
+       build's configuration, the local indices, BLTE raw and zlib, the
+       encoding file, Warcraft III's text root); names as the root has
+       them, `War3.w3mod:` the game's, `War3.w3mod:_HD.w3mod:` the HD
+       ones, locales and tilesets as mods; all 93777 files on disk
+       read. MCP: `casc_list`, `casc_read`.
+     - **b, the game's layers**: a project's game folder a Reforged
+       install (`wc3.bni` `[project] game=`), its files through
+       `game::Lookup` as the game layers them (the base, the tileset's,
+       the locale's, HD over SD when the project says HD).
+     - **c, `.dds`**: BC1, BC3, BC5 and the rest Reforged's textures use.
+     - **d, Reforged's models**: MDX 1100 and later (a layer's several
+       textures, its shader), `mdx-rs`.
+     - **e, the HD shaders**: diffuse, normal, ORM, emissive, team
+       colour, as the game draws them.
 
 ## MCP
 
