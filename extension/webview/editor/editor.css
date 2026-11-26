@@ -334,6 +334,18 @@ button:hover {
     font: inherit;
 }
 
+.tools .camera-field {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+}
+
+.tools .camera-field input {
+    width: 5em;
+}
+
 .camera-list {
     background: var(--vscode-input-background);
     color: var(--vscode-input-foreground);

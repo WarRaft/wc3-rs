@@ -652,10 +652,11 @@
     }
     function showCamera() {
         const c = selectedCamera !== null ? cameras[selectedCamera] : null
-        for (const id of ['camera-name', 'camera-set', 'camera-look', 'camera-delete']) $(id).disabled = !c
+        for (const id of ['camera-name', 'camera-fov', 'camera-set', 'camera-look', 'camera-delete']) $(id).disabled = !c
         if (document.activeElement !== $('camera-name')) $('camera-name').value = c ? c.name : ''
         const [rot, aoa, dist, fov] = c ? c.view.map(v => Math.round(v * 100) / 100) : []
-        $('camera-view').textContent = c ? `rotation ${rot}, angle of attack ${aoa}, distance ${dist}, field of view ${fov}` : 'Click a camera, or make one from the view'
+        if (document.activeElement !== $('camera-fov')) $('camera-fov').value = c ? fov : ''
+        $('camera-view').textContent = c ? `rotation ${rot}, angle of attack ${aoa}, distance ${dist}` : 'Click a camera, or make one from the view'
         const list = $('camera-list')
         if (list.options.length !== cameras.length || cameras.some((c, i) => list.options[i].textContent !== c.name)) {
             list.replaceChildren(...cameras.map((c, i) => Object.assign(document.createElement('option'), {value: i, textContent: c.name})))
@@ -688,6 +689,15 @@
         cameraRenameTimer = setTimeout(() => send(encode.cameraRename(index, name)), 250)
     }
     // A new one's field of view the view's (70, World Editor's); one set to the view keeps its own.
+    // Its field of view set as it's typed (1 to 179).
+    let cameraFovTimer = 0
+    $('camera-fov').oninput = () => {
+        clearTimeout(cameraFovTimer)
+        const index = selectedCamera
+        const fov = Number($('camera-fov').value)
+        if (index === null || !(fov >= 1 && fov <= 179)) return
+        cameraFovTimer = setTimeout(() => send(encode.cameraSet(index, 'field_of_view', fov)), 250)
+    }
     const fromView = index => send(encode.cameraView(index, camera.position, camera.distance, camera.horizontal, camera.vertical, index < 0 ? camera.fov : cameras[index].view[3]))
     $('camera-new').onclick = () => {
         selectNewCamera = true
@@ -983,7 +993,7 @@
         } else if (msg.type === 'camera') {
             // The Cameras tool's, for the tests: `new` from the view, `pick`
             // one (`index`), `drag` the one picked to a point of the view,
-            // `set` it to the view, `look` through it, `rename`, `delete`.
+            // `set` it to the view, `look` through it, `rename`, `fov` typed, `delete`.
             const c = selectedCamera
             if (msg.action === 'new') $('camera-new').onclick()
             else if (msg.action === 'pick') pickCamera(msg.index)
@@ -992,7 +1002,11 @@
                 $('camera-look').onclick()
                 vscode.postMessage({type: 'camera', camera: c !== null && {index: c, name: cameras[c].name, target: cameras[c].target, view: cameras[c].view, count: cameras.length, looking: {position: camera.position, distance: camera.distance, horizontal: camera.horizontal, vertical: camera.vertical, fov: camera.fov}}})
             } else if (msg.action === 'rename' && c !== null) send(encode.cameraRename(c, msg.name))
-            else if (msg.action === 'delete') $('camera-delete').onclick()
+            else if (msg.action === 'fov') {
+                // As typed in its field.
+                $('camera-fov').value = String(msg.fov)
+                $('camera-fov').oninput()
+            } else if (msg.action === 'delete') $('camera-delete').onclick()
             else if (msg.action === 'drag' && c !== null) {
                 send(encode.camera(true, c, camera.ray(msg.x, msg.y, aspect())))
                 send(encode.strokeEnd())

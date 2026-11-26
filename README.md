@@ -1750,11 +1750,13 @@ step), this list updated.
      World Editor's; the view's was HiveWE's 50), Set to view sets the
      one picked so (its field of view kept), Look through it (a double
      click in the list) puts the view where it looks from, at its field
-     of view (Home: 70 again); its name changed as it's
+     of view (Home: 70 again); its field of view set in the panel (1 to
+     179, `CameraSet`: any of `w3c_rs::Camera`'s fields by name); its name changed as it's
      typed; Delete. Undo (`Snapshot::Cameras`), saved into its layer; a
      map without `war3map.w3c` gets one in its `war3map.w3i`'s layout (a
      2.0 map's version 3). Its text form in step as the regions' is.
-     Messages `Camera`, `CameraView`, `CameraRename`, `CameraDelete`;
+     Messages `Camera`, `CameraView`, `CameraRename`, `CameraDelete`,
+     `CameraSet`;
      `Overlays` says each camera's rotation, angle of attack, distance
      and field of view. MCP: the `w3c_*` tools already change the file.
 

@@ -47,6 +47,7 @@ const EditorProtocol = (() => {
         CAMERA_VIEW: 24,
         CAMERA_RENAME: 25,
         CAMERA_DELETE: 26,
+        CAMERA_SET: 27,
         MAP_SETTINGS: 146,
     }
 
@@ -270,6 +271,14 @@ const EditorProtocol = (() => {
             const w = new Writer()
             w.u32(index)
             return w.frame(KIND.CAMERA_DELETE)
+        },
+        /** A camera's field (`field_of_view` ...) set. */
+        cameraSet(index, field, value) {
+            const w = new Writer()
+            w.u32(index)
+            w.string(field)
+            w.f32(value)
+            return w.frame(KIND.CAMERA_SET)
         },
         mapAsk: () => new Writer().frame(KIND.MAP_ASK),
         /** Cells added on each side {left, right, bottom, top}, the playable area's margins [l, r, b, t] or null. */

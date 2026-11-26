@@ -225,6 +225,7 @@ impl Editor {
                     ClientMsg::CameraView { index, view } => s.camera_view(index, view),
                     ClientMsg::CameraRename { index, name } => s.camera_rename(index, &name),
                     ClientMsg::CameraDelete { index } => s.camera_delete(index),
+                    ClientMsg::CameraSet { index, field, value } => s.camera_set(index, &field, value),
                     ClientMsg::Text { path, text } => s.text_changed(&path, &text),
                     ClientMsg::MapAsk => vec![ServerMsg::MapSettings(s.map_settings())],
                     ClientMsg::Resize { sides, margins } => s.resize(sides, margins),

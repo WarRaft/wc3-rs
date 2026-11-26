@@ -46,6 +46,7 @@
 //! | 24 | `CameraView` | a camera made from the view or set to it: `i32` its index (a new one's: -1), `f32` the point looked at x, y, z (cells, layers), distance (cells), the view's horizontal and vertical angles (radians, as the page's camera has them), its field of view (degrees: the page sends World Editor's 70 for a new one, the camera's own for one set); answered the same |
 //! | 25 | `CameraRename` | `u32` index, its name; answered the same |
 //! | 26 | `CameraDelete` | `u32` index; answered the same |
+//! | 27 | `CameraSet` | a camera's field set: `u32` index, the field's name (`w3c_rs::Camera::fields`': `field_of_view` ...), `f32` its value; answered the same |
 //! | 22 | `TilePathing` | the tile pather's: `u8` a tile's index in the terrain's list, `u8` what it forbids (`wpm` flags: 2 walking, 4 flying, 8 building); answered by `Overlays` and `State` |
 //! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id); answered by `Icons` |
 //!
@@ -117,6 +118,7 @@ mod kind {
     pub const CAMERA_VIEW: u8 = 24;
     pub const CAMERA_RENAME: u8 = 25;
     pub const CAMERA_DELETE: u8 = 26;
+    pub const CAMERA_SET: u8 = 27;
     pub const FOLLOW: u8 = 142;
     pub const TEXT_OUT: u8 = 143;
     pub const SAVE_DOCS: u8 = 144;
@@ -190,6 +192,8 @@ pub enum ClientMsg {
     CameraRename { index: u32, name: String },
     /// Kind 26.
     CameraDelete { index: u32 },
+    /// Kind 27.
+    CameraSet { index: u32, field: String, value: f32 },
 }
 
 /// A tile the tile setter offers: its id, name, tileset's letter (its
@@ -533,6 +537,7 @@ impl ClientMsg {
             }
             kind::CAMERA_RENAME => Some(ClientMsg::CameraRename { index: r.u32()?, name: r.string()? }),
             kind::CAMERA_DELETE => Some(ClientMsg::CameraDelete { index: r.u32()? }),
+            kind::CAMERA_SET => Some(ClientMsg::CameraSet { index: r.u32()?, field: r.string()?, value: r.f32()? }),
             _ => None,
         })
     }
@@ -651,6 +656,12 @@ impl ClientMsg {
             ClientMsg::CameraDelete { index } => {
                 w.u32(*index);
                 kind::CAMERA_DELETE
+            }
+            ClientMsg::CameraSet { index, field, value } => {
+                w.u32(*index);
+                w.string(field);
+                w.f32(*value);
+                kind::CAMERA_SET
             }
             ClientMsg::Icons(list) => {
                 w.list(list, |w, (k, id)| {

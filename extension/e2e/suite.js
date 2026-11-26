@@ -247,7 +247,7 @@ async function steps() {
     check(!savedOverlays.dirty && savedOverlays.message.includes('war3map.w3r') && savedOverlays.message.includes('war3map.wpm'), savedOverlays.message)
     check(fs.statSync(map).mtimeMs > stamp2, 'the map on disk written')
 
-    log('cameras: one made from the view, renamed, its target dragged, looked through, deleted and undone; saved; one at 45° looked through')
+    log('cameras: one made from the view, renamed, its target dragged, looked through, deleted and undone; saved; one at 45° looked through, its field of view typed')
     await we.panel.webview.postMessage({type: 'tool', tool: 'cameras'})
     const camsAt = we.overlays.cameras
     we.camera = undefined
@@ -283,6 +283,9 @@ async function steps() {
     const lookedNarrow = await until(() => we.camera?.looking && we.camera, 'looked through it')
     check(lookedNarrow.looking.fov === 45, `the view's field of view from 70 to ${lookedNarrow.looking.fov}`)
     await we.panel.webview.postMessage({type: 'fov', fov: 70})
+    // Its field of view typed in the panel.
+    await we.panel.webview.postMessage({type: 'camera', action: 'fov', fov: 60})
+    await until(() => we.camera?.view[3] === 60 && we.state?.undo, 'its field of view typed: 60')
     await we.panel.webview.postMessage({type: 'camera', action: 'delete'})
     await until(() => we.overlays?.cameras === camsAt + 1, 'deleted')
 
