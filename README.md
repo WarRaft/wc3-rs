@@ -30,7 +30,7 @@ item's details are in its section below):
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
   Castle, CruiserCommand, LastGuards, three-corridors, Edemium; Castle
   Revival and Diablo Reforged, Reforged 2.0 maps: `w3i` 39, `doo` 13,
-  `w3r` 7, read; their files over 90 MB not in the repository: GitHub's
+  `w3r` 7, `w3c` 3, read; their files over 90 MB not in the repository: GitHub's
   limit), each a project of its own (`wc3.bni`). Edemium's dummy units
   name models nowhere (`1.mdx`, `null.mdx`), Castle Revival imports text
   models (`.mdl`): read as Reforged reads them, a `.mdx` not found taken

@@ -71,3 +71,24 @@ fn bounds_follow_the_ground() {
     assert_eq!(out.len() / POINT, 2 * 4 * (2 + 1 + 2 + 1));
     assert!(out.chunks(POINT).all(|p| (p[2] - 0.08).abs() < 1e-6));
 }
+
+/// A Reforged 2.0 map's cameras (`war3map.w3c` version 3, its depth of
+/// field and free camera; the local rotation of its w3i's 1.31 and later).
+#[test]
+fn reforged_cameras() {
+    let dir = TestDir::new("overlays-reforged");
+    dir.write("war3map.w3i", &w3i_rs::Info::new(39).to_bytes().unwrap());
+    let mut cams = w3c_rs::Cameras::new(w3c_rs::Layout::Local);
+    cams.version = 3;
+    let mut c = w3c_rs::Camera::new("Camera 002", 128.0, 0.0);
+    (c.depth_of_field, c.free) = (900.0, 1);
+    cams.cameras.push(c);
+    dir.write("war3map.w3c", &cams.to_bytes().unwrap());
+    let game = wc3_server::game::Lookup { roots: vec![dir.path().to_path_buf()], ..Default::default() }.open().0;
+    let (t, d) = draw();
+    let files = crate::placed::Files::read(&game).0;
+    let info = game.read("war3map.w3i").and_then(|(b, _)| w3i_rs::parse(&b).ok());
+    let o = Overlays::load(&game, &t, &d, &Objects::default(), &files, info.as_ref(), (3, 2, vec![0u8; 24]));
+    assert!(!o.notes.iter().any(|n| n.contains("w3c")), "{:?}", o.notes);
+    assert_eq!(o.cameras.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Camera 002"]);
+}
