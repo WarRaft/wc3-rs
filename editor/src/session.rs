@@ -1143,11 +1143,12 @@ impl Session {
     /// the next number) or camera `index` set to it: `view` the point
     /// looked at (cells, layers), the distance (cells), the horizontal
     /// and vertical angles (radians: the page looks along cos v sin h,
-    /// cos v cos h, sin v), the field of view (degrees). The game's
+    /// cos v cos h, sin v), the field of view (degrees), the roll
+    /// (radians; the camera's in degrees, 0 to 360). The game's
     /// rotation is then 90° − h, its angle of attack v, each 0 to 360.
-    pub fn camera_view(&mut self, index: i32, view: [f32; 7]) -> Vec<ServerMsg> {
+    pub fn camera_view(&mut self, index: i32, view: [f32; 8]) -> Vec<ServerMsg> {
         let Some(draw) = self.drawn.clone() else { return vec![] };
-        let [x, y, z, distance, h, v, fov] = view;
+        let [x, y, z, distance, h, v, fov, roll] = view;
         let degrees = |a: f32| {
             let d = a.to_degrees().rem_euclid(360.0);
             // Whole hundredths, as World Editor shows them.
@@ -1170,6 +1171,7 @@ impl Session {
             c.rotation = degrees(std::f32::consts::FRAC_PI_2 - h);
             c.angle_of_attack = degrees(v);
             c.field_of_view = fov;
+            c.roll = degrees(roll);
             Ok(())
         })
     }

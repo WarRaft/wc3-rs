@@ -254,11 +254,11 @@ const EditorProtocol = (() => {
             for (const v of [...origin, ...dir]) w.f32(v)
             return w.frame(KIND.CAMERA)
         },
-        /** A camera made from the view (index -1) or set to it: the point looked at (cells), distance (cells), horizontal, vertical (radians), field of view (degrees). */
-        cameraView(index, position, distance, horizontal, vertical, fov) {
+        /** A camera made from the view (index -1) or set to it: the point looked at (cells), distance (cells), horizontal, vertical (radians), field of view (degrees), roll (radians). */
+        cameraView(index, position, distance, horizontal, vertical, fov, roll) {
             const w = new Writer()
             w.u32(index >>> 0)
-            for (const v of [...position, distance, horizontal, vertical, fov]) w.f32(v)
+            for (const v of [...position, distance, horizontal, vertical, fov, roll]) w.f32(v)
             return w.frame(KIND.CAMERA_VIEW)
         },
         cameraRename(index, name) {

@@ -295,6 +295,13 @@ async function steps() {
     const rolled = await until(() => we.camera?.looking && we.camera, 'looked through it rolled')
     check(Math.abs(rolled.looking.roll * 180 / Math.PI - 10) < 1e-3 && rolled.looking.fov === 60, `the view's roll ${(rolled.looking.roll * 180 / Math.PI).toFixed(2)}°, field of view ${rolled.looking.fov}`)
     await shot('world-editor-camera-rolled')
+    // One made from the rolled view: its roll the view's; deleted, the rolled one picked again.
+    await we.panel.webview.postMessage({type: 'camera', action: 'new'})
+    const fromRolled = await until(() => we.camera?.count === camsAt + 3 && we.camera, 'a camera made from the rolled view')
+    check(Math.abs(fromRolled.view[5] - 10) < 0.01 && fromRolled.view[3] === 60, `${fromRolled.name}: roll ${fromRolled.view[5]}, field of view ${fromRolled.view[3]}`)
+    await we.panel.webview.postMessage({type: 'camera', action: 'delete'})
+    await until(() => we.overlays?.cameras === camsAt + 2, 'deleted')
+    await we.panel.webview.postMessage({type: 'camera', action: 'pick', index: camsAt + 1})
     await we.panel.webview.postMessage({type: 'fov', fov: 70, roll: 0})
     await we.panel.webview.postMessage({type: 'camera', action: 'delete'})
     await until(() => we.overlays?.cameras === camsAt + 1, 'deleted')

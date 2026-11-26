@@ -331,7 +331,7 @@ fn cameras_made_from_the_view_dragged_renamed_deleted_undone_saved_and_in_step_w
     // The view looking north (horizontal 0) down at -0.977 radians from
     // 10 cells, at (2, 1) cells, a layer over the ground: the corner is
     // at -128, -64.
-    let msgs = s.camera_view(-1, [2.0, 1.0, ground + 1.0, 10.0, 0.0, -0.977, 50.0]);
+    let msgs = s.camera_view(-1, [2.0, 1.0, ground + 1.0, 10.0, 0.0, -0.977, 50.0, 0.0]);
     assert!(matches!(&msgs[..], [ServerMsg::Overlays(o), ServerMsg::State(st)] if o.cameras.len() == 1 && o.camera_lines.len() > 0 && st.dirty && st.undo), "{msgs:?}");
     let c = &s.placed.cameras.as_ref().unwrap().cameras[0];
     assert_eq!(c.name, "Camera 001");
@@ -343,13 +343,13 @@ fn cameras_made_from_the_view_dragged_renamed_deleted_undone_saved_and_in_step_w
     assert!((cam.target[0] - 2.0).abs() < 1e-4 && (cam.target[1] - 1.0).abs() < 1e-4);
     assert!(cam.eye[1] < cam.target[1] && cam.eye[2] > cam.target[2]);
     assert_eq!(cam.view, [90.0, 304.02, 1280.0, 50.0, 128.0, 0.0]);
-    s.camera_view(-1, [3.0, 1.0, ground, 10.0, std::f32::consts::FRAC_PI_2, -0.5, 70.0]);
+    s.camera_view(-1, [3.0, 1.0, ground, 10.0, std::f32::consts::FRAC_PI_2, -0.5, 70.0, -0.1]);
     let c = &s.placed.cameras.as_ref().unwrap().cameras[1];
-    assert_eq!((c.name.as_str(), c.rotation), ("Camera 002", 0.0));
+    assert_eq!((c.name.as_str(), c.rotation, c.roll), ("Camera 002", 0.0, 354.27));
     // The second set to another view: east (horizontal -π/2 looks west).
-    s.camera_view(1, [3.0, 1.0, ground, 5.0, -std::f32::consts::FRAC_PI_2, -0.5, 70.0]);
+    s.camera_view(1, [3.0, 1.0, ground, 5.0, -std::f32::consts::FRAC_PI_2, -0.5, 70.0, 0.0]);
     let c = &s.placed.cameras.as_ref().unwrap().cameras[1];
-    assert_eq!((c.name.as_str(), c.rotation, c.distance), ("Camera 002", 180.0, 640.0));
+    assert_eq!((c.name.as_str(), c.rotation, c.distance, c.roll), ("Camera 002", 180.0, 640.0, 0.0));
     // The first's target dragged to (1, 0.5) cells, its height kept.
     let down = [0.0, 0.0, -1.0];
     s.camera_drag(true, 0, [1.0, 0.5, 9.0], down);

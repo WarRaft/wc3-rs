@@ -1747,8 +1747,8 @@ step), this list updated.
      (`Camera 001` ..., the next number: its target the point the view
      looks at, its distance, rotation 90° − the view's horizontal angle,
      angle of attack its vertical one, field of view the view's: 70,
-     World Editor's; the view's was HiveWE's 50), Set to view sets the
-     one picked so (its field of view kept), Look through it (a double
+     World Editor's; the view's was HiveWE's 50; roll the view's), Set
+     to view sets the one picked so (its field of view and roll kept), Look through it (a double
      click in the list) puts the view where it looks from, at its field
      of view and roll (the picture turned clockwise by it; Home: 70 and
      no roll again; the view's rays and billboards turned with it); its height (z offset), rotation, angle
