@@ -75,6 +75,7 @@ const VIEW = 'wc3.editors'
  * @property {{pathing: number, destructables: number, decks: number, regions: number, cameras: number, bounds: number, minimap: number, region?: {name: string, x: number, y: number}} | undefined} overlays  what the page has of the overlays
  * @property {{dirty: boolean, undo: boolean, redo: boolean, message: string} | undefined} state  the edits' state the page last showed
  * @property {{name: string, bounds: number[]} | null | undefined} region  the region picked (the Regions tool)
+ * @property {{index: number, name: string, target: number[], view: number[], count: number} | null | undefined} camera  the camera picked (the Cameras tool; `view` rotation, angle of attack, distance, field of view), and how many there are
  * @property {{frames: number, blocks: number, blinks: number, where: object[]} | undefined} flicker  blinks the page counted over a run of frames
  * @property {string | false | undefined} focused  the model of the thing the camera was put over (one with ribbons, or else tails)
  * @property {{width: number, height: number, margins: number[], tileset: string, mapTiles: string[], tiles: number} | undefined} mapSettings  the map's settings the page was last sent
@@ -134,6 +135,15 @@ function registerWorldEditor(context, binary, pickManifest) {
     <input id="region-name" type="text" placeholder="Region's name" disabled>
     <span id="region-bounds" class="region-bounds"></span>
     <button id="region-delete" disabled>Delete region</button>
+  </div>
+  <div id="camera-panel" class="region-panel" hidden>
+    <select id="camera-list" class="camera-list" size="6"></select>
+    <input id="camera-name" type="text" placeholder="Camera's name" disabled>
+    <span id="camera-view" class="region-bounds"></span>
+    <button id="camera-new" title="A new camera, looking as the view does">New from view</button>
+    <button id="camera-set" disabled title="The camera picked looks as the view does">Set to view</button>
+    <button id="camera-look" disabled title="The view looks as the camera picked does">Look through it</button>
+    <button id="camera-delete" disabled>Delete camera</button>
   </div>
   <div id="objects-palette" class="objects-palette" hidden>
     <div id="object-kinds" class="object-kinds"></div>
@@ -296,6 +306,8 @@ function registerWorldEditor(context, binary, pickManifest) {
                 editor.icons = msg.icons
             } else if (msg.type === 'region') {
                 editor.region = msg.region
+            } else if (msg.type === 'camera') {
+                editor.camera = msg.camera
             } else if (msg.type === 'overlays') {
                 editor.overlays = msg.overlays
             } else if (msg.type === 'error') {

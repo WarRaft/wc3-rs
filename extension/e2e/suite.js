@@ -247,6 +247,32 @@ async function steps() {
     check(!savedOverlays.dirty && savedOverlays.message.includes('war3map.w3r') && savedOverlays.message.includes('war3map.wpm'), savedOverlays.message)
     check(fs.statSync(map).mtimeMs > stamp2, 'the map on disk written')
 
+    log('cameras: one made from the view, renamed, its target dragged, looked through, deleted and undone; saved')
+    await we.panel.webview.postMessage({type: 'tool', tool: 'cameras'})
+    const camsAt = we.overlays.cameras
+    we.camera = undefined
+    await we.panel.webview.postMessage({type: 'camera', action: 'new'})
+    const cam = await until(() => we.camera?.count === camsAt + 1 && we.camera, 'a camera made from the view')
+    check(/^Camera \d{3}$/.test(cam.name) && cam.index === camsAt && cam.view[3] === 50 && cam.view[2] > 0, `${cam.name}: rotation, angle of attack, distance, field of view ${cam.view.join(', ')}`)
+    await we.panel.webview.postMessage({type: 'camera', action: 'rename', name: 'E2E Intro'})
+    await until(() => we.camera?.name === 'E2E Intro', 'renamed')
+    await we.panel.webview.postMessage({type: 'camera', action: 'drag', x: 0.3, y: -0.2})
+    const dragged = await until(() => we.camera && Math.hypot(we.camera.target[0] - cam.target[0], we.camera.target[1] - cam.target[1]) > 0.5 && we.camera, 'its target dragged')
+    check(dragged.name === 'E2E Intro', `its target from ${cam.target.map(v => v.toFixed(1))} to ${dragged.target.map(v => v.toFixed(1))} (cells)`)
+    we.camera = undefined
+    await we.panel.webview.postMessage({type: 'camera', action: 'look'})
+    const looked = await until(() => we.camera?.looking && we.camera, 'looked through')
+    check(Math.hypot(looked.looking.position[0] - looked.target[0], looked.looking.position[1] - looked.target[1]) < 1e-3 && Math.abs(looked.looking.distance * 128 - looked.view[2]) < 1, `the view at its target, ${Math.round(looked.looking.distance * 128)} away`)
+    await shot('world-editor-cameras')
+    await we.panel.webview.postMessage({type: 'camera', action: 'delete'})
+    await until(() => we.overlays?.cameras === camsAt, 'deleted')
+    await we.panel.webview.postMessage({type: 'undo'})
+    await until(() => we.overlays?.cameras === camsAt + 1, 'undone: back')
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'save'})
+    const savedCams = await until(() => we.state?.message && we.state, 'saved')
+    check(!savedCams.dirty && savedCams.message.includes('war3map.w3c'), savedCams.message)
+
     log("the map's settings: its tiles reordered and undone, a tile's pathing and undone, four cells added on the right, saved")
     we.mapSettings = undefined
     await we.panel.webview.postMessage({type: 'mapOpen'})

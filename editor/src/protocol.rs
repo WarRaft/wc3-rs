@@ -42,6 +42,10 @@
 //! | 19 | `MapAsk` | nothing; answered by `MapSettings` |
 //! | 20 | `Resize` | `i32` cells added left, right, bottom, top (fewer than 0: taken off), `u8` margins given, `i32` the playable area's margins left, right, bottom, top; answered by the map and all of it drawn again (as `Hello`), `MapSettings` |
 //! | 21 | `Tiles` | the tile setter's: a list of tile ids, the new index of each old tile (an array of `u8`), `u8` the tileset's letter; answered as `Resize` |
+//! | 23 | `Camera` | a camera's target dragged: `u8` the drag's first, `u32` its index, the ray where it is (six `f32`): its target moved where it meets the ground; answered by `Overlays` and `State` |
+//! | 24 | `CameraView` | a camera made from the view or set to it: `i32` its index (a new one's: -1), `f32` the point looked at x, y, z (cells, layers), distance (cells), the view's horizontal and vertical angles (radians, as the page's camera has them), field of view (degrees); answered the same |
+//! | 25 | `CameraRename` | `u32` index, its name; answered the same |
+//! | 26 | `CameraDelete` | `u32` index; answered the same |
 //! | 22 | `TilePathing` | the tile pather's: `u8` a tile's index in the terrain's list, `u8` what it forbids (`wpm` flags: 2 walking, 4 flying, 8 building); answered by `Overlays` and `State` |
 //! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id); answered by `Icons` |
 //!
@@ -109,6 +113,10 @@ mod kind {
     pub const RESIZE: u8 = 20;
     pub const TILES: u8 = 21;
     pub const TILE_PATHING: u8 = 22;
+    pub const CAMERA: u8 = 23;
+    pub const CAMERA_VIEW: u8 = 24;
+    pub const CAMERA_RENAME: u8 = 25;
+    pub const CAMERA_DELETE: u8 = 26;
     pub const FOLLOW: u8 = 142;
     pub const TEXT_OUT: u8 = 143;
     pub const SAVE_DOCS: u8 = 144;
@@ -173,6 +181,15 @@ pub enum ClientMsg {
     Tiles { ids: Vec<String>, to: Vec<u8>, tileset: u8 },
     /// Kind 22.
     TilePathing { index: u8, forbids: u8 },
+    /// Kind 23.
+    Camera { start: bool, index: u32, origin: [f32; 3], dir: [f32; 3] },
+    /// Kind 24: `view` the point looked at (three), distance, horizontal,
+    /// vertical, field of view.
+    CameraView { index: i32, view: [f32; 7] },
+    /// Kind 25.
+    CameraRename { index: u32, name: String },
+    /// Kind 26.
+    CameraDelete { index: u32 },
 }
 
 /// A tile the tile setter offers: its id, name, tileset's letter (its
@@ -316,7 +333,7 @@ pub struct PickedMsg {
 /// `pathing::DECK`), the regions' picture (`u32` width, height, RGBA), a list of
 /// regions (name, `f32` left, bottom, right, top, `u8` r, g, b), lines of
 /// the bounds and of the cameras (`f32`, `overlays::POINT` a point), a
-/// list of cameras (name, `f32` target x, y, z, eye x, y, z), the
+/// list of cameras (name, `f32` target x, y, z, eye x, y, z, rotation, angle of attack, distance, field of view), the
 /// minimap (`u32` width, height, RGBA, north up), notes.
 pub type OverlaysMsg = crate::overlays::Overlays;
 
@@ -500,6 +517,22 @@ impl ClientMsg {
             }
             kind::TILES => Some(ClientMsg::Tiles { ids: r.list(|r| r.string())?, to: r.bytes()?, tileset: r.u8()? }),
             kind::TILE_PATHING => Some(ClientMsg::TilePathing { index: r.u8()?, forbids: r.u8()? }),
+            kind::CAMERA => Some(ClientMsg::Camera {
+                start: r.u8()? != 0,
+                index: r.u32()?,
+                origin: [r.f32()?, r.f32()?, r.f32()?],
+                dir: [r.f32()?, r.f32()?, r.f32()?],
+            }),
+            kind::CAMERA_VIEW => {
+                let index = r.u32()? as i32;
+                let mut view = [0.0; 7];
+                for v in &mut view {
+                    *v = r.f32()?;
+                }
+                Some(ClientMsg::CameraView { index, view })
+            }
+            kind::CAMERA_RENAME => Some(ClientMsg::CameraRename { index: r.u32()?, name: r.string()? }),
+            kind::CAMERA_DELETE => Some(ClientMsg::CameraDelete { index: r.u32()? }),
             _ => None,
         })
     }
@@ -598,6 +631,26 @@ impl ClientMsg {
                 w.u8(*index);
                 w.u8(*forbids);
                 kind::TILE_PATHING
+            }
+            ClientMsg::Camera { start, index, origin, dir } => {
+                w.u8(*start as u8);
+                w.u32(*index);
+                origin.iter().chain(dir).for_each(|v| w.f32(*v));
+                kind::CAMERA
+            }
+            ClientMsg::CameraView { index, view } => {
+                w.u32(*index as u32);
+                view.iter().for_each(|v| w.f32(*v));
+                kind::CAMERA_VIEW
+            }
+            ClientMsg::CameraRename { index, name } => {
+                w.u32(*index);
+                w.string(name);
+                kind::CAMERA_RENAME
+            }
+            ClientMsg::CameraDelete { index } => {
+                w.u32(*index);
+                kind::CAMERA_DELETE
             }
             ClientMsg::Icons(list) => {
                 w.list(list, |w, (k, id)| {
@@ -776,7 +829,7 @@ impl ServerMsg {
                 w.f32s(&o.camera_lines);
                 w.list(&o.cameras, |w, c| {
                     w.string(&c.name);
-                    c.target.iter().chain(&c.eye).for_each(|v| w.f32(*v));
+                    c.target.iter().chain(&c.eye).chain(&c.view).for_each(|v| w.f32(*v));
                 });
                 w.u32(o.minimap.width);
                 w.u32(o.minimap.height);
@@ -1034,7 +1087,7 @@ impl ServerMsg {
                 })?;
                 let bounds = r.f32s()?;
                 let camera_lines = r.f32s()?;
-                let cameras = r.list(|r| Ok(Camera { name: r.string()?, target: [r.f32()?, r.f32()?, r.f32()?], eye: [r.f32()?, r.f32()?, r.f32()?] }))?;
+                let cameras = r.list(|r| Ok(Camera { name: r.string()?, target: [r.f32()?, r.f32()?, r.f32()?], eye: [r.f32()?, r.f32()?, r.f32()?], view: [r.f32()?, r.f32()?, r.f32()?, r.f32()?] }))?;
                 let minimap = grid(&mut r)?;
                 let notes = r.list(|r| r.string())?;
                 ServerMsg::Overlays(Overlays { pathing, destructables, regions, region_picture, bounds, camera_lines, cameras, minimap, notes })

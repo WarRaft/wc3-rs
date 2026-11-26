@@ -83,6 +83,7 @@ pub enum Snapshot {
     Doodads(Vec<doo_rs::Doodad>),
     Units(Vec<doo_rs::Unit>),
     Regions(Vec<w3r_rs::Region>),
+    Cameras(Vec<w3c_rs::Camera>),
     Pathing(Vec<u8>),
     /// The whole terrain (the tile setter's: its list, cliffs, tileset).
     Whole(Box<Terrain>),
@@ -96,7 +97,7 @@ pub struct Dirty {
     pub units: bool,
     pub regions: bool,
     pub pathing: bool,
-    /// `war3map.w3c` (cameras off a cut terrain removed).
+    /// `war3map.w3c`.
     pub cameras: bool,
     /// `war3map.w3i` (its playable area, its tileset) and `war3map.shd`.
     pub info: bool,
@@ -238,6 +239,7 @@ impl Edits {
             Snapshot::Doodads(_) => self.dirty.doodads = true,
             Snapshot::Units(_) => self.dirty.units = true,
             Snapshot::Regions(_) => self.dirty.regions = true,
+            Snapshot::Cameras(_) => self.dirty.cameras = true,
             Snapshot::Pathing(_) => self.dirty.pathing = true,
         }
         self.undo.push(before);
@@ -333,6 +335,11 @@ impl Edits {
                 self.dirty.regions = true;
                 let file = t.files.regions.get_or_insert_with(w3r_rs::Regions::new);
                 Snapshot::Regions(std::mem::replace(&mut file.regions, r))
+            }
+            Snapshot::Cameras(c) => {
+                self.dirty.cameras = true;
+                let file = t.files.cameras.get_or_insert_with(|| w3c_rs::Cameras::new(Default::default()));
+                Snapshot::Cameras(std::mem::replace(&mut file.cameras, c))
             }
             Snapshot::Pathing(cells) => {
                 self.dirty.pathing = true;

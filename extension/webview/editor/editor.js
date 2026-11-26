@@ -65,7 +65,7 @@
             const {x: right, forward} = camera.axes()
             const up = [right[1] * camera.direction[2] - right[2] * camera.direction[1], right[2] * camera.direction[0] - right[0] * camera.direction[2], right[0] * camera.direction[1] - right[1] * camera.direction[0]]
             objects?.draw(mvp, now / 1000, {right, up, forward, view: camera.direction, eye: camera.eye()}, light, hours)
-            lines?.draw(mvp, show)
+            lines?.draw(mvp, {...show, cameraPicked: show.cameras})
         }
     }
 
@@ -174,6 +174,10 @@
             $('region-delete').onclick()
             return
         }
+        if (brush.tool === 'cameras' && selectedCamera !== null && (e.code === 'Delete' || e.code === 'Backspace')) {
+            $('camera-delete').onclick()
+            return
+        }
         if (selected && (e.code === 'Delete' || e.code === 'Backspace')) {
             send(encode.delete(selected.file, selected.index))
             selected = null
@@ -270,9 +274,12 @@
         {tool: 'dry', label: 'Dry'},
         {tool: 'place', label: 'Place'},
         {tool: 'regions', label: 'Regions'},
+        {tool: 'cameras', label: 'Cameras'},
         {tool: 'pathingOn', label: 'Pathing +'},
         {tool: 'pathingOff', label: 'Pathing −'},
     ]
+    /** The tools that lay no brush. */
+    const NO_BRUSH = ['select', 'place', 'regions', 'cameras']
     const brush = {tool: 'select', size: 4, strength: 0.25, texture: '', cliff: 0, flags: 2, ...(vscode.getState()?.brush ?? {})}
     const keep = () => vscode.setState({...(vscode.getState() ?? {}), brush})
     const tools = $('tools')
@@ -284,20 +291,22 @@
         const pathing = brush.tool.startsWith('pathing')
         $('pathing-flags').hidden = !pathing
         $('region-panel').hidden = brush.tool !== 'regions'
-        $('size-label').hidden = ['place', 'select', 'regions'].includes(brush.tool)
-        $('strength-label').hidden = ['place', 'select', 'regions'].includes(brush.tool) || pathing
+        $('camera-panel').hidden = brush.tool !== 'cameras'
+        $('size-label').hidden = NO_BRUSH.includes(brush.tool)
+        $('strength-label').hidden = NO_BRUSH.includes(brush.tool) || pathing
         for (const c of $('pathing-flags').querySelectorAll('input')) c.checked = (brush.flags & Number(c.value)) !== 0
         // A tool of a layer shows the layer.
-        if ((pathing && !show.pathing) || (brush.tool === 'regions' && !show.regions)) {
+        if ((pathing && !show.pathing) || (brush.tool === 'regions' && !show.regions) || (brush.tool === 'cameras' && !show.cameras)) {
             if (pathing) show.pathing = true
-            else show.regions = true
+            else if (brush.tool === 'regions') show.regions = true
+            else show.cameras = true
             applyShow()
         }
         for (const b of $('textures').children) b.classList.toggle('on', b.dataset.id === brush.texture)
         $('size-value').textContent = brush.size
         $('strength-value').textContent = brush.strength.toFixed(2)
         canvas.style.cursor = brush.tool === 'select' ? '' : 'crosshair'
-        if (['select', 'place', 'regions'].includes(brush.tool) && terrain) terrain.brush = [0, 0, 0]
+        if (NO_BRUSH.includes(brush.tool) && terrain) terrain.brush = [0, 0, 0]
     }
     for (const t of TOOL_LIST) {
         const b = document.createElement('button')
@@ -382,7 +391,7 @@
         stroke.first = false
     }
     canvas.addEventListener('mousedown', e => {
-        if (e.button !== 0 || ['select', 'place', 'regions'].includes(brush.tool) || !terrain?.ready) return
+        if (e.button !== 0 || NO_BRUSH.includes(brush.tool) || !terrain?.ready) return
         stroke = {first: true, pending: false}
         Object.assign(mouse, {x: e.clientX, y: e.clientY})
         step()
@@ -395,7 +404,7 @@
     canvas.addEventListener('mousemove', e => {
         Object.assign(mouse, {x: e.clientX, y: e.clientY})
         if (thingDrag) return
-        if (!['select', 'place', 'regions'].includes(brush.tool) && terrain?.ready) {
+        if (!NO_BRUSH.includes(brush.tool) && terrain?.ready) {
             const {origin, dir} = rayAt(e.clientX, e.clientY)
             const p = terrain.groundHit(origin, dir)
             terrain.brush = p ? [p[0], p[1], brush.size / 2] : [0, 0, 0]
@@ -602,6 +611,124 @@
     })
     let selectNewRegion = false
 
+    // Cameras: a click picks the one whose target (or eye) is nearest on
+    // the screen, a drag from it moves its target over the ground; New
+    // from view makes one looking as the view does, Set to view sets the
+    // one picked so, Look through it the view as it looks.
+    let cameras = []
+    let selectedCamera = null
+    let cameraDrag = null
+    let cameraRenameTimer = 0
+    let selectNewCamera = false
+    const aspect = () => {
+        const r = canvas.getBoundingClientRect()
+        return r.width / r.height
+    }
+    /** Where a point (cells) is on the screen, in pixels from the canvas' top left; null behind the view. */
+    function onScreen(p) {
+        const m = camera.matrix(aspect())
+        const x = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]
+        const y = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]
+        const w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15]
+        if (w <= 0) return null
+        const r = canvas.getBoundingClientRect()
+        return [(x / w + 1) / 2 * r.width, (1 - y / w) / 2 * r.height]
+    }
+    /** The camera nearest the canvas' point (x, y), within 14 pixels; null none. */
+    function cameraAt(x, y) {
+        let best = null
+        let bestD = 14
+        cameras.forEach((c, i) => {
+            for (const p of [c.target, c.eye]) {
+                const s = onScreen(p)
+                const d = s && Math.hypot(s[0] - x, s[1] - y)
+                if (s && d < bestD) {
+                    best = i
+                    bestD = d
+                }
+            }
+        })
+        return best
+    }
+    function showCamera() {
+        const c = selectedCamera !== null ? cameras[selectedCamera] : null
+        for (const id of ['camera-name', 'camera-set', 'camera-look', 'camera-delete']) $(id).disabled = !c
+        if (document.activeElement !== $('camera-name')) $('camera-name').value = c ? c.name : ''
+        const [rot, aoa, dist, fov] = c ? c.view.map(v => Math.round(v * 100) / 100) : []
+        $('camera-view').textContent = c ? `rotation ${rot}, angle of attack ${aoa}, distance ${dist}, field of view ${fov}` : 'Click a camera, or make one from the view'
+        const list = $('camera-list')
+        if (list.options.length !== cameras.length || cameras.some((c, i) => list.options[i].textContent !== c.name)) {
+            list.replaceChildren(...cameras.map((c, i) => Object.assign(document.createElement('option'), {value: i, textContent: c.name})))
+        }
+        list.value = c ? String(selectedCamera) : ''
+        // The one picked drawn white over the rest.
+        const picked = []
+        if (c) {
+            // A little over the rest, to be drawn over them.
+            const line = (a, b) => picked.push(a[0], a[1], a[2] + 0.02, 1, 1, 1, 1, b[0], b[1], b[2] + 0.02, 1, 1, 1, 1)
+            line(c.eye, c.target)
+            const [x, y, z] = c.target
+            line([x - 0.8, y, z], [x + 0.8, y, z])
+            line([x, y - 0.8, z], [x, y + 0.8, z])
+        }
+        lines?.set('cameraPicked', new Float32Array(picked))
+        vscode.postMessage({type: 'camera', camera: c && {index: selectedCamera, name: c.name, target: c.target, view: c.view, count: cameras.length}})
+    }
+    function pickCamera(i) {
+        selectedCamera = i
+        showCamera()
+    }
+    $('camera-list').onchange = () => pickCamera($('camera-list').value === '' ? null : Number($('camera-list').value))
+    $('camera-list').ondblclick = () => $('camera-look').onclick()
+    $('camera-name').oninput = () => {
+        clearTimeout(cameraRenameTimer)
+        const index = selectedCamera
+        const name = $('camera-name').value
+        if (index === null || !name.trim()) return
+        cameraRenameTimer = setTimeout(() => send(encode.cameraRename(index, name)), 250)
+    }
+    const fromView = index => send(encode.cameraView(index, camera.position, camera.distance, camera.horizontal, camera.vertical, camera.fov))
+    $('camera-new').onclick = () => {
+        selectNewCamera = true
+        fromView(-1)
+    }
+    $('camera-set').onclick = () => selectedCamera !== null && fromView(selectedCamera)
+    $('camera-look').onclick = () => {
+        const c = selectedCamera !== null ? cameras[selectedCamera] : null
+        if (!c) return
+        const d = [0, 1, 2].map(k => c.target[k] - c.eye[k])
+        const len = Math.hypot(...d) || 1
+        camera.position = [...c.target]
+        camera.distance = Math.max(0.5, len)
+        camera.vertical = Math.max(-Math.PI / 2 + 0.001, Math.min(Math.PI / 2 - 0.001, Math.asin(d[2] / len)))
+        camera.horizontal = Math.atan2(d[0], d[1])
+    }
+    $('camera-delete').onclick = () => {
+        if (selectedCamera === null) return
+        send(encode.cameraDelete(selectedCamera))
+        selectedCamera = null
+        showCamera()
+    }
+    canvas.addEventListener('mousedown', e => {
+        if (e.button !== 0 || brush.tool !== 'cameras' || !terrain?.ready) return
+        const r = canvas.getBoundingClientRect()
+        pickCamera(cameraAt(e.clientX - r.left, e.clientY - r.top))
+        if (selectedCamera !== null) cameraDrag = {index: selectedCamera, first: true, pending: false, moved: false, x: e.clientX, y: e.clientY}
+    })
+    canvas.addEventListener('mousemove', e => {
+        const d = cameraDrag
+        if (!d || d.pending || (!d.moved && Math.abs(e.clientX - d.x) + Math.abs(e.clientY - d.y) < 4)) return
+        d.moved = true
+        d.pending = true
+        send(encode.camera(d.first, d.index, rayAt(e.clientX, e.clientY)))
+        d.first = false
+    })
+    window.addEventListener('mouseup', () => {
+        const d = cameraDrag
+        cameraDrag = null
+        if (d?.moved) send(encode.strokeEnd())
+    })
+
     function showState(st) {
         $('undo').disabled = !st.undo
         $('redo').disabled = !st.redo
@@ -727,6 +854,13 @@
             showRegion()
             lines?.set('bounds', msg.bounds)
             lines?.set('cameras', msg.cameraLines)
+            cameras = msg.cameras
+            if (selectNewCamera) {
+                selectedCamera = cameras.length - 1
+                selectNewCamera = false
+            }
+            if (selectedCamera !== null && selectedCamera >= cameras.length) selectedCamera = null
+            showCamera()
             if (msg.minimap.width) {
                 minimap.width = msg.minimap.width
                 minimap.height = msg.minimap.height
@@ -756,6 +890,7 @@
             if (stroke) stroke.pending = false
             if (thingDrag) thingDrag.pending = false
             if (regionDrag) regionDrag.pending = false
+            if (cameraDrag) cameraDrag.pending = false
             showState(msg)
         } else if (msg.kind === 'light' && terrain) {
             light.set(msg)
@@ -840,6 +975,23 @@
             send(encode.region(true, msg.mode, index, ray(msg.from), ray(msg.to)))
             send(encode.strokeEnd())
             if (msg.mode === 0) selectNewRegion = true
+        } else if (msg.type === 'camera') {
+            // The Cameras tool's, for the tests: `new` from the view, `pick`
+            // one (`index`), `drag` the one picked to a point of the view,
+            // `set` it to the view, `look` through it, `rename`, `delete`.
+            const c = selectedCamera
+            if (msg.action === 'new') $('camera-new').onclick()
+            else if (msg.action === 'pick') pickCamera(msg.index)
+            else if (msg.action === 'set') $('camera-set').onclick()
+            else if (msg.action === 'look') {
+                $('camera-look').onclick()
+                vscode.postMessage({type: 'camera', camera: c !== null && {index: c, name: cameras[c].name, target: cameras[c].target, view: cameras[c].view, count: cameras.length, looking: {position: camera.position, distance: camera.distance, horizontal: camera.horizontal, vertical: camera.vertical}}})
+            } else if (msg.action === 'rename' && c !== null) send(encode.cameraRename(c, msg.name))
+            else if (msg.action === 'delete') $('camera-delete').onclick()
+            else if (msg.action === 'drag' && c !== null) {
+                send(encode.camera(true, c, camera.ray(msg.x, msg.y, aspect())))
+                send(encode.strokeEnd())
+            }
         } else if (msg.type === 'tool') {
             // A tool picked, as its button does: for the tests.
             brush.tool = msg.tool

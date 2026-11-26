@@ -20,8 +20,8 @@ item's details are in its section below):
     checked against it.
 - **The World Editor** (see [World Editor](#world-editor)): its steps,
   in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs), 4 (doodads and units),
-  5 (overlays), 6 (editing: terrain brushes, things placed, regions and
-  pathing), 7 (in step with the rest), 8a (animation), 8b (particles),
+  5 (overlays), 6 (editing: terrain brushes, things placed, regions,
+  pathing, cameras), 7 (in step with the rest), 8a (animation), 8b (particles),
   8c (light), 8d (the map's size and tiles), the leftovers; Reforged HD
   a (the storage), b (the game's layers), c (`.dds`), d (its
   models), e (the HD shaders), f (2.0's mods and HD terrain).
@@ -1739,6 +1739,22 @@ step), this list updated.
      data over the game's: `Units\*UnitFunc.txt`) at 32 pixels or less,
      once (some 20 ms for 64); doodads and destructables have none.
      Names shown without the game's colours (`names::plain`).
+   - **6d, cameras** (done after 8d): the Cameras tool (it shows their
+     layer): the list of the map's cameras; a click picks the one whose
+     target or eye is nearest on the screen (drawn white over the rest),
+     a drag from it moves its target over the ground (its height over
+     the ground kept); New from view makes one looking as the view does
+     (`Camera 001` ..., the next number: its target the point the view
+     looks at, its distance, rotation 90° − the view's horizontal angle,
+     angle of attack its vertical one, field of view the view's), Set to
+     view sets the one picked so, Look through it (a double click in the
+     list) puts the view where it looks from; its name changed as it's
+     typed; Delete. Undo (`Snapshot::Cameras`), saved into its layer; a
+     map without `war3map.w3c` gets one in its `war3map.w3i`'s layout (a
+     2.0 map's version 3). Its text form in step as the regions' is.
+     Messages `Camera`, `CameraView`, `CameraRename`, `CameraDelete`;
+     `Overlays` says each camera's rotation, angle of attack, distance
+     and field of view. MCP: the `w3c_*` tools already change the file.
 
 7. **In step with the rest** (done). Decided with the user: a text form
    open in VS Code and the editor are one (the text is the truth, as
@@ -1746,7 +1762,7 @@ step), this list updated.
    Editor does.
    - **Text forms**: the editor says where its pieces with a text form
      are (`Follow`: `war3map.w3e`, `war3map.doo`, `war3mapUnits.doo`,
-     `war3map.w3r`);
+     `war3map.w3r`, `war3map.w3c`);
      the extension sends what's typed in their documents (`Text`,
      `TextClosed`; debounced), the editor takes it in with the server's
      converters (an undo; an error in the text said, nothing taken), and

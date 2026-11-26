@@ -60,7 +60,7 @@ fn the_terrain_drawn_with_the_tables_of_the_roots() {
     assert!(l.terrain.is_empty() && l.notes.iter().any(|n| n.contains("TerrainLights")), "{:?}", l.notes);
     // The pieces with a text form, where they are (the terrain) or would
     // be, at the top root (the map has none of the others).
-    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r"]);
+    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c"]);
     assert!(f[1].1.ends_with("map/war3map.doo"), "{f:?}");
     // Nothing placed; the minimap a pixel a corner.
     assert!(o.models.is_empty() && o.notes.is_empty());
@@ -318,6 +318,73 @@ fn a_change_on_disk_taken_in_unless_the_editor_has_its_own() {
     let msgs = s.disk_changed(&[dir.path().join("map/war3map.w3r")]);
     assert!(matches!(msgs.last(), Some(ServerMsg::State(st)) if st.message.contains("your changes to it kept")), "{msgs:?}");
     assert_eq!(s.placed.regions.as_ref().unwrap().regions[0].name, "Ours again");
+}
+
+#[test]
+fn cameras_made_from_the_view_dragged_renamed_deleted_undone_saved_and_in_step_with_their_text() {
+    let dir = TestDir::new("session-cameras");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let ground = crate::placed::ground_at(s.drawn.as_ref().unwrap(), 2.0, 1.0);
+    // The view looking north (horizontal 0) down at -0.977 radians from
+    // 10 cells, at (2, 1) cells, a layer over the ground: the corner is
+    // at -128, -64.
+    let msgs = s.camera_view(-1, [2.0, 1.0, ground + 1.0, 10.0, 0.0, -0.977, 50.0]);
+    assert!(matches!(&msgs[..], [ServerMsg::Overlays(o), ServerMsg::State(st)] if o.cameras.len() == 1 && o.camera_lines.len() > 0 && st.dirty && st.undo), "{msgs:?}");
+    let c = &s.placed.cameras.as_ref().unwrap().cameras[0];
+    assert_eq!(c.name, "Camera 001");
+    assert_eq!([c.target_x, c.target_y, c.z_offset, c.distance, c.rotation, c.field_of_view], [128.0, 64.0, 128.0, 1280.0, 90.0, 50.0]);
+    assert_eq!(c.angle_of_attack, 304.02);
+    // Drawn where the view was: its eye up and to the south of its target.
+    let o = s.overlays.as_ref().unwrap();
+    let cam = &o.cameras[0];
+    assert!((cam.target[0] - 2.0).abs() < 1e-4 && (cam.target[1] - 1.0).abs() < 1e-4);
+    assert!(cam.eye[1] < cam.target[1] && cam.eye[2] > cam.target[2]);
+    assert_eq!(cam.view, [90.0, 304.02, 1280.0, 50.0]);
+    s.camera_view(-1, [3.0, 1.0, ground, 10.0, std::f32::consts::FRAC_PI_2, -0.5, 70.0]);
+    let c = &s.placed.cameras.as_ref().unwrap().cameras[1];
+    assert_eq!((c.name.as_str(), c.rotation), ("Camera 002", 0.0));
+    // The second set to another view: east (horizontal -π/2 looks west).
+    s.camera_view(1, [3.0, 1.0, ground, 5.0, -std::f32::consts::FRAC_PI_2, -0.5, 70.0]);
+    let c = &s.placed.cameras.as_ref().unwrap().cameras[1];
+    assert_eq!((c.name.as_str(), c.rotation, c.distance), ("Camera 002", 180.0, 640.0));
+    // The first's target dragged to (1, 0.5) cells, its height kept.
+    let down = [0.0, 0.0, -1.0];
+    s.camera_drag(true, 0, [1.0, 0.5, 9.0], down);
+    s.camera_drag(false, 0, [1.5, 0.5, 9.0], down);
+    s.stroke_end();
+    let c = &s.placed.cameras.as_ref().unwrap().cameras[0];
+    assert_eq!([c.target_x, c.target_y, c.z_offset], [64.0, 0.0, 128.0]);
+    s.undo(false);
+    assert_eq!(s.placed.cameras.as_ref().unwrap().cameras[0].target_x, 128.0);
+    s.camera_rename(0, "Intro");
+    assert!(matches!(s.camera_rename(0, " ").last(), Some(ServerMsg::State(st)) if st.message.contains("needs a name")));
+    s.camera_delete(1);
+    assert_eq!(s.placed.cameras.as_ref().unwrap().cameras.len(), 1);
+    assert!(matches!(s.camera_delete(5).last(), Some(ServerMsg::State(st)) if st.message.contains("no camera")));
+    s.undo(false);
+    assert_eq!(s.placed.cameras.as_ref().unwrap().cameras.len(), 2);
+    // Saved: a new war3map.w3c, 1.27a's layout (no war3map.w3i).
+    let saved = s.save();
+    assert!(matches!(&saved[..], [ServerMsg::State(st)] if st.message.contains("war3map.w3c")), "{saved:?}");
+    let back = w3c_rs::parse(&std::fs::read(dir.path().join("map/war3map.w3c")).unwrap(), w3c_rs::Layout::default()).unwrap();
+    assert_eq!(back.cameras, s.placed.cameras.as_ref().unwrap().cameras);
+    assert_eq!(back.cameras[0].name, "Intro");
+    // Its text form: typed, taken in; the editor's change given to it.
+    let path = dir.path().join("map/war3map.w3c").display().to_string();
+    assert!(s.follow().iter().any(|(n, p)| n == "war3map.w3c" && *p == path));
+    let text = String::from_utf8(wc3_server::cameras::convert(wc3_server::objects::TO_TEXT, &path, &back.to_bytes().unwrap()).unwrap()).unwrap();
+    assert!(s.text_changed(&path, &text).is_empty());
+    let typed = text.replace("[Intro]", "[Typed]");
+    assert_ne!(typed, text);
+    let msgs = s.text_changed(&path, &typed);
+    assert!(matches!(&msgs[..], [ServerMsg::Overlays(o), .., ServerMsg::State(st)] if o.cameras[0].name == "Typed" && st.undo), "{msgs:?}");
+    s.camera_rename(1, "Outro");
+    let out = s.sync_docs();
+    assert!(matches!(&out[..], [ServerMsg::TextOut { text, .. }] if text.contains("[Outro]")), "{out:?}");
+    assert!(!s.edits.dirty.cameras);
 }
 
 #[test]

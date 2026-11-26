@@ -334,6 +334,13 @@ button:hover {
     font: inherit;
 }
 
+.camera-list {
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, #555);
+    font: inherit;
+}
+
 .region-bounds {
     color: var(--vscode-descriptionForeground);
 }

@@ -556,7 +556,7 @@ impl Session {
         let mut out = Vec::new();
         if let Some(what) = done {
             match what {
-                crate::edit::Snapshot::Regions(_) | crate::edit::Snapshot::Pathing(_) => out.push(ServerMsg::Overlays(self.overlays())),
+                crate::edit::Snapshot::Regions(_) | crate::edit::Snapshot::Cameras(_) | crate::edit::Snapshot::Pathing(_) => out.push(ServerMsg::Overlays(self.overlays())),
                 crate::edit::Snapshot::Whole(_) => {
                     let changed = self.tileset_letter() != self.terrain.tileset;
                     self.retileset(changed);
@@ -822,12 +822,12 @@ impl Session {
         out
     }
 
-    /// The pieces that have a text form (`war3map.doo`,
-    /// `war3mapUnits.doo`, `war3map.w3r`), each with the path its file
+    /// The pieces that have a text form (`war3map.w3e`, `war3map.doo`,
+    /// `war3mapUnits.doo`, `war3map.w3r`, `war3map.w3c`), each with the path its file
     /// is at (or would be written to): what the page's text forms are
     /// matched by.
     pub fn follow(&self) -> Vec<(String, String)> {
-        ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r"].iter().filter_map(|n| Some((n.to_string(), self.path_of(n)?.display().to_string()))).collect()
+        ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c"].iter().filter_map(|n| Some((n.to_string(), self.path_of(n)?.display().to_string()))).collect()
     }
 
     /// Where the map's file `name` is (on disk, or inside a root map), or
@@ -847,6 +847,7 @@ impl Session {
             "war3map.doo" => self.placed.doodads.as_ref()?.to_bytes().ok(),
             "war3mapUnits.doo" => self.placed.units.as_ref()?.to_bytes().ok(),
             "war3map.w3r" => self.placed.regions.as_ref()?.to_bytes().ok(),
+            "war3map.w3c" => self.placed.cameras.as_ref()?.to_bytes().ok(),
             "war3map.w3e" => self.terrain.to_bytes().ok(),
             _ => None,
         }
@@ -858,6 +859,8 @@ impl Session {
         let bytes = self.piece_bytes(name)?;
         let text = if name == "war3map.w3r" {
             wc3_server::regions::convert(wc3_server::objects::TO_TEXT, path, &bytes)
+        } else if name == "war3map.w3c" {
+            wc3_server::cameras::convert(wc3_server::objects::TO_TEXT, path, &bytes)
         } else if name == "war3map.w3e" {
             wc3_server::terrain::convert(wc3_server::objects::TO_TEXT, path, &bytes)
         } else {
@@ -882,6 +885,8 @@ impl Session {
         }
         let bytes = if name == "war3map.w3r" {
             wc3_server::regions::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
+        } else if name == "war3map.w3c" {
+            wc3_server::cameras::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
         } else {
             wc3_server::placement::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
         };
@@ -899,6 +904,10 @@ impl Session {
                 let before = self.placed.units.replace(u);
                 crate::edit::Snapshot::Units(before.map(|u| u.units).unwrap_or_default())
             }),
+            "war3map.w3c" => w3c_rs::parse(&bytes, wc3_server::cameras::layout(std::path::Path::new(path))).map(|c| {
+                let before = self.placed.cameras.replace(c);
+                crate::edit::Snapshot::Cameras(before.map(|c| c.cameras).unwrap_or_default())
+            }),
             _ => w3r_rs::parse(&bytes).map(|r| {
                 let before = self.placed.regions.replace(r);
                 crate::edit::Snapshot::Regions(before.map(|r| r.regions).unwrap_or_default())
@@ -906,7 +915,7 @@ impl Session {
         };
         let Ok(before) = taken else { return vec![ServerMsg::State(self.state(format!("Can't read {name}'s text")))] };
         self.edits.record(before);
-        let mut out = if name == "war3map.w3r" { vec![ServerMsg::Overlays(self.overlays())] } else { self.place_objects() };
+        let mut out = if name == "war3map.w3r" || name == "war3map.w3c" { vec![ServerMsg::Overlays(self.overlays())] } else { self.place_objects() };
         out.extend(self.sync_docs());
         out.push(ServerMsg::State(self.state(String::new())));
         out
@@ -959,6 +968,7 @@ impl Session {
                 "war3map.doo" => d.doodads = false,
                 "war3mapUnits.doo" => d.units = false,
                 "war3map.w3r" => d.regions = false,
+                "war3map.w3c" => d.cameras = false,
                 _ => {}
             }
         }
@@ -1087,6 +1097,101 @@ impl Session {
                 return Err(format!("no region {index}"));
             }
             regions.regions.remove(index as usize);
+            Ok(())
+        })
+    }
+
+    /// A camera edit: its state recorded for undo (`start`), `change`
+    /// made, the overlays again. A map without `war3map.w3c` gets one in
+    /// its `war3map.w3i`'s layout (a 2.0 map's version 3).
+    fn cameras_edit(&mut self, start: bool, change: impl FnOnce(&mut w3c_rs::Cameras) -> Result<(), String>) -> Vec<ServerMsg> {
+        let w3i = self.info.as_ref().map(|i| i.version);
+        let cameras = self.placed.cameras.get_or_insert_with(|| {
+            let mut c = w3c_rs::Cameras::new(w3i.map(w3c_rs::Layout::from_w3i_version).unwrap_or_default());
+            if w3i.is_some_and(|v| v >= 39) {
+                c.version = 3;
+            }
+            c
+        });
+        let before = cameras.cameras.clone();
+        if let Err(message) = change(cameras) {
+            cameras.cameras = before;
+            return vec![ServerMsg::State(self.state(message))];
+        }
+        if start {
+            self.edits.record(crate::edit::Snapshot::Cameras(before));
+        } else {
+            self.edits.dirty.cameras = true;
+        }
+        vec![ServerMsg::Overlays(self.overlays()), ServerMsg::State(self.state(String::new()))]
+    }
+
+    /// Camera `index`'s target dragged to where the ray meets the ground
+    /// (its height over the ground kept). `start`: the drag's first step.
+    pub fn camera_drag(&mut self, start: bool, index: u32, origin: [f32; 3], dir: [f32; 3]) -> Vec<ServerMsg> {
+        let Some([x, y, _]) = self.ground_point(origin, dir) else {
+            return vec![ServerMsg::State(self.state(String::new()))];
+        };
+        self.cameras_edit(start, |c| {
+            let c = c.cameras.get_mut(index as usize).ok_or(format!("no camera {index}"))?;
+            (c.target_x, c.target_y) = (x, y);
+            Ok(())
+        })
+    }
+
+    /// A camera made from the page's view (`index` -1: `Camera 001` ...,
+    /// the next number) or camera `index` set to it: `view` the point
+    /// looked at (cells, layers), the distance (cells), the horizontal
+    /// and vertical angles (radians: the page looks along cos v sin h,
+    /// cos v cos h, sin v), the field of view (degrees). The game's
+    /// rotation is then 90° − h, its angle of attack v, each 0 to 360.
+    pub fn camera_view(&mut self, index: i32, view: [f32; 7]) -> Vec<ServerMsg> {
+        let Some(draw) = self.drawn.clone() else { return vec![] };
+        let [x, y, z, distance, h, v, fov] = view;
+        let degrees = |a: f32| {
+            let d = a.to_degrees().rem_euclid(360.0);
+            // Whole hundredths, as World Editor shows them.
+            let d = (d * 100.0).round() / 100.0;
+            if d >= 360.0 { 0.0 } else { d }
+        };
+        let ground = crate::placed::ground_at(&draw, x, y);
+        self.cameras_edit(true, |cameras| {
+            let c = if index < 0 {
+                let n = cameras.cameras.iter().filter_map(|c| c.name.strip_prefix("Camera ")?.parse::<u32>().ok()).max().map_or(1, |n| n + 1);
+                cameras.cameras.push(w3c_rs::Camera::new(format!("Camera {n:03}"), 0.0, 0.0));
+                cameras.cameras.last_mut().unwrap()
+            } else {
+                cameras.cameras.get_mut(index as usize).ok_or(format!("no camera {index}"))?
+            };
+            c.target_x = draw.offset[0] + x * 128.0;
+            c.target_y = draw.offset[1] + y * 128.0;
+            c.z_offset = ((z - ground) * 128.0 * 100.0).round() / 100.0;
+            c.distance = (distance * 128.0 * 100.0).round() / 100.0;
+            c.rotation = degrees(std::f32::consts::FRAC_PI_2 - h);
+            c.angle_of_attack = degrees(v);
+            c.field_of_view = fov;
+            Ok(())
+        })
+    }
+
+    pub fn camera_rename(&mut self, index: u32, name: &str) -> Vec<ServerMsg> {
+        let name = name.to_string();
+        self.cameras_edit(true, |cameras| {
+            let c = cameras.cameras.get_mut(index as usize).ok_or(format!("no camera {index}"))?;
+            if name.trim().is_empty() {
+                return Err("A camera needs a name.".into());
+            }
+            c.name = name;
+            Ok(())
+        })
+    }
+
+    pub fn camera_delete(&mut self, index: u32) -> Vec<ServerMsg> {
+        self.cameras_edit(true, |cameras| {
+            if (index as usize) >= cameras.cameras.len() {
+                return Err(format!("no camera {index}"));
+            }
+            cameras.cameras.remove(index as usize);
             Ok(())
         })
     }

@@ -33,12 +33,15 @@ pub struct Region {
     pub color: [u8; 3],
 }
 
-/// A camera: its name, where it looks and where it's from (cells, layers).
+/// A camera: its name, where it looks and where it's from (cells, layers),
+/// and its rotation, angle of attack (degrees), distance (the game's
+/// units) and field of view (degrees), as the file has them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Camera {
     pub name: String,
     pub target: [f32; 3],
     pub eye: [f32; 3],
+    pub view: [f32; 4],
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -167,7 +170,7 @@ impl Overlays {
                 for (dx, dy) in [(0.5, 0.0), (0.0, 0.5)] {
                     line([x - dx, y - dy, target[2]], [x + dx, y + dy, target[2]], CAMERA, &mut out.camera_lines);
                 }
-                out.cameras.push(Camera { name: c.name.clone(), target, eye });
+                out.cameras.push(Camera { name: c.name.clone(), target, eye, view: [c.rotation, c.angle_of_attack, c.distance, c.field_of_view] });
             }
         }
 

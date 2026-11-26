@@ -43,6 +43,10 @@ const EditorProtocol = (() => {
         RESIZE: 20,
         TILES: 21,
         TILE_PATHING: 22,
+        CAMERA: 23,
+        CAMERA_VIEW: 24,
+        CAMERA_RENAME: 25,
+        CAMERA_DELETE: 26,
         MAP_SETTINGS: 146,
     }
 
@@ -241,6 +245,32 @@ const EditorProtocol = (() => {
             w.u32(index)
             return w.frame(KIND.REGION_DELETE)
         },
+        /** A camera's target dragged: the drag's first step, its index, the ray where it is. */
+        camera(start, index, {origin, dir}) {
+            const w = new Writer()
+            w.u8(start ? 1 : 0)
+            w.u32(index)
+            for (const v of [...origin, ...dir]) w.f32(v)
+            return w.frame(KIND.CAMERA)
+        },
+        /** A camera made from the view (index -1) or set to it: the point looked at (cells), distance (cells), horizontal, vertical (radians), field of view (degrees). */
+        cameraView(index, position, distance, horizontal, vertical, fov) {
+            const w = new Writer()
+            w.u32(index >>> 0)
+            for (const v of [...position, distance, horizontal, vertical, fov]) w.f32(v)
+            return w.frame(KIND.CAMERA_VIEW)
+        },
+        cameraRename(index, name) {
+            const w = new Writer()
+            w.u32(index)
+            w.string(name)
+            return w.frame(KIND.CAMERA_RENAME)
+        },
+        cameraDelete(index) {
+            const w = new Writer()
+            w.u32(index)
+            return w.frame(KIND.CAMERA_DELETE)
+        },
         mapAsk: () => new Writer().frame(KIND.MAP_ASK),
         /** Cells added on each side {left, right, bottom, top}, the playable area's margins [l, r, b, t] or null. */
         resize(sides, margins) {
@@ -385,7 +415,7 @@ const EditorProtocol = (() => {
                     regions: r.list(r => ({name: r.string(), bounds: [r.f32(), r.f32(), r.f32(), r.f32()], color: [r.u8(), r.u8(), r.u8()]})),
                     bounds: r.f32s(),
                     cameraLines: r.f32s(),
-                    cameras: r.list(r => ({name: r.string(), target: [r.f32(), r.f32(), r.f32()], eye: [r.f32(), r.f32(), r.f32()]})),
+                    cameras: r.list(r => ({name: r.string(), target: [r.f32(), r.f32(), r.f32()], eye: [r.f32(), r.f32(), r.f32()], view: [r.f32(), r.f32(), r.f32(), r.f32()]})),
                     minimap: grid(r),
                     notes: r.list(r => r.string()),
                 }
