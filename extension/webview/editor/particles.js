@@ -18,7 +18,8 @@
  *
  * Ribbons (`RIBB`) likewise: a segment is the time it was made, the
  * emitter's place then (the frames the process baked), its height above
- * and below it, gravity since; a quad joins each to the one before, the
+ * and below it, its alpha, colour and texture's cell then, gravity
+ * since; a quad joins each to the one before, the
  * newest at the emitter now.
  */
 const EditorParticles = (() => {
@@ -42,6 +43,14 @@ uniform float u_fps;
 out vec2 v_uv;
 out vec4 v_color;
 const vec2 C[6] = vec2[6](vec2(-1, 1), vec2(-1, -1), vec2(1, 1), vec2(1, 1), vec2(-1, -1), vec2(1, -1));
+// Frame x (frames since the start, any sign) of a loop of n, in whole
+// numbers: a float mod can round to n itself, past the texture's last
+// row (its texels 0: the model gone for a frame).
+int loopFrame(float x, int n) {
+    int f = int(floor(x));
+    if (f < 0) f += n * ((-f) / n + 1);
+    return min(f % n, n - 1);
+}
 uint hash(uint x) {
     x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16;
     return x;
@@ -73,14 +82,14 @@ void main() {
     if (age < 0.0 || age > life) return;
     uint s = uint(slot) * 747796405u + uint(int(cycle)) * 2891336453u + uint(thing) * 1181783497u + 1u;
     // The emitter when it was made: shown, making it.
-    int made = int(mod(floor((u_time - age) * u_fps + phase), float(u_frameCount)));
+    int made = loopFrame((u_time - age) * u_fps + phase, u_frameCount);
     vec4 then = texelFetch(u_frames, ivec2(3, made), 0);
     float keep = rnd(s) * 0.5 + 0.5;
     if (then.x < 0.5 || then.y <= 0.0 || keep > then.y * every) return;
     // Where the emitter is: when it was made (in the world), or now (in
     // the model's space, 0x80000: it goes with the emitter).
     bool modelSpace = (int(u_p[11]) & 0x80000) != 0;
-    int frame = modelSpace ? int(mod(floor(u_time * u_fps + phase), float(u_frameCount))) : made;
+    int frame = modelSpace ? loopFrame(u_time * u_fps + phase, u_frameCount) : made;
     vec4 r0 = texelFetch(u_frames, ivec2(0, frame), 0);
     vec4 r1 = texelFetch(u_frames, ivec2(1, frame), 0);
     vec4 r2 = texelFetch(u_frames, ivec2(2, frame), 0);
@@ -161,13 +170,20 @@ layout(location = 4) in vec3 a_scale;
 uniform mat4 u_mvp;
 uniform float u_time;
 uniform float u_r[8];
-uniform vec3 u_color;
 uniform highp sampler2D u_frames;
 uniform int u_frameCount;
 uniform float u_fps;
 out vec2 v_uv;
 out vec4 v_color;
 const vec2 C[6] = vec2[6](vec2(-1, 1), vec2(-1, -1), vec2(1, 1), vec2(1, 1), vec2(-1, -1), vec2(1, -1));
+// Frame x (frames since the start, any sign) of a loop of n, in whole
+// numbers: a float mod can round to n itself, past the texture's last
+// row (its texels 0: the model gone for a frame).
+int loopFrame(float x, int n) {
+    int f = int(floor(x));
+    if (f < 0) f += n * ((-f) / n + 1);
+    return min(f % n, n - 1);
+}
 void main() {
     int quads = int(u_r[7]) - 1;
     int k = gl_InstanceID % quads;
@@ -184,23 +200,25 @@ void main() {
     float age = now - made;
     float older = (floor(now * rate) - float(k)) / rate;
     if (now - older > life) return;
-    int frame = int(mod(floor(made * u_fps + phase), float(u_frameCount)));
+    int frame = loopFrame(made * u_fps + phase, u_frameCount);
     vec4 r0 = texelFetch(u_frames, ivec2(0, frame), 0);
     vec4 r1 = texelFetch(u_frames, ivec2(1, frame), 0);
     vec4 r2 = texelFetch(u_frames, ivec2(2, frame), 0);
     vec4 extra = texelFetch(u_frames, ivec2(3, frame), 0);
+    // Its colour and texture's cell then (KRCO, KRTX).
+    vec4 look = texelFetch(u_frames, ivec2(4, frame), 0);
     if (extra.x < 0.5) return;
     vec4 at = vec4(0.0, corner.y > 0.0 ? extra.y : -extra.z, 0.0, 1.0);
     vec3 p = vec3(dot(r0, at), dot(r1, at), dot(r2, at));
     p.z -= 0.5 * u_r[5] * age * age;
     float cols = u_r[3];
     float rows = u_r[2];
-    float slot = u_r[4];
+    float slot = floor(look.w + 0.5);
     float col = mod(slot, cols);
     float row = floor(slot / cols);
     // Along it by age, the newest at the cell's left (as Retera's Model Studio).
     v_uv = vec2((col + clamp(age / life, 0.0, 1.0)) / cols, (row + (corner.y > 0.0 ? 0.0 : 1.0)) / rows);
-    v_color = vec4(u_color, extra.w);
+    v_color = vec4(look.rgb, extra.w);
     float cs = cos(a_place.w);
     float sn = sin(a_place.w);
     vec3 q = p * a_scale;
@@ -210,7 +228,7 @@ void main() {
 
     /** `particles::FRAME`, `particles::RIBBON_FRAME`. */
     const FRAME = 16
-    const RIBBON_FRAME = 16
+    const RIBBON_FRAME = 20
 
     class Particles {
         /** @param {WebGL2RenderingContext} gl */
@@ -235,7 +253,7 @@ void main() {
             }
             const common = ['u_mvp', 'u_time', 'u_frames', 'u_frameCount', 'u_fps', 'u_texture', 'u_team', 'u_teamColor', 'u_alphaKey']
             ;[this.program, this.u] = program(VS, [...common, 'u_right', 'u_up', 'u_p', 'u_seg', 'u_head', 'u_tail', 'u_pass'])
-            ;[this.ribbonProgram, this.ru] = program(RIBBON_VS, [...common, 'u_r', 'u_color'])
+            ;[this.ribbonProgram, this.ru] = program(RIBBON_VS, [...common, 'u_r'])
             /** Each model's ribbons. */
             this.ribbons = []
             this.ribbonCount = 0
@@ -377,7 +395,6 @@ void main() {
                 for (const x of list) {
                     this.common(ru, x, mvp, time, texture(x.r.texture), x.r.texture === -1, x.r.params[6])
                     gl.uniform1fv(ru.u_r, x.r.params)
-                    gl.uniform3fv(ru.u_color, x.r.color)
                     gl.uniform1f(ru.u_fps, x.r.fps)
                     gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n * x.quads)
                 }

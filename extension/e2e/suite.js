@@ -104,6 +104,13 @@ async function steps() {
     await shot('world-editor')
     await we.panel.webview.postMessage({type: 'look', x: 30, y: 100, distance: 32, horizontal: 0.4, vertical: -0.85})
     await shot('world-editor-cliffs')
+    for (const animate of [false, true]) {
+        we.flicker = undefined
+        await we.panel.webview.postMessage({type: 'flicker', frames: 150, animate})
+        const fl = await until(() => we.flicker, 'the frames read', 60000)
+        log(`  animate ${animate}: ${fl.blinks} blinks in ${fl.frames} frames of ${fl.blocks} blocks ${JSON.stringify(fl.where)}`)
+        if (animate) check(fl.blinks === 0, `no model blinks: ${fl.blinks} blinks in ${fl.frames} frames`)
+    }
     we.focused = undefined
     await we.panel.webview.postMessage({type: 'focusEffect', tails: true})
     const focused = await until(() => we.focused !== undefined && we.focused, 'focused')

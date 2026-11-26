@@ -69,6 +69,45 @@
         }
     }
 
+    // For the tests: the picture's blocks over a run of frames, and
+    // the blinks among them (a block unlike the frames on both sides of
+    // it, which are like each other).
+    let flicker = null
+    const BLOCK = 32
+    function flickerFrame() {
+        const w = canvas.width
+        const h = canvas.height
+        const px = new Uint8Array(w * h * 4)
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px)
+        const bw = Math.floor(w / BLOCK)
+        const bh = Math.floor(h / BLOCK)
+        const sums = new Float32Array(bw * bh)
+        for (let y = 0; y < bh * BLOCK; y += 2) {
+            for (let x = 0; x < bw * BLOCK; x += 2) {
+                const i = (y * w + x) * 4
+                sums[Math.floor(y / BLOCK) * bw + Math.floor(x / BLOCK)] += px[i] + px[i + 1] + px[i + 2]
+            }
+        }
+        const n = (BLOCK / 2) * (BLOCK / 2) * 3
+        flicker.frames.push(sums.map(v => v / n))
+        if (flicker.frames.length < flicker.want) return
+        const f = flicker.frames
+        let blinks = 0
+        const where = []
+        for (let i = 1; i + 1 < f.length; i++) {
+            for (let b = 0; b < f[i].length; b++) {
+                const around = Math.abs(f[i - 1][b] - f[i + 1][b])
+                const jump = Math.min(Math.abs(f[i][b] - f[i - 1][b]), Math.abs(f[i][b] - f[i + 1][b]))
+                if (jump > 25 && around < 6) {
+                    blinks++
+                    if (where.length < 10) where.push({frame: i, x: b % bw, y: Math.floor(b / bw), jump: Math.round(jump)})
+                }
+            }
+        }
+        vscode.postMessage({type: 'flicker', flicker: {frames: f.length, blocks: f[0].length, blinks, where}})
+        flicker = null
+    }
+
     // Keys held move the camera a little every frame.
     const held = new Set()
     let last = performance.now()
@@ -81,6 +120,7 @@
         const dy = (k('ArrowDown') || k('KeyS') ? 1 : 0) - (k('ArrowUp') || k('KeyW') ? 1 : 0)
         if (dx || dy) camera.move(dx * speed, dy * speed)
         draw(now)
+        if (flicker) flickerFrame()
         drawMinimap()
         requestAnimationFrame(frame)
     }
@@ -830,6 +870,12 @@
                 camera.vertical = -0.6
             }
             vscode.postMessage({type: 'focused', found: mi !== undefined, path: mi !== undefined ? objects.models[mi]?.path : ''})
+        } else if (msg.type === 'flicker') {
+            if (typeof msg.animate === 'boolean') {
+                show.animate = msg.animate
+                applyShow()
+            }
+            flicker = {want: msg.frames ?? 120, frames: []}
         } else if (msg.type === 'mapOpen') {
             mapPanel.open()
         } else if (msg.type === 'mapResize') {

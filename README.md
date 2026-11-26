@@ -1833,7 +1833,14 @@ step), this list updated.
      rest (in the world) where it was when the particle was made, its
      visibility and rate then too (made at the emitter's most a second,
      thinned to its rate at the time), as HiveWE and Retera's Model
-     Studio do. `KRCO`/`KRTX` animated are not yet. MCP: `mdx_info` says the emitters and
+     Studio do. `KRCO`/`KRTX` animated (done): a ribbon's frame
+     (`particles::RIBBON_FRAME`, 20 floats) has its colour and texture's
+     cell too, each segment drawn with its own, as when it was made.
+     The frame of a loop is worked out in whole numbers
+     (`loopFrame` in the shaders): a float `mod` on the GPU came out
+     past the texture's last row now and then, its texels 0, the model
+     gone for a frame (the e2e counts blinks over 150 frames: 258 with
+     `mod`, none now). MCP: `mdx_info` says the emitters and
      ribbons.
    - **8c, light** (done): `mdx-rs` reads lights (`LITE`, up to 1100);
      `editor/src/light.rs` finds the day and night models of the tileset

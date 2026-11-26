@@ -125,8 +125,9 @@ pub fn emitters(m: &Model, texture: &mut dyn FnMut(u32, u32) -> i32) -> Vec<Emit
 }
 
 /// Floats a ribbon's frame has: its matrix's three rows of four, its
-/// visibility, its height above and below, its alpha.
-pub const RIBBON_FRAME: usize = 16;
+/// visibility, its height above and below, its alpha; its colour (RGB,
+/// `KRCO`), its texture's cell (`KRTX`).
+pub const RIBBON_FRAME: usize = 20;
 
 /// The most segments a ribbon keeps.
 pub const MAX_SEGMENTS: f32 = 256.0;
@@ -137,7 +138,8 @@ pub struct Ribbon {
     /// gravity, filter mode (as an emitter's: 0 blend, 1 additive, 2
     /// modulate, 3 modulate 2x, 4 alpha key), the segments kept.
     pub params: [f32; 8],
-    /// Its colour, RGB.
+    /// Its colour, RGB (as its first frame's: `frames` have it as it
+    /// goes).
     pub color: [f32; 3],
     pub texture: i32,
     pub fps: f32,
@@ -172,6 +174,12 @@ pub fn ribbons(m: &Model, texture: &mut dyn FnMut(u32) -> i32) -> Vec<Ribbon> {
                 frame[13] = crate::anim::track_at(m, &tl, f, r.number(b"KRHA"), r.height_above);
                 frame[14] = crate::anim::track_at(m, &tl, f, r.number(b"KRHB"), r.height_below);
                 frame[15] = crate::anim::track_at(m, &tl, f, r.number(b"KRAL"), r.alpha);
+                let (at, since) = tl.at(f);
+                let color = crate::anim::value_at(r.color(b"KRCO"), r.color, at, tl.start, tl.end, since, m.global_sequences());
+                frame[16..19].copy_from_slice(&color);
+                // The cell: a whole number, held from key to key.
+                let slot = r.slot(b"KRTX").map(|t| mdx_rs::Track { interpolation: 0, global_sequence: t.global_sequence, keys: t.keys.iter().map(|k| mdx_rs::Key { frame: k.frame, value: k.value as f32, tangents: None }).collect() });
+                frame[19] = crate::anim::track_at(m, &tl, f, slot.as_ref(), r.texture_slot as f32);
                 out.extend(frame);
             }
             let layer = m.materials().get(r.material_id as usize).and_then(|mat| mat.layers.first());

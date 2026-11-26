@@ -83,7 +83,11 @@ fn a_ribbon_at_its_pivot_with_its_materials_texture() {
         columns: 2,
         material_id: 0,
         gravity: 0.0,
-        tracks: vec![(*b"KRAL", mdx_rs::RibbonTrack::Number(Track { interpolation: 0, global_sequence: -1, keys: vec![key(0, 0.5)] }))],
+        tracks: vec![
+            (*b"KRAL", mdx_rs::RibbonTrack::Number(Track { interpolation: 0, global_sequence: -1, keys: vec![key(0, 0.5)] })),
+            (*b"KRCO", mdx_rs::RibbonTrack::Color(Track { interpolation: 0, global_sequence: -1, keys: vec![Key { frame: 0, value: [0.0, 1.0, 0.0], tangents: None }] })),
+            (*b"KRTX", mdx_rs::RibbonTrack::Slot(Track { interpolation: 0, global_sequence: -1, keys: vec![Key { frame: 0, value: 1u32, tangents: None }] })),
+        ],
     };
     let layer = mdx_rs::Layer { filter_mode: 3, shading: 0, texture_id: 1, texture_animation_id: u32::MAX, coord_id: 0, alpha: 1.0, rest: vec![] };
     let stand = Sequence { name: Fixed::new("Stand", 80), start: 0, end: 1000, move_speed: 0.0, flags: 0, rarity: 0.0, sync_point: 0, extent: Extent::default() };
@@ -105,6 +109,8 @@ fn a_ribbon_at_its_pivot_with_its_materials_texture() {
     assert_eq!(r.frames.len(), RIBBON_FRAME);
     assert_eq!(r.frames[11], 50.0);
     assert_eq!(&r.frames[12..16], [1.0, 25.0, 10.0, 0.5]);
+    // Its colour and cell as their tracks say.
+    assert_eq!(&r.frames[16..20], [0.0, 1.0, 0.0, 1.0]);
 }
 
 #[test]

@@ -72,6 +72,14 @@ mat3 facing(int kind) {
     }
     return mat3(x, y, z);
 }
+// Frame x (frames since the start, any sign) of a loop of n, in whole
+// numbers: a float mod can round to n itself, past the texture's last
+// row (its texels 0: the model gone for a frame).
+int loopFrame(float x, int n) {
+    int f = int(floor(x));
+    if (f < 0) f += n * ((-f) / n + 1);
+    return min(f % n, n - 1);
+}
 vec3 skinned(vec4 v, int frame) {
     vec3 sum = vec3(0.0);
     for (int k = 0; k < 4; k++) {
@@ -104,7 +112,7 @@ void main() {
     if (u_animated) {
         // Each one at its own place in the loop, by where it stands.
         float phase = fract(sin(dot(a_place.xy, vec2(12.9898, 78.233))) * 43758.5453) * float(u_frames);
-        int frame = u_still ? 0 : int(mod(floor(u_time * u_fps + phase), float(u_frames)));
+        int frame = u_still ? 0 : loopFrame(u_time * u_fps + phase, u_frames);
         if (u_skinned) {
             pos = skinned(vec4(a_pos, 1.0), frame);
             normal = skinned(vec4(a_normal, 0.0), frame);
