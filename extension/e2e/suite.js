@@ -289,6 +289,13 @@ async function steps() {
     for (const [field, value] of fields) await we.panel.webview.postMessage({type: 'camera', action: 'field', field, value})
     const typedCam = await until(() => we.camera?.view[5] === 10 && we.camera, 'its fields typed')
     check(typedCam.view.join() === fields.map(t => t[1]).join(), `rotation, angle of attack, distance, field of view, height, roll typed: ${typedCam.view.join(', ')}`)
+    // Looked through: the view rolled as it is.
+    we.camera = undefined
+    await we.panel.webview.postMessage({type: 'camera', action: 'look'})
+    const rolled = await until(() => we.camera?.looking && we.camera, 'looked through it rolled')
+    check(Math.abs(rolled.looking.roll * 180 / Math.PI - 10) < 1e-3 && rolled.looking.fov === 60, `the view's roll ${(rolled.looking.roll * 180 / Math.PI).toFixed(2)}°, field of view ${rolled.looking.fov}`)
+    await shot('world-editor-camera-rolled')
+    await we.panel.webview.postMessage({type: 'fov', fov: 70, roll: 0})
     await we.panel.webview.postMessage({type: 'camera', action: 'delete'})
     await until(() => we.overlays?.cameras === camsAt + 1, 'deleted')
 

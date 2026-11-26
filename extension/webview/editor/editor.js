@@ -62,8 +62,8 @@
             terrain.showShadows = show.shadows
             light.showFog = show.fog
             terrain.draw(mvp, now / 1000)
-            const {x: right, forward} = camera.axes()
-            const up = [right[1] * camera.direction[2] - right[2] * camera.direction[1], right[2] * camera.direction[0] - right[0] * camera.direction[2], right[0] * camera.direction[1] - right[1] * camera.direction[0]]
+            const {forward} = camera.axes()
+            const {right, up} = camera.basis()
             objects?.draw(mvp, now / 1000, {right, up, forward, view: camera.direction, eye: camera.eye()}, light, hours)
             lines?.draw(mvp, {...show, cameraPicked: show.cameras})
         }
@@ -735,6 +735,7 @@
         camera.vertical = Math.max(-Math.PI / 2 + 0.001, Math.min(Math.PI / 2 - 0.001, Math.asin(d[2] / len)))
         camera.horizontal = Math.atan2(d[0], d[1])
         camera.fov = Math.max(1, Math.min(179, c.view[3]))
+        camera.roll = c.view[5] * Math.PI / 180
     }
     $('camera-delete').onclick = () => {
         if (selectedCamera === null) return
@@ -1009,8 +1010,9 @@
             send(encode.strokeEnd())
             if (msg.mode === 0) selectNewRegion = true
         } else if (msg.type === 'fov') {
-            // The view's field of view: for the tests.
+            // The view's field of view (and roll): for the tests.
             camera.fov = msg.fov
+            if (msg.roll !== undefined) camera.roll = msg.roll
         } else if (msg.type === 'camera') {
             // The Cameras tool's, for the tests: `new` from the view, `pick`
             // one (`index`), `drag` the one picked to a point of the view,
@@ -1021,7 +1023,7 @@
             else if (msg.action === 'set') $('camera-set').onclick()
             else if (msg.action === 'look') {
                 $('camera-look').onclick()
-                vscode.postMessage({type: 'camera', camera: c !== null && {index: c, name: cameras[c].name, target: cameras[c].target, view: cameras[c].view, count: cameras.length, looking: {position: camera.position, distance: camera.distance, horizontal: camera.horizontal, vertical: camera.vertical, fov: camera.fov}}})
+                vscode.postMessage({type: 'camera', camera: c !== null && {index: c, name: cameras[c].name, target: cameras[c].target, view: cameras[c].view, count: cameras.length, looking: {position: camera.position, distance: camera.distance, horizontal: camera.horizontal, vertical: camera.vertical, fov: camera.fov, roll: camera.roll}}})
             } else if (msg.action === 'rename' && c !== null) send(encode.cameraRename(c, msg.name))
             else if (msg.action === 'field') {
                 // As typed in its field (`field_of_view` ...).

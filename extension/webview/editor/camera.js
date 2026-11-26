@@ -3,8 +3,9 @@
 /**
  * The view's camera, HiveWE's (`camera.ixx`): it looks at a point from a
  * distance, at two angles, with a field of view of 70° (World Editor's,
- * a new camera's; HiveWE's is 50°). Distances are in cells (128 units),
- * as everything the editor draws, z up.
+ * a new camera's; HiveWE's is 50°), turned about where it looks by its
+ * roll (0 but through a camera that has one). Distances are in cells
+ * (128 units), as everything the editor draws, z up.
  *
  * Right drag moves it, Ctrl + right drag (or middle drag) turns it, the
  * wheel brings it nearer or further, the arrow keys and WASD move it.
@@ -54,6 +55,8 @@ const EditorCamera = (() => {
             this.horizontal = 0
             this.vertical = -0.977
             this.fov = 70
+            /** Radians about the view's direction: the picture turned clockwise. */
+            this.roll = 0
             /** The ground's height under a point, to keep the camera on it. */
             this.heightAt = () => 0
         }
@@ -65,6 +68,7 @@ const EditorCamera = (() => {
             this.vertical = -0.977
             this.distance = Math.min(Math.max(w, h) * 0.9, 1000)
             this.fov = 70
+            this.roll = 0
             this.position[2] = this.heightAt(this.position[0], this.position[1])
         }
 
@@ -79,6 +83,19 @@ const EditorCamera = (() => {
             const x = norm(cross(this.direction, [0, 0, 1]))
             const forward = cross(x, [0, 0, 1])
             return {x, forward}
+        }
+
+        /** The picture's right and up in the world, turned by the roll. */
+        basis() {
+            const d = this.direction
+            const {x} = this.axes()
+            const y = cross(x, d)
+            const c = Math.cos(this.roll)
+            const s = Math.sin(this.roll)
+            return {
+                right: [0, 1, 2].map(k => x[k] * c + y[k] * s),
+                up: [0, 1, 2].map(k => y[k] * c - x[k] * s),
+            }
         }
 
         move(dx, dy) {
@@ -111,8 +128,7 @@ const EditorCamera = (() => {
          */
         ray(nx, ny, aspect) {
             const d = this.direction
-            const {x} = this.axes()
-            const y = cross(x, d)
+            const {right: x, up: y} = this.basis()
             const t = Math.tan(this.fov * Math.PI / 360)
             const dir = norm([0, 1, 2].map(k => d[k] + x[k] * nx * t * aspect + y[k] * ny * t))
             return {origin: this.eye(), dir}
@@ -122,7 +138,7 @@ const EditorCamera = (() => {
         matrix(aspect) {
             const eye = this.eye()
             const projection = mat4.perspective(this.fov * Math.PI / 180, aspect, 0.05, 2000)
-            return mat4.multiply(projection, mat4.lookAt(eye, this.position, [0, 0, 1]))
+            return mat4.multiply(projection, mat4.lookAt(eye, this.position, this.basis().up))
         }
     }
 

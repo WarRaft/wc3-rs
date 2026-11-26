@@ -1750,7 +1750,8 @@ step), this list updated.
      World Editor's; the view's was HiveWE's 50), Set to view sets the
      one picked so (its field of view kept), Look through it (a double
      click in the list) puts the view where it looks from, at its field
-     of view (Home: 70 again); its height (z offset), rotation, angle
+     of view and roll (the picture turned clockwise by it; Home: 70 and
+     no roll again; the view's rays and billboards turned with it); its height (z offset), rotation, angle
      of attack, distance, roll and field of view set in the panel as they're typed (`CameraSet`:
      any of `w3c_rs::Camera`'s fields by name; a distance over 0, a
      field of view 1 to 179); its name changed as it's
