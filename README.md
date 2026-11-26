@@ -21,7 +21,8 @@ item's details are in its section below):
 - **The World Editor** (see [World Editor](#world-editor)): its steps,
   in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs), 4 (doodads and units),
   5 (overlays), 6 (editing: terrain brushes, things placed, regions and
-  pathing), 7 (in step with the rest), 8a (animation). Next: 8b.
+  pathing), 7 (in step with the rest), 8a (animation), 8b (particles).
+  Next: 8c.
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1783,7 +1784,20 @@ step), this list updated.
      Diablo III beta map 85 of 298 models move (2.5 MB of matrices).
      Billboarded nodes (facing the camera) and geosets shown or hidden
      as the sequence goes are next. MCP: `mdx_info` says the skeleton.
-   - **8b, particles** (`PRE2`, `RIBB`): emitters read and drawn.
+   - **8b, particles** (done): `mdx-rs` reads the particle emitters
+     (`PRE2`, all 3320 models still written back as they were);
+     `editor/src/particles.rs` describes each (speed, variation,
+     latitude, gravity, life, size, segments, the head's cells, its
+     texture) and, at every frame of `Stand`, where it is (its node's
+     matrix at its pivot), whether it's shown (`KP2V`) and how many it
+     makes (`KP2E`); the page's `particles.js` keeps no particle: each
+     is its number, the shader works out when it was made, where it went
+     (a random place, direction and speed from its number and round, as
+     HiveWE makes them) and where it is, a square facing the camera, the
+     game's filter modes; one draw an emitter of a model for all its
+     things. On the Diablo III beta map 137 emitters (waterfalls' spray,
+     torches). Tails (`head_or_tail` 1, 2), emitters in model space, and
+     ribbons (`RIBB`) are next. MCP: `mdx_info` says the emitters.
    - **8c, light**: the day and night (`Environment\DNC`), the map's
      light, fog, shadows.
    - **8d, the terrain's size and tiles**: resize, the tile setter

@@ -51,7 +51,9 @@
         if (terrain?.ready) {
             const mvp = camera.matrix(w / h)
             terrain.draw(mvp, now / 1000)
-            objects?.draw(mvp, now / 1000)
+            const {x: right, forward} = camera.axes()
+            const up = [right[1] * camera.direction[2] - right[2] * camera.direction[1], right[2] * camera.direction[0] - right[0] * camera.direction[2], right[0] * camera.direction[1] - right[1] * camera.direction[0]]
+            objects?.draw(mvp, now / 1000, {right, up, forward})
             lines?.draw(mvp, show)
         }
     }
@@ -626,6 +628,7 @@
                         cliffs: terrain.cliffs.reduce((n, c) => n + c.instances, 0),
                         objects: objects.count,
                         animated: objects.models.filter(m => m.anim).length,
+                        emitters: objects.particles.count,
                         error: gl.getError(),
                     },
                 }))

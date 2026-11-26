@@ -40,6 +40,22 @@ trait Lerp: Copy {
     fn bezier(a: Self, out: Self, inn: Self, b: Self, t: f32) -> Self;
 }
 
+impl Lerp for f32 {
+    fn lerp(a: Self, b: Self, t: f32) -> Self {
+        a + (b - a) * t
+    }
+    fn hermite(a: Self, out: Self, inn: Self, b: Self, t: f32) -> Self {
+        <[f32; 3]>::hermite([a; 3], [out; 3], [inn; 3], [b; 3], t)[0]
+    }
+    fn bezier(a: Self, out: Self, inn: Self, b: Self, t: f32) -> Self {
+        <[f32; 3]>::bezier([a; 3], [out; 3], [inn; 3], [b; 3], t)[0]
+    }
+}
+
+fn value_f32(track: Option<&Track<f32>>, default: f32, frame: u32, start: u32, end: u32, since: u32, globals: &[u32]) -> f32 {
+    value(track, default, frame, start, end, since, globals)
+}
+
 impl Lerp for [f32; 3] {
     fn lerp(a: Self, b: Self, t: f32) -> Self {
         [0, 1, 2].map(|k| a[k] + (b[k] - a[k]) * t)
@@ -116,9 +132,9 @@ fn value<T: Lerp + mdx_rs::Value>(track: Option<&Track<T>>, default: T, frame: u
 }
 
 /// A 4 by 4 matrix, column by column.
-type Mat = [f32; 16];
+pub type Mat = [f32; 16];
 
-fn mul(a: &Mat, b: &Mat) -> Mat {
+pub fn mul(a: &Mat, b: &Mat) -> Mat {
     let mut out = [0.0; 16];
     for c in 0..4 {
         for r in 0..4 {
@@ -160,7 +176,8 @@ pub struct Skeleton<'a> {
 
 impl<'a> Skeleton<'a> {
     pub fn of(m: &'a Model) -> Skeleton<'a> {
-        let all: HashMap<u32, &Node> = m.bones().iter().map(|b| &b.node).chain(m.helpers()).map(|n| (n.object_id, n)).collect();
+        let all: HashMap<u32, &Node> =
+            m.bones().iter().map(|b| &b.node).chain(m.helpers()).chain(m.emitters2().iter().map(|e| &e.node)).map(|n| (n.object_id, n)).collect();
         // Parents first.
         let mut order: Vec<&Node> = Vec::new();
         let mut placed = std::collections::HashSet::new();
@@ -192,53 +209,99 @@ impl<'a> Skeleton<'a> {
     }
 }
 
+/// The frames a model's `Stand` (or first sequence) is sampled at.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Timeline {
+    pub start: u32,
+    pub end: u32,
+    pub frames: usize,
+    /// Milliseconds a frame.
+    pub step: f32,
+}
+
+impl Timeline {
+    pub fn of(m: &Model) -> Timeline {
+        let seqs = m.sequences();
+        let seq = seqs.iter().find(|s| s.name.text().to_ascii_lowercase().starts_with("stand")).or(seqs.first());
+        let (start, end) = seq.map_or((0, 0), |s| (s.start, s.end.max(s.start)));
+        let length = (end - start) as f32;
+        let frames = ((length / 1000.0 * FPS).ceil() as usize).clamp(1, MAX_FRAMES);
+        let step = if frames > 1 { length / frames as f32 } else { 0.0 };
+        Timeline { start, end, frames, step }
+    }
+
+    pub fn fps(&self) -> f32 {
+        if self.step > 0.0 { 1000.0 / self.step } else { FPS }
+    }
+
+    /// Frame `f`'s time in the model, and since the sequence started.
+    pub fn at(&self, f: usize) -> (u32, u32) {
+        let since = (f as f32 * self.step) as u32;
+        (self.start + since, since)
+    }
+}
+
+impl Skeleton<'_> {
+    /// Every node's matrix at frame `f` of `tl`, by its id.
+    pub fn world(&self, m: &Model, tl: &Timeline, f: usize) -> HashMap<u32, Mat> {
+        let (frame, since) = tl.at(f);
+        let (pivots, globals) = (m.pivots(), m.global_sequences());
+        let mut world: HashMap<u32, Mat> = HashMap::new();
+        for n in &self.nodes {
+            let t = value(n.translation(), [0.0; 3], frame, tl.start, tl.end, since, globals);
+            let r = value(n.rotation(), [0.0, 0.0, 0.0, 1.0], frame, tl.start, tl.end, since, globals);
+            let s = value(n.scaling(), [1.0; 3], frame, tl.start, tl.end, since, globals);
+            let pivot = pivots.get(n.object_id as usize).copied().unwrap_or_default();
+            let mut local = local(r, t, s, pivot);
+            if let Some(parent) = n.parent().and_then(|p| world.get(&p)) {
+                local = mul(parent, &local);
+            }
+            world.insert(n.object_id, local);
+        }
+        world
+    }
+
+    /// Does anything move: a node with a track?
+    pub fn moves(&self) -> bool {
+        self.nodes.iter().any(|n| !n.tracks.is_empty())
+    }
+}
+
+/// Three rows of four of a matrix, into `out`.
+pub fn rows(m: &Mat, out: &mut [f32]) {
+    for row in 0..3 {
+        for c in 0..4 {
+            out[row * 4 + c] = m[c * 4 + row];
+        }
+    }
+}
+
+/// A float track's value at frame `f` of `tl` (`default` without it).
+pub fn track_at(m: &Model, tl: &Timeline, f: usize, track: Option<&Track<f32>>, default: f32) -> f32 {
+    let (frame, since) = tl.at(f);
+    value_f32(track, default, frame, tl.start, tl.end, since, m.global_sequences())
+}
+
 /// The model's `Stand` (or first sequence) baked; `None` when nothing
 /// moves (no node has a track in it) or it has too many bones.
 pub fn bake(m: &Model) -> Option<Baked> {
     let sk = Skeleton::of(m);
-    if sk.slots.is_empty() || sk.slots.len() > 255 || sk.nodes.iter().all(|n| n.tracks.is_empty()) {
+    if sk.slots.is_empty() || sk.slots.len() > 255 || !sk.moves() {
         return None;
     }
-    let seqs = m.sequences();
-    let seq = seqs.iter().find(|s| s.name.text().to_ascii_lowercase().starts_with("stand")).or(seqs.first());
-    let (start, end) = seq.map_or((0, 0), |s| (s.start, s.end.max(s.start)));
-    let length = (end - start) as f32;
-    let frames = ((length / 1000.0 * FPS).ceil() as usize).clamp(1, MAX_FRAMES);
-    let step = if frames > 1 { length / frames as f32 } else { 0.0 };
-    let fps = if step > 0.0 { 1000.0 / step } else { FPS };
-    let pivots = m.pivots();
-    let globals = m.global_sequences();
-    let mut matrices = vec![0.0f32; frames * sk.slots.len() * 12];
-    let mut world: HashMap<u32, Mat> = HashMap::new();
-    for f in 0..frames {
-        let since = (f as f32 * step) as u32;
-        let frame = start + since;
-        world.clear();
-        for n in &sk.nodes {
-            let t = value(n.translation(), [0.0; 3], frame, start, end, since, globals);
-            let r = value(n.rotation(), [0.0, 0.0, 0.0, 1.0], frame, start, end, since, globals);
-            let s = value(n.scaling(), [1.0; 3], frame, start, end, since, globals);
-            let pivot = pivots.get(n.object_id as usize).copied().unwrap_or_default();
-            let mut m = local(r, t, s, pivot);
-            if let Some(parent) = n.parent().and_then(|p| world.get(&p)) {
-                m = mul(parent, &m);
-            }
-            world.insert(n.object_id, m);
-        }
+    let tl = Timeline::of(m);
+    let mut matrices = vec![0.0f32; tl.frames * sk.slots.len() * 12];
+    for f in 0..tl.frames {
+        let world = sk.world(m, &tl, f);
         for (id, slot) in &sk.slots {
-            let m = world.get(id).copied().unwrap_or_else(identity);
             let at = (f * sk.slots.len() + slot) * 12;
-            for row in 0..3 {
-                for c in 0..4 {
-                    matrices[at + row * 4 + c] = m[c * 4 + row];
-                }
-            }
+            rows(&world.get(id).copied().unwrap_or_else(identity), &mut matrices[at..at + 12]);
         }
     }
-    Some(Baked { bones: sk.slots.len() as u32, frames: frames as u32, fps, matrices })
+    Some(Baked { bones: sk.slots.len() as u32, frames: tl.frames as u32, fps: tl.fps(), matrices })
 }
 
-fn identity() -> Mat {
+pub fn identity() -> Mat {
     let mut m = [0.0; 16];
     m[0] = 1.0;
     m[5] = 1.0;

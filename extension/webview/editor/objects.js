@@ -128,6 +128,7 @@ void main() {
             this.program = program(gl)
             this.textures = []
             this.models = []
+            this.particles = new EditorParticles.Particles(gl)
             this.white = this.texture({width: 1, height: 1, rgba: new Uint8Array([255, 255, 255, 255])})
             /** The model and instance picked; -1 none. */
             this.selected = {model: -1, instance: -1}
@@ -233,6 +234,7 @@ void main() {
                     model.geosets.push({vao, buffers, count: g.indices.length, layers: g.layers})
                 }
             }
+            this.particles.set(msg, this.models.map(m => m.instanceBuffer))
         }
 
         /** Where every model stands: a list, a model each, of its instances. */
@@ -265,7 +267,7 @@ void main() {
             this.selected = {model, instance}
         }
 
-        draw(mvp, time = 0) {
+        draw(mvp, time = 0, camera = null) {
             const gl = this.gl
             const p = this.program
             gl.useProgram(p.program)
@@ -307,6 +309,9 @@ void main() {
             gl.bindVertexArray(null)
             gl.disable(gl.BLEND)
             gl.depthMask(true)
+            if (camera && this.animate) {
+                this.particles.draw(mvp, time, camera, i => this.models[i]?.instances ?? 0, i => (i >= 0 ? this.textures[i] : null) ?? this.white)
+            }
         }
 
         blend(mode) {

@@ -77,6 +77,8 @@ pub struct Model {
     pub error: String,
     /// Its `Stand`, baked (`anim::bake`); `None` when nothing moves.
     pub anim: Option<crate::anim::Baked>,
+    /// Its particle emitters (`particles::emitters`).
+    pub emitters: Vec<crate::particles::Emitter>,
 }
 
 /// Floats per instance.
@@ -498,6 +500,11 @@ fn load_model(
         })
         .collect();
     model.anim = crate::anim::bake(&m);
+    model.emitters = crate::particles::emitters(&m, &mut |id, replaceable| match replaceable {
+        1 => texture::TEAM_COLOR,
+        0 => texs.get(id as usize).copied().unwrap_or(texture::NONE),
+        _ => texture::NONE,
+    });
     let slots = crate::anim::Skeleton::of(&m).slots;
     let (mut min, mut max) = ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]);
     for (gi, g) in m.geosets().iter().enumerate() {

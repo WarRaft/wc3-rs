@@ -225,7 +225,10 @@ pub struct CliffsMsg {
 /// the vertices' bones and weights, 8 bytes each (none when the model
 /// doesn't move); then `f32` instances, `placed::INSTANCE` each; error;
 /// its animation, `u32` bones, `u32` frames, `f32` frames a second, `f32`
-/// matrices, 12 a bone a frame, 0 bones when it doesn't move), notes.
+/// matrices, 12 a bone a frame, 0 bones when it doesn't move; a list of
+/// its particle emitters, each `f32` arrays of its parameters (16), its
+/// segments (15), its head's cells (6), `i32` texture, `f32` frames a
+/// second, its frames (`particles::FRAME` each)), notes.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ObjectsMsg {
     pub first_texture: u32,
@@ -618,6 +621,14 @@ impl ServerMsg {
                     w.u32(a.frames);
                     w.f32(a.fps);
                     w.f32s(&a.matrices);
+                    w.list(&m.emitters, |w, e| {
+                        w.f32s(&e.params);
+                        w.f32s(&e.segments);
+                        w.f32s(&e.head);
+                        w.u32(e.texture as u32);
+                        w.f32(e.fps);
+                        w.f32s(&e.frames);
+                    });
                 });
                 w.list(&o.notes, |w, n| w.string(n));
                 kind::OBJECTS
@@ -815,7 +826,18 @@ impl ServerMsg {
                     let (instances, error) = (r.f32s()?, r.string()?);
                     let anim = crate::anim::Baked { bones: r.u32()?, frames: r.u32()?, fps: r.f32()?, matrices: r.f32s()? };
                     let anim = (anim.bones > 0).then_some(anim);
-                    Ok(crate::placed::Model { path, min, max, geosets, instances, error, anim })
+                    let emitters = r.list(|r| {
+                        let array = |v: Vec<f32>| v.try_into().map_err(|_| DecodeError("an emitter's parameters".into()));
+                        Ok(crate::particles::Emitter {
+                            params: array(r.f32s()?)?,
+                            segments: r.f32s()?.try_into().map_err(|_| DecodeError("segments".into()))?,
+                            head: r.f32s()?.try_into().map_err(|_| DecodeError("head".into()))?,
+                            texture: r.u32()? as i32,
+                            fps: r.f32()?,
+                            frames: r.f32s()?,
+                        })
+                    })?;
+                    Ok(crate::placed::Model { path, min, max, geosets, instances, error, anim, emitters })
                 })?;
                 ServerMsg::Objects(ObjectsMsg { first_texture, first_model, textures, models, notes: r.list(|r| r.string())? })
             }

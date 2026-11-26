@@ -328,6 +328,7 @@ const EditorProtocol = (() => {
                     instances: r.f32s(),
                     error: r.string(),
                     anim: {bones: r.u32(), frames: r.u32(), fps: r.f32(), matrices: r.f32s()},
+                    emitters: r.list(r => ({params: r.f32s(), segments: r.f32s(), head: r.f32s(), texture: r.i32(), fps: r.f32(), frames: r.f32s()})),
                 }))
                 return {kind: 'objects', firstTexture, firstModel, textures, models, notes: r.list(r => r.string())}
             }
