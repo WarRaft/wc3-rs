@@ -302,7 +302,11 @@ async function steps() {
     await we.panel.webview.postMessage({type: 'camera', action: 'delete'})
     await until(() => we.overlays?.cameras === camsAt + 2, 'deleted')
     await we.panel.webview.postMessage({type: 'camera', action: 'pick', index: camsAt + 1})
+    // Set to a view of no roll at 70: its roll the view's, its field of view kept.
     await we.panel.webview.postMessage({type: 'fov', fov: 70, roll: 0})
+    await we.panel.webview.postMessage({type: 'camera', action: 'set'})
+    const unrolled = await until(() => we.camera?.view[5] === 0 && we.camera, 'set to the view')
+    check(unrolled.view[3] === 60, `${unrolled.name}: roll ${unrolled.view[5]}, field of view ${unrolled.view[3]}`)
     await we.panel.webview.postMessage({type: 'camera', action: 'delete'})
     await until(() => we.overlays?.cameras === camsAt + 1, 'deleted')
 
