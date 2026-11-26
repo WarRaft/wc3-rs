@@ -11,6 +11,7 @@
 //! - [`protocol`]: the frames.
 
 pub mod cliffs;
+pub mod edit;
 pub mod lock;
 pub mod overlays;
 pub mod picture;
@@ -69,8 +70,13 @@ pub fn serve(input: &mut impl io::Read, output: &mut impl Write, root: &Path) ->
         };
         match msg {
             ClientMsg::Hello => {
-                // The page (re)loaded: the map as it is now, read again.
-                match session::Session::open(root) {
+                // The page (re)loaded: the map open, with its changes
+                // (unsaved ones too); the first time, read.
+                let opened = match session.take() {
+                    Some(s) => Ok(s),
+                    None => session::Session::open(root),
+                };
+                match opened {
                     Ok(mut s) => {
                         // The map's name first, for the page to show
                         // while the rest is worked out.
@@ -86,6 +92,20 @@ pub fn serve(input: &mut impl io::Read, output: &mut impl Write, root: &Path) ->
             ClientMsg::Pick { origin, dir } => {
                 let picked = session.as_ref().map(|s| s.pick(origin, dir)).unwrap_or_default();
                 write(output, &ServerMsg::Picked(picked))?;
+            }
+            edit => {
+                let Some(s) = session.as_mut() else { continue };
+                let answers = match edit {
+                    ClientMsg::Brush { start, origin, dir, brush } => s.brush(origin, dir, &brush, start),
+                    ClientMsg::StrokeEnd => s.stroke_end(),
+                    ClientMsg::Undo => s.undo(false),
+                    ClientMsg::Redo => s.undo(true),
+                    ClientMsg::Save => s.save(),
+                    ClientMsg::Hello | ClientMsg::Pick { .. } => unreachable!("answered above"),
+                };
+                for msg in &answers {
+                    write(output, msg)?;
+                }
             }
         }
     }

@@ -140,10 +140,13 @@ coming is listed below.
   destructables, units and items in their models (a click picks one and
   says what it is, with its regions); the pathing, regions, cameras and
   bounds over it, each a button, and a minimap; right drag moves, Ctrl +
-  right drag turns, the wheel zooms, G shows the grid. Its process (`wc3
-  editor`) reads the map through the project's roots and works out
-  everything drawn. Editing and animation come step by step (the
-  repository README, "World Editor").
+  right drag turns, the wheel zooms, G shows the grid. The terrain is
+  edited with brushes (raise, lower, plateau, smooth, texture, cliff
+  level, water), undone and redone, and saved where its file came from
+  (Ctrl+Z, Ctrl+Shift+Z, Ctrl+S). Its process (`wc3 editor`) reads the
+  map through the project's roots and works out everything drawn.
+  Placing things and animation come step by step (the repository README,
+  "World Editor").
 
 ## Not yet
 

@@ -20,7 +20,7 @@ item's details are in its section below):
     checked against it.
 - **The World Editor** (see [World Editor](#world-editor)): its steps,
   in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs), 4 (doodads and units),
-  5 (overlays).
+  5 (overlays), 6a (terrain brushes). Next: 6b.
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1666,13 +1666,36 @@ step), this list updated.
    `overlays.js` and buttons (and keys P, R, C, B, M), the minimap a
    click moves the camera on. MCP: `w3e_image`'s `show` (regions,
    units, bounds: `picture::mark`).
-6. **Editing.** Terrain brushes (raise, lower, plateau, smooth, noise;
-   ground texture; cliff level; water), each applied in Rust, the
-   changed rectangle sent back; undo and redo in Rust; save to the
-   layers (see "The files are the truth"). Then the palettes, their
-   lists from the game's data through the lookup, their names from
-   `UI\WorldEditStrings.txt`: doodads, units, regions, pathing; moving,
-   rotating, deleting what's selected.
+6. **Editing.** In three parts:
+   - **6a, terrain brushes** (done): raise, lower, plateau, smooth,
+     ground texture, cliff level up and down, water and dry, each laid
+     in Rust (`editor/src/edit.rs`) where the mouse's ray meets the
+     ground, a step at a time while the button is held (the next once
+     the last is answered); undo and redo, a stroke each; save
+     (`Session::save`): `war3map.w3e` into the layer it came from (a
+     root folder's file, inside a root map through `MapFs`), one only
+     the game has into the top root. The `Brush`, `StrokeEnd`, `Undo`,
+     `Redo`, `Save` messages; `Palette` (the tileset's ground textures,
+     `[TileSets]` after its name and blight, with pictures; the
+     terrain's cliff types), `State` (unsaved, undo, redo, what a save
+     said); after an edit the terrain's messages again (`Cliffs`
+     without textures keeps the page's). The page's tool panel, the
+     brush's ring, Ctrl+Z, Ctrl+Shift+Z, Ctrl+S, the tab's `●`; closing
+     it with changes not saved says they're lost. What the terrain
+     changes doesn't follow yet: units' heights, the bounds' lines,
+     the minimap, and the files World Editor makes with the terrain
+     (`war3map.wpm`, `war3map.shd`): step 7. The whole terrain is
+     worked out again after each step (fast enough for 193 by 129;
+     the changed rectangle alone, when a bigger map needs it). MCP:
+     `w3e_brush`.
+   - **6b, things placed**: the palettes of doodads, destructables,
+     units and items (their lists from the game's data and the map's
+     object data, their names from `UI\WorldEditStrings.txt` and the
+     profiles); placing, moving, rotating, deleting what's selected;
+     saved to `war3map.doo` and `war3mapUnits.doo` the same way.
+   - **6c, regions and pathing**: regions drawn, moved, resized,
+     renamed (`war3map.w3r`); the pathing brush (`war3map.wpm`).
+
 7. **In step with the rest.** Disk changes read again piece by piece;
    the editor and open text forms of the same file; the language server
    and the build see what the editor saved.

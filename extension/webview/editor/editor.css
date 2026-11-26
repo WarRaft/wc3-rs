@@ -155,3 +155,85 @@ button:hover {
 .minimap[hidden] {
     display: none;
 }
+.tools {
+    position: absolute;
+    left: 12px;
+    top: 12px;
+    width: 180px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    background: color-mix(in srgb, var(--vscode-editor-background) 88%, transparent);
+    border: 1px solid var(--vscode-panel-border, #444);
+    font-size: .9em;
+}
+
+.tool-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+}
+
+.tool-buttons button, .edits button {
+    background: transparent;
+    color: var(--vscode-foreground);
+    border: 1px solid var(--vscode-panel-border, #555);
+    padding: 2px 4px;
+    font-size: .95em;
+}
+
+.tool-buttons button.on {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+}
+
+.tools label {
+    display: flex;
+    flex-direction: column;
+    color: var(--vscode-descriptionForeground);
+}
+
+.textures {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 2px;
+}
+
+.textures[hidden], .tools select[hidden] {
+    display: none;
+}
+
+.texture {
+    padding: 0;
+    border: 2px solid transparent;
+    background: transparent;
+    line-height: 0;
+}
+
+.texture canvas {
+    width: 28px;
+    height: 28px;
+}
+
+.texture.on {
+    border-color: var(--vscode-focusBorder);
+}
+
+.edits {
+    display: flex;
+    gap: 2px;
+}
+
+.edits button {
+    flex: 1;
+}
+
+.edits button:disabled {
+    opacity: .4;
+    cursor: default;
+}
+
+.name.dirty::before {
+    content: '● ';
+}

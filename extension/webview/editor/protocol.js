@@ -19,7 +19,17 @@ const EditorProtocol = (() => {
         PICKED: 135,
         OVERLAYS: 136,
         PICK: 2,
+        BRUSH: 3,
+        STROKE_END: 4,
+        UNDO: 5,
+        REDO: 6,
+        SAVE: 7,
+        PALETTE: 137,
+        STATE: 138,
     }
+
+    /** The tools by their code (`edit::TOOLS`). */
+    const TOOLS = ['raise', 'lower', 'plateau', 'smooth', 'texture', 'cliffUp', 'cliffDown', 'water', 'dry']
 
     const utf8 = new TextDecoder()
     const utf8Out = new TextEncoder()
@@ -105,6 +115,10 @@ const EditorProtocol = (() => {
             this.bytes = []
         }
 
+        u8(v) {
+            this.bytes.push(v & 0xff)
+        }
+
         u32(v) {
             this.bytes.push(v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff)
         }
@@ -138,6 +152,20 @@ const EditorProtocol = (() => {
             for (const v of [...origin, ...dir]) w.f32(v)
             return w.frame(KIND.PICK)
         },
+        /** A step of a stroke: `brush` {tool, size, strength, texture, cliff}. */
+        brush(start, origin, dir, brush) {
+            const w = new Writer()
+            w.u8(start ? 1 : 0)
+            w.u8(TOOLS.indexOf(brush.tool))
+            for (const v of [...origin, ...dir, brush.size, brush.strength]) w.f32(v)
+            w.string(brush.texture ?? '')
+            w.u32(brush.cliff ?? -1)
+            return w.frame(KIND.BRUSH)
+        },
+        strokeEnd: () => new Writer().frame(KIND.STROKE_END),
+        undo: () => new Writer().frame(KIND.UNDO),
+        redo: () => new Writer().frame(KIND.REDO),
+        save: () => new Writer().frame(KIND.SAVE),
     }
 
     /**
@@ -244,10 +272,16 @@ const EditorProtocol = (() => {
                     notes: r.list(r => r.string()),
                 }
             }
+            case KIND.PALETTE: {
+                const entry = r => ({id: r.string(), name: r.string(), icon: {width: r.u32(), height: r.u32(), rgba: r.bytes()}})
+                return {kind: 'palette', grounds: r.list(entry), cliffs: r.list(entry)}
+            }
+            case KIND.STATE:
+                return {kind: 'state', dirty: r.u8() !== 0, undo: r.u8() !== 0, redo: r.u8() !== 0, message: r.string()}
             default:
                 return null
         }
     }
 
-    return {KIND, encode, decode}
+    return {KIND, TOOLS, encode, decode}
 })()

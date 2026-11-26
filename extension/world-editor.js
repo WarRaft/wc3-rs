@@ -33,6 +33,7 @@ const VIEW = 'wc3.editors'
  * @property {{name: string, width: number, height: number} | null} map  what the page last said of the map
  * @property {string | null} error  what the page last said went wrong
  * @property {{pathing: number, regions: number, cameras: number, bounds: number, minimap: number, region?: {name: string, x: number, y: number}} | undefined} overlays  what the page has of the overlays
+ * @property {{dirty: boolean, undo: boolean, redo: boolean, message: string} | undefined} state  the edits' state the page last showed
  * @property {string | undefined} picked  what the last click picked, said ('' nothing)
  * @property {{width: number, height: number, layers: number, water: number, cliffs: number, objects: number, error: number} | null} drawn  what the page drew of the terrain first
  */
@@ -71,6 +72,14 @@ function registerWorldEditor(context, binary, pickManifest) {
 </head><body>
 <div class="bar"><span id="name" class="name">Opening…</span><span id="meta" class="meta"></span><span class="spacer"></span><span id="toggles" class="toggles"></span><span class="hint">Click: pick · Right drag: move · Ctrl + right drag: turn · Wheel: zoom · WASD · G: grid · Home: all of it</span></div>
 <div class="stage"><canvas id="view"></canvas><canvas id="minimap" class="minimap" hidden></canvas>
+<div id="tools" class="tools">
+  <div id="tool-buttons" class="tool-buttons"></div>
+  <label>Size <span id="size-value"></span><input id="size" type="range" min="1" max="32" step="1"></label>
+  <label>Strength <span id="strength-value"></span><input id="strength" type="range" min="0.05" max="1" step="0.05"></label>
+  <div id="textures" class="textures" hidden></div>
+  <select id="cliff-types" hidden></select>
+  <div class="edits"><button id="undo" title="Undo (Ctrl+Z)" disabled>Undo</button><button id="redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button><button id="save" title="Save the terrain (Ctrl+S)" disabled>Save</button></div>
+</div>
 <div id="message" class="message" hidden><h2 id="message-title"></h2><p id="message-text"></p><button id="reopen" hidden>Reopen</button></div>
 </div>
 <ul id="notes" class="notes" hidden></ul>
@@ -155,8 +164,12 @@ function registerWorldEditor(context, binary, pickManifest) {
             } else if (msg.type === 'map') {
                 editor.map = msg.map
                 editor.error = null
-                panel.title = msg.map.name || path.basename(root)
+                panel.title = (editor.state?.dirty ? '● ' : '') + (msg.map.name || path.basename(root))
                 refresh()
+            } else if (msg.type === 'state') {
+                editor.state = msg.state
+                const name = editor.map?.name || path.basename(root)
+                panel.title = msg.state.dirty ? `● ${name}` : name
             } else if (msg.type === 'drawn') {
                 editor.drawn = msg.terrain
             } else if (msg.type === 'picked') {
@@ -172,6 +185,7 @@ function registerWorldEditor(context, binary, pickManifest) {
             }
         })
         panel.onDidDispose(() => {
+            if (editor.state?.dirty) window.showWarningMessage(`WC3: the World Editor of ${path.basename(root)} was closed with changes not saved; they're lost.`)
             editors.delete(root)
             stop(editor)
             refresh()

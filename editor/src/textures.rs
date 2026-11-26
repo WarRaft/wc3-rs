@@ -68,6 +68,23 @@ pub fn capped(game: &Game, path: &str, max: u32) -> Result<Picture, String> {
     Ok((mip.width, mip.height, mip.rgba.clone()))
 }
 
+/// Layer `n` of `layers` at `size` pixels a side, for a palette.
+pub fn icon(layers: &Layers, n: u32, size: u32) -> Icon {
+    let bytes = (layers.size * layers.size * 4) as usize;
+    match layers.rgba.get(n as usize * bytes..(n as usize + 1) * bytes) {
+        Some(layer) if layers.size > 0 => Icon { width: size, height: size, rgba: scale(layer, layers.size, size) },
+        _ => Icon::default(),
+    }
+}
+
+/// A small picture: RGBA, rows top to bottom.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Icon {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+}
+
 /// The average colour of a picture, 0-255: a team's colour from its
 /// team colour texture.
 pub fn average(game: &Game, path: &str) -> Option<[u8; 3]> {

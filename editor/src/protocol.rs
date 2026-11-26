@@ -24,6 +24,11 @@
 //! |------|---------|------|
 //! | 1 | `Hello` | nothing: the page (re)loaded; answered by `Map` or `Error` |
 //! | 2 | `Pick` | a ray from the camera: `f32` origin x, y, z, direction x, y, z (cells, layers); answered by `Picked` |
+//! | 3 | `Brush` | a step of a stroke: `u8` its first, `u8` tool (`edit::TOOLS`), the ray (six `f32`), `f32` size, strength, the texture's tile id (empty for none), `i32` cliff; answered by what changed (`Ground`, `Cliffs`, `Terrain`) and `State` |
+//! | 4 | `StrokeEnd` | the mouse let go; answered by `State` |
+//! | 5 | `Undo` | answered by what changed and `State` |
+//! | 6 | `Redo` | the same |
+//! | 7 | `Save` | the terrain written where it came from; answered by `State` (where, or why not) |
 //!
 //! Editor → page:
 //!
@@ -38,10 +43,15 @@
 //! | 134 | `Objects` | what's placed: see [`ObjectsMsg`] |
 //! | 135 | `Picked` | what a `Pick` meets: see [`PickedMsg`] |
 //! | 136 | `Overlays` | pathing, regions, bounds, cameras, minimap: see [`OverlaysMsg`] |
+//! | 137 | `Palette` | the terrain palette: see [`PaletteMsg`] |
+//! | 138 | `State` | the edits' state: see [`StateMsg`] |
+//!
+//! After an edit the terrain's messages come again: `Cliffs` with no
+//! textures keeps the ones the page has.
 //!
 //! `Hello` is answered by `Map`, then `Ground`, `Water` and `Cliffs`
 //! (what the terrain's layers index, and what stands on it), then
-//! `Terrain`, then `Objects`, then `Overlays`.
+//! `Terrain`, then `Objects`, `Overlays`, `Palette` and `State`.
 
 use std::io::{self, Read};
 
@@ -50,6 +60,13 @@ pub use wc3_server::protocol::{HEADER, MAX_BODY};
 mod kind {
     pub const HELLO: u8 = 1;
     pub const PICK: u8 = 2;
+    pub const BRUSH: u8 = 3;
+    pub const STROKE_END: u8 = 4;
+    pub const UNDO: u8 = 5;
+    pub const REDO: u8 = 6;
+    pub const SAVE: u8 = 7;
+    pub const PALETTE: u8 = 137;
+    pub const STATE: u8 = 138;
     pub const OBJECTS: u8 = 134;
     pub const PICKED: u8 = 135;
     pub const OVERLAYS: u8 = 136;
@@ -68,6 +85,16 @@ pub enum ClientMsg {
     Hello,
     /// Kind 2.
     Pick { origin: [f32; 3], dir: [f32; 3] },
+    /// Kind 3.
+    Brush { start: bool, origin: [f32; 3], dir: [f32; 3], brush: crate::edit::Brush },
+    /// Kind 4.
+    StrokeEnd,
+    /// Kind 5.
+    Undo,
+    /// Kind 6.
+    Redo,
+    /// Kind 7.
+    Save,
 }
 
 /// What the page is told of the map: kind 128's body, in this order.
@@ -165,6 +192,32 @@ pub struct PickedMsg {
 /// minimap (`u32` width, height, RGBA, north up), notes.
 pub type OverlaysMsg = crate::overlays::Overlays;
 
+/// A palette's entry: id, name, a picture (`u32` width, height, RGBA).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PaletteEntry {
+    pub id: String,
+    pub name: String,
+    pub icon: crate::textures::Icon,
+}
+
+/// Kind 137's body: a list of ground textures, a list of cliff types
+/// (their order the terrain's: a brush's `cliff`), each a [`PaletteEntry`].
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PaletteMsg {
+    pub grounds: Vec<PaletteEntry>,
+    pub cliffs: Vec<PaletteEntry>,
+}
+
+/// Kind 138's body: `u8` unsaved changes, `u8` can undo, `u8` can redo,
+/// a message (what a save or a brush said; empty for none).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StateMsg {
+    pub dirty: bool,
+    pub undo: bool,
+    pub redo: bool,
+    pub message: String,
+}
+
 /// Editor → page.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServerMsg {
@@ -186,6 +239,10 @@ pub enum ServerMsg {
     Picked(PickedMsg),
     /// Kind 136.
     Overlays(OverlaysMsg),
+    /// Kind 137.
+    Palette(PaletteMsg),
+    /// Kind 138.
+    State(StateMsg),
 }
 
 /// A frame's body was shorter than its fields, or not UTF-8.
@@ -212,6 +269,21 @@ impl ClientMsg {
         Ok(match kind {
             kind::HELLO => Some(ClientMsg::Hello),
             kind::PICK => Some(ClientMsg::Pick { origin: [r.f32()?, r.f32()?, r.f32()?], dir: [r.f32()?, r.f32()?, r.f32()?] }),
+            kind::BRUSH => {
+                let start = r.u8()? != 0;
+                let tool = crate::edit::TOOLS.get(r.u8()? as usize).copied().ok_or_else(|| DecodeError("no such tool".into()))?;
+                let origin = [r.f32()?, r.f32()?, r.f32()?];
+                let dir = [r.f32()?, r.f32()?, r.f32()?];
+                let (size, strength) = (r.f32()?, r.f32()?);
+                let texture = r.string()?;
+                let cliff = r.u32()? as i32;
+                let texture = parser_rs::bin::Rawcode::parse(&texture);
+                Some(ClientMsg::Brush { start, origin, dir, brush: crate::edit::Brush { tool, size, strength, texture, cliff } })
+            }
+            kind::STROKE_END => Some(ClientMsg::StrokeEnd),
+            kind::UNDO => Some(ClientMsg::Undo),
+            kind::REDO => Some(ClientMsg::Redo),
+            kind::SAVE => Some(ClientMsg::Save),
             _ => None,
         })
     }
@@ -225,6 +297,20 @@ impl ClientMsg {
                 origin.iter().chain(dir).for_each(|v| w.f32(*v));
                 kind::PICK
             }
+            ClientMsg::Brush { start, origin, dir, brush } => {
+                w.u8(*start as u8);
+                w.u8(crate::edit::TOOLS.iter().position(|t| *t == brush.tool).unwrap() as u8);
+                origin.iter().chain(dir).for_each(|v| w.f32(*v));
+                w.f32(brush.size);
+                w.f32(brush.strength);
+                w.string(&brush.texture.map(|t| t.to_string()).unwrap_or_default());
+                w.u32(brush.cliff as u32);
+                kind::BRUSH
+            }
+            ClientMsg::StrokeEnd => kind::STROKE_END,
+            ClientMsg::Undo => kind::UNDO,
+            ClientMsg::Redo => kind::REDO,
+            ClientMsg::Save => kind::SAVE,
         };
         w.frame(kind)
     }
@@ -369,6 +455,25 @@ impl ServerMsg {
                 w.list(&o.notes, |w, n| w.string(n));
                 kind::OVERLAYS
             }
+            ServerMsg::Palette(p) => {
+                for list in [&p.grounds, &p.cliffs] {
+                    w.list(list, |w, e| {
+                        w.string(&e.id);
+                        w.string(&e.name);
+                        w.u32(e.icon.width);
+                        w.u32(e.icon.height);
+                        w.bytes(&e.icon.rgba);
+                    });
+                }
+                kind::PALETTE
+            }
+            ServerMsg::State(st) => {
+                w.u8(st.dirty as u8);
+                w.u8(st.undo as u8);
+                w.u8(st.redo as u8);
+                w.string(&st.message);
+                kind::STATE
+            }
         };
         w.frame(kind)
     }
@@ -488,6 +593,17 @@ impl ServerMsg {
                 let notes = r.list(|r| r.string())?;
                 ServerMsg::Overlays(Overlays { pathing, regions, region_picture, bounds, camera_lines, cameras, minimap, notes })
             }
+            kind::PALETTE => {
+                let entry = |r: &mut Reader| -> Result<PaletteEntry, DecodeError> {
+                    Ok(PaletteEntry {
+                        id: r.string()?,
+                        name: r.string()?,
+                        icon: crate::textures::Icon { width: r.u32()?, height: r.u32()?, rgba: r.bytes()? },
+                    })
+                };
+                ServerMsg::Palette(PaletteMsg { grounds: r.list(entry)?, cliffs: r.list(entry)? })
+            }
+            kind::STATE => ServerMsg::State(StateMsg { dirty: r.u8()? != 0, undo: r.u8()? != 0, redo: r.u8()? != 0, message: r.string()? }),
             _ => return Ok(None),
         }))
     }

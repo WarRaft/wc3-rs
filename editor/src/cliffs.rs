@@ -54,6 +54,11 @@ pub struct Cliffs {
 
 impl Cliffs {
     pub fn of(game: &Game, t: &Terrain, tileset: &Tileset) -> Cliffs {
+        Self::with(&mut |path: &str| game.read(path).map(|(b, _)| b), t, tileset)
+    }
+
+    /// [`of`](Self::of), each model's file through `read` (a cache).
+    pub fn with(read: &mut dyn FnMut(&str) -> Option<Vec<u8>>, t: &Terrain, tileset: &Tileset) -> Cliffs {
         let (w, h) = (t.width as usize, t.height as usize);
         let v = t.flags_version();
         let mut tile_flags = terrain::tile_flags(t);
@@ -80,7 +85,7 @@ impl Cliffs {
             if let Some(found) = files.get(&path.to_ascii_lowercase()) {
                 return *found;
             }
-            let found = game.read(&path).map(|(bytes, _)| {
+            let found = read(&path).map(|bytes| {
                 out.models.push((path.clone(), bytes));
                 out.models.len() - 1
             });

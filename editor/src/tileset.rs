@@ -83,6 +83,9 @@ pub struct Tileset {
     pub water: Option<Water>,
     /// The blight texture's path, with its extension.
     pub blight: Option<String>,
+    /// The tileset's ground tiles (`[TileSets]`, after its name and
+    /// blight), as World Editor's terrain palette offers them.
+    pub tiles: Vec<String>,
     /// What was missing.
     pub notes: Vec<String>,
 }
@@ -101,16 +104,18 @@ impl Tileset {
         let terrain = table("TerrainArt\\Terrain.slk");
         let cliffs = table("TerrainArt\\CliffTypes.slk");
         let water = table("TerrainArt\\Water.slk").and_then(|w| water(&w, letter));
-        let blight = game
+        let fields: Vec<String> = game
             .read_patched("UI\\WorldEditData.txt")
             .and_then(|text| {
                 let doc = bni_rs::parse(&text);
                 let section = doc.section("TileSets")?;
                 let item = section.items.iter().find(|i| i.key.as_ref().is_some_and(|k| k.text.trim() == letter.to_string()))?;
-                let path = item.fields.get(1)?.text().trim().trim_matches('"').to_string();
-                (!path.is_empty()).then(|| with_extension(&path))
-            });
-        Tileset { terrain, cliffs, water, blight, notes }
+                Some(item.fields.iter().map(|f| f.text().trim().trim_matches('"').to_string()).collect())
+            })
+            .unwrap_or_default();
+        let blight = fields.get(1).filter(|p| !p.is_empty()).map(|p| with_extension(p));
+        let tiles = fields.iter().skip(2).filter(|t| t.len() == 4).cloned().collect();
+        Tileset { terrain, cliffs, water, blight, tiles, notes }
     }
 
     /// Ground tile `id`'s texture path (`dir\file.blp`).

@@ -121,6 +121,27 @@ async function steps() {
     const inRegion = await until(() => we.picked !== undefined && we.picked, 'a click in a region')
     check(inRegion.includes(`in ${ov.region.name}`), `picked in ${ov.region.name}: ${inRegion}`)
     await we.panel.webview.postMessage({type: 'show', show: {pathing: false, regions: false, cameras: false}})
+
+    log('the terrain edited: a stroke raises it, undo and redo, a texture, saved into the map')
+    const stamp0 = fs.statSync(map).mtimeMs
+    await we.panel.webview.postMessage({type: 'look', x: 60, y: 60, distance: 30, horizontal: 0, vertical: -1.2})
+    await sleep(300)
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'brush', brush: {tool: 'raise', size: 8, strength: 1}, points: [[0, 0], [0.05, 0], [0.1, 0]]})
+    await until(() => we.state?.undo, 'the stroke done')
+    check(we.state.dirty && we.panel.title.startsWith('● '), `unsaved: the tab says so (${we.panel.title})`)
+    await shot('world-editor-raised')
+    await we.panel.webview.postMessage({type: 'undo'})
+    await until(() => we.state?.redo && !we.state.undo, 'undone')
+    await we.panel.webview.postMessage({type: 'redo'})
+    await until(() => we.state?.undo && !we.state.redo, 'redone')
+    await we.panel.webview.postMessage({type: 'brush', brush: {tool: 'texture', size: 6}, points: [[-0.2, -0.2]]})
+    await until(() => we.state && !we.state.redo && we.state.message === '' && we.state.undo, 'the texture laid')
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'save'})
+    const saved = await until(() => we.state?.message && we.state, 'saved')
+    check(!saved.dirty && /^Saved .*map\.w3x.war3map\.w3e$/.test(saved.message), saved.message)
+    check(fs.statSync(map).mtimeMs > stamp0 && !we.panel.title.startsWith('● '), 'the map on disk written, the tab clean')
     await vscode.commands.executeCommand('wc3.editor.close', {root})
     check(!api.worldEditors.has(root), 'closed: no editor of the project')
     await vscode.commands.executeCommand('workbench.action.closeAllEditors')

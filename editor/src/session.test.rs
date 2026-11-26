@@ -54,7 +54,8 @@ fn the_terrain_drawn_with_the_tables_of_the_roots() {
     dir.write("map/T/Dirt.blp", &testdir::tga(8, 4, |_, _| [9, 9, 9, 255]));
     let mut s = Session::open(dir.path()).unwrap();
     let msgs = s.draw();
-    let [ServerMsg::Ground(g), ServerMsg::Water(w), ServerMsg::Cliffs(c), ServerMsg::Terrain(t), ServerMsg::Objects(o), ServerMsg::Overlays(v)] = &msgs[..] else { panic!("{} messages", msgs.len()) };
+    let [ServerMsg::Ground(g), ServerMsg::Water(w), ServerMsg::Cliffs(c), ServerMsg::Terrain(t), ServerMsg::Objects(o), ServerMsg::Overlays(v), ServerMsg::Palette(_), ServerMsg::State(st)] = &msgs[..] else { panic!("{} messages", msgs.len()) };
+    assert_eq!(st, &StateMsg::default());
     // Nothing placed; the minimap a pixel a corner.
     assert!(o.models.is_empty() && o.notes.is_empty());
     assert_eq!((v.minimap.width, v.minimap.height, v.minimap.data.len()), (3, 2, 24));
@@ -112,4 +113,46 @@ fn a_real_map_draws_with_its_textures() {
         }
         eprintln!("  {} bytes", m.encode().len());
     }
+}
+
+/// A brush where a ray from above meets the ground, at (1, 0.5).
+fn raise(s: &mut Session, start: bool) -> Vec<ServerMsg> {
+    let brush = crate::edit::Brush { tool: crate::edit::Tool::Raise, size: 4.0, strength: 1.0, texture: None, cliff: -1 };
+    s.brush([1.0, 0.5, 10.0], [0.0, 0.0, -1.0], &brush, start)
+}
+
+#[test]
+fn a_brush_then_undo_then_save_where_the_terrain_came_from() {
+    let dir = TestDir::new("session-edit");
+    dir.write("wc3.bni", b"[map]\nroot=base\nroot=over\n");
+    dir.write("base/war3map.w3e", &testdir::terrain());
+    std::fs::create_dir_all(dir.path().join("over")).unwrap();
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let msgs = raise(&mut s, true);
+    // The terrain again (no new ground textures), and the state.
+    assert!(matches!(&msgs[..], [ServerMsg::Cliffs(c), ServerMsg::Terrain(t), ServerMsg::State(st)] if c.textures.count == 0 && t.heights[1] > 0.0 && st.dirty && !st.undo));
+    s.stroke_end();
+    let msgs = s.undo(false);
+    assert!(matches!(msgs.last(), Some(ServerMsg::State(st)) if st.redo && !st.undo));
+    s.undo(true);
+    // Saved into base, where it came from, not over it.
+    let saved = s.save();
+    assert!(matches!(&saved[..], [ServerMsg::State(st)] if !st.dirty && st.message.contains("base")), "{saved:?}");
+    let back = w3e_rs::parse(&std::fs::read(dir.path().join("base/war3map.w3e")).unwrap()).unwrap();
+    assert!(back.point(1, 0).unwrap().height > 0x2000);
+    assert!(!dir.path().join("over/war3map.w3e").exists());
+}
+
+#[test]
+fn a_terrain_from_the_game_saves_into_the_top_root() {
+    let dir = TestDir::new("session-edit-game");
+    dir.write("wc3.bni", b"[project]\ngame=game\n\n[map]\nroot=map\n");
+    dir.write("game/war3map.w3e", &testdir::terrain());
+    std::fs::create_dir_all(dir.path().join("map")).unwrap();
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    raise(&mut s, true);
+    s.save();
+    assert!(dir.path().join("map/war3map.w3e").exists());
 }

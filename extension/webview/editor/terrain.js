@@ -63,6 +63,7 @@ uniform sampler2DArray u_layers;
 uniform uint u_first[64];
 uniform vec3 u_light;
 uniform bool u_grid;
+uniform vec3 u_brush;
 uniform highp usampler2D u_pathing;
 uniform sampler2D u_regions;
 uniform bool u_showPathing;
@@ -109,6 +110,11 @@ void main() {
     color.rgb *= light;
     color.rgb *= 1.0 - 0.55 * v_boundary;
     color.rgb = overlays(color.rgb, v_pos);
+    // The brush: a ring where it would be laid.
+    if (u_brush.z > 0.0) {
+        float d = abs(length(v_pos - u_brush.xy) - u_brush.z) / fwidth(length(v_pos - u_brush.xy));
+        color.rgb = mix(color.rgb, vec3(0.2, 1.0, 0.4), (1.0 - clamp(d - 0.5, 0.0, 1.0)) * 0.9);
+    }
     if (u_grid) {
         vec2 g = abs(fract(v_pos - 0.5) - 0.5) / fwidth(v_pos);
         float line = 1.0 - clamp(min(g.x, g.y), 0.0, 1.0);
@@ -300,6 +306,8 @@ void main() {
             this.pathing = dataTexture(gl, gl.R8UI, gl.RED_INTEGER, gl.UNSIGNED_BYTE, 1, 1, new Uint8Array(1))
             this.regions = dataTexture(gl, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, 1, 1, new Uint8Array(4))
             this.show = {pathing: false, regions: false}
+            /** The brush's ring: x, y, radius (cells); radius 0 none. */
+            this.brush = [0, 0, 0]
             this.vao = gl.createVertexArray()
             this.terrain = null
             this.layers = null
@@ -337,12 +345,17 @@ void main() {
                 gl.deleteVertexArray(c.vao)
                 c.buffers.forEach(b => gl.deleteBuffer(b))
             }
-            if (this.cliffTextures) gl.deleteTexture(this.cliffTextures)
-            this.cliffTextures = msg.count ? arrayTexture(gl, msg.size, msg.count, msg.rgba, gl.REPEAT) : null
+            // No textures (after an edit): the ones it has.
+            if (msg.count) {
+                if (this.cliffTextures) gl.deleteTexture(this.cliffTextures)
+                this.cliffTextures = arrayTexture(gl, msg.size, msg.count, msg.rgba, gl.REPEAT)
+                this.cliffTextureNotes = msg.textures.filter(t => t.error).map(t => `Cliff texture ${t.error}`)
+            }
             this.cliffs = []
+            this.cliffNotes = [...(this.cliffTextureNotes ?? []), ...msg.notes]
             for (const m of msg.meshes) {
                 if (m.error) {
-                    this.notes.push(m.error)
+                    this.cliffNotes.push(m.error)
                     continue
                 }
                 if (!m.instances.length || !m.indices.length) continue
@@ -369,8 +382,6 @@ void main() {
                 gl.bindVertexArray(null)
                 this.cliffs.push({vao, buffers, count: m.indices.length, instances: m.instances.length / 4})
             }
-            for (const t of msg.textures) if (t.error) this.notes.push(`Cliff texture ${t.error}`)
-            this.notes.push(...msg.notes)
         }
 
         setOverlays(msg) {
@@ -432,6 +443,18 @@ void main() {
             return bottom * (1 - fy) + top * fy
         }
 
+        /** Where the ray from `origin` along `dir` meets the ground, for the brush's ring. */
+        groundHit(origin, dir) {
+            const t = this.terrain
+            if (!t) return null
+            for (let s = 0; s < 3000; s += 0.1) {
+                const p = [origin[0] + dir[0] * s, origin[1] + dir[1] * s, origin[2] + dir[2] * s]
+                const inside = p[0] >= 0 && p[1] >= 0 && p[0] <= t.width - 1 && p[1] <= t.height - 1
+                if (inside && p[2] <= this.heightAt(p[0], p[1])) return p
+            }
+            return null
+        }
+
         get ready() {
             return !!(this.terrain && this.layers)
         }
@@ -459,6 +482,7 @@ void main() {
             gl.uniform1uiv(g.uniforms.u_first, this.first)
             gl.uniform3fv(g.uniforms.u_light, LIGHT)
             gl.uniform1i(g.uniforms.u_grid, this.grid ? 1 : 0)
+            gl.uniform3fv(g.uniforms.u_brush, this.brush)
             bind(0, gl.TEXTURE_2D, t.textures.heights, g.uniforms.u_heights)
             bind(1, gl.TEXTURE_2D, t.textures.ground, g.uniforms.u_ground)
             bind(2, gl.TEXTURE_2D, t.textures.tiles, g.uniforms.u_tiles)

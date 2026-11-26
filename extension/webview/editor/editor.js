@@ -75,9 +75,10 @@
 
     let drag = null
     canvas.addEventListener('contextmenu', e => e.preventDefault())
-    // A click: what's under it, asked of the editor (it answers Picked).
+    // A click: what's under it, asked of the editor (it answers Picked);
+    // with a tool, a stroke (below).
     canvas.addEventListener('click', e => {
-        if (!terrain?.ready) return
+        if (!terrain?.ready || brush.tool !== 'select') return
         const r = canvas.getBoundingClientRect()
         const nx = ((e.clientX - r.left) / r.width) * 2 - 1
         const ny = 1 - ((e.clientY - r.top) / r.height) * 2
@@ -104,7 +105,18 @@
         camera.zoom(-e.deltaY)
     }, {passive: false})
     window.addEventListener('keydown', e => {
-        if (e.target instanceof HTMLInputElement) return
+        const mod = e.ctrlKey || e.metaKey
+        if (mod && e.code === 'KeyZ') {
+            e.preventDefault()
+            send(e.shiftKey ? encode.redo() : encode.undo())
+            return
+        }
+        if (mod && (e.code === 'KeyY' || e.code === 'KeyS')) {
+            e.preventDefault()
+            send(e.code === 'KeyS' ? encode.save() : encode.redo())
+            return
+        }
+        if (mod || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
         const toggle = TOGGLES.find(t => t.code === e.code)
         if (toggle) {
             show[toggle.key] = !show[toggle.key]
@@ -168,8 +180,139 @@
         camera.position = [x, y, camera.heightAt(x, y)]
     })
 
+    // The terrain palette: a tool, its brush; the editor lays it where
+    // the mouse's ray meets the ground, a step at a time while the left
+    // button is held (the next once the last is answered).
+    const TOOL_LIST = [
+        {tool: 'select', label: 'Select'},
+        {tool: 'raise', label: 'Raise'},
+        {tool: 'lower', label: 'Lower'},
+        {tool: 'plateau', label: 'Plateau'},
+        {tool: 'smooth', label: 'Smooth'},
+        {tool: 'texture', label: 'Texture'},
+        {tool: 'cliffUp', label: 'Cliff +'},
+        {tool: 'cliffDown', label: 'Cliff −'},
+        {tool: 'water', label: 'Water'},
+        {tool: 'dry', label: 'Dry'},
+    ]
+    const brush = {tool: 'select', size: 4, strength: 0.25, texture: '', cliff: 0, ...(vscode.getState()?.brush ?? {})}
+    const keep = () => vscode.setState({...(vscode.getState() ?? {}), brush})
+    const tools = $('tools')
+    function showTools() {
+        for (const b of tools.querySelectorAll('[data-tool]')) b.classList.toggle('on', b.dataset.tool === brush.tool)
+        $('textures').hidden = brush.tool !== 'texture'
+        $('cliff-types').hidden = !brush.tool.startsWith('cliff')
+        for (const b of $('textures').children) b.classList.toggle('on', b.dataset.id === brush.texture)
+        $('size-value').textContent = brush.size
+        $('strength-value').textContent = brush.strength.toFixed(2)
+        canvas.style.cursor = brush.tool === 'select' ? '' : 'crosshair'
+        if (brush.tool === 'select' && terrain) terrain.brush = [0, 0, 0]
+    }
+    for (const t of TOOL_LIST) {
+        const b = document.createElement('button')
+        b.dataset.tool = t.tool
+        b.textContent = t.label
+        b.onclick = () => {
+            brush.tool = t.tool
+            keep()
+            showTools()
+        }
+        $('tool-buttons').append(b)
+    }
+    $('size').value = brush.size
+    $('size').oninput = () => {
+        brush.size = Number($('size').value)
+        keep()
+        showTools()
+    }
+    $('strength').value = brush.strength
+    $('strength').oninput = () => {
+        brush.strength = Number($('strength').value)
+        keep()
+        showTools()
+    }
+    $('cliff-types').onchange = () => {
+        brush.cliff = Number($('cliff-types').value)
+        keep()
+    }
+    $('undo').onclick = () => send(encode.undo())
+    $('redo').onclick = () => send(encode.redo())
+    $('save').onclick = () => send(encode.save())
+    showTools()
+
+    function showPalette(p) {
+        const list = $('textures')
+        list.replaceChildren(...p.grounds.map(g => {
+            const b = document.createElement('button')
+            b.className = 'texture'
+            b.dataset.id = g.id
+            b.title = `${g.name} (${g.id})`
+            if (g.icon.width) {
+                const c = document.createElement('canvas')
+                c.width = g.icon.width
+                c.height = g.icon.height
+                c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(g.icon.rgba.buffer, g.icon.rgba.byteOffset, g.icon.rgba.byteLength), g.icon.width, g.icon.height), 0, 0)
+                b.append(c)
+            } else b.textContent = g.id
+            b.onclick = () => {
+                brush.texture = g.id
+                keep()
+                showTools()
+            }
+            return b
+        }))
+        if (!brush.texture && p.grounds[0]) brush.texture = p.grounds[0].id
+        $('cliff-types').replaceChildren(...p.cliffs.map((c, i) => Object.assign(document.createElement('option'), {value: i, textContent: c.name})))
+        $('cliff-types').value = String(Math.min(brush.cliff, Math.max(0, p.cliffs.length - 1)))
+        showTools()
+    }
+
+    let stroke = null
+    const rayAt = (x, y) => {
+        const r = canvas.getBoundingClientRect()
+        return camera.ray(((x - r.left) / r.width) * 2 - 1, 1 - ((y - r.top) / r.height) * 2, r.width / r.height)
+    }
+    const mouse = {x: 0, y: 0}
+    /** A step of the stroke at the mouse, unless one is still unanswered. */
+    function step() {
+        if (!stroke || stroke.pending) return
+        const {origin, dir} = rayAt(mouse.x, mouse.y)
+        stroke.pending = true
+        send(encode.brush(stroke.first, origin, dir, brush))
+        stroke.first = false
+    }
+    canvas.addEventListener('mousedown', e => {
+        if (e.button !== 0 || brush.tool === 'select' || !terrain?.ready) return
+        stroke = {first: true, pending: false}
+        Object.assign(mouse, {x: e.clientX, y: e.clientY})
+        step()
+    })
+    window.addEventListener('mouseup', e => {
+        if (e.button !== 0 || !stroke) return
+        stroke = null
+        send(encode.strokeEnd())
+    })
+    canvas.addEventListener('mousemove', e => {
+        Object.assign(mouse, {x: e.clientX, y: e.clientY})
+        if (brush.tool !== 'select' && terrain?.ready) {
+            const {origin, dir} = rayAt(e.clientX, e.clientY)
+            const p = terrain.groundHit(origin, dir)
+            terrain.brush = p ? [p[0], p[1], brush.size / 2] : [0, 0, 0]
+        }
+    })
+    setInterval(step, 50)
+
+    function showState(st) {
+        $('undo').disabled = !st.undo
+        $('redo').disabled = !st.redo
+        $('save').disabled = !st.dirty
+        $('name').classList.toggle('dirty', st.dirty)
+        if (st.message) $('status').textContent = st.message
+        vscode.postMessage({type: 'state', state: st})
+    }
+
     function showNotes() {
-        const all = [...mapNotes, ...(terrain?.notes ?? []), ...(objects?.notes ?? []), ...overlayNotes]
+        const all = [...mapNotes, ...(terrain?.notes ?? []), ...(terrain?.cliffNotes ?? []), ...(objects?.notes ?? []), ...overlayNotes]
         const notes = $('notes')
         notes.replaceChildren(...all.map(n => Object.assign(document.createElement('li'), {textContent: n})))
         notes.hidden = !all.length
@@ -260,6 +403,11 @@
                 // The first region's name and middle (the game's units).
                 region: msg.regions[0] && {name: msg.regions[0].name, x: (msg.regions[0].bounds[0] + msg.regions[0].bounds[2]) / 2, y: (msg.regions[0].bounds[1] + msg.regions[0].bounds[3]) / 2},
             }})
+        } else if (msg.kind === 'palette') {
+            showPalette(msg)
+        } else if (msg.kind === 'state') {
+            if (stroke) stroke.pending = false
+            showState(msg)
         } else if (msg.kind === 'picked' && objects) {
             objects.select(msg.found ? msg.model : -1, msg.found ? msg.instance : -1)
             $('status').textContent = msg.found ? msg.text : ''
@@ -288,6 +436,19 @@
             if (msg.distance) camera.distance = msg.distance
             if (msg.horizontal !== undefined) camera.horizontal = msg.horizontal
             if (msg.vertical !== undefined) camera.vertical = msg.vertical
+        } else if (msg.type === 'brush') {
+            // A stroke at points of the view (-1 to 1, y up), as the mouse
+            // would lay it: for the tests.
+            Object.assign(brush, msg.brush)
+            showTools()
+            const r = canvas.getBoundingClientRect()
+            msg.points.forEach((p, i) => {
+                const {origin, dir} = camera.ray(p[0], p[1], r.width / r.height)
+                send(encode.brush(i === 0, origin, dir, brush))
+            })
+            send(encode.strokeEnd())
+        } else if (msg.type === 'undo' || msg.type === 'redo' || msg.type === 'save') {
+            send(encode[msg.type]())
         } else if (msg.type === 'show') {
             // Layers turned on or off, as the buttons do: for the tests.
             Object.assign(show, msg.show)
