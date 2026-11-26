@@ -1749,7 +1749,10 @@ step), this list updated.
      angle of attack its vertical one, field of view the view's: 70,
      World Editor's; the view's was HiveWE's 50; roll the view's), Set
      to view sets the one picked so (its field of view and roll the
-     view's too), Look through it (a double
+     view's too; its height over the ground kept: it looks exactly as
+     the view does, from the same eye along the same line, its target
+     where that line is its height over the ground, nearest the view's,
+     `overlays::at_height`), Look through it (a double
      click in the list) puts the view where it looks from, at its field
      of view and roll (the picture turned clockwise by it; Home: 70 and
      no roll again; the view's rays and billboards turned with it); its height (z offset), rotation, angle

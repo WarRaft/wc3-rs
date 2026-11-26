@@ -393,6 +393,26 @@ fn cameras_made_from_the_view_dragged_renamed_deleted_undone_saved_and_in_step_w
     let out = s.sync_docs();
     assert!(matches!(&out[..], [ServerMsg::TextOut { text, .. }] if text.contains("[Outro]")), "{out:?}");
     assert!(!s.edits.dirty.cameras);
+    // Set to a view looking at the ground: its height kept (a cell over
+    // it), from the view's eye along its direction, nearer.
+    let height = s.placed.cameras.as_ref().unwrap().cameras[0].z_offset;
+    assert_eq!(height, 128.0);
+    let (v, hz, d) = (-0.977f32, 0.3f32, 10.0f32);
+    let dir = [v.cos() * hz.sin(), v.cos() * hz.cos(), v.sin()];
+    let ground = crate::placed::ground_at(s.drawn.as_ref().unwrap(), 2.0, 1.0);
+    let eye = [2.0 - dir[0] * d, 1.0 - dir[1] * d, ground - dir[2] * d];
+    s.camera_view(0, [2.0, 1.0, ground, d, hz, v, 70.0, 0.0]);
+    let c = &s.placed.cameras.as_ref().unwrap().cameras[0];
+    assert_eq!(c.z_offset, 128.0);
+    assert!(c.distance < d * 128.0, "{}", c.distance);
+    let cam = &s.overlays.as_ref().unwrap().cameras[0];
+    assert!((0..3).all(|k| (cam.eye[k] - eye[k]).abs() < 0.01), "{:?} {eye:?}", cam.eye);
+    let over = cam.target[2] - crate::placed::ground_at(s.drawn.as_ref().unwrap(), cam.target[0], cam.target[1]);
+    assert!((over - 1.0).abs() < 0.01, "{over}");
+    // Off the map before the line is at its height: the view's target, said.
+    let msgs = s.camera_view(0, [2.0, 1.0, ground, d, hz, 0.3, 70.0, 0.0]);
+    assert!(matches!(msgs.last(), Some(ServerMsg::State(st)) if st.message.contains("never looks")), "{msgs:?}");
+    assert_eq!(s.placed.cameras.as_ref().unwrap().cameras[0].z_offset, 0.0);
 }
 
 #[test]

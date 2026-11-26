@@ -1146,9 +1146,28 @@ impl Session {
     /// cos v cos h, sin v), the field of view (degrees), the roll
     /// (radians; the camera's in degrees, 0 to 360). The game's
     /// rotation is then 90° − h, its angle of attack v, each 0 to 360.
+    ///
+    /// A camera set keeps its height over the ground (its z offset) and
+    /// still looks exactly as the view does: from the same eye along the
+    /// same direction, its target where that line is its height over the
+    /// ground (the place nearest the view's), its distance to it. A line
+    /// that never is (looking up, say) takes the view's target, said.
     pub fn camera_view(&mut self, index: i32, view: [f32; 8]) -> Vec<ServerMsg> {
         let Some(draw) = self.drawn.clone() else { return vec![] };
-        let [x, y, z, distance, h, v, fov, roll] = view;
+        let [mut x, mut y, mut z, mut distance, h, v, fov, roll] = view;
+        let kept = (index >= 0).then(|| self.placed.cameras.as_ref()?.cameras.get(index as usize).map(|c| c.z_offset / 128.0)).flatten();
+        let mut said = String::new();
+        if let Some(height) = kept {
+            let dir = [v.cos() * h.sin(), v.cos() * h.cos(), v.sin()];
+            let eye = [x - dir[0] * distance, y - dir[1] * distance, z - dir[2] * distance];
+            match crate::overlays::at_height(&draw, eye, dir, height, distance) {
+                Some(t) => {
+                    (x, y, z) = (eye[0] + dir[0] * t, eye[1] + dir[1] * t, eye[2] + dir[2] * t);
+                    distance = t;
+                }
+                None => said = "The view never looks at the camera's height over the ground: its height is the view's.".into(),
+            }
+        }
         let degrees = |a: f32| {
             let d = a.to_degrees().rem_euclid(360.0);
             // Whole hundredths, as World Editor shows them.
@@ -1156,7 +1175,7 @@ impl Session {
             if d >= 360.0 { 0.0 } else { d }
         };
         let ground = crate::placed::ground_at(&draw, x, y);
-        self.cameras_edit(true, |cameras| {
+        let out = self.cameras_edit(true, |cameras| {
             let c = if index < 0 {
                 let n = cameras.cameras.iter().filter_map(|c| c.name.strip_prefix("Camera ")?.parse::<u32>().ok()).max().map_or(1, |n| n + 1);
                 cameras.cameras.push(w3c_rs::Camera::new(format!("Camera {n:03}"), 0.0, 0.0));
@@ -1173,7 +1192,16 @@ impl Session {
             c.field_of_view = fov;
             c.roll = degrees(roll);
             Ok(())
-        })
+        });
+        match (said.is_empty(), out.last()) {
+            (false, Some(ServerMsg::State(_))) => {
+                let mut out = out;
+                out.pop();
+                out.push(ServerMsg::State(self.state(said)));
+                out
+            }
+            _ => out,
+        }
     }
 
     pub fn camera_rename(&mut self, index: u32, name: &str) -> Vec<ServerMsg> {

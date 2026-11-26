@@ -237,6 +237,50 @@ pub fn ground_hit(draw: &Draw, origin: [f32; 3], dir: [f32; 3]) -> Option<[f32; 
     None
 }
 
+/// How far from `eye` along `dir` (cells, layers; `dir` of length 1) the
+/// line is `height` over the ground (within the map), the place nearest
+/// `near` of those in front of the eye; none if it never is.
+pub fn at_height(draw: &Draw, eye: [f32; 3], dir: [f32; 3], height: f32, near: f32) -> Option<f32> {
+    let inside = |p: [f32; 3]| p[0] >= 0.0 && p[1] >= 0.0 && p[0] <= draw.width as f32 - 1.0 && p[1] <= draw.height as f32 - 1.0;
+    let at = |t: f32| [eye[0] + dir[0] * t, eye[1] + dir[1] * t, eye[2] + dir[2] * t];
+    // Over (> 0) or under the height.
+    let over = |t: f32| {
+        let p = at(t);
+        inside(p).then(|| p[2] - ground_at(draw, p[0], p[1]) - height)
+    };
+    let (step, far) = (0.05, 4000.0);
+    let mut best: Option<f32> = None;
+    let mut t = 0.0;
+    let mut last = over(t);
+    while t < far {
+        let next = over(t + step);
+        if let (Some(a), Some(b)) = (last, next) {
+            if a == 0.0 || (a > 0.0) != (b > 0.0) {
+                // Halved down to a thousandth of a step.
+                let (mut lo, mut hi) = (t, t + step);
+                for _ in 0..10 {
+                    let mid = (lo + hi) / 2.0;
+                    match over(mid) {
+                        Some(m) if (m > 0.0) == (a > 0.0) && m != 0.0 => lo = mid,
+                        _ => hi = mid,
+                    }
+                }
+                let root = if a == 0.0 { t } else { (lo + hi) / 2.0 };
+                if root > 0.0 && best.is_none_or(|b| (root - near).abs() < (b - near).abs()) {
+                    best = Some(root);
+                }
+            }
+        }
+        // Past the nearest found and the place looked at: no nearer.
+        if best.is_some_and(|b| t - near > (b - near).abs()) {
+            break;
+        }
+        last = next;
+        t += step;
+    }
+    best
+}
+
 #[cfg(test)]
 #[path = "overlays.test.rs"]
 mod tests;
