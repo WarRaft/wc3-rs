@@ -22,7 +22,17 @@ fn files(kind: Kind) -> (&'static [&'static str], &'static [&'static str]) {
     match kind {
         Kind::Doodad => (&["Doodads\\Doodads.slk"], &[]),
         Kind::Destructable => (&["Units\\DestructableData.slk"], &[]),
-        Kind::Unit => (&["Units\\UnitData.slk", "Units\\UnitBalance.slk", "Units\\UnitUI.slk"], &[]),
+        Kind::Unit => (
+            &["Units\\UnitData.slk", "Units\\UnitBalance.slk", "Units\\UnitUI.slk"],
+            &[
+                "Units\\CampaignUnitFunc.txt",
+                "Units\\HumanUnitFunc.txt",
+                "Units\\NeutralUnitFunc.txt",
+                "Units\\NightElfUnitFunc.txt",
+                "Units\\OrcUnitFunc.txt",
+                "Units\\UndeadUnitFunc.txt",
+            ],
+        ),
         Kind::Item => (&["Units\\ItemData.slk"], &["Units\\ItemFunc.txt"]),
         _ => (&[], &[]),
     }

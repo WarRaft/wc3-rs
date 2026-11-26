@@ -32,10 +32,15 @@ const EditorProtocol = (() => {
         DELETE: 11,
         INSTANCES: 139,
         OBJECT_PALETTE: 140,
+        ICONS: 12,
+        ICONS_ANSWER: 141,
+        REGION: 13,
+        REGION_RENAME: 14,
+        REGION_DELETE: 15,
     }
 
     /** The tools by their code (`edit::TOOLS`). */
-    const TOOLS = ['raise', 'lower', 'plateau', 'smooth', 'texture', 'cliffUp', 'cliffDown', 'water', 'dry']
+    const TOOLS = ['raise', 'lower', 'plateau', 'smooth', 'texture', 'cliffUp', 'cliffDown', 'water', 'dry', 'pathingOn', 'pathingOff']
 
     const utf8 = new TextDecoder()
     const utf8Out = new TextEncoder()
@@ -166,6 +171,7 @@ const EditorProtocol = (() => {
             for (const v of [...origin, ...dir, brush.size, brush.strength]) w.f32(v)
             w.string(brush.texture ?? '')
             w.u32(brush.cliff ?? -1)
+            w.u8(brush.flags ?? 0)
             return w.frame(KIND.BRUSH)
         },
         strokeEnd: () => new Writer().frame(KIND.STROKE_END),
@@ -196,6 +202,36 @@ const EditorProtocol = (() => {
             w.u32(index)
             w.f32(delta)
             return w.frame(KIND.ROTATE)
+        },
+        /** The icons of types: a list of [kind, id]. */
+        icons(list) {
+            const w = new Writer()
+            w.u32(list.length)
+            for (const [k, id] of list) {
+                w.u8(k)
+                w.string(id)
+            }
+            return w.frame(KIND.ICONS)
+        },
+        /** A region's drag: its first step, mode (0 new, 1 moved, 2 a corner), index (-1 new), the rays it started and is at. */
+        region(start, mode, index, from, to) {
+            const w = new Writer()
+            w.u8(start ? 1 : 0)
+            w.u8(mode)
+            w.u32(index)
+            for (const v of [...from.origin, ...from.dir, ...to.origin, ...to.dir]) w.f32(v)
+            return w.frame(KIND.REGION)
+        },
+        regionRename(index, name) {
+            const w = new Writer()
+            w.u32(index)
+            w.string(name)
+            return w.frame(KIND.REGION_RENAME)
+        },
+        regionDelete(index) {
+            const w = new Writer()
+            w.u32(index)
+            return w.frame(KIND.REGION_DELETE)
         },
         delete(file, index) {
             const w = new Writer()
@@ -292,7 +328,10 @@ const EditorProtocol = (() => {
                 return {kind: 'objects', firstTexture, firstModel, textures, models, notes: r.list(r => r.string())}
             }
             case KIND.PICKED: {
-                const m = {kind: 'picked', found: r.u8() !== 0, model: r.u32(), instance: r.u32(), file: r.u8(), index: r.u32(), text: r.string()}
+                const m = {kind: 'picked', found: r.u8() !== 0, model: r.u32(), instance: r.u32(), file: r.u8(), index: r.u32()}
+                const region = r.u32()
+                m.region = region === 0xFFFFFFFF ? null : region
+                m.text = r.string()
                 const on = r.u8() !== 0
                 const p = [r.f32(), r.f32(), r.f32()]
                 return {...m, ground: on ? p : null}
@@ -319,6 +358,8 @@ const EditorProtocol = (() => {
                 return {kind: 'instances', models: r.list(r => r.f32s())}
             case KIND.OBJECT_PALETTE:
                 return {kind: 'objectPalette', entries: r.list(r => ({kind: r.u8(), id: r.string(), name: r.string(), group: r.string(), custom: r.u8() !== 0}))}
+            case KIND.ICONS_ANSWER:
+                return {kind: 'icons', icons: r.list(r => ({kind: r.u8(), id: r.string(), width: r.u32(), height: r.u32(), rgba: r.bytes()}))}
             case KIND.STATE:
                 return {kind: 'state', dirty: r.u8() !== 0, undo: r.u8() !== 0, redo: r.u8() !== 0, message: r.string()}
             default:

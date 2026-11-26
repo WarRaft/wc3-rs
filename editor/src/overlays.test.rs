@@ -39,7 +39,8 @@ fn regions_bounds_cameras_and_the_minimap() {
     let game = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()] }.open().0;
     let (t, d) = draw();
     let minimap = (3, 2, vec![0u8; 3 * 2 * 4]);
-    let o = Overlays::load(&game, &t, &d, &Objects::default(), minimap);
+    let files = crate::placed::Files::read(&game).0;
+    let o = Overlays::load(&game, &t, &d, &Objects::default(), &files, minimap);
     assert!(o.notes.is_empty(), "{:?}", o.notes);
     // The region's picture: the left cell, four by four pixels, its
     // edge stronger; the right cell clear.

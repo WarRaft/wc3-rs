@@ -100,23 +100,23 @@ const PLAYABLE: [f32; 4] = [1.0, 0.85, 0.2, 1.0];
 const CAMERA: [f32; 4] = [1.0, 0.4, 0.9, 1.0];
 
 impl Overlays {
-    pub fn load(game: &Game, t: &Terrain, draw: &Draw, objects: &Objects, minimap: (u32, u32, Vec<u8>)) -> Overlays {
+    /// The overlays of the map through `game`, its regions and pathing
+    /// `files`' (as the editor has them).
+    pub fn load(game: &Game, t: &Terrain, draw: &Draw, objects: &Objects, files: &crate::placed::Files, minimap: (u32, u32, Vec<u8>)) -> Overlays {
         let mut out = Overlays::default();
         let cells = |wx: f32, wy: f32| [(wx - draw.offset[0]) / 128.0, (wy - draw.offset[1]) / 128.0];
         let read = |name: &str| game.read(name).map(|(b, _)| b);
         let w3i = read("war3map.w3i");
 
-        match read("war3map.wpm").map(|b| wpm_rs::parse(&b)) {
-            Some(Ok(p)) => out.pathing = Grid { width: p.width, height: p.height, data: p.cells },
-            Some(Err(e)) => out.notes.push(format!("Can't read war3map.wpm: {e}")),
-            None => {}
+        if let Some(p) = &files.pathing {
+            out.pathing = Grid { width: p.width, height: p.height, data: p.cells.clone() };
         }
 
         // The regions, four pixels a cell.
         let (gw, gh) = ((t.width.saturating_sub(1)) * 4, (t.height.saturating_sub(1)) * 4);
         let mut picture = vec![0f32; (gw * gh * 4) as usize];
-        match read("war3map.w3r").map(|b| w3r_rs::parse(&b)) {
-            Some(Ok(rs)) => {
+        {
+            if let Some(rs) = &files.regions {
                 for r in &rs.regions {
                     let color = [r.red, r.green, r.blue];
                     out.regions.push(Region { name: r.name.clone(), bounds: [r.left, r.bottom, r.right, r.top], color });
@@ -137,8 +137,6 @@ impl Overlays {
                     }
                 }
             }
-            Some(Err(e)) => out.notes.push(format!("Can't read war3map.w3r: {e}")),
-            None => {}
         }
         out.region_picture = Grid { width: gw, height: gh, data: picture.iter().map(|v| (v * 255.0).round() as u8).collect() };
 

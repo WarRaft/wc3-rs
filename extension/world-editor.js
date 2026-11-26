@@ -34,6 +34,8 @@ const VIEW = 'wc3.editors'
  * @property {string | null} error  what the page last said went wrong
  * @property {{pathing: number, regions: number, cameras: number, bounds: number, minimap: number, region?: {name: string, x: number, y: number}} | undefined} overlays  what the page has of the overlays
  * @property {{dirty: boolean, undo: boolean, redo: boolean, message: string} | undefined} state  the edits' state the page last showed
+ * @property {{name: string, bounds: number[]} | null | undefined} region  the region picked (the Regions tool)
+ * @property {number | undefined} icons  how many of the object palette's icons the page has
  * @property {string | undefined} picked  what the last click picked, said ('' nothing)
  * @property {{width: number, height: number, layers: number, water: number, cliffs: number, objects: number, error: number} | null} drawn  what the page drew of the terrain first
  */
@@ -78,6 +80,16 @@ function registerWorldEditor(context, binary, pickManifest) {
   <label id="strength-label">Strength <span id="strength-value"></span><input id="strength" type="range" min="0.05" max="1" step="0.05"></label>
   <div id="textures" class="textures" hidden></div>
   <select id="cliff-types" hidden></select>
+  <div id="pathing-flags" class="pathing-flags" hidden>
+    <label><input type="checkbox" value="2"> No walking</label>
+    <label><input type="checkbox" value="4"> No flying</label>
+    <label><input type="checkbox" value="8"> No building</label>
+  </div>
+  <div id="region-panel" class="region-panel" hidden>
+    <input id="region-name" type="text" placeholder="Region's name" disabled>
+    <span id="region-bounds" class="region-bounds"></span>
+    <button id="region-delete" disabled>Delete region</button>
+  </div>
   <div id="objects-palette" class="objects-palette" hidden>
     <div id="object-kinds" class="object-kinds"></div>
     <input id="object-search" type="search" placeholder="Search">
@@ -180,6 +192,10 @@ function registerWorldEditor(context, binary, pickManifest) {
                 editor.drawn = msg.terrain
             } else if (msg.type === 'picked') {
                 editor.picked = msg.text
+            } else if (msg.type === 'icons') {
+                editor.icons = msg.icons
+            } else if (msg.type === 'region') {
+                editor.region = msg.region
             } else if (msg.type === 'overlays') {
                 editor.overlays = msg.overlays
             } else if (msg.type === 'error') {

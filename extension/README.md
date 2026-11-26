@@ -144,11 +144,13 @@ coming is listed below.
   edited with brushes (raise, lower, plateau, smooth, texture, cliff
   level, water), undone and redone, and saved where its file came from
   (Ctrl+Z, Ctrl+Shift+Z, Ctrl+S); doodads, destructables, units and
-  items are placed from a palette with a search, dragged, turned (Q, E),
-  deleted, and saved the same way. Its process (`wc3 editor`) reads the
-  map through the project's roots and works out everything drawn.
-  Regions, pathing and animation come step by step (the repository
-  README, "World Editor").
+  items are placed from a palette with a search and icons, dragged,
+  turned (Q, E), deleted, and saved the same way; regions are drawn,
+  moved, resized, renamed and deleted, and the pathing painted. Its
+  process (`wc3 editor`) reads the map through the project's roots and
+  works out everything drawn. Animation and the files World Editor makes
+  with the terrain come step by step (the repository README, "World
+  Editor").
 
 ## Not yet
 

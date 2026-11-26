@@ -10,7 +10,7 @@ fn flat(n: u32) -> Terrain {
 }
 
 fn brush(tool: Tool) -> Brush {
-    Brush { tool, size: 4.0, strength: 1.0, texture: None, cliff: -1 }
+    Brush { tool, size: 4.0, strength: 1.0, texture: None, cliff: -1, flags: 0 }
 }
 
 #[test]
@@ -92,7 +92,7 @@ fn the_things_placed_undone_and_redone_with_the_terrain() {
     });
     e.apply(&mut t, 4.0, 4.0, &brush(Tool::Raise), true).unwrap();
     e.end();
-    assert_eq!(e.dirty, Dirty { terrain: true, doodads: true, units: false });
+    assert_eq!(e.dirty, Dirty { terrain: true, doodads: true, ..Default::default() });
     // The terrain's stroke undone first, then the doodad.
     assert!(matches!(e.undo(Target { terrain: &mut t, files: &mut files }), Some(Snapshot::Terrain(..))));
     assert!(matches!(e.undo(Target { terrain: &mut t, files: &mut files }), Some(Snapshot::Doodads(_))));

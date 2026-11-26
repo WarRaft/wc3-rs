@@ -8,7 +8,7 @@ use wc3_server::game::{Game, Lookup};
 use wc3_server::names::Names;
 use wc3_server::project::{self, Project};
 
-use crate::protocol::{CliffsMsg, GroundMsg, MapInfo, ObjectEntry, ObjectsMsg, PaletteEntry, PaletteMsg, PickedMsg, ServerMsg, StateMsg, WaterMsg};
+use crate::protocol::{CliffsMsg, GroundMsg, IconEntry, MapInfo, ObjectEntry, ObjectsMsg, PaletteEntry, PaletteMsg, PickedMsg, ServerMsg, StateMsg, WaterMsg};
 use crate::terrain::{Draw, Grounds};
 use crate::tileset::Tileset;
 
@@ -38,6 +38,11 @@ pub struct Session {
     pub placed: crate::placed::Files,
     /// The types of what's placed, once read.
     types: Option<crate::types::Types>,
+    /// A region's drag: the region (`None` until a new one is made) and
+    /// its bounds when it started.
+    region_drag: Option<(Option<usize>, [f32; 4])>,
+    /// Icons read, by path in lower case (`None`: not there).
+    icon_cache: std::collections::HashMap<String, Option<crate::textures::Icon>>,
     /// The models and textures the page has (the ones after are new);
     /// `None` before it has any.
     sent: Option<(usize, usize)>,
@@ -103,6 +108,8 @@ impl Session {
             placed: Default::default(),
             types: None,
             sent: None,
+            icon_cache: Default::default(),
+            region_drag: None,
             notes,
         })
     }
@@ -217,7 +224,7 @@ impl Session {
         let objects = self.objects.as_ref().unwrap();
         let (_, grounds, textures, layers) = self.ground_cache.as_ref().unwrap();
         let minimap = crate::picture::paint(&self.terrain, grounds, textures, layers, &draw, self.tileset.water.as_ref(), 1);
-        let overlays = crate::overlays::Overlays::load(&self.game, &self.terrain, &draw, objects, minimap);
+        let overlays = crate::overlays::Overlays::load(&self.game, &self.terrain, &draw, objects, &self.placed, minimap);
         self.overlays = Some(overlays.clone());
         terrain.extend(objects_msg);
         terrain.push(ServerMsg::Overlays(overlays));
@@ -295,6 +302,13 @@ impl Session {
         let Some([x, y, _]) = self.drawn.as_ref().and_then(|d| crate::overlays::ground_hit(d, origin, dir)) else {
             return vec![ServerMsg::State(self.state(String::new()))];
         };
+        if matches!(brush.tool, crate::edit::Tool::PathingOn | crate::edit::Tool::PathingOff) {
+            let Some(pathing) = self.placed.pathing.as_mut() else {
+                return vec![ServerMsg::State(self.state("The map has no war3map.wpm to paint.".into()))];
+            };
+            self.edits.pathing(pathing, x, y, brush, start);
+            return vec![ServerMsg::Overlays(self.overlays()), ServerMsg::State(self.state(String::new()))];
+        }
         match self.edits.apply(&mut self.terrain, x, y, brush, start) {
             Ok(()) => {
                 let mut out = self.terrain_msgs(false);
@@ -318,10 +332,14 @@ impl Session {
         let done = if redo { self.edits.redo(target) } else { self.edits.undo(target) };
         let mut out = Vec::new();
         if let Some(what) = done {
-            if matches!(what, crate::edit::Snapshot::Terrain(..)) {
-                out.extend(self.terrain_msgs(false));
+            match what {
+                crate::edit::Snapshot::Regions(_) | crate::edit::Snapshot::Pathing(_) => out.push(ServerMsg::Overlays(self.overlays())),
+                crate::edit::Snapshot::Terrain(..) => {
+                    out.extend(self.terrain_msgs(false));
+                    out.extend(self.place_objects());
+                }
+                _ => out.extend(self.place_objects()),
             }
-            out.extend(self.place_objects());
         }
         out.push(ServerMsg::State(self.state(String::new())));
         out
@@ -334,10 +352,12 @@ impl Session {
         let dirty = self.edits.dirty;
         let mut saved = Vec::new();
         let mut failed = Vec::new();
-        let files: [FileToSave; 3] = [
+        let files: [FileToSave; 5] = [
             (dirty.terrain, "war3map.w3e", self.terrain.to_bytes().map_err(|e| e.to_string())),
             (dirty.doodads, "war3map.doo", self.placed.doodads.as_ref().map_or(Ok(Vec::new()), |d| d.to_bytes().map_err(|e| e.to_string()))),
             (dirty.units, "war3mapUnits.doo", self.placed.units.as_ref().map_or(Ok(Vec::new()), |u| u.to_bytes().map_err(|e| e.to_string()))),
+            (dirty.regions, "war3map.w3r", self.placed.regions.as_ref().map_or(Ok(Vec::new()), |r| r.to_bytes().map_err(|e| e.to_string()))),
+            (dirty.pathing, "war3map.wpm", self.placed.pathing.as_ref().map_or(Ok(Vec::new()), |p| p.to_bytes().map_err(|e| e.to_string()))),
         ];
         for (i, (changed, name, bytes)) in files.into_iter().enumerate() {
             if !changed {
@@ -346,11 +366,8 @@ impl Session {
             match bytes.and_then(|b| self.write_file(name, b)) {
                 Ok(to) => {
                     saved.push(to.display().to_string());
-                    match i {
-                        0 => self.edits.dirty.terrain = false,
-                        1 => self.edits.dirty.doodads = false,
-                        _ => self.edits.dirty.units = false,
-                    }
+                    let d = &mut self.edits.dirty;
+                    *[&mut d.terrain, &mut d.doodads, &mut d.units, &mut d.regions, &mut d.pathing][i] = false;
                 }
                 Err(e) => failed.push(format!("{name}: {e}")),
             }
@@ -412,10 +429,157 @@ impl Session {
                     w3abdhqtu_rs::Kind::Item => get("class"),
                     _ => get("category"),
                 };
-                out.push(ObjectEntry { kind: code as u8, id: id.clone(), name: named.shown(), group, custom: named.custom });
+                // Shown as text: the game's colours left out.
+                let name = wc3_server::names::plain(&named.shown());
+                out.push(ObjectEntry { kind: code as u8, id: id.clone(), name, group, custom: named.custom });
             }
         }
         out
+    }
+
+    /// The icons of types (`kind` as the object palette's, id), each its
+    /// `Art` (a unit's or an item's button, the map's object data's
+    /// over the game's) at 32 pixels or less, read once; none for a type
+    /// without one (doodads, destructables).
+    pub fn icons(&mut self, wanted: &[(u8, String)]) -> Vec<IconEntry> {
+        let types = self.types.get_or_insert_with(|| crate::types::Types::load(&self.game));
+        wanted
+            .iter()
+            .map(|(kind, id)| {
+                let k = crate::placed::PLACED_CODES.get(*kind as usize).copied().unwrap_or(w3abdhqtu_rs::Kind::Doodad);
+                // A list (`Art=a.blp,b.blp`): its first.
+                let art = types.get(k, id, "Art").map(|a| a.split(',').next().unwrap_or(a).trim().to_string());
+                let icon = art.and_then(|path| {
+                    let path = crate::tileset::with_extension(&path);
+                    self.icon_cache
+                        .entry(path.to_ascii_lowercase())
+                        .or_insert_with(|| {
+                            crate::textures::capped(&self.game, &path, 32)
+                                .ok()
+                                .map(|(w, h, rgba)| crate::textures::Icon { width: w, height: h, rgba })
+                        })
+                        .clone()
+                });
+                IconEntry { kind: *kind, id: id.clone(), icon: icon.unwrap_or_default() }
+            })
+            .collect()
+    }
+
+    /// The overlays worked out again (the regions, the pathing, the
+    /// minimap as they are now), kept for picks.
+    fn overlays(&mut self) -> crate::overlays::Overlays {
+        let draw = self.drawn.clone().expect("drawn");
+        let (_, grounds, textures, layers) = self.ground_cache.as_ref().expect("drawn");
+        let minimap = crate::picture::paint(&self.terrain, grounds, textures, layers, &draw, self.tileset.water.as_ref(), 1);
+        let empty = crate::placed::Objects::default();
+        let objects = self.objects.as_ref().unwrap_or(&empty);
+        let o = crate::overlays::Overlays::load(&self.game, &self.terrain, &draw, objects, &self.placed, minimap);
+        self.overlays = Some(o.clone());
+        o
+    }
+
+    /// A region edit: its state recorded for undo (`start`), `change`
+    /// made, the overlays again.
+    fn regions_edit(&mut self, start: bool, change: impl FnOnce(&mut w3r_rs::Regions) -> Result<(), String>) -> Vec<ServerMsg> {
+        let regions = self.placed.regions.get_or_insert_with(w3r_rs::Regions::new);
+        let before = regions.regions.clone();
+        if let Err(message) = change(regions) {
+            regions.regions = before;
+            return vec![ServerMsg::State(self.state(message))];
+        }
+        if start {
+            self.edits.record(crate::edit::Snapshot::Regions(before));
+        } else {
+            self.edits.dirty.regions = true;
+        }
+        vec![ServerMsg::Overlays(self.overlays()), ServerMsg::State(self.state(String::new()))]
+    }
+
+    /// A drag of a region from where the ray `from` meets the ground to
+    /// where `to` does, its edges on World Editor's grid of 32 units:
+    /// mode 0 a new one (`Region 000` ..., the next number), 1 region
+    /// `index` moved, 2 its corner nearest the start moved. `start`: the
+    /// drag's first step (which undo goes back to).
+    pub fn region_drag(&mut self, start: bool, mode: u8, index: i32, from: ([f32; 3], [f32; 3]), to: ([f32; 3], [f32; 3])) -> Vec<ServerMsg> {
+        let (Some(a), Some(b)) = (self.ground_point(from.0, from.1), self.ground_point(to.0, to.1)) else {
+            return vec![ServerMsg::State(self.state(String::new()))];
+        };
+        let snap = |v: f32| (v / 32.0).round() * 32.0;
+        if start {
+            let index = match (mode, index) {
+                (0, _) => None,
+                (_, i) if i >= 0 => Some(i as usize),
+                _ => return vec![ServerMsg::State(self.state("No region picked.".into()))],
+            };
+            let bounds = index.and_then(|i| self.placed.regions.as_ref()?.regions.get(i)).map(|r| [r.left, r.bottom, r.right, r.top]);
+            self.region_drag = Some((index, bounds.unwrap_or_default()));
+        }
+        let Some((index, was)) = self.region_drag else { return vec![] };
+        let mut made = None;
+        let out = self.regions_edit(start, |regions| {
+            let r = match index {
+                Some(i) => regions.regions.get_mut(i).ok_or(format!("no region {i}"))?,
+                None => {
+                    let n = regions.regions.iter().filter_map(|r| r.name.strip_prefix("Region ")?.parse::<u32>().ok()).max().map_or(0, |n| n + 1);
+                    let next = regions.next_index();
+                    let mut r = w3r_rs::Region::new(format!("Region {n:03}"), 0.0, 0.0, 0.0, 0.0, next);
+                    // A colour of its own, as World Editor gives one.
+                    (r.red, r.green, r.blue) = [(255, 64, 64), (64, 160, 255), (64, 255, 64), (255, 200, 0), (200, 64, 255), (0, 220, 200)][n as usize % 6];
+                    regions.regions.push(r);
+                    made = Some(regions.regions.len() - 1);
+                    regions.regions.last_mut().unwrap()
+                }
+            };
+            let (ax, ay, bx, by) = (snap(a[0]), snap(a[1]), snap(b[0]), snap(b[1]));
+            let [l, bo, rt, tp] = was;
+            [r.left, r.bottom, r.right, r.top] = match mode {
+                0 => [ax.min(bx), ay.min(by), ax.max(bx), ay.max(by)],
+                1 => {
+                    let (dx, dy) = (bx - ax, by - ay);
+                    [l + dx, bo + dy, rt + dx, tp + dy]
+                }
+                _ => {
+                    // The corner nearest where the drag started, to where it is.
+                    let x_left = (ax - l).abs() < (ax - rt).abs();
+                    let y_bottom = (ay - bo).abs() < (ay - tp).abs();
+                    let (nl, nr) = if x_left { (bx, rt) } else { (l, bx) };
+                    let (nb, nt) = if y_bottom { (by, tp) } else { (bo, by) };
+                    [nl.min(nr), nb.min(nt), nl.max(nr), nb.max(nt)]
+                }
+            };
+            if r.right - r.left < 32.0 || r.top - r.bottom < 32.0 {
+                r.right = r.right.max(r.left + 32.0);
+                r.top = r.top.max(r.bottom + 32.0);
+            }
+            Ok(())
+        });
+        // A new one: the drag's next steps resize it.
+        if let Some(i) = made {
+            self.region_drag = Some((Some(i), [0.0; 4]));
+        }
+        out
+    }
+
+    pub fn region_rename(&mut self, index: u32, name: &str) -> Vec<ServerMsg> {
+        let name = name.to_string();
+        self.regions_edit(true, |regions| {
+            let r = regions.regions.get_mut(index as usize).ok_or(format!("no region {index}"))?;
+            if name.trim().is_empty() {
+                return Err("A region needs a name.".into());
+            }
+            r.name = name;
+            Ok(())
+        })
+    }
+
+    pub fn region_delete(&mut self, index: u32) -> Vec<ServerMsg> {
+        self.regions_edit(true, |regions| {
+            if (index as usize) >= regions.regions.len() {
+                return Err(format!("no region {index}"));
+            }
+            regions.regions.remove(index as usize);
+            Ok(())
+        })
     }
 
     /// The ground's point a ray meets, in the game's units.
@@ -526,6 +690,13 @@ impl Session {
         })
     }
 
+    /// The region over `(x, y)` (the game's units) drawn last: the one on
+    /// top.
+    fn region_at(&self, x: f32, y: f32) -> Option<u32> {
+        let regions = &self.placed.regions.as_ref()?.regions;
+        regions.iter().rposition(|r| x >= r.left && x <= r.right && y >= r.bottom && y <= r.top).map(|i| i as u32)
+    }
+
     /// What a ray from the camera meets first, said.
     pub fn pick(&self, origin: [f32; 3], dir: [f32; 3]) -> PickedMsg {
         let ground = self.drawn.as_ref().and_then(|d| crate::overlays::ground_hit(d, origin, dir));
@@ -538,10 +709,11 @@ impl Session {
             // The ground: its point in the game's units, its regions.
             let Some(([x, y, z], d)) = ground.zip(self.drawn.as_ref()) else { return PickedMsg::default() };
             let (wx, wy, wz) = (d.offset[0] + x * 128.0, d.offset[1] + y * 128.0, z * 128.0);
-            return PickedMsg { text: format!("({wx:.0}, {wy:.0}, {wz:.0}){}", in_regions(wx, wy)), ground, ..Default::default() };
+            let region = self.region_at(wx, wy);
+            return PickedMsg { text: format!("({wx:.0}, {wy:.0}, {wz:.0}){}", in_regions(wx, wy)), ground, region, ..Default::default() };
         };
         let id = t.id.to_string();
-        let name = self.names.objects.get(t.kind, &id).map(|n| n.shown()).unwrap_or_else(|| id.clone());
+        let name = self.names.objects.get(t.kind, &id).map(|n| wc3_server::names::plain(&n.shown())).unwrap_or_else(|| id.clone());
         let what = match t.kind {
             w3abdhqtu_rs::Kind::Doodad => "doodad".to_string(),
             w3abdhqtu_rs::Kind::Destructable => "destructable".to_string(),
@@ -555,6 +727,7 @@ impl Session {
             instance: t.instance as u32,
             file: if matches!(t.kind, w3abdhqtu_rs::Kind::Doodad | w3abdhqtu_rs::Kind::Destructable) { 0 } else { 1 },
             index: t.index as u32,
+            region: ground.and_then(|_| self.region_at(t.world[0], t.world[1])),
             text: format!(
                 "{name} ({id}) · {what} · ({:.0}, {:.0}, {:.0}) · {file} #{}{}",
                 t.world[0],

@@ -283,6 +283,9 @@ button:hover {
 }
 
 .object {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     padding: 1px 6px;
     cursor: pointer;
     white-space: nowrap;
@@ -301,4 +304,43 @@ button:hover {
 
 .object.custom {
     font-style: italic;
+}
+.object .icon {
+    width: 20px;
+    height: 20px;
+    flex: none;
+}
+.pathing-flags, .region-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.pathing-flags[hidden], .region-panel[hidden] {
+    display: none;
+}
+
+.pathing-flags label {
+    flex-direction: row;
+    gap: 4px;
+    color: var(--vscode-foreground);
+}
+
+.region-panel input {
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, #555);
+    padding: 2px 4px;
+    font: inherit;
+}
+
+.region-bounds {
+    color: var(--vscode-descriptionForeground);
+}
+
+.region-panel button {
+    background: transparent;
+    color: var(--vscode-foreground);
+    border: 1px solid var(--vscode-panel-border, #555);
+    padding: 2px 4px;
 }

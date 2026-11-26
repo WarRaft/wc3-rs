@@ -117,6 +117,10 @@
             return
         }
         if (mod || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
+        if (brush.tool === 'regions' && selectedRegion !== null && (e.code === 'Delete' || e.code === 'Backspace')) {
+            $('region-delete').onclick()
+            return
+        }
         if (selected && (e.code === 'Delete' || e.code === 'Backspace')) {
             send(encode.delete(selected.file, selected.index))
             selected = null
@@ -206,8 +210,11 @@
         {tool: 'water', label: 'Water'},
         {tool: 'dry', label: 'Dry'},
         {tool: 'place', label: 'Place'},
+        {tool: 'regions', label: 'Regions'},
+        {tool: 'pathingOn', label: 'Pathing +'},
+        {tool: 'pathingOff', label: 'Pathing −'},
     ]
-    const brush = {tool: 'select', size: 4, strength: 0.25, texture: '', cliff: 0, ...(vscode.getState()?.brush ?? {})}
+    const brush = {tool: 'select', size: 4, strength: 0.25, texture: '', cliff: 0, flags: 2, ...(vscode.getState()?.brush ?? {})}
     const keep = () => vscode.setState({...(vscode.getState() ?? {}), brush})
     const tools = $('tools')
     function showTools() {
@@ -215,12 +222,23 @@
         $('textures').hidden = brush.tool !== 'texture'
         $('cliff-types').hidden = !brush.tool.startsWith('cliff')
         $('objects-palette').hidden = brush.tool !== 'place'
-        $('size-label').hidden = $('strength-label').hidden = brush.tool === 'place' || brush.tool === 'select'
+        const pathing = brush.tool.startsWith('pathing')
+        $('pathing-flags').hidden = !pathing
+        $('region-panel').hidden = brush.tool !== 'regions'
+        $('size-label').hidden = ['place', 'select', 'regions'].includes(brush.tool)
+        $('strength-label').hidden = ['place', 'select', 'regions'].includes(brush.tool) || pathing
+        for (const c of $('pathing-flags').querySelectorAll('input')) c.checked = (brush.flags & Number(c.value)) !== 0
+        // A tool of a layer shows the layer.
+        if ((pathing && !show.pathing) || (brush.tool === 'regions' && !show.regions)) {
+            if (pathing) show.pathing = true
+            else show.regions = true
+            applyShow()
+        }
         for (const b of $('textures').children) b.classList.toggle('on', b.dataset.id === brush.texture)
         $('size-value').textContent = brush.size
         $('strength-value').textContent = brush.strength.toFixed(2)
         canvas.style.cursor = brush.tool === 'select' ? '' : 'crosshair'
-        if ((brush.tool === 'select' || brush.tool === 'place') && terrain) terrain.brush = [0, 0, 0]
+        if (['select', 'place', 'regions'].includes(brush.tool) && terrain) terrain.brush = [0, 0, 0]
     }
     for (const t of TOOL_LIST) {
         const b = document.createElement('button')
@@ -248,6 +266,12 @@
     $('cliff-types').onchange = () => {
         brush.cliff = Number($('cliff-types').value)
         keep()
+    }
+    for (const c of $('pathing-flags').querySelectorAll('input')) {
+        c.onchange = () => {
+            brush.flags = c.checked ? brush.flags | Number(c.value) : brush.flags & ~Number(c.value)
+            keep()
+        }
     }
     $('undo').onclick = () => send(encode.undo())
     $('redo').onclick = () => send(encode.redo())
@@ -296,7 +320,7 @@
         stroke.first = false
     }
     canvas.addEventListener('mousedown', e => {
-        if (e.button !== 0 || brush.tool === 'select' || brush.tool === 'place' || !terrain?.ready) return
+        if (e.button !== 0 || ['select', 'place', 'regions'].includes(brush.tool) || !terrain?.ready) return
         stroke = {first: true, pending: false}
         Object.assign(mouse, {x: e.clientX, y: e.clientY})
         step()
@@ -309,7 +333,7 @@
     canvas.addEventListener('mousemove', e => {
         Object.assign(mouse, {x: e.clientX, y: e.clientY})
         if (thingDrag) return
-        if (brush.tool !== 'select' && brush.tool !== 'place' && terrain?.ready) {
+        if (!['select', 'place', 'regions'].includes(brush.tool) && terrain?.ready) {
             const {origin, dir} = rayAt(e.clientX, e.clientY)
             const p = terrain.groundHit(origin, dir)
             terrain.brush = p ? [p[0], p[1], brush.size / 2] : [0, 0, 0]
@@ -365,10 +389,16 @@
             .filter(e => e.kind === placing.kind)
             .filter(e => words.every(w => `${e.name} ${e.id} ${e.group}`.toLowerCase().includes(w)))
             .slice(0, 300)
+        icons.observer?.disconnect()
         $('object-list').replaceChildren(...shown.map(e => {
             const row = document.createElement('div')
             row.className = 'object' + (e.id === placing.id ? ' on' : '') + (e.custom ? ' custom' : '')
-            row.textContent = e.name
+            row.dataset.key = `${e.kind}:${e.id}`
+            const icon = document.createElement('canvas')
+            icon.className = 'icon'
+            icon.width = icon.height = 32
+            row.append(icon, document.createTextNode(e.name))
+            paintIcon(row)
             row.title = `${e.name} (${e.id})${e.group ? ' · ' + e.group : ''}${e.custom ? ' · the map\'s' : ''}`
             row.onclick = () => {
                 placing.id = e.id
@@ -377,6 +407,38 @@
             }
             return row
         }))
+        // The icons of the rows shown, asked for as they come into view.
+        icons.observer = new IntersectionObserver(seen => {
+            for (const s of seen) if (s.isIntersecting) wantIcon(s.target.dataset.key)
+        }, {root: $('object-list')})
+        for (const row of $('object-list').children) icons.observer.observe(row)
+    }
+
+    // The palette's icons, asked of the editor a few at a time (it reads
+    // each once), kept here: `null` for a type without one.
+    const icons = {cache: new Map(), wanted: new Set(), timer: 0, observer: null}
+    function wantIcon(key) {
+        if (icons.cache.has(key) || icons.wanted.has(key)) return
+        icons.wanted.add(key)
+        icons.timer ||= setTimeout(() => {
+            icons.timer = 0
+            const batch = [...icons.wanted].slice(0, 64)
+            batch.forEach(k => icons.wanted.delete(k))
+            for (const k of batch) icons.cache.set(k, undefined)
+            send(encode.icons(batch.map(k => {
+                const at = k.indexOf(':')
+                return [Number(k.slice(0, at)), k.slice(at + 1)]
+            })))
+            if (icons.wanted.size) wantIcon([...icons.wanted][0])
+        }, 30)
+    }
+    function paintIcon(row) {
+        const data = icons.cache.get(row.dataset.key)
+        const canvas = row.querySelector('canvas')
+        if (!data || !canvas) return
+        canvas.width = data.width
+        canvas.height = data.height
+        canvas.getContext('2d').putImageData(data, 0, 0)
     }
 
     // Place: a click lays the type picked.
@@ -416,6 +478,67 @@
             e.stopImmediatePropagation()
         }
     }, true)
+
+    // Regions: a click picks one (the last drawn over the point); a drag
+    // on the ground makes one, inside the one picked moves it, with Shift
+    // moves its nearest corner. Its name is changed as it's typed.
+    let regions = []
+    let selectedRegion = null
+    let regionDrag = null
+    let renameTimer = 0
+    const worldOf = p => terrain?.terrain ? [p[0] * 128 + terrain.terrain.offset[0], p[1] * 128 + terrain.terrain.offset[1]] : [0, 0]
+    function showRegion() {
+        const r = selectedRegion !== null ? regions[selectedRegion] : null
+        $('region-name').disabled = $('region-delete').disabled = !r
+        if (document.activeElement !== $('region-name')) $('region-name').value = r ? r.name : ''
+        $('region-bounds').textContent = r ? r.bounds.map(v => Math.round(v)).join(', ') : 'Click a region, or drag to draw one'
+        vscode.postMessage({type: 'region', region: r && {name: r.name, bounds: r.bounds}})
+    }
+    $('region-name').oninput = () => {
+        clearTimeout(renameTimer)
+        const index = selectedRegion
+        const name = $('region-name').value
+        if (index === null || !name.trim()) return
+        renameTimer = setTimeout(() => send(encode.regionRename(index, name)), 250)
+    }
+    $('region-delete').onclick = () => {
+        if (selectedRegion === null) return
+        send(encode.regionDelete(selectedRegion))
+        selectedRegion = null
+        showRegion()
+    }
+    canvas.addEventListener('mousedown', e => {
+        if (e.button !== 0 || brush.tool !== 'regions' || !terrain?.ready) return
+        const from = rayAt(e.clientX, e.clientY)
+        const hit = terrain.groundHit(from.origin, from.dir)
+        const r = selectedRegion !== null ? regions[selectedRegion] : null
+        const [wx, wy] = hit ? worldOf(hit) : [NaN, NaN]
+        const inside = r && wx >= r.bounds[0] && wx <= r.bounds[2] && wy >= r.bounds[1] && wy <= r.bounds[3]
+        const mode = r && e.shiftKey ? 2 : inside ? 1 : 0
+        regionDrag = {from, mode, index: mode ? selectedRegion : -1, first: true, pending: false, moved: false, x: e.clientX, y: e.clientY}
+    })
+    canvas.addEventListener('mousemove', e => {
+        const d = regionDrag
+        if (!d || d.pending || (!d.moved && Math.abs(e.clientX - d.x) + Math.abs(e.clientY - d.y) < 4)) return
+        d.moved = true
+        d.pending = true
+        send(encode.region(d.first, d.mode, d.index, d.from, rayAt(e.clientX, e.clientY)))
+        if (d.first && d.mode === 0) d.made = true
+        d.first = false
+    })
+    window.addEventListener('mouseup', () => {
+        const d = regionDrag
+        if (!d) return
+        regionDrag = null
+        if (!d.moved) {
+            // A click: what's there (Picked says the region).
+            send(encode.pick(d.from.origin, d.from.dir))
+            return
+        }
+        send(encode.strokeEnd())
+        if (d.made) selectNewRegion = true
+    })
+    let selectNewRegion = false
 
     function showState(st) {
         $('undo').disabled = !st.undo
@@ -505,6 +628,13 @@
             }
         } else if (msg.kind === 'overlays' && terrain) {
             terrain.setOverlays(msg)
+            regions = msg.regions
+            if (selectNewRegion || (regionDrag?.made && selectedRegion === null)) {
+                selectedRegion = regions.length - 1
+                selectNewRegion = false
+            }
+            if (selectedRegion !== null && selectedRegion >= regions.length) selectedRegion = null
+            showRegion()
             lines?.set('bounds', msg.bounds)
             lines?.set('cameras', msg.cameraLines)
             if (msg.minimap.width) {
@@ -528,10 +658,26 @@
         } else if (msg.kind === 'state') {
             if (stroke) stroke.pending = false
             if (thingDrag) thingDrag.pending = false
+            if (regionDrag) regionDrag.pending = false
             showState(msg)
+        } else if (msg.kind === 'icons') {
+            for (const i of msg.icons) {
+                const key = `${i.kind}:${i.id}`
+                icons.cache.set(key, i.width ? new ImageData(new Uint8ClampedArray(i.rgba.buffer, i.rgba.byteOffset, i.rgba.byteLength), i.width, i.height) : null)
+                const row = $('object-list').querySelector(`[data-key="${CSS.escape(key)}"]`)
+                if (row) paintIcon(row)
+            }
+            vscode.postMessage({type: 'icons', icons: [...icons.cache.values()].filter(Boolean).length})
         } else if (msg.kind === 'objectPalette') {
             showObjectPalette(msg.entries)
         } else if (msg.kind === 'picked' && objects) {
+            if (brush.tool === 'regions') {
+                selectedRegion = msg.region
+                showRegion()
+                $('status').textContent = msg.text
+                vscode.postMessage({type: 'picked', text: msg.text})
+                return
+            }
             selected = msg.found ? {file: msg.file, index: msg.index} : null
             objects.select(msg.found ? msg.model : -1, msg.found ? msg.instance : -1)
             $('status').textContent = msg.found ? msg.text : ''
@@ -583,6 +729,20 @@
             const {origin, dir} = camera.ray(msg.x, msg.y, r.width / r.height)
             send(encode.move(true, selected.file, selected.index, origin, dir))
             send(encode.strokeEnd())
+        } else if (msg.type === 'region') {
+            // A region's drag between points of the view: for the tests.
+            const r = canvas.getBoundingClientRect()
+            const ray = p => camera.ray(p[0], p[1], r.width / r.height)
+            const index = msg.mode ? selectedRegion ?? -1 : -1
+            send(encode.region(true, msg.mode, index, ray(msg.from), ray(msg.to)))
+            send(encode.strokeEnd())
+            if (msg.mode === 0) selectNewRegion = true
+        } else if (msg.type === 'tool') {
+            // A tool picked, as its button does: for the tests.
+            brush.tool = msg.tool
+            showTools()
+        } else if (msg.type === 'regionRename' && selectedRegion !== null) {
+            send(encode.regionRename(selectedRegion, msg.name))
         } else if (msg.type === 'rotate' && selected) {
             send(encode.rotate(selected.file, selected.index, msg.delta))
         } else if (msg.type === 'delete' && selected) {

@@ -14,6 +14,9 @@
 //! - **Cliff up, Cliff down**: the points' cliff layer to the one the
 //!   stroke started on, one up or down, in the cliff texture `value`.
 //! - **Water, Dry**: water shown or not on the points.
+//! - **Pathing on, Pathing off** (`war3map.wpm`, four cells a terrain
+//!   cell): the brush's `flags` (2 no walking, 4 no flying, 8 no
+//!   building) set or cleared on the cells in it.
 
 use parser_rs::bin::Rawcode;
 use w3e_rs::{Point, Terrain};
@@ -29,11 +32,24 @@ pub enum Tool {
     CliffDown,
     Water,
     Dry,
+    PathingOn,
+    PathingOff,
 }
 
 /// The tools by their code on the wire.
-pub const TOOLS: [Tool; 9] =
-    [Tool::Raise, Tool::Lower, Tool::Plateau, Tool::Smooth, Tool::Texture, Tool::CliffUp, Tool::CliffDown, Tool::Water, Tool::Dry];
+pub const TOOLS: [Tool; 11] = [
+    Tool::Raise,
+    Tool::Lower,
+    Tool::Plateau,
+    Tool::Smooth,
+    Tool::Texture,
+    Tool::CliffUp,
+    Tool::CliffDown,
+    Tool::Water,
+    Tool::Dry,
+    Tool::PathingOn,
+    Tool::PathingOff,
+];
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Brush {
@@ -47,13 +63,14 @@ pub struct Brush {
     /// terrain's, or -1 to keep each point's).
     pub texture: Option<Rawcode>,
     pub cliff: i32,
+    /// Pathing: the flags set or cleared.
+    pub flags: u8,
 }
 
 /// A stroke going on.
 #[derive(Debug, Clone)]
 struct Stroke {
-    before: Vec<Point>,
-    ground: Vec<Rawcode>,
+    before: Snapshot,
     /// The height (Plateau) or layer (Cliff) the stroke started on.
     start: Option<i32>,
 }
@@ -65,6 +82,8 @@ pub enum Snapshot {
     Terrain(Vec<Point>, Vec<Rawcode>),
     Doodads(Vec<doo_rs::Doodad>),
     Units(Vec<doo_rs::Unit>),
+    Regions(Vec<w3r_rs::Region>),
+    Pathing(Vec<u8>),
 }
 
 /// Which files have changes not saved.
@@ -73,11 +92,13 @@ pub struct Dirty {
     pub terrain: bool,
     pub doodads: bool,
     pub units: bool,
+    pub regions: bool,
+    pub pathing: bool,
 }
 
 impl Dirty {
     pub fn any(self) -> bool {
-        self.terrain || self.doodads || self.units
+        self.terrain || self.doodads || self.units || self.regions || self.pathing
     }
 }
 
@@ -113,7 +134,7 @@ impl Edits {
     pub fn apply(&mut self, t: &mut Terrain, x: f32, y: f32, brush: &Brush, start: bool) -> Result<(), String> {
         if start || self.stroke.is_none() {
             self.end();
-            self.stroke = Some(Stroke { before: t.points.clone(), ground: t.ground.clone(), start: None });
+            self.stroke = Some(Stroke { before: Snapshot::Terrain(t.points.clone(), t.ground.clone()), start: None });
         }
         let v = t.flags_version();
         let (w, h) = (t.width as i64, t.height as i64);
@@ -192,6 +213,8 @@ impl Edits {
                     }
                     Tool::Water => p.set_has_water(v, true),
                     Tool::Dry => p.set_has_water(v, false),
+                    // Not the terrain's: `pathing`.
+                    Tool::PathingOn | Tool::PathingOff => {}
                 }
             }
         }
@@ -207,9 +230,33 @@ impl Edits {
             Snapshot::Terrain(..) => self.dirty.terrain = true,
             Snapshot::Doodads(_) => self.dirty.doodads = true,
             Snapshot::Units(_) => self.dirty.units = true,
+            Snapshot::Regions(_) => self.dirty.regions = true,
+            Snapshot::Pathing(_) => self.dirty.pathing = true,
         }
         self.undo.push(before);
         self.redo.clear();
+    }
+
+    /// Lays a pathing brush at `(x, y)` (terrain cells) on `p`: its
+    /// `flags` set (`PathingOn`) or cleared on the cells within it.
+    pub fn pathing(&mut self, p: &mut wpm_rs::Pathing, x: f32, y: f32, brush: &Brush, start: bool) {
+        if start || self.stroke.is_none() {
+            self.end();
+            self.stroke = Some(Stroke { before: Snapshot::Pathing(p.cells.clone()), start: None });
+        }
+        // Four pathing cells a terrain cell; a cell's middle at +0.5.
+        let (cx, cy, r) = (x * 4.0, y * 4.0, (brush.size * 2.0).max(0.5));
+        let (w, h) = (p.width as i64, p.height as i64);
+        for py in ((cy - r).floor() as i64).max(0)..=((cy + r).ceil() as i64).min(h - 1) {
+            for px in ((cx - r).floor() as i64).max(0)..=((cx + r).ceil() as i64).min(w - 1) {
+                if ((px as f32 + 0.5 - cx).powi(2) + (py as f32 + 0.5 - cy).powi(2)).sqrt() > r {
+                    continue;
+                }
+                let c = &mut p.cells[(py * w + px) as usize];
+                if brush.tool == Tool::PathingOn { *c |= brush.flags } else { *c &= !brush.flags }
+            }
+        }
+        self.dirty.pathing = true;
     }
 
     /// A step that changed nothing: a stroke it started is no stroke.
@@ -223,7 +270,7 @@ impl Edits {
     /// The stroke done: it can be undone.
     pub fn end(&mut self) {
         if let Some(s) = self.stroke.take() {
-            self.undo.push(Snapshot::Terrain(s.before, s.ground));
+            self.undo.push(s.before);
             self.redo.clear();
         }
     }
@@ -262,6 +309,18 @@ impl Edits {
                 self.dirty.units = true;
                 let file = t.files.units.get_or_insert_with(|| new_units(t.files.layout));
                 Snapshot::Units(std::mem::replace(&mut file.units, u))
+            }
+            Snapshot::Regions(r) => {
+                self.dirty.regions = true;
+                let file = t.files.regions.get_or_insert_with(w3r_rs::Regions::new);
+                Snapshot::Regions(std::mem::replace(&mut file.regions, r))
+            }
+            Snapshot::Pathing(cells) => {
+                self.dirty.pathing = true;
+                match t.files.pathing.as_mut() {
+                    Some(p) => Snapshot::Pathing(std::mem::replace(&mut p.cells, cells)),
+                    None => Snapshot::Pathing(cells),
+                }
             }
         }
     }

@@ -20,7 +20,8 @@ item's details are in its section below):
     checked against it.
 - **The World Editor** (see [World Editor](#world-editor)): its steps,
   in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs), 4 (doodads and units),
-  5 (overlays), 6a (terrain brushes), 6b (things placed). Next: 6c.
+  5 (overlays), 6 (editing: terrain brushes, things placed, regions and
+  pathing). Next: 7.
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1708,8 +1709,23 @@ step), this list updated.
      `Instances`, `ObjectPalette`; `Picked` says the thing's file and
      index. MCP: the `doo_*` tools already place, change and delete in
      the files.
-   - **6c, regions and pathing**: regions drawn, moved, resized,
-     renamed (`war3map.w3r`); the pathing brush (`war3map.wpm`).
+   - **6c, regions and pathing** (done): the Regions tool (a click
+     picks the region drawn last over the point; a drag on the ground
+     draws one, `Region 000` ... in a colour of its own; inside the one
+     picked moves it; with Shift moves its nearest corner; edges on
+     World Editor's grid of 32 units; its name changed as it's typed;
+     Delete), `war3map.w3r`; the pathing brushes (Pathing +, Pathing −:
+     no walking, no flying, no building set or cleared on the cells,
+     four a terrain cell), `war3map.wpm`; both with undo
+     (`Snapshot::Regions`, `Snapshot::Pathing`) and saved into their
+     layers; a tool of a layer shows the layer. Messages `Region`,
+     `RegionRename`, `RegionDelete`; `Brush` with its pathing flags;
+     `Picked` with the region. The object palette's icons too, lazily:
+     the page asks for the rows it shows (`Icons`, 64 at most), the
+     editor reads each `Art` (a unit's, an item's; the map's object
+     data over the game's: `Units\*UnitFunc.txt`) at 32 pixels or less,
+     once (some 20 ms for 64); doodads and destructables have none.
+     Names shown without the game's colours (`names::plain`).
 
 7. **In step with the rest.** Disk changes read again piece by piece;
    the editor and open text forms of the same file; the language server

@@ -105,6 +105,10 @@ pub fn serve(input: &mut impl io::Read, output: &mut impl Write, root: &Path) ->
                     ClientMsg::Move { start, file, index, origin, dir } => s.move_thing(file, index, origin, dir, start),
                     ClientMsg::Rotate { file, index, delta } => s.rotate(file, index, delta),
                     ClientMsg::Delete { file, index } => s.delete(file, index),
+                    ClientMsg::Icons(wanted) => vec![ServerMsg::Icons(s.icons(&wanted))],
+                    ClientMsg::Region { start, mode, index, from, to } => s.region_drag(start, mode, index, from, to),
+                    ClientMsg::RegionRename { index, name } => s.region_rename(index, &name),
+                    ClientMsg::RegionDelete { index } => s.region_delete(index),
                     ClientMsg::Hello | ClientMsg::Pick { .. } => unreachable!("answered above"),
                 };
                 for msg in &answers {

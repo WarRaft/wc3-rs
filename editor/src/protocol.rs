@@ -24,7 +24,7 @@
 //! |------|---------|------|
 //! | 1 | `Hello` | nothing: the page (re)loaded; answered by `Map` or `Error` |
 //! | 2 | `Pick` | a ray from the camera: `f32` origin x, y, z, direction x, y, z (cells, layers); answered by `Picked` |
-//! | 3 | `Brush` | a step of a stroke: `u8` its first, `u8` tool (`edit::TOOLS`), the ray (six `f32`), `f32` size, strength, the texture's tile id (empty for none), `i32` cliff; answered by what changed (`Ground`, `Cliffs`, `Terrain`) and `State` |
+//! | 3 | `Brush` | a step of a stroke: `u8` its first, `u8` tool (`edit::TOOLS`), the ray (six `f32`), `f32` size, strength, the texture's tile id (empty for none), `i32` cliff, `u8` pathing flags; answered by what changed (`Ground`, `Cliffs`, `Terrain`) and `State` |
 //! | 4 | `StrokeEnd` | the mouse let go; answered by `State` |
 //! | 5 | `Undo` | answered by what changed and `State` |
 //! | 6 | `Redo` | the same |
@@ -33,6 +33,10 @@
 //! | 9 | `Move` | a thing moved where a ray meets the ground: `u8` a drag's first, `u8` file (0 `war3map.doo`, 1 `war3mapUnits.doo`), `u32` index, the ray; answered the same |
 //! | 10 | `Rotate` | `u8` file, `u32` index, `f32` radians; answered the same |
 //! | 11 | `Delete` | `u8` file, `u32` index; answered the same |
+//! | 13 | `Region` | a region drawn, moved or resized by a drag: `u8` the drag's first, `u8` mode (0 a new one, 1 moved, 2 a corner moved), `i32` its index (a new one's: -1), the rays where the drag started and where it is (six `f32` each); answered by `Overlays` and `State` |
+//! | 14 | `RegionRename` | `u32` index, its name; answered the same |
+//! | 15 | `RegionDelete` | `u32` index; answered the same |
+//! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id); answered by `Icons` |
 //!
 //! Editor → page:
 //!
@@ -51,6 +55,7 @@
 //! | 138 | `State` | the edits' state: see [`StateMsg`] |
 //! | 139 | `Instances` | where every model stands: a list, a model each, of its instances (`f32` array, `placed::INSTANCE` each) |
 //! | 140 | `ObjectPalette` | a list of types to place: see [`ObjectEntry`] |
+//! | 141 | `Icons` | a list of (`u8` kind, id, `u32` width, height, RGBA; 0 by 0 for none) |
 //!
 //! After an edit the terrain's messages come again: `Cliffs` with no
 //! textures keeps the ones the page has. `Objects` adds models and
@@ -81,6 +86,11 @@ mod kind {
     pub const DELETE: u8 = 11;
     pub const INSTANCES: u8 = 139;
     pub const OBJECT_PALETTE: u8 = 140;
+    pub const ICONS: u8 = 12;
+    pub const REGION: u8 = 13;
+    pub const REGION_RENAME: u8 = 14;
+    pub const REGION_DELETE: u8 = 15;
+    pub const ICONS_ANSWER: u8 = 141;
     pub const OBJECTS: u8 = 134;
     pub const PICKED: u8 = 135;
     pub const OVERLAYS: u8 = 136;
@@ -117,6 +127,14 @@ pub enum ClientMsg {
     Rotate { file: u8, index: u32, delta: f32 },
     /// Kind 11.
     Delete { file: u8, index: u32 },
+    /// Kind 12.
+    Icons(Vec<(u8, String)>),
+    /// Kind 13.
+    Region { start: bool, mode: u8, index: i32, from: ([f32; 3], [f32; 3]), to: ([f32; 3], [f32; 3]) },
+    /// Kind 14.
+    RegionRename { index: u32, name: String },
+    /// Kind 15.
+    RegionDelete { index: u32 },
 }
 
 /// What the page is told of the map: kind 128's body, in this order.
@@ -198,7 +216,8 @@ pub struct ObjectsMsg {
 
 /// Kind 135's body: `u8` found (a thing), `u32` model, `u32` instance,
 /// `u8` its file (0 `war3map.doo`, 1 `war3mapUnits.doo`), `u32` its index
-/// there, what it is (a line to show: the thing, else the ground's point
+/// there, `i32` the region over the point (the last of those, -1 none),
+/// what it is (a line to show: the thing, else the ground's point
 /// and its regions); `u8` on the ground, its point `f32` x, y, z (cells,
 /// layers).
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -208,6 +227,7 @@ pub struct PickedMsg {
     pub instance: u32,
     pub file: u8,
     pub index: u32,
+    pub region: Option<u32>,
     pub text: String,
     pub ground: Option<[f32; 3]>,
 }
@@ -257,6 +277,14 @@ pub struct ObjectEntry {
     pub custom: bool,
 }
 
+/// A type's icon (kind 141's list).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct IconEntry {
+    pub kind: u8,
+    pub id: String,
+    pub icon: crate::textures::Icon,
+}
+
 /// Editor → page.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServerMsg {
@@ -286,6 +314,8 @@ pub enum ServerMsg {
     Instances(Vec<Vec<f32>>),
     /// Kind 140.
     ObjectPalette(Vec<ObjectEntry>),
+    /// Kind 141.
+    Icons(Vec<IconEntry>),
 }
 
 /// A frame's body was shorter than its fields, or not UTF-8.
@@ -320,8 +350,9 @@ impl ClientMsg {
                 let (size, strength) = (r.f32()?, r.f32()?);
                 let texture = r.string()?;
                 let cliff = r.u32()? as i32;
+                let flags = r.u8()?;
                 let texture = parser_rs::bin::Rawcode::parse(&texture);
-                Some(ClientMsg::Brush { start, origin, dir, brush: crate::edit::Brush { tool, size, strength, texture, cliff } })
+                Some(ClientMsg::Brush { start, origin, dir, brush: crate::edit::Brush { tool, size, strength, texture, cliff, flags } })
             }
             kind::STROKE_END => Some(ClientMsg::StrokeEnd),
             kind::UNDO => Some(ClientMsg::Undo),
@@ -343,6 +374,16 @@ impl ClientMsg {
             }),
             kind::ROTATE => Some(ClientMsg::Rotate { file: r.u8()?, index: r.u32()?, delta: r.f32()? }),
             kind::DELETE => Some(ClientMsg::Delete { file: r.u8()?, index: r.u32()? }),
+            kind::ICONS => Some(ClientMsg::Icons(r.list(|r| Ok((r.u8()?, r.string()?)))?)),
+            kind::REGION => {
+                let (start, mode, index) = (r.u8()? != 0, r.u8()?, r.u32()? as i32);
+                let mut ray = || -> Result<([f32; 3], [f32; 3]), DecodeError> { Ok(([r.f32()?, r.f32()?, r.f32()?], [r.f32()?, r.f32()?, r.f32()?])) };
+                let from = ray()?;
+                let to = ray()?;
+                Some(ClientMsg::Region { start, mode, index, from, to })
+            }
+            kind::REGION_RENAME => Some(ClientMsg::RegionRename { index: r.u32()?, name: r.string()? }),
+            kind::REGION_DELETE => Some(ClientMsg::RegionDelete { index: r.u32()? }),
             _ => None,
         })
     }
@@ -364,6 +405,7 @@ impl ClientMsg {
                 w.f32(brush.strength);
                 w.string(&brush.texture.map(|t| t.to_string()).unwrap_or_default());
                 w.u32(brush.cliff as u32);
+                w.u8(brush.flags);
                 kind::BRUSH
             }
             ClientMsg::StrokeEnd => kind::STROKE_END,
@@ -394,6 +436,31 @@ impl ClientMsg {
                 w.u8(*file);
                 w.u32(*index);
                 kind::DELETE
+            }
+            ClientMsg::Region { start, mode, index, from, to } => {
+                w.u8(*start as u8);
+                w.u8(*mode);
+                w.u32(*index as u32);
+                for v in from.0.iter().chain(&from.1).chain(&to.0).chain(&to.1) {
+                    w.f32(*v);
+                }
+                kind::REGION
+            }
+            ClientMsg::RegionRename { index, name } => {
+                w.u32(*index);
+                w.string(name);
+                kind::REGION_RENAME
+            }
+            ClientMsg::RegionDelete { index } => {
+                w.u32(*index);
+                kind::REGION_DELETE
+            }
+            ClientMsg::Icons(list) => {
+                w.list(list, |w, (k, id)| {
+                    w.u8(*k);
+                    w.string(id);
+                });
+                kind::ICONS
             }
         };
         w.frame(kind)
@@ -515,6 +582,7 @@ impl ServerMsg {
                 w.u32(p.instance);
                 w.u8(p.file);
                 w.u32(p.index);
+                w.u32(p.region.unwrap_or(u32::MAX));
                 w.string(&p.text);
                 w.u8(p.ground.is_some() as u8);
                 p.ground.unwrap_or_default().iter().for_each(|v| w.f32(*v));
@@ -568,6 +636,16 @@ impl ServerMsg {
                     w.u8(e.custom as u8);
                 });
                 kind::OBJECT_PALETTE
+            }
+            ServerMsg::Icons(list) => {
+                w.list(list, |w, e| {
+                    w.u8(e.kind);
+                    w.string(&e.id);
+                    w.u32(e.icon.width);
+                    w.u32(e.icon.height);
+                    w.bytes(&e.icon.rgba);
+                });
+                kind::ICONS_ANSWER
             }
             ServerMsg::State(st) => {
                 w.u8(st.dirty as u8);
@@ -676,10 +754,11 @@ impl ServerMsg {
                 ServerMsg::Objects(ObjectsMsg { first_texture, first_model, textures, models, notes: r.list(|r| r.string())? })
             }
             kind::PICKED => {
-                let (found, model, instance, file, index, text) = (r.u8()? != 0, r.u32()?, r.u32()?, r.u8()?, r.u32()?, r.string()?);
+                let (found, model, instance, file, index) = (r.u8()? != 0, r.u32()?, r.u32()?, r.u8()?, r.u32()?);
+                let (region, text) = (Some(r.u32()?).filter(|r| *r != u32::MAX), r.string()?);
                 let on = r.u8()? != 0;
                 let p = [r.f32()?, r.f32()?, r.f32()?];
-                ServerMsg::Picked(PickedMsg { found, model, instance, file, index, text, ground: on.then_some(p) })
+                ServerMsg::Picked(PickedMsg { found, model, instance, file, index, region, text, ground: on.then_some(p) })
             }
             kind::OVERLAYS => {
                 use crate::overlays::{Camera, Grid, Overlays, Region};
@@ -709,6 +788,9 @@ impl ServerMsg {
             kind::INSTANCES => ServerMsg::Instances(r.list(|r| r.f32s())?),
             kind::OBJECT_PALETTE => ServerMsg::ObjectPalette(r.list(|r| {
                 Ok(ObjectEntry { kind: r.u8()?, id: r.string()?, name: r.string()?, group: r.string()?, custom: r.u8()? != 0 })
+            })?),
+            kind::ICONS_ANSWER => ServerMsg::Icons(r.list(|r| {
+                Ok(IconEntry { kind: r.u8()?, id: r.string()?, icon: crate::textures::Icon { width: r.u32()?, height: r.u32()?, rgba: r.bytes()? } })
             })?),
             kind::STATE => ServerMsg::State(StateMsg { dirty: r.u8()? != 0, undo: r.u8()? != 0, redo: r.u8()? != 0, message: r.string()? }),
             _ => return Ok(None),

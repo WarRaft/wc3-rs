@@ -117,7 +117,7 @@ fn a_real_map_draws_with_its_textures() {
 
 /// A brush where a ray from above meets the ground, at (1, 0.5).
 fn raise(s: &mut Session, start: bool) -> Vec<ServerMsg> {
-    let brush = crate::edit::Brush { tool: crate::edit::Tool::Raise, size: 4.0, strength: 1.0, texture: None, cliff: -1 };
+    let brush = crate::edit::Brush { tool: crate::edit::Tool::Raise, size: 4.0, strength: 1.0, texture: None, cliff: -1, flags: 0 };
     s.brush([1.0, 0.5, 10.0], [0.0, 0.0, -1.0], &brush, start)
 }
 
@@ -194,4 +194,51 @@ fn things_placed_moved_turned_deleted_undone_and_saved() {
     let back = doo_rs::parse_doodads_any(&std::fs::read(dir.path().join("map/war3map.doo")).unwrap()).unwrap();
     assert_eq!(back.doodads.len(), 1);
     assert_eq!(back.doodads[0].placement.x, 128.0);
+}
+
+#[test]
+fn regions_drawn_moved_resized_renamed_deleted_and_pathing_painted() {
+    let dir = TestDir::new("session-regions");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    // A pathing map: 8 by 4 cells, nothing forbidden.
+    let pathing = wpm_rs::Pathing { version: 0, width: 8, height: 4, cells: vec![0; 32] };
+    dir.write("map/war3map.wpm", &pathing.to_bytes().unwrap());
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let down = [0.0, 0.0, -1.0];
+    // Cells (0, 0) to (1.3, 0.8): -128, -64 to 38.4, 38.4: on the grid of 32.
+    s.region_drag(true, 0, -1, ([0.0, 0.0, 9.0], down), ([0.5, 0.5, 9.0], down));
+    s.region_drag(false, 0, -1, ([0.0, 0.0, 9.0], down), ([1.3, 0.8, 9.0], down));
+    s.stroke_end();
+    let r = &s.placed.regions.as_ref().unwrap().regions;
+    assert_eq!((r.len(), r[0].name.as_str()), (1, "Region 000"));
+    assert_eq!([r[0].left, r[0].bottom, r[0].right, r[0].top], [-128.0, -64.0, 32.0, 32.0]);
+    // Moved a cell right; its top right corner to (1.5, 1) cells.
+    s.region_drag(true, 1, 0, ([0.5, 0.5, 9.0], down), ([1.5, 0.5, 9.0], down));
+    let r = &s.placed.regions.as_ref().unwrap().regions[0];
+    assert_eq!([r.left, r.right], [0.0, 160.0]);
+    s.region_drag(true, 2, 0, ([1.9, 0.9, 9.0], down), ([1.5, 1.0, 9.0], down));
+    let r = &s.placed.regions.as_ref().unwrap().regions[0];
+    assert_eq!([r.left, r.bottom, r.right, r.top], [0.0, -64.0, 64.0, 64.0]);
+    s.region_rename(0, "Spawn");
+    assert!(matches!(s.region_rename(0, " ").last(), Some(ServerMsg::State(st)) if st.message.contains("needs a name")));
+    // A click on the ground in it says it.
+    let picked = s.pick([1.0, 0.5, 9.0], down);
+    assert_eq!(picked.region, Some(0));
+    assert!(picked.text.contains("in Spawn"), "{}", picked.text);
+    // Pathing: no building painted where the brush is.
+    let brush = crate::edit::Brush { tool: crate::edit::Tool::PathingOn, size: 1.0, strength: 0.0, texture: None, cliff: -1, flags: 8 };
+    let msgs = s.brush([1.0, 0.5, 9.0], down, &brush, true);
+    assert!(matches!(&msgs[..], [ServerMsg::Overlays(o), ServerMsg::State(st)] if o.pathing.data.contains(&8) && st.dirty));
+    s.stroke_end();
+    s.region_delete(0);
+    assert!(s.placed.regions.as_ref().unwrap().regions.is_empty());
+    s.undo(false);
+    assert_eq!(s.placed.regions.as_ref().unwrap().regions[0].name, "Spawn");
+    // Saved: both files, the terrain untouched.
+    let saved = s.save();
+    assert!(matches!(&saved[..], [ServerMsg::State(st)] if st.message.contains("war3map.w3r") && st.message.contains("war3map.wpm") && !st.message.contains("w3e")), "{saved:?}");
+    let back = wpm_rs::parse(&std::fs::read(dir.path().join("map/war3map.wpm")).unwrap()).unwrap();
+    assert!(back.cells.contains(&8));
 }

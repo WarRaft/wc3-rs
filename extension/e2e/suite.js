@@ -169,6 +169,30 @@ async function steps() {
     const savedUnits = await until(() => we.state?.message && we.state, 'saved')
     check(!savedUnits.dirty && /^Saved .*map\.w3x.war3mapUnits\.doo$/.test(savedUnits.message), savedUnits.message)
     check(fs.statSync(map).mtimeMs > stamp1, 'the map on disk written')
+
+    log("the object palette's icons, asked for as they're shown")
+    await we.panel.webview.postMessage({type: 'tool', tool: 'place'})
+    const iconCount = await until(() => we.icons, 'icons')
+    check(iconCount > 10, `${iconCount} icons`)
+    await shot('world-editor-palette')
+
+    log('regions: one drawn, renamed; the pathing painted; both saved')
+    await we.panel.webview.postMessage({type: 'tool', tool: 'regions'})
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'region', mode: 0, from: [-0.3, -0.3], to: [0.3, 0.3]})
+    const made = await until(() => we.region?.name.startsWith('Region ') && we.region, 'a region drawn')
+    check(made.bounds[2] > made.bounds[0] && made.bounds.every(v => v % 32 === 0), `${made.name}: ${made.bounds.join(', ')}, on the grid of 32`)
+    await we.panel.webview.postMessage({type: 'regionRename', name: 'E2E Spawn'})
+    await until(() => we.region?.name === 'E2E Spawn', 'renamed')
+    await we.panel.webview.postMessage({type: 'brush', brush: {tool: 'pathingOn', size: 2, flags: 8}, points: [[0, 0]]})
+    await until(() => we.state?.undo && we.state.dirty, 'the pathing painted')
+    await shot('world-editor-regions')
+    const stamp2 = fs.statSync(map).mtimeMs
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'save'})
+    const savedOverlays = await until(() => we.state?.message && we.state, 'saved')
+    check(!savedOverlays.dirty && savedOverlays.message.includes('war3map.w3r') && savedOverlays.message.includes('war3map.wpm'), savedOverlays.message)
+    check(fs.statSync(map).mtimeMs > stamp2, 'the map on disk written')
     await vscode.commands.executeCommand('wc3.editor.close', {root})
     check(!api.worldEditors.has(root), 'closed: no editor of the project')
     await vscode.commands.executeCommand('workbench.action.closeAllEditors')

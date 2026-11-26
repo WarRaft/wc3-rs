@@ -199,6 +199,9 @@ struct Place {
 pub struct Files {
     pub doodads: Option<doo_rs::Doodads>,
     pub units: Option<doo_rs::Units>,
+    /// The regions (`war3map.w3r`) and the pathing (`war3map.wpm`).
+    pub regions: Option<w3r_rs::Regions>,
+    pub pathing: Option<wpm_rs::Pathing>,
     /// The layout the map's `war3map.w3i` says (1.32's skins), for new
     /// files.
     pub layout: doo_rs::Layout,
@@ -227,7 +230,22 @@ impl Files {
                 }
             }
         });
-        (Files { doodads, units, layout: layout.unwrap_or_default() }, notes)
+        let regions = game.read("war3map.w3r").and_then(|(b, _)| match w3r_rs::parse(&b) {
+            Ok(r) => Some(r),
+            Err(e) => {
+                notes.push(format!("Can't read war3map.w3r: {e}"));
+                None
+            }
+        });
+        let pathing = game.read("war3map.wpm").and_then(|(b, _)| match wpm_rs::parse(&b) {
+            Ok(p) => Some(p),
+            Err(e) => {
+                notes.push(format!("Can't read war3map.wpm: {e}"));
+                None
+            }
+        });
+        let files = Files { doodads, units, regions, pathing, layout: layout.unwrap_or_default() };
+        (files, notes)
     }
 }
 
