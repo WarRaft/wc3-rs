@@ -3,8 +3,10 @@
 /**
  * The view's camera, HiveWE's (`camera.ixx`): it looks at a point from a
  * distance, at two angles, with a field of view of 70° (World Editor's,
- * a new camera's; HiveWE's is 50°), turned about where it looks by its
- * roll (0 but through a camera that has one). Distances are in cells
+ * a new camera's), turned about where it looks by its roll (0 but
+ * through a camera that has one). The field of view is the game's: wider
+ * than what the picture's height shows, by its 1.66 (the vertical one
+ * 2 atan(tan(fov / 2) / 1.66), 45.8° for 70; as Waric reads the game). Distances are in cells
  * (128 units), as everything the editor draws, z up.
  *
  * Right drag moves it, Ctrl + right drag (or middle drag) turns it, the
@@ -66,10 +68,16 @@ const EditorCamera = (() => {
             this.position = [w / 2, h / 2, 0]
             this.horizontal = 0
             this.vertical = -0.977
-            this.distance = Math.min(Math.max(w, h) * 0.9, 1000)
             this.fov = 70
+            // As much of it in view as HiveWE's 50° high showed at 0.9 of its size.
+            this.distance = Math.min(Math.max(w, h) * 0.9 * Math.tan(25 * Math.PI / 180) / Math.tan(this.verticalFov() * Math.PI / 360), 1000)
             this.roll = 0
             this.position[2] = this.heightAt(this.position[0], this.position[1])
+        }
+
+        /** The picture's vertical field of view (degrees), from the game's. */
+        verticalFov() {
+            return 2 * Math.atan(Math.tan(this.fov * Math.PI / 360) / 1.66) * 180 / Math.PI
         }
 
         get direction() {
@@ -129,7 +137,7 @@ const EditorCamera = (() => {
         ray(nx, ny, aspect) {
             const d = this.direction
             const {right: x, up: y} = this.basis()
-            const t = Math.tan(this.fov * Math.PI / 360)
+            const t = Math.tan(this.verticalFov() * Math.PI / 360)
             const dir = norm([0, 1, 2].map(k => d[k] + x[k] * nx * t * aspect + y[k] * ny * t))
             return {origin: this.eye(), dir}
         }
@@ -137,7 +145,7 @@ const EditorCamera = (() => {
         /** The projection times the view, for a picture `aspect` wide. */
         matrix(aspect) {
             const eye = this.eye()
-            const projection = mat4.perspective(this.fov * Math.PI / 180, aspect, 0.05, 2000)
+            const projection = mat4.perspective(this.verticalFov() * Math.PI / 180, aspect, 0.05, 2000)
             return mat4.multiply(projection, mat4.lookAt(eye, this.position, this.basis().up))
         }
     }

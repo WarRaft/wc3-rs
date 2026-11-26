@@ -1747,7 +1747,11 @@ step), this list updated.
      (`Camera 001` ..., the next number: its target the point the view
      looks at, its distance, rotation 90° − the view's horizontal angle,
      angle of attack its vertical one, field of view the view's: 70,
-     World Editor's; the view's was HiveWE's 50; roll the view's), Set
+     World Editor's, the game's field of view, which the view turns into
+     its picture's height as the game does, 2 atan(tan(fov / 2) / 1.66),
+     45.8° for 70 (Waric's reading of the game; the view's was HiveWE's
+     50° high); roll the view's, positive turning the picture clockwise,
+     as Waric turns it), Set
      to view sets the one picked so (its field of view and roll the
      view's too; its height over the ground kept: it looks exactly as
      the view does, from the same eye along the same line, its target
