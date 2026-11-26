@@ -139,8 +139,8 @@ function registerWorldEditor(context, binary, pickManifest) {
   <div id="camera-panel" class="region-panel" hidden>
     <select id="camera-list" class="camera-list" size="6"></select>
     <input id="camera-name" type="text" placeholder="Camera's name" disabled>
-    <span id="camera-view" class="region-bounds"></span>
-    <label class="camera-field">Field of view <input id="camera-fov" type="number" min="1" max="179" step="1" disabled></label>
+    <span id="camera-hint" class="region-bounds"></span>
+    <div id="camera-fields" class="camera-fields"></div>
     <button id="camera-new" title="A new camera, looking as the view does">New from view</button>
     <button id="camera-set" disabled title="The camera picked looks as the view does">Set to view</button>
     <button id="camera-look" disabled title="The view looks as the camera picked does">Look through it</button>

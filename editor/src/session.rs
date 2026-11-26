@@ -1187,12 +1187,18 @@ impl Session {
     }
 
     /// Camera `index`'s field `field` (one of `w3c_rs::Camera::fields`)
-    /// set to `value`; a field of view between 1 and 179 degrees.
+    /// set to `value`; a field of view between 1 and 179 degrees, a
+    /// distance over 0.
     pub fn camera_set(&mut self, index: u32, field: &str, value: f32) -> Vec<ServerMsg> {
         let field = field.to_string();
         self.cameras_edit(true, |cameras| {
             let c = cameras.cameras.get_mut(index as usize).ok_or(format!("no camera {index}"))?;
-            if !value.is_finite() || (field == "field_of_view" && !(1.0..=179.0).contains(&value)) {
+            let bad = match field.as_str() {
+                "field_of_view" => !(1.0..=179.0).contains(&value),
+                "distance" => value <= 0.0,
+                _ => false,
+            };
+            if !value.is_finite() || bad {
                 return Err(format!("A camera's {} can't be {value}.", field.replace('_', " ")));
             }
             *c.field_mut(&field).ok_or(format!("a camera has no {field}"))? = value;

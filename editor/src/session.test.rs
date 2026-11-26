@@ -363,6 +363,7 @@ fn cameras_made_from_the_view_dragged_renamed_deleted_undone_saved_and_in_step_w
     assert_eq!(s.placed.cameras.as_ref().unwrap().cameras[0].field_of_view, 60.0);
     assert_eq!(s.overlays.as_ref().unwrap().cameras[0].view[3], 60.0);
     assert!(matches!(s.camera_set(0, "field_of_view", 200.0).last(), Some(ServerMsg::State(st)) if st.message.contains("field of view can't be 200")));
+    assert!(matches!(s.camera_set(0, "distance", 0.0).last(), Some(ServerMsg::State(st)) if st.message.contains("distance can't be 0")));
     assert!(matches!(s.camera_set(0, "nothing", 1.0).last(), Some(ServerMsg::State(st)) if st.message.contains("no nothing")));
     s.undo(false);
     assert_eq!(s.placed.cameras.as_ref().unwrap().cameras[0].field_of_view, 50.0);

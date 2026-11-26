@@ -346,6 +346,12 @@ button:hover {
     width: 5em;
 }
 
+.camera-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
 .camera-list {
     background: var(--vscode-input-background);
     color: var(--vscode-input-foreground);
