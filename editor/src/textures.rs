@@ -69,6 +69,21 @@ fn picture(game: &Game, path: &str) -> Result<Picture, String> {
     Ok((mip.width, mip.height, mip.rgba))
 }
 
+/// A ground texture's picture: in HD (Reforged), its `_Diffuse` first
+/// (`TerrainArt\LordaeronCapital\Lordc_GrassTrim.blp` is
+/// `Lordc_GrassTrim_Diffuse.dds`; 2.0's tilesets have no other), as the
+/// game and HiveWE read it.
+fn ground_picture(game: &Game, path: &str) -> Result<Picture, String> {
+    if game.hd() {
+        let file = path.rfind(['\\', '/']).map_or(0, |i| i + 1);
+        let stem = path[file..].rfind('.').map_or(path, |dot| &path[..file + dot]);
+        if let Ok(p) = picture(game, &format!("{stem}_Diffuse.dds")) {
+            return Ok(p);
+        }
+    }
+    picture(game, path)
+}
+
 /// A picture's biggest mip no wider or higher than `max`, else its
 /// smallest: what a model's texture is drawn with.
 pub fn capped(game: &Game, path: &str, max: u32) -> Result<Picture, String> {
@@ -171,7 +186,7 @@ pub fn ground(game: &Game, paths: &[(String, Option<String>)]) -> (Vec<GroundTex
         .iter()
         .map(|(id, path)| match path {
             None => Err(format!("{id}: not in TerrainArt\\Terrain.slk")),
-            Some(p) => picture(game, p).and_then(|pic| {
+            Some(p) => ground_picture(game, p).and_then(|pic| {
                 let (w, h, _) = &pic;
                 if *h < 4 || (*w != *h && *w != 2 * *h) {
                     Err(format!("{p}: {w} by {h}, neither 4 by 4 cells nor 8 by 4"))
