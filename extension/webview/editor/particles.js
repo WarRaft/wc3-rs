@@ -4,8 +4,10 @@
  * Particles, as the editor's process described each emitter (see
  * `editor/src/particles.rs`): no particle is kept here. A particle is its
  * number alone: the vertex shader works out when it was made (the
- * emitter makes its particles one after another, the oldest made again
- * when it dies), where it went (a random place in the emitter's width
+ * emitter makes its particles one after another at its most a second,
+ * the oldest made again when it dies; one made while the emitter was
+ * hidden, or made fewer of then, left out), where the emitter was then
+ * (or is now, for one in the model's space, 0x80000), where it went (a random place in the emitter's width
  * and length, a direction within its latitude, its speed varied, all
  * from the number and the round it's in), and where it is now (gravity
  * down), its colour, alpha and size between its segments', its texture's
@@ -57,19 +59,12 @@ void main() {
     int slot = gl_InstanceID % alive;
     int thing = gl_InstanceID / alive;
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-    // The emitter now: its place in the model, shown, how many a second
-    // (each thing at its own place in the loop, as its model's bones).
+    // Each thing at its own place in the loop, as its model's bones.
     float phase = fract(sin(dot(a_place.xy, vec2(12.9898, 78.233))) * 43758.5453) * float(u_frameCount);
-    int frame = int(mod(floor(u_time * u_fps + phase), float(u_frameCount)));
-    vec4 r0 = texelFetch(u_frames, ivec2(0, frame), 0);
-    vec4 r1 = texelFetch(u_frames, ivec2(1, frame), 0);
-    vec4 r2 = texelFetch(u_frames, ivec2(2, frame), 0);
-    vec4 extra = texelFetch(u_frames, ivec2(3, frame), 0);
-    float rate = extra.y;
-    if (extra.x < 0.5 || rate <= 0.0) return;
     float life = u_p[4];
-    // Made one after another: this one's round and age.
-    float every = 1.0 / rate;
+    // Made one after another at the emitter's most a second (alive over
+    // life); fewer kept when it makes fewer then (its rate at the time).
+    float every = life / float(alive);
     float period = float(alive) * every;
     float now = u_time + fract(phase * 0.618) * period;
     float firstAt = float(slot) * every;
@@ -77,6 +72,18 @@ void main() {
     float age = now - (cycle * period + firstAt);
     if (age < 0.0 || age > life) return;
     uint s = uint(slot) * 747796405u + uint(int(cycle)) * 2891336453u + uint(thing) * 1181783497u + 1u;
+    // The emitter when it was made: shown, making it.
+    int made = int(mod(floor((u_time - age) * u_fps + phase), float(u_frameCount)));
+    vec4 then = texelFetch(u_frames, ivec2(3, made), 0);
+    float keep = rnd(s) * 0.5 + 0.5;
+    if (then.x < 0.5 || then.y <= 0.0 || keep > then.y * every) return;
+    // Where the emitter is: when it was made (in the world), or now (in
+    // the model's space, 0x80000: it goes with the emitter).
+    bool modelSpace = (int(u_p[11]) & 0x80000) != 0;
+    int frame = modelSpace ? int(mod(floor(u_time * u_fps + phase), float(u_frameCount))) : made;
+    vec4 r0 = texelFetch(u_frames, ivec2(0, frame), 0);
+    vec4 r1 = texelFetch(u_frames, ivec2(1, frame), 0);
+    vec4 r2 = texelFetch(u_frames, ivec2(2, frame), 0);
     vec3 local = vec3(u_p[6] * 0.5 * rnd(s), u_p[5] * 0.5 * rnd(s), 0.0);
     float rotY = u_p[2] * rnd(s);
     bool line = (int(u_p[11]) & 0x20000) != 0;

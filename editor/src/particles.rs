@@ -4,7 +4,9 @@
 //! emitter is (its node's matrix, about its pivot), whether it's shown
 //! (`KP2V`) and how many it makes a second (`KP2E`). The page then works
 //! out each particle from its number and the time alone (when it was
-//! made, where it went), as HiveWE's `particle_emitter2_simulation` makes
+//! made, where the emitter was then, or is now for one in the model's
+//! space, 0x80000, and whether it was shown and making it; where it
+//! went), as HiveWE's `particle_emitter2_simulation` makes
 //! them: a place in the emitter's width and length, a direction within
 //! its latitude of straight up (in its plane alone for a line emitter),
 //! its speed varied, gravity down; its colour, alpha and size between

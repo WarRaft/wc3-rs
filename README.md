@@ -1828,8 +1828,12 @@ step), this list updated.
      emitter's place then from the baked frames, gravity since, the
      texture along it by age; 390 ribbons of the game's models read and
      written back, Phoenix, Graveyard, Shade's shown in `Stand` (many
-     units' only in Attack). Emitters in model space and `KRCO`/`KRTX`
-     animated are not yet. MCP: `mdx_info` says the emitters and
+     units' only in Attack). Emitters in the model's space (0x80000, done
+     after the geosets): a particle is where the emitter is now, the
+     rest (in the world) where it was when the particle was made, its
+     visibility and rate then too (made at the emitter's most a second,
+     thinned to its rate at the time), as HiveWE and Retera's Model
+     Studio do. `KRCO`/`KRTX` animated are not yet. MCP: `mdx_info` says the emitters and
      ribbons.
    - **8c, light** (done): `mdx-rs` reads lights (`LITE`, up to 1100);
      `editor/src/light.rs` finds the day and night models of the tileset

@@ -668,6 +668,7 @@
                         geosetAnimated: objects.models.filter(m => m.geosetAnimated).length,
                         emitters: objects.particles.count,
                         tails: objects.particles.models.flat().filter(x => x.e.params[14] !== 0).length,
+                        modelSpace: objects.particles.models.flat().filter(x => (x.e.params[11] & 0x80000) !== 0).length,
                         ribbons: objects.particles.ribbonCount,
                         error: gl.getError(),
                     },

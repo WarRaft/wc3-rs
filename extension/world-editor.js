@@ -81,7 +81,7 @@ const VIEW = 'wc3.editors'
  * @property {number | undefined} icons  how many of the object palette's icons the page has
  * @property {Map<string, string> | undefined} follow  the paths of the pieces with a text form, by their lower case
  * @property {string | undefined} picked  what the last click picked, said ('' nothing)
- * @property {{width: number, height: number, layers: number, water: number, cliffs: number, objects: number, animated: number, billboards: number, geosetAnimated: number, emitters: number, tails: number, ribbons: number, error: number} | null} drawn  what the page drew of the terrain first
+ * @property {{width: number, height: number, layers: number, water: number, cliffs: number, objects: number, animated: number, billboards: number, geosetAnimated: number, emitters: number, tails: number, modelSpace: number, ribbons: number, error: number} | null} drawn  what the page drew of the terrain first
  */
 
 /**
