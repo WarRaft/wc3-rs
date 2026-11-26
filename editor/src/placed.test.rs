@@ -116,23 +116,28 @@ fn a_start_locations_model_world_edit_art_says() {
 }
 
 /// A model that isn't anywhere (a dummy unit's `1.mdx`, a map's trick to
-/// have nothing drawn) and one that's a text model (`.mdl`, as Reforged
-/// maps import them): each said, as its own error.
+/// have nothing drawn): said. A text model (`.mdl`, as Reforged maps
+/// import them) of the name read as the game does; a broken one's error at
+/// its line.
 #[test]
-fn a_dummys_missing_model_and_a_text_model_said() {
+fn a_dummys_missing_model_said_and_text_models_read() {
     let dir = TestDir::new("placed-missing");
-    dir.write("Units/UnitUI.slk", &testdir::slk(&[&["unitUIID", "file"], &["hdum", "1"], &["hmdl", "war3mapImported\\Cliff"]]));
-    dir.write("war3mapImported/Cliff.mdl", b"Version {\n\tFormatVersion 800,\n}\n");
+    dir.write("Units/UnitUI.slk", &testdir::slk(&[&["unitUIID", "file"], &["hdum", "1"], &["hmdl", "war3mapImported\\Cliff"], &["hbad", "war3mapImported\\Broken.mdx"]]));
+    let mdl = "Version { FormatVersion 800, }\nModel \"Cliff\" { }\nSequences 1 { Anim \"Stand\" { Interval { 0, 1000 }, } }\nGeoset {\n Vertices 3 { { 0, 0, 0 }, { 64, 0, 0 }, { 0, 64, 0 }, }\n Normals 3 { { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, }\n TVertices 3 { { 0, 0 }, { 1, 0 }, { 0, 1 }, }\n VertexGroup { 0, 0, 0, }\n Faces 1 3 { Triangles { { 0, 1, 2 }, } }\n Groups 1 1 { Matrices { 0 }, }\n MaterialID 0,\n SelectionGroup 0,\n}\nMaterials 1 { Material { Layer { FilterMode None, static TextureID 0, } } }\nTextures 1 { Bitmap { Image \"\", ReplaceableId 1, } }\nBone \"b\" { ObjectId 0, GeosetId 0, GeosetAnimId None, }\nPivotPoints 1 { { 0, 0, 0 }, }\n";
+    dir.write("war3mapImported/Cliff.mdl", mdl.as_bytes());
+    dir.write("war3mapImported/Broken.mdl", b"Version { FormatVersion 800, }\nGeoset {\n Vertices 1 { { 0, 0 }, }\n}\n");
     let mut units = doo_rs::Units { version: 8, subversion: 11, layout: doo_rs::Layout::Classic, units: vec![] };
-    units.units.push(doo_rs::Unit::new(Rawcode(*b"hdum"), 0.0, 0.0, 0));
-    units.units.push(doo_rs::Unit::new(Rawcode(*b"hdum"), 64.0, 0.0, 0));
-    units.units.push(doo_rs::Unit::new(Rawcode(*b"hmdl"), 0.0, 64.0, 0));
+    for (id, x) in [(b"hdum", 0.0), (b"hdum", 64.0), (b"hmdl", 128.0), (b"hbad", 192.0)] {
+        units.units.push(doo_rs::Unit::new(Rawcode(*id), x, 64.0, 0));
+    }
     dir.write("war3mapUnits.doo", &units.to_bytes().unwrap());
     let game = wc3_server::game::Lookup { roots: vec![dir.path().to_path_buf()], ..Default::default() }.open().0;
     let types = Types::load(&game);
     let t = w3e_rs::parse(&testdir::terrain()).unwrap();
     let draw = crate::terrain::Draw::new(&t, &crate::terrain::Grounds { ids: vec![], blight: 0, cliff_ground: vec![] }, crate::terrain::tile_flags(&t), &|_| false, 0.0);
     let o = Objects::load(&game, &types, &draw);
-    assert_eq!(o.notes, ["Models not in the game's files or the roots: 1.mdx", "Text models (.mdl), not read yet: war3mapImported\\Cliff.mdl"]);
-    assert!(o.things.is_empty());
+    assert_eq!(o.notes, ["Models not in the game's files or the roots: 1.mdx"]);
+    let paths: Vec<_> = o.models.iter().map(|m| (m.path.as_str(), m.error.as_str())).collect();
+    assert_eq!(paths, [("war3mapImported\\Cliff.mdl", ""), ("war3mapImported\\Broken.mdl", "war3mapImported\\Broken.mdl: MDL: line 3: a number expected, `}` found")]);
+    assert_eq!(o.models[0].geosets.len(), 1);
 }

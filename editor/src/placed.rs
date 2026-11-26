@@ -164,6 +164,16 @@ pub fn model_path(path: &str) -> String {
     }
 }
 
+/// A model's file as the game reads it: `path`, else (Reforged) the text
+/// model of its name, `.mdl`. Its path and bytes.
+pub fn read_model(game: &Game, path: &str) -> Option<(String, Vec<u8>)> {
+    if let Some((bytes, _)) = game.read(path) {
+        return Some((path.to_string(), bytes));
+    }
+    let mdl = format!("{}.mdl", strip_extension(path));
+    game.read(&mdl).map(|(bytes, _)| (mdl, bytes))
+}
+
 fn strip_extension(path: &str) -> &str {
     let file_start = path.rfind(['\\', '/']).map_or(0, |i| i + 1);
     match path[file_start..].rfind('.') {
@@ -413,15 +423,12 @@ impl Objects {
         }
 
         let mut missing: Vec<String> = Vec::new();
-        // Text models (`.mdl`, which Reforged reads as they are): there,
-        // not read yet.
-        let mut text_models: Vec<String> = Vec::new();
         for place in places {
             let key = (place.paths[0].to_ascii_lowercase(), place.replaceable.clone());
             let model = match self.model_of.get(&key) {
                 Some(m) => *m,
                 None => {
-                    let found = place.paths.iter().find_map(|p| game.read(p).map(|(b, _)| (p.clone(), b)));
+                    let found = place.paths.iter().find_map(|p| read_model(game, p));
                     let m = found.map(|(path, bytes)| {
                         let m = load_model(&path, &bytes, place.replaceable.as_ref(), game, &mut self.textures, &mut self.texture_of);
                         self.models.push(m);
@@ -432,10 +439,8 @@ impl Objects {
                 }
             };
             let Some(model) = model else {
-                let mdl = format!("{}.mdl", strip_extension(&place.paths[0]));
-                let (list, name) = if game.read(&mdl).is_some() { (&mut text_models, mdl) } else { (&mut missing, place.paths[0].clone()) };
-                if !list.contains(&name) {
-                    list.push(name);
+                if !missing.contains(&place.paths[0]) {
+                    missing.push(place.paths[0].clone());
                 }
                 continue;
             };
@@ -457,9 +462,6 @@ impl Objects {
         }
         if !missing.is_empty() {
             self.notes.push(format!("Models not in the game's files or the roots: {}", missing.join(", ")));
-        }
-        if !text_models.is_empty() {
-            self.notes.push(format!("Text models (.mdl), not read yet: {}", text_models.join(", ")));
         }
     }
 
@@ -532,7 +534,7 @@ fn load_model(
     texture_of: &mut HashMap<String, usize>,
 ) -> Model {
     let mut model = Model { path: path.to_string(), ..Default::default() };
-    let m = match mdx_rs::parse(bytes) {
+    let m = match mdx_rs::parse_file(bytes) {
         Ok(m) => m,
         Err(e) => {
             model.error = format!("{path}: {e}");

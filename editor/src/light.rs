@@ -40,7 +40,7 @@ pub fn load(game: &Game, letter: char) -> (DayLight, DayLight, Vec<String>) {
             notes.push(format!("No light for tileset {letter} in UI\\WorldEditData.txt [{section}]: the view's own."));
             return DayLight::default();
         };
-        match game.read(&p).map(|(b, _)| mdx_rs::parse(&b)) {
+        match crate::placed::read_model(game, &p).map(|(_, b)| mdx_rs::parse_file(&b)) {
             Some(Ok(m)) => DayLight { samples: bake(&m), path: p },
             Some(Err(e)) => {
                 notes.push(format!("{p}: {e}"));

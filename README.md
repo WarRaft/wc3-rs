@@ -33,8 +33,9 @@ item's details are in its section below):
   `w3r` 7, read; their files over 90 MB not in the repository: GitHub's
   limit), each a project of its own (`wc3.bni`). Edemium's dummy units
   name models nowhere (`1.mdx`, `null.mdx`), Castle Revival imports text
-  models (`.mdl`, which Reforged reads; not read here yet): each said as
-  its own error (`placed::tests`). three-corridors'
+  models (`.mdl`): read as Reforged reads them, a `.mdx` not found taken
+  as the `.mdl` of its name (`mdx-rs`'s MDL; a broken one's error at its
+  line), `placed::tests`. three-corridors'
   custom script is vJASS and Zinc as real libraries write them (95
   textmacros, 13 Zinc blocks, 43 libraries: Nestharus', Bribe's,
   BPower's) and builds clean (`wc3-build`'s README, Tests); none uses
