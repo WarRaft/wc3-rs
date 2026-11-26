@@ -253,7 +253,7 @@ async function steps() {
     we.camera = undefined
     await we.panel.webview.postMessage({type: 'camera', action: 'new'})
     const cam = await until(() => we.camera?.count === camsAt + 1 && we.camera, 'a camera made from the view')
-    check(/^Camera \d{3}$/.test(cam.name) && cam.index === camsAt && cam.view[3] === 50 && cam.view[2] > 0, `${cam.name}: rotation, angle of attack, distance, field of view ${cam.view.join(', ')}`)
+    check(/^Camera \d{3}$/.test(cam.name) && cam.index === camsAt && cam.view[3] === 70 && cam.view[2] > 0, `${cam.name}: rotation, angle of attack, distance, field of view ${cam.view.join(', ')}`)
     await we.panel.webview.postMessage({type: 'camera', action: 'rename', name: 'E2E Intro'})
     await until(() => we.camera?.name === 'E2E Intro', 'renamed')
     await we.panel.webview.postMessage({type: 'camera', action: 'drag', x: 0.3, y: -0.2})

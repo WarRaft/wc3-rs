@@ -43,7 +43,7 @@
 //! | 20 | `Resize` | `i32` cells added left, right, bottom, top (fewer than 0: taken off), `u8` margins given, `i32` the playable area's margins left, right, bottom, top; answered by the map and all of it drawn again (as `Hello`), `MapSettings` |
 //! | 21 | `Tiles` | the tile setter's: a list of tile ids, the new index of each old tile (an array of `u8`), `u8` the tileset's letter; answered as `Resize` |
 //! | 23 | `Camera` | a camera's target dragged: `u8` the drag's first, `u32` its index, the ray where it is (six `f32`): its target moved where it meets the ground; answered by `Overlays` and `State` |
-//! | 24 | `CameraView` | a camera made from the view or set to it: `i32` its index (a new one's: -1), `f32` the point looked at x, y, z (cells, layers), distance (cells), the view's horizontal and vertical angles (radians, as the page's camera has them), field of view (degrees); answered the same |
+//! | 24 | `CameraView` | a camera made from the view or set to it: `i32` its index (a new one's: -1), `f32` the point looked at x, y, z (cells, layers), distance (cells), the view's horizontal and vertical angles (radians, as the page's camera has them), its field of view (degrees: the page sends World Editor's 70 for a new one, the camera's own for one set); answered the same |
 //! | 25 | `CameraRename` | `u32` index, its name; answered the same |
 //! | 26 | `CameraDelete` | `u32` index; answered the same |
 //! | 22 | `TilePathing` | the tile pather's: `u8` a tile's index in the terrain's list, `u8` what it forbids (`wpm` flags: 2 walking, 4 flying, 8 building); answered by `Overlays` and `State` |

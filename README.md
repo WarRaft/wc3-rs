@@ -1746,8 +1746,8 @@ step), this list updated.
      the ground kept); New from view makes one looking as the view does
      (`Camera 001` ..., the next number: its target the point the view
      looks at, its distance, rotation 90° − the view's horizontal angle,
-     angle of attack its vertical one, field of view the view's), Set to
-     view sets the one picked so, Look through it (a double click in the
+     angle of attack its vertical one, field of view World Editor's 70),
+     Set to view sets the one picked so (its field of view kept), Look through it (a double click in the
      list) puts the view where it looks from; its name changed as it's
      typed; Delete. Undo (`Snapshot::Cameras`), saved into its layer; a
      map without `war3map.w3c` gets one in its `war3map.w3i`'s layout (a
