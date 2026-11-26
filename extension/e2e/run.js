@@ -7,7 +7,11 @@
  * `wc3.bni` naming the game (`WC3_GAME`; `E2E_HD=1`: its HD, a
  * Reforged install's).
  *
- *   node e2e/run.js [map.w3x]
+ *   node e2e/run.js [map.w3x] [all | current | step,step...]
+ *
+ * Which steps (`suite.js`'s `STEPS`): all of them (`npm run e2e`), the
+ * work in hand's (`current`, its `CURRENT`: `npm run e2e:current`), or
+ * those named; a step's needs and the World Editor opened with them.
  *
  * What the tests say goes to `<out>/log.txt`, printed when it's done;
  * screenshots to `<out>/*.png` (macOS `screencapture`: the terminal needs
@@ -20,7 +24,11 @@ const os = require('os')
 const path = require('path')
 
 const ext = path.resolve(__dirname, '..')
-const map = path.resolve(process.argv[2] || path.join(ext, '..', '..', 'maps', 'Diablo', 'Diablo-III-beta-Unprotected.w3x'))
+// A map (a path with an extension), and which steps.
+const given = process.argv.slice(2)
+const mapArg = given.find(a => /\.w3[xm]$/i.test(a))
+const which = given.find(a => a !== mapArg) || 'all'
+const map = path.resolve(mapArg || path.join(ext, '..', '..', 'maps', 'Diablo', 'Diablo-III-beta-Unprotected.w3x'))
 const game = process.env.WC3_GAME || '/Volumes/TrascendSSD/Warcraft III (Vanilla)/Warcraft III 1.26a Full (EN)'
 const code = process.env.VSCODE || '/Applications/Visual Studio Code.app/Contents/MacOS/Code'
 const out = process.env.E2E_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'wc3-e2e-'))
@@ -63,7 +71,7 @@ const args = [
     '--new-window',
 ]
 console.log(`VS Code on ${workspace} (out: ${out})`)
-const child = spawn(code, args, {env: {...process.env, E2E_OUT: out, E2E_MAP: path.join(workspace, 'map.w3x'), ELECTRON_RUN_AS_NODE: ''}, stdio: ['ignore', 'pipe', 'pipe']})
+const child = spawn(code, args, {env: {...process.env, E2E_STEPS: which, E2E_OUT: out, E2E_MAP: path.join(workspace, 'map.w3x'), ELECTRON_RUN_AS_NODE: ''}, stdio: ['ignore', 'pipe', 'pipe']})
 child.stdout.on('data', d => process.env.E2E_VERBOSE && process.stderr.write(d))
 child.stderr.on('data', d => process.env.E2E_VERBOSE && process.stderr.write(d))
 // The screenshots the tests ask for (`shot.request`: the file to write).

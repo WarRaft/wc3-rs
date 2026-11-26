@@ -2301,7 +2301,16 @@ query about 1 ms.
 
 ## Tests in the editor
 
-`cd extension && npm run e2e [map.w3x]` (`e2e/run.js`) runs the
+`cd extension && npm run e2e` (`node e2e/run.js [map.w3x] [all |
+current | step,step...]`) runs every step; `npm run e2e:current` only
+the work in hand's (`suite.js`'s `CURRENT`, moved on as the work is:
+some 15 seconds against two minutes), and names (`things,cameras`) those
+steps. Each step of `suite.js`'s `STEPS` has a name, says whether it
+works in the World Editor (opened before the first such step, closed
+after the last) and the steps it needs (`w3r-text` the region of
+`regions`), run with it. A new piece of the editor gets a step, or its
+part of one; while it's worked on, the current steps are run, and every
+step before a commit. `run.js`
 extension in a VS Code of its own: the one installed (`VSCODE`, else
 `/Applications/Visual Studio Code.app`), with a profile and extensions
 folder of its own in a temporary folder (no other extension; it opens

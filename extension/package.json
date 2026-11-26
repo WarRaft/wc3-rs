@@ -24,7 +24,8 @@
   ],
   "main": "./extension.js",
   "scripts": {
-    "e2e": "node e2e/run.js"
+    "e2e": "node e2e/run.js all",
+    "e2e:current": "node e2e/run.js current"
   },
   "activationEvents": [
     "onFileSystem:wc3obj",
