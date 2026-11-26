@@ -353,7 +353,7 @@ const EditorProtocol = (() => {
                         normals: r.f32s(),
                         uvs: r.f32s(),
                         indices: r.u16s(),
-                        layers: r.list(r => ({texture: r.i32(), filterMode: r.u32(), shading: r.u32(), alpha: r.f32(), hd: r.u8() !== 0, normal: r.i32(), orm: r.i32(), emissive: r.i32(), team: r.i32()})),
+                        layers: r.list(r => ({texture: r.i32(), filterMode: r.u32(), shading: r.u32(), alpha: r.f32(), hd: r.u8() !== 0, normal: r.i32(), orm: r.i32(), emissive: r.i32(), team: r.i32(), reflections: r.i32()})),
                         skin: r.bytes(),
                         index: r.u32(),
                         tangents: r.f32s(),

@@ -1983,9 +1983,12 @@ step), this list updated.
        added after the light; the normal taken to the world rather than
        the light to the tangent's space, so HD models take the map's day
        and night as the rest. A slot a layer hasn't: a flat normal, an
-       ORM with no team colour, no glow. Not yet: roughness and
-       metalness (the ORM's G, B: no specular light here), reflections
-       (slot 5).
+       ORM with no team colour, no glow. The highlight as Retera's
+       Model Studio draws it (HiveWE draws none): about the half vector,
+       as strong as the surface is smooth (the ORM's G) and metal (B),
+       its colour the reflections' (slot 5, an environment map at the
+       pixel's place on the screen) or, the rougher, the surface's; a
+       layer without an ORM none.
      - **f, 2.0's mods and HD terrain** (done): the mods in HiveWE's
        order (`casc::prefixes`): the graphics mod's tileset, locale and
        itself, then the game's tileset, locale and itself, then

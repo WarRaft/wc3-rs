@@ -713,7 +713,7 @@ impl ServerMsg {
                             w.u32(l.shading);
                             w.f32(l.alpha);
                             w.u8(l.hd as u8);
-                            for t in [l.normal, l.orm, l.emissive, l.team] {
+                            for t in [l.normal, l.orm, l.emissive, l.team, l.reflections] {
                                 w.u32(t as u32);
                             }
                         });
@@ -980,6 +980,7 @@ impl ServerMsg {
                                     orm: r.u32()? as i32,
                                     emissive: r.u32()? as i32,
                                     team: r.u32()? as i32,
+                                    reflections: r.u32()? as i32,
                                 })
                             })?,
                             skin: r.bytes()?,

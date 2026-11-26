@@ -108,6 +108,7 @@ out vec3 v_team;
 out float v_selected;
 out float v_dist;
 out vec4 v_geoset;
+out vec3 v_view;
 uniform vec3 u_eye;
 void main() {
     vec3 pos = a_pos;
@@ -136,6 +137,7 @@ void main() {
     v_team = a_team;
     v_selected = gl_InstanceID == u_selected ? 1.0 : 0.0;
     v_dist = distance(p, u_eye) * 128.0;
+    v_view = u_eye - p;
     gl_Position = u_mvp * vec4(p, 1.0);
 }`
 
@@ -147,12 +149,16 @@ uniform float u_alpha;
 uniform bool u_cutout;
 uniform bool u_unshaded;
 uniform vec3 u_light;
-// Reforged's HD layer: its normal map (x, y), ORM (its alpha where team
-// colour goes), emissive (units 2, 3, 4).
+// Reforged's HD layer: its normal map (x, y), ORM (occlusion, roughness,
+// metalness; its alpha where team colour goes), emissive, reflections
+// (units 2, 3, 4, 5).
 uniform bool u_hd;
 uniform sampler2D u_normalMap;
 uniform sampler2D u_orm;
 uniform sampler2D u_emissive;
+uniform sampler2D u_reflections;
+uniform vec2 u_viewport;
+in vec3 v_view;
 ${EditorLight.GLSL}
 in float v_dist;
 in vec2 v_uv;
@@ -172,11 +178,12 @@ void main() {
     if (u_cutout && color.a < 0.75) discard;
     vec3 n = v_normal;
     vec3 glow = vec3(0.0);
+    vec4 orm = vec4(1.0, 1.0, 0.0, 0.0);
     if (u_hd) {
         // As the game's HD shader: team colour where the ORM's alpha says,
         // the normal map's x and y (z worked out) about the vertex's
         // tangent, the emissive added after the light.
-        vec4 orm = texture(u_orm, v_uv);
+        orm = texture(u_orm, v_uv);
         color.rgb = mix(color.rgb, color.rgb * v_team, orm.a);
         if (dot(v_tangent.xyz, v_tangent.xyz) > 1e-4) {
             vec2 xy = texture(u_normalMap, v_uv).xy * 2.0 - 1.0;
@@ -189,7 +196,20 @@ void main() {
         glow = texture(u_emissive, v_uv).rgb;
     }
     if (!u_unshaded) {
+        vec3 base = color.rgb;
         color.rgb = lit(color.rgb, n, clamp((dot(-u_light, normalize(n)) + 1.0) * 0.5, 0.0, 1.0) * 1.2);
+        if (u_hd) {
+            // The highlight as Retera's Model Studio draws it: about the
+            // half vector, as strong as the surface is smooth (G) and
+            // metal (B), its colour the reflections' (an environment map
+            // at the pixel's place on the screen) or, the rougher, the
+            // surface's.
+            vec3 N = normalize(n);
+            vec3 H = normalize(-u_light + normalize(v_view));
+            float spec = pow(max(dot(N, H) * 0.5 + 0.5, 0.0), 32.0);
+            vec3 sky = clamp(0.2 + 2.0 * texture(u_reflections, gl_FragCoord.xy / u_viewport * vec2(1.0, -1.0)).rgb, 0.0, 1.0);
+            color.rgb += (max(0.5 - orm.g, 0.0) + orm.b) * spec * mix(sky, base, orm.g);
+        }
     }
     color.rgb += glow;
     color.rgb = fogged(color.rgb, v_dist);
@@ -217,7 +237,7 @@ void main() {
         if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p))
         const u = name => gl.getUniformLocation(p, name)
         const light = Object.fromEntries(['u_daylight', 'u_sun', 'u_diffuse', 'u_ambient', 'u_fog', 'u_fogStart', 'u_fogEnd', 'u_fogColor', 'u_eye'].map(n => [n, u(n)]))
-        return {...light, program: p, u_animated: u('u_animated'), u_skinned: u('u_skinned'), u_geoset: u('u_geoset'), u_still: u('u_still'), u_camRight: u('u_camRight'), u_camUp: u('u_camUp'), u_camForward: u('u_camForward'), u_matrices: u('u_matrices'), u_time: u('u_time'), u_fps: u('u_fps'), u_frames: u('u_frames'), u_mvp: u('u_mvp'), u_selected: u('u_selected'), u_texture: u('u_texture'), u_source: u('u_source'), u_alpha: u('u_alpha'), u_cutout: u('u_cutout'), u_unshaded: u('u_unshaded'), u_light: u('u_light'), u_hd: u('u_hd'), u_normalMap: u('u_normalMap'), u_orm: u('u_orm'), u_emissive: u('u_emissive')}
+        return {...light, program: p, u_animated: u('u_animated'), u_skinned: u('u_skinned'), u_geoset: u('u_geoset'), u_still: u('u_still'), u_camRight: u('u_camRight'), u_camUp: u('u_camUp'), u_camForward: u('u_camForward'), u_matrices: u('u_matrices'), u_time: u('u_time'), u_fps: u('u_fps'), u_frames: u('u_frames'), u_mvp: u('u_mvp'), u_selected: u('u_selected'), u_texture: u('u_texture'), u_source: u('u_source'), u_alpha: u('u_alpha'), u_cutout: u('u_cutout'), u_unshaded: u('u_unshaded'), u_light: u('u_light'), u_hd: u('u_hd'), u_normalMap: u('u_normalMap'), u_orm: u('u_orm'), u_emissive: u('u_emissive'), u_reflections: u('u_reflections'), u_viewport: u('u_viewport')}
     }
 
     class Objects {
@@ -425,11 +445,12 @@ void main() {
                             gl.uniform1i(p.u_hd, l.hd ? 1 : 0)
                             if (l.hd) {
                                 const own = (i, none) => (i >= 0 ? this.textures[i] : null) ?? none
-                                for (const [unit, name, t] of [[2, 'u_normalMap', own(l.normal, this.flat)], [3, 'u_orm', own(l.orm, this.plainOrm)], [4, 'u_emissive', own(l.emissive, this.black)]]) {
+                                for (const [unit, name, t] of [[2, 'u_normalMap', own(l.normal, this.flat)], [3, 'u_orm', own(l.orm, this.plainOrm)], [4, 'u_emissive', own(l.emissive, this.black)], [5, 'u_reflections', own(l.reflections, this.black)]]) {
                                     gl.activeTexture(gl.TEXTURE0 + unit)
                                     gl.bindTexture(gl.TEXTURE_2D, t)
                                     gl.uniform1i(p[name], unit)
                                 }
+                                gl.uniform2f(p.u_viewport, gl.drawingBufferWidth, gl.drawingBufferHeight)
                                 gl.activeTexture(gl.TEXTURE0)
                             }
                             gl.drawElementsInstanced(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0, m.instances)

@@ -49,13 +49,15 @@ pub struct Layer {
     pub alpha: f32,
     /// Reforged's HD layer (its textures by slot, more than a diffuse
     /// one): its normal map, ORM (occlusion, roughness, metalness; its
-    /// alpha where team colour goes), emissive and team colour textures,
-    /// each as [`texture`](Self::texture) ([`texture::NONE`] for none).
+    /// alpha where team colour goes), emissive, team colour and
+    /// reflections (an environment map) textures, each as
+    /// [`texture`](Self::texture) ([`texture::NONE`] for none).
     pub hd: bool,
     pub normal: i32,
     pub orm: i32,
     pub emissive: i32,
     pub team: i32,
+    pub reflections: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -644,6 +646,7 @@ fn load_model(
                             orm: slot(2),
                             emissive: slot(3),
                             team: slot(4),
+                            reflections: slot(5),
                         }
                     })
                     .collect()
