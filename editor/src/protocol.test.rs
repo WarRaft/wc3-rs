@@ -45,6 +45,10 @@ fn edits_round_trip() {
         ClientMsg::Redo,
         ClientMsg::Save,
         ClientMsg::ThingAsk { file: 1, index: 7 },
+        ClientMsg::SoundNew { file: "Sound\\Ambient\\Rain.wav".into() },
+        ClientMsg::SoundSet { index: 1, field: "volume".into(), value: "".into() },
+        ClientMsg::SoundDelete { index: 2 },
+        ClientMsg::SoundPlay { file: "a.wav".into() },
         ClientMsg::ThingSet { file: 0, index: 2, field: "scale_x".into(), value: 1.5 },
     ] {
         let frame = msg.encode();
@@ -59,6 +63,10 @@ fn edits_round_trip() {
         brush: crate::edit::Brush { tool: crate::edit::Tool::Texture, size: 4.0, strength: 0.5, texture: parser_rs::bin::Rawcode::parse("Lgrs"), cliff: -1, flags: 0 },
     };
     assert_eq!(page.encode().len(), 52);
+    let mut rain = w3s_rs::Sound::new("gg_snd_Rain", "Sound\\Ambient\\Rain.wav");
+    rain.volume = 100;
+    round_trip(ServerMsg::Sounds(vec![rain, w3s_rs::Sound::new("gg_snd_B", "b.mp3")]));
+    round_trip(ServerMsg::SoundData { file: "a.wav".into(), bytes: vec![1, 2, 3], error: String::new() });
     round_trip(ServerMsg::Thing(ThingMsg { file: 1, index: 7, fields: vec![("x".into(), 64.0), ("hp".into(), -1.0)] }));
     round_trip(ServerMsg::State(StateMsg { dirty: true, undo: true, redo: false, message: "Saved".into() }));
     round_trip(ServerMsg::Palette(PaletteMsg {

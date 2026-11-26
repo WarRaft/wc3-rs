@@ -84,6 +84,7 @@ pub enum Snapshot {
     Units(Vec<doo_rs::Unit>),
     Regions(Vec<w3r_rs::Region>),
     Cameras(Vec<w3c_rs::Camera>),
+    Sounds(Vec<w3s_rs::Sound>),
     Pathing(Vec<u8>),
     /// The whole terrain (the tile setter's: its list, cliffs, tileset).
     Whole(Box<Terrain>),
@@ -99,6 +100,8 @@ pub struct Dirty {
     pub pathing: bool,
     /// `war3map.w3c`.
     pub cameras: bool,
+    /// `war3map.w3s`.
+    pub sounds: bool,
     /// `war3map.w3i` (its playable area, its tileset) and `war3map.shd`.
     pub info: bool,
     pub shadows: bool,
@@ -106,7 +109,7 @@ pub struct Dirty {
 
 impl Dirty {
     pub fn any(self) -> bool {
-        self.terrain || self.doodads || self.units || self.regions || self.pathing || self.cameras || self.info || self.shadows
+        self.terrain || self.doodads || self.units || self.regions || self.pathing || self.cameras || self.sounds || self.info || self.shadows
     }
 }
 
@@ -240,6 +243,7 @@ impl Edits {
             Snapshot::Units(_) => self.dirty.units = true,
             Snapshot::Regions(_) => self.dirty.regions = true,
             Snapshot::Cameras(_) => self.dirty.cameras = true,
+            Snapshot::Sounds(_) => self.dirty.sounds = true,
             Snapshot::Pathing(_) => self.dirty.pathing = true,
         }
         self.undo.push(before);
@@ -340,6 +344,11 @@ impl Edits {
                 self.dirty.cameras = true;
                 let file = t.files.cameras.get_or_insert_with(|| w3c_rs::Cameras::new(Default::default()));
                 Snapshot::Cameras(std::mem::replace(&mut file.cameras, c))
+            }
+            Snapshot::Sounds(s) => {
+                self.dirty.sounds = true;
+                let file = t.files.sounds.get_or_insert_with(w3s_rs::Sounds::new);
+                Snapshot::Sounds(std::mem::replace(&mut file.sounds, s))
             }
             Snapshot::Pathing(cells) => {
                 self.dirty.pathing = true;

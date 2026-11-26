@@ -21,7 +21,7 @@ item's details are in its section below):
 - **The World Editor** (see [World Editor](#world-editor)): its steps,
   in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs), 4 (doodads and units),
   5 (overlays), 6 (editing: terrain brushes, things placed, regions,
-  pathing, cameras, a thing's properties), 7 (in step with the rest), 8a (animation), 8b (particles),
+  pathing, cameras, a thing's properties, sounds), 7 (in step with the rest), 8a (animation), 8b (particles),
   8c (light), 8d (the map's size and tiles), the leftovers; Reforged HD
   a (the storage), b (the game's layers), c (`.dds`), d (its
   models), e (the HD shaders), f (2.0's mods and HD terrain).
@@ -1791,6 +1791,23 @@ step), this list updated.
      as it's typed (`ThingSet`), in its range or said and put back; an
      undo each. Messages `ThingAsk`, `ThingSet`, `Thing`. MCP: the
      `doo_*` tools already change them.
+   - **6f, sounds** (done after 6e): `war3map.w3s` a piece of the
+     session as the cameras are (read with the rest, taken in when
+     changed on disk, saved, its text form in step; `Snapshot::Sounds`).
+     The Sounds tool: the list of the map's sounds; New of a file (a path
+     in the game's files or the map's; one neither has is made and
+     said), as World Editor makes one (`w3s_rs::Sound::new`: 3D,
+     stopping out of range, the rest its label's defaults), its variable
+     `gg_snd_` and the file's name (`_2` ... when taken); the one picked's
+     variable (`gg_snd_` and a name, no other sound's), file, EAX label,
+     flags (looping, 3D, stopping out of range, music), channel, volume
+     (0 to 127), pitch (over 0), fades, distances, cone, each set as it's
+     typed (`SoundSet`, as text: empty is "use default"), in its range
+     or said; Play (its file's bytes, `SoundPlay`: a `.wav` the game has
+     as `.flac` or `.mp3` too, decoded and played by the page's
+     `AudioContext`); Delete. An undo each. Messages `SoundNew`,
+     `SoundSet`, `SoundDelete`, `SoundPlay`, `Sounds`, `SoundData`. MCP:
+     the `w3s_*` tools already change the file.
 
 7. **In step with the rest** (done). Decided with the user: a text form
    open in VS Code and the editor are one (the text is the truth, as

@@ -54,13 +54,13 @@ fn the_terrain_drawn_with_the_tables_of_the_roots() {
     dir.write("map/T/Dirt.blp", &testdir::tga(8, 4, |_, _| [9, 9, 9, 255]));
     let mut s = Session::open(dir.path()).unwrap();
     let msgs = s.draw();
-    let [ServerMsg::Ground(g), ServerMsg::Water(w), ServerMsg::Cliffs(c), ServerMsg::Terrain(t), ServerMsg::Objects(o), ServerMsg::Instances(_), ServerMsg::Overlays(v), ServerMsg::Palette(_), ServerMsg::ObjectPalette(_), ServerMsg::Follow(f), ServerMsg::Light(l), ServerMsg::State(st)] = &msgs[..] else { panic!("{} messages", msgs.len()) };
+    let [ServerMsg::Ground(g), ServerMsg::Water(w), ServerMsg::Cliffs(c), ServerMsg::Terrain(t), ServerMsg::Objects(o), ServerMsg::Instances(_), ServerMsg::Overlays(v), ServerMsg::Palette(_), ServerMsg::ObjectPalette(_), ServerMsg::Sounds(_), ServerMsg::Follow(f), ServerMsg::Light(l), ServerMsg::State(st)] = &msgs[..] else { panic!("{} messages", msgs.len()) };
     assert_eq!(st, &StateMsg::default());
     // No game: no day and night (the view's own light), said.
     assert!(l.terrain.is_empty() && l.notes.iter().any(|n| n.contains("TerrainLights")), "{:?}", l.notes);
     // The pieces with a text form, where they are (the terrain) or would
     // be, at the top root (the map has none of the others).
-    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c"]);
+    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c", "war3map.w3s"]);
     assert!(f[1].1.ends_with("map/war3map.doo"), "{f:?}");
     // Nothing placed; the minimap a pixel a corner.
     assert!(o.models.is_empty() && o.notes.is_empty());
@@ -653,4 +653,71 @@ fn a_things_fields_said_set_in_their_ranges_undone_and_saved() {
     s.save();
     let back = doo_rs::parse_units_any(&std::fs::read(dir.path().join("map/war3mapUnits.doo")).unwrap()).unwrap();
     assert_eq!((back.units[1].level, back.units[0].hp, back.units[0].player), (5, 50, 3));
+}
+
+#[test]
+fn sounds_made_set_in_their_ranges_deleted_undone_saved_played_and_in_step_with_their_text() {
+    let dir = TestDir::new("session-sounds");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    dir.write("map/Sound/Rain.wav", b"RIFF....WAVE");
+    let mut s = Session::open(dir.path()).unwrap();
+    let drawn = s.draw();
+    assert!(drawn.iter().any(|m| matches!(m, ServerMsg::Sounds(l) if l.is_empty())), "the page told: none");
+    let said = |msgs: &[ServerMsg]| match msgs.last() {
+        Some(ServerMsg::State(st)) => st.message.clone(),
+        m => panic!("{m:?}"),
+    };
+    let sounds = |s: &Session| s.placed.sounds.as_ref().map(|n| n.sounds.clone()).unwrap_or_default();
+    // Made: named after the file, a second one numbered.
+    let msgs = s.sound_new("Sound/Rain.wav");
+    assert!(matches!(&msgs[0], ServerMsg::Sounds(l) if l.len() == 1) && said(&msgs).is_empty(), "{msgs:?}");
+    s.sound_new("Sound\\Rain.wav");
+    assert!(said(&s.sound_new("Sound\\Thunder.wav")).contains("isn't in the game's files"));
+    let names: Vec<String> = sounds(&s).iter().map(|n| n.name.clone()).collect();
+    assert_eq!(names, ["gg_snd_Rain", "gg_snd_Rain_2", "gg_snd_Thunder"]);
+    assert_eq!(sounds(&s)[0].file, "Sound\\Rain.wav");
+    // Set: in range, or said and not set.
+    assert_eq!(said(&s.sound_set(0, "volume", "100")), "");
+    assert!(said(&s.sound_set(0, "volume", "128")).contains("volume can't be"));
+    assert!(said(&s.sound_set(0, "volume", "1.5")).contains("volume can't be"));
+    assert_eq!(said(&s.sound_set(0, "pitch", "1.25")), "");
+    assert_eq!(said(&s.sound_set(0, "channel", "10")), "");
+    assert!(said(&s.sound_set(0, "channel", "15")).contains("channel can't be"));
+    assert_eq!(said(&s.sound_set(0, "flags", &(w3s_rs::LOOPING | w3s_rs::SOUND_3D).to_string())), "");
+    assert_eq!(said(&s.sound_set(0, "min_distance", "600")), "");
+    assert_eq!(said(&s.sound_set(0, "min_distance", "")), "");
+    assert!(said(&s.sound_set(0, "name", "gg_snd_Rain_2")).contains("Another sound"));
+    assert!(said(&s.sound_set(0, "name", "Rain")).contains("gg_snd_"));
+    assert_eq!(said(&s.sound_set(0, "name", "gg_snd_Storm")), "");
+    let rain = &sounds(&s)[0];
+    assert_eq!((rain.name.as_str(), rain.volume, rain.pitch, rain.channel, rain.flags), ("gg_snd_Storm", 100, 1.25, 10, w3s_rs::LOOPING | w3s_rs::SOUND_3D));
+    assert_eq!(rain.min_distance, w3s_rs::DEFAULT_REAL);
+    // Deleted, undone; the name's set undone.
+    s.sound_delete(1);
+    assert_eq!(sounds(&s).len(), 2);
+    let undone = s.undo(false);
+    assert!(matches!(&undone[0], ServerMsg::Sounds(l) if l.len() == 3));
+    s.undo(false);
+    assert_eq!(sounds(&s)[0].name, "gg_snd_Rain");
+    s.undo(true);
+    // Played: the file's bytes, or why not.
+    assert!(matches!(s.sound_data("Sound\\Rain.wav"), ServerMsg::SoundData { bytes, error, .. } if bytes == b"RIFF....WAVE" && error.is_empty()));
+    assert!(matches!(s.sound_data("Sound\\Thunder.wav"), ServerMsg::SoundData { bytes, error, .. } if bytes.is_empty() && error.contains("isn't")));
+    // Saved into the root.
+    let saved = s.save();
+    assert!(said(&saved).contains("war3map.w3s"), "{saved:?}");
+    let back = w3s_rs::parse(&std::fs::read(dir.path().join("map/war3map.w3s")).unwrap()).unwrap();
+    assert_eq!(back.sounds, sounds(&s));
+    // Its text form: the editor's change goes to it, typed in it the editor follows.
+    let path = dir.path().join("map/war3map.w3s").display().to_string();
+    let text = s.piece_text("war3map.w3s", &path).unwrap();
+    assert!(text.contains("[gg_snd_Storm]"), "{text}");
+    s.text_changed(&path, &text);
+    s.sound_set(0, "volume", "50");
+    let out = s.sync_docs();
+    assert!(matches!(&out[..], [ServerMsg::TextOut { text, .. }] if text.contains("volume=50")), "{out:?}");
+    let typed = s.piece_text("war3map.w3s", &path).unwrap().replace("[gg_snd_Storm]", "[gg_snd_Typed]");
+    let msgs = s.text_changed(&path, &typed);
+    assert!(matches!(&msgs[0], ServerMsg::Sounds(l) if l[0].name == "gg_snd_Typed"), "{msgs:?}");
 }

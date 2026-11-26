@@ -260,6 +260,7 @@ impl Session {
         terrain.push(ServerMsg::Overlays(overlays));
         terrain.push(ServerMsg::Palette(self.palette()));
         terrain.push(ServerMsg::ObjectPalette(self.object_palette()));
+        terrain.push(self.sounds_msg());
         terrain.push(ServerMsg::Follow(self.follow()));
         terrain.push(ServerMsg::Light(self.light()));
         terrain.push(ServerMsg::State(self.state(String::new())));
@@ -557,6 +558,7 @@ impl Session {
         if let Some(what) = done {
             match what {
                 crate::edit::Snapshot::Regions(_) | crate::edit::Snapshot::Cameras(_) | crate::edit::Snapshot::Pathing(_) => out.push(ServerMsg::Overlays(self.overlays())),
+                crate::edit::Snapshot::Sounds(_) => out.push(self.sounds_msg()),
                 crate::edit::Snapshot::Whole(_) => {
                     let changed = self.tileset_letter() != self.terrain.tileset;
                     self.retileset(changed);
@@ -605,13 +607,14 @@ impl Session {
         let docs: Vec<String> = self.docs.values().map(|(p, _)| p.clone()).collect();
         let mut saved = Vec::new();
         let mut failed = Vec::new();
-        let files: [FileToSave; 8] = [
+        let files: [FileToSave; 9] = [
             (dirty.terrain, "war3map.w3e", self.terrain.to_bytes().map_err(|e| e.to_string())),
             (dirty.doodads, "war3map.doo", self.placed.doodads.as_ref().map_or(Ok(Vec::new()), |d| d.to_bytes().map_err(|e| e.to_string()))),
             (dirty.units, "war3mapUnits.doo", self.placed.units.as_ref().map_or(Ok(Vec::new()), |u| u.to_bytes().map_err(|e| e.to_string()))),
             (dirty.regions, "war3map.w3r", self.placed.regions.as_ref().map_or(Ok(Vec::new()), |r| r.to_bytes().map_err(|e| e.to_string()))),
             (dirty.pathing, "war3map.wpm", self.placed.pathing.as_ref().map_or(Ok(Vec::new()), |p| p.to_bytes().map_err(|e| e.to_string()))),
             (dirty.cameras && self.placed.cameras.is_some(), "war3map.w3c", self.placed.cameras.as_ref().map_or(Ok(Vec::new()), |c| c.to_bytes().map_err(|e| e.to_string()))),
+            (dirty.sounds && self.placed.sounds.is_some(), "war3map.w3s", self.placed.sounds.as_ref().map_or(Ok(Vec::new()), |n| n.to_bytes().map_err(|e| e.to_string()))),
             (dirty.info && self.info.is_some(), "war3map.w3i", self.info.as_ref().map_or(Ok(Vec::new()), |i| i.to_bytes().map_err(|e| e.to_string()))),
             (dirty.shadows && self.shadows.is_some(), "war3map.shd", Ok(self.shadows.as_ref().map_or(Vec::new(), |s| s.to_bytes()))),
         ];
@@ -631,7 +634,7 @@ impl Session {
                 Ok(to) => {
                     saved.push(to.display().to_string());
                     let d = &mut self.edits.dirty;
-                    *[&mut d.terrain, &mut d.doodads, &mut d.units, &mut d.regions, &mut d.pathing, &mut d.cameras, &mut d.info, &mut d.shadows][i] = false;
+                    *[&mut d.terrain, &mut d.doodads, &mut d.units, &mut d.regions, &mut d.pathing, &mut d.cameras, &mut d.sounds, &mut d.info, &mut d.shadows][i] = false;
                 }
                 Err(e) => failed.push(format!("{name}: {e}")),
             }
@@ -738,7 +741,7 @@ impl Session {
     }
 
     /// The map's pieces the editor changes, by name.
-    pub const PIECES: [&'static str; 6] = ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.wpm", "war3map.w3c"];
+    pub const PIECES: [&'static str; 7] = ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.wpm", "war3map.w3c", "war3map.w3s"];
 
     /// Each piece's bytes as the layers have it now, hashed (`None`: no
     /// layer has it).
@@ -774,6 +777,7 @@ impl Session {
             "war3mapUnits.doo" => d.units,
             "war3map.w3r" => d.regions,
             "war3map.w3c" => d.cameras,
+            "war3map.w3s" => d.sounds,
             _ => d.pathing,
         };
         let (kept, taken): (Vec<&str>, Vec<&str>) = changed.iter().partition(|n| dirty(n));
@@ -796,6 +800,7 @@ impl Session {
                 "war3mapUnits.doo" => self.placed.units = files.units.clone(),
                 "war3map.w3r" => self.placed.regions = files.regions.clone(),
                 "war3map.w3c" => self.placed.cameras = files.cameras.clone(),
+                "war3map.w3s" => self.placed.sounds = files.sounds.clone(),
                 _ => {
                     self.placed.pathing = files.pathing.clone();
                     self.pathing_made = None;
@@ -812,6 +817,7 @@ impl Session {
                 self.pathing_made = Some(self.made_pathing());
             }
             out.push(ServerMsg::Overlays(self.overlays()));
+            out.push(self.sounds_msg());
         }
         let message = match (taken.is_empty(), kept.is_empty()) {
             (_, false) => format!("Changed on disk: {}; your changes to it kept (Reload takes the disk's).", kept.join(", ")),
@@ -823,11 +829,11 @@ impl Session {
     }
 
     /// The pieces that have a text form (`war3map.w3e`, `war3map.doo`,
-    /// `war3mapUnits.doo`, `war3map.w3r`, `war3map.w3c`), each with the path its file
+    /// `war3mapUnits.doo`, `war3map.w3r`, `war3map.w3c`, `war3map.w3s`), each with the path its file
     /// is at (or would be written to): what the page's text forms are
     /// matched by.
     pub fn follow(&self) -> Vec<(String, String)> {
-        ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c"].iter().filter_map(|n| Some((n.to_string(), self.path_of(n)?.display().to_string()))).collect()
+        ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c", "war3map.w3s"].iter().filter_map(|n| Some((n.to_string(), self.path_of(n)?.display().to_string()))).collect()
     }
 
     /// Where the map's file `name` is (on disk, or inside a root map), or
@@ -848,6 +854,7 @@ impl Session {
             "war3mapUnits.doo" => self.placed.units.as_ref()?.to_bytes().ok(),
             "war3map.w3r" => self.placed.regions.as_ref()?.to_bytes().ok(),
             "war3map.w3c" => self.placed.cameras.as_ref()?.to_bytes().ok(),
+            "war3map.w3s" => self.placed.sounds.as_ref()?.to_bytes().ok(),
             "war3map.w3e" => self.terrain.to_bytes().ok(),
             _ => None,
         }
@@ -861,6 +868,8 @@ impl Session {
             wc3_server::regions::convert(wc3_server::objects::TO_TEXT, path, &bytes)
         } else if name == "war3map.w3c" {
             wc3_server::cameras::convert(wc3_server::objects::TO_TEXT, path, &bytes)
+        } else if name == "war3map.w3s" {
+            wc3_server::sounds::convert(wc3_server::objects::TO_TEXT, path, &bytes)
         } else if name == "war3map.w3e" {
             wc3_server::terrain::convert(wc3_server::objects::TO_TEXT, path, &bytes)
         } else {
@@ -887,6 +896,8 @@ impl Session {
             wc3_server::regions::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
         } else if name == "war3map.w3c" {
             wc3_server::cameras::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
+        } else if name == "war3map.w3s" {
+            wc3_server::sounds::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
         } else {
             wc3_server::placement::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
         };
@@ -908,6 +919,10 @@ impl Session {
                 let before = self.placed.cameras.replace(c);
                 crate::edit::Snapshot::Cameras(before.map(|c| c.cameras).unwrap_or_default())
             }),
+            "war3map.w3s" => w3s_rs::parse(&bytes).map(|n| {
+                let before = self.placed.sounds.replace(n);
+                crate::edit::Snapshot::Sounds(before.map(|n| n.sounds).unwrap_or_default())
+            }),
             _ => w3r_rs::parse(&bytes).map(|r| {
                 let before = self.placed.regions.replace(r);
                 crate::edit::Snapshot::Regions(before.map(|r| r.regions).unwrap_or_default())
@@ -915,7 +930,11 @@ impl Session {
         };
         let Ok(before) = taken else { return vec![ServerMsg::State(self.state(format!("Can't read {name}'s text")))] };
         self.edits.record(before);
-        let mut out = if name == "war3map.w3r" || name == "war3map.w3c" { vec![ServerMsg::Overlays(self.overlays())] } else { self.place_objects() };
+        let mut out = match name {
+            "war3map.w3r" | "war3map.w3c" => vec![ServerMsg::Overlays(self.overlays())],
+            "war3map.w3s" => vec![self.sounds_msg()],
+            _ => self.place_objects(),
+        };
         out.extend(self.sync_docs());
         out.push(ServerMsg::State(self.state(String::new())));
         out
@@ -969,6 +988,7 @@ impl Session {
                 "war3mapUnits.doo" => d.units = false,
                 "war3map.w3r" => d.regions = false,
                 "war3map.w3c" => d.cameras = false,
+                "war3map.w3s" => d.sounds = false,
                 _ => {}
             }
         }
@@ -1245,6 +1265,142 @@ impl Session {
             cameras.cameras.remove(index as usize);
             Ok(())
         })
+    }
+
+    /// The map's sounds (`war3map.w3s`), as the page lists them.
+    pub fn sounds_msg(&self) -> ServerMsg {
+        ServerMsg::Sounds(self.placed.sounds.as_ref().map(|s| s.sounds.clone()).unwrap_or_default())
+    }
+
+    /// A sound edit: its state recorded for undo, `change` made (refused,
+    /// said, when it errs), the sounds again. A map without
+    /// `war3map.w3s` gets one.
+    fn sounds_edit(&mut self, change: impl FnOnce(&mut w3s_rs::Sounds) -> Result<String, String>) -> Vec<ServerMsg> {
+        let sounds = self.placed.sounds.get_or_insert_with(w3s_rs::Sounds::new);
+        let before = sounds.sounds.clone();
+        let message = match change(sounds) {
+            Ok(said) => {
+                self.edits.record(crate::edit::Snapshot::Sounds(before));
+                said
+            }
+            Err(message) => {
+                sounds.sounds = before;
+                message
+            }
+        };
+        vec![self.sounds_msg(), ServerMsg::State(self.state(message))]
+    }
+
+    /// Whether the game's files or the map's have `file`; said when not.
+    fn sound_file_note(&self, file: &str) -> String {
+        if self.game.read(file).is_some() { String::new() } else { format!("{file} isn't in the game's files or the map's.") }
+    }
+
+    /// A sound of `file` (a path in the game's files or the map's) made
+    /// as World Editor makes one ([`w3s_rs::Sound::new`]: 3D, stopping out
+    /// of range, the rest its label's defaults), its variable `gg_snd_`
+    /// and the file's name (`_2` ... when that's taken).
+    pub fn sound_new(&mut self, file: &str) -> Vec<ServerMsg> {
+        let file = file.trim().replace('/', "\\");
+        if file.is_empty() {
+            return vec![ServerMsg::State(self.state("A sound needs a file.".to_string()))];
+        }
+        let note = self.sound_file_note(&file);
+        self.sounds_edit(|sounds| {
+            let stem = file.rsplit('\\').next().unwrap_or(&file);
+            let stem = stem.rsplit_once('.').map_or(stem, |(s, _)| s);
+            let base: String = format!("gg_snd_{}", stem.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect::<String>());
+            let taken = |n: &str| sounds.sounds.iter().any(|s| s.name.eq_ignore_ascii_case(n));
+            let name = if taken(&base) { (2..).map(|k| format!("{base}_{k}")).find(|n| !taken(n)).unwrap() } else { base };
+            sounds.sounds.push(w3s_rs::Sound::new(name, file.clone()));
+            Ok(note)
+        })
+    }
+
+    /// Sound `index`'s `field` set to `value`: `name` (its variable:
+    /// `gg_snd_` and a name, no other sound's), `file`, `eax` (a label of
+    /// `UI\\SoundInfo\\EAXDefs.slk`), `flags` (a number:
+    /// `w3s_rs::FLAGS`' bits), or a number of `w3s_rs::Sound::numbers`
+    /// (empty: "use default"; `volume` 0 to 127, `channel` one of
+    /// `w3s_rs::CHANNELS`, a distance, fade or cone angle not below 0,
+    /// `pitch` over 0). An undo each.
+    pub fn sound_set(&mut self, index: u32, field: &str, value: &str) -> Vec<ServerMsg> {
+        let note = if field == "file" { self.sound_file_note(value.trim()) } else { String::new() };
+        let (field, value) = (field.to_string(), value.trim().to_string());
+        self.sounds_edit(move |sounds| {
+            let i = index as usize;
+            if i >= sounds.sounds.len() {
+                return Err(format!("no sound {index}"));
+            }
+            let bad = || format!("A sound's {} can't be {value:?}.", field.replace('_', " "));
+            match field.as_str() {
+                "name" => {
+                    let rest = value.strip_prefix("gg_snd_").unwrap_or("");
+                    let fine = !rest.is_empty() && rest.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') && !rest.ends_with('_');
+                    if !fine {
+                        return Err(format!("A sound's name is gg_snd_ and letters, digits, underscores (not last): not {value:?}."));
+                    }
+                    if sounds.sounds.iter().enumerate().any(|(k, s)| k != i && s.name.eq_ignore_ascii_case(&value)) {
+                        return Err(format!("Another sound is {value}."));
+                    }
+                    sounds.sounds[i].name = value.clone();
+                }
+                "file" if !value.is_empty() => sounds.sounds[i].file = value.replace('/', "\\"),
+                "eax" if !value.is_empty() => sounds.sounds[i].eax = value.clone(),
+                "flags" => sounds.sounds[i].flags = value.parse::<u32>().map_err(|_| bad())?,
+                _ => {
+                    let s = &mut sounds.sounds[i];
+                    let Some((_, kind)) = s.numbers().into_iter().find(|(n, _)| *n == field) else { return Err(bad()) };
+                    let v = if value.is_empty() {
+                        match kind {
+                            w3s_rs::Value::Int(_) => w3s_rs::Value::Int(w3s_rs::DEFAULT_INT),
+                            w3s_rs::Value::Real(_) => w3s_rs::Value::Real(w3s_rs::DEFAULT_REAL),
+                        }
+                    } else {
+                        let x: f64 = value.parse().map_err(|_| bad())?;
+                        let fine = x.is_finite()
+                            && match field.as_str() {
+                                "volume" | "cone_outside_volume" => (0.0..=127.0).contains(&x),
+                                "channel" => w3s_rs::CHANNELS.iter().any(|(c, _)| *c as f64 == x),
+                                "pitch" => x > 0.0,
+                                "cone_x" | "cone_y" | "cone_z" => true,
+                                _ => x >= 0.0,
+                            };
+                        match kind {
+                            w3s_rs::Value::Int(_) if fine && x.fract() == 0.0 => w3s_rs::Value::Int(x as i32),
+                            w3s_rs::Value::Real(_) if fine => w3s_rs::Value::Real(x as f32),
+                            _ => return Err(bad()),
+                        }
+                    };
+                    s.set_number(&field, v);
+                }
+            }
+            Ok(note)
+        })
+    }
+
+    /// Sound `index` taken away.
+    pub fn sound_delete(&mut self, index: u32) -> Vec<ServerMsg> {
+        self.sounds_edit(|sounds| {
+            if (index as usize) >= sounds.sounds.len() {
+                return Err(format!("no sound {index}"));
+            }
+            sounds.sounds.remove(index as usize);
+            Ok(String::new())
+        })
+    }
+
+    /// A sound file's bytes, for the page to play: through the layers (a
+    /// `.wav` the game has as `.flac` or `.mp3` too); empty, and why, when
+    /// none has it.
+    pub fn sound_data(&self, file: &str) -> ServerMsg {
+        let file = file.replace('/', "\\");
+        let stem = file.rsplit_once('.').map_or(file.as_str(), |(s, _)| s);
+        let found = std::iter::once(file.clone()).chain(["flac", "mp3", "wav"].iter().map(|e| format!("{stem}.{e}"))).find_map(|n| self.game.read(&n).map(|(b, _)| b));
+        match found {
+            Some(bytes) => ServerMsg::SoundData { file, bytes, error: String::new() },
+            None => ServerMsg::SoundData { error: format!("{file} isn't in the game's files or the map's."), file, bytes: Vec::new() },
+        }
     }
 
     /// The ground's point a ray meets, in the game's units.

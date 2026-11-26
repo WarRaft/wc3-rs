@@ -51,6 +51,12 @@ const EditorProtocol = (() => {
         THING_ASK: 28,
         THING_SET: 29,
         THING: 147,
+        SOUND_NEW: 30,
+        SOUND_SET: 31,
+        SOUND_DELETE: 32,
+        SOUND_PLAY: 33,
+        SOUNDS: 148,
+        SOUND_DATA: 149,
         MAP_SETTINGS: 146,
     }
 
@@ -299,6 +305,31 @@ const EditorProtocol = (() => {
             w.f32(value)
             return w.frame(KIND.THING_SET)
         },
+        /** A sound of `file` made. */
+        soundNew(file) {
+            const w = new Writer()
+            w.string(file)
+            return w.frame(KIND.SOUND_NEW)
+        },
+        /** A sound's field (`name`, `volume` ...) set to `value`, text ('' "use default"). */
+        soundSet(index, field, value) {
+            const w = new Writer()
+            w.u32(index)
+            w.string(field)
+            w.string(String(value))
+            return w.frame(KIND.SOUND_SET)
+        },
+        soundDelete(index) {
+            const w = new Writer()
+            w.u32(index)
+            return w.frame(KIND.SOUND_DELETE)
+        },
+        /** A sound file's bytes asked for: answered by `soundData`. */
+        soundPlay(file) {
+            const w = new Writer()
+            w.string(file)
+            return w.frame(KIND.SOUND_PLAY)
+        },
         mapAsk: () => new Writer().frame(KIND.MAP_ASK),
         /** Cells added on each side {left, right, bottom, top}, the playable area's margins [l, r, b, t] or null. */
         resize(sides, margins) {
@@ -433,6 +464,11 @@ const EditorProtocol = (() => {
                 const p = [r.f32(), r.f32(), r.f32()]
                 return {...m, ground: on ? p : null}
             }
+            case KIND.SOUNDS:
+                // `numbers` as `w3s_rs::Sound::numbers` has them.
+                return {kind: 'sounds', sounds: r.list(r => ({name: r.string(), file: r.string(), eax: r.string(), flags: r.u32(), numbers: Array.from(r.f32s())}))}
+            case KIND.SOUND_DATA:
+                return {kind: 'soundData', file: r.string(), bytes: r.bytes(), error: r.string()}
             case KIND.THING: {
                 const file = r.u8()
                 const index = r.u32()

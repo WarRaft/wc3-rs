@@ -13,7 +13,7 @@ const path = require('path')
  * The steps of the work in hand (`node e2e/run.js current`): moved on as
  * the work does; `all` runs every step.
  */
-const CURRENT = ['things']
+const CURRENT = ['sounds']
 
 const out = process.env.E2E_OUT
 const map = process.env.E2E_MAP
@@ -364,6 +364,39 @@ async function steps(only) {
             check(unrolled.view[3] === 70 && unrolled.view[4] === -150 && Math.abs(unrolled.view[2] - 2000) < 1, `${unrolled.name}: roll ${unrolled.view[5]}, field of view ${unrolled.view[3]}, height ${unrolled.view[4]}, distance ${unrolled.view[2]}`)
             await we.panel.webview.postMessage({type: 'camera', action: 'delete'})
             await until(() => we.overlays?.cameras === camsAt + 1, 'deleted')
+        }},
+        {name: 'sounds', editor: true, run: async () => {
+            log("sounds: one made of a game's file, its fields typed, a flag, played, deleted and undone; saved")
+            await we.panel.webview.postMessage({type: 'tool', tool: 'sounds'})
+            const listed = await until(() => we.sounds, 'the sounds listed')
+            const at = listed.count
+            await we.panel.webview.postMessage({type: 'sound', action: 'new', file: 'Sound\\Interface\\BattleNetTick.wav'})
+            const made = await until(() => we.sounds?.count === at + 1 && we.sounds.picked && we.sounds, 'a sound made')
+            check(made.picked.name.startsWith('gg_snd_BattleNetTick') && made.picked.flags === 6 && !we.state?.message, `${made.picked.name}: ${made.picked.file}, flags ${made.picked.flags}`)
+            for (const [field, value, bit] of [['volume', 90], ['pitch', 1.5], ['channel', 8], ['flags', true, 1], ['name', 'gg_snd_E2ETick'], ['volume', 200]]) {
+                we.state = undefined
+                await we.panel.webview.postMessage({type: 'sound', action: 'field', field, value, bit})
+                await until(() => we.state, `${field} typed`)
+                check(field === 'volume' && value === 200 ? /volume can't be/.test(we.state.message) : !we.state.message, `${field} ${value}: ${we.state.message || 'set'}`)
+            }
+            const typed = await until(() => {
+                const p = we.sounds?.picked
+                return p && p.name === 'gg_snd_E2ETick' && p.numbers[2] === 90 && p.numbers[3] === 1.5 && p.numbers[6] === 8 && p.flags === 7 && p
+            }, 'its fields as typed')
+            check(true, `${typed.name}: volume ${typed.numbers[2]}, pitch ${typed.numbers[3]}, channel ${typed.numbers[6]}, flags ${typed.flags}`)
+            await shot('world-editor-sounds')
+            we.played = undefined
+            await we.panel.webview.postMessage({type: 'sound', action: 'play'})
+            const played = await until(() => we.played, 'played')
+            check(played.bytes > 1000 && played.played && !played.error, `played ${played.file}: ${played.bytes} bytes${played.error ? `, ${played.error}` : ''}`)
+            await we.panel.webview.postMessage({type: 'sound', action: 'delete'})
+            await until(() => we.sounds?.count === at, 'deleted')
+            await we.panel.webview.postMessage({type: 'undo'})
+            await until(() => we.sounds?.count === at + 1, 'undone: back')
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'save'})
+            const saved = await until(() => we.state?.message && we.state, 'saved')
+            check(!saved.dirty && saved.message.includes('war3map.w3s'), saved.message)
         }},
         {name: 'map', editor: true, run: async () => {
             log("the map's settings: its tiles reordered and undone, a tile's pathing and undone, four cells added on the right, saved")

@@ -23,6 +23,7 @@ wpm-rs = { path = "../../wpm-rs" }
 notify = "8.2.0"
 w3r-rs = { path = "../../w3r-rs" }
 w3c-rs = { path = "../../w3c-rs" }
+w3s-rs = { path = "../../w3s-rs" }
 shd-rs = { path = "../../shd-rs" }
 bni-rs = { path = "../../bni-rs" }
 

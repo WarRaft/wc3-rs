@@ -37,6 +37,7 @@ fn hello_is_answered_with_the_map_each_time() {
             ServerMsg::State(_) => "state",
             ServerMsg::Instances(_) => "instances",
             ServerMsg::ObjectPalette(_) => "objects palette",
+            ServerMsg::Sounds(_) => "sounds",
             ServerMsg::Follow(_) => "follow",
             ServerMsg::Light(_) => "light",
             ServerMsg::Terrain(t) if t.width == 3 => "terrain",
@@ -44,8 +45,8 @@ fn hello_is_answered_with_the_map_each_time() {
         })
         .collect();
     assert_eq!(kinds, [
-        "map", "ground", "water", "cliffs", "terrain", "objects", "instances", "overlays", "palette", "objects palette", "follow", "light", "state",
-        "map", "ground", "water", "cliffs", "terrain", "objects", "instances", "overlays", "palette", "objects palette", "follow", "light", "state",
+        "map", "ground", "water", "cliffs", "terrain", "objects", "instances", "overlays", "palette", "objects palette", "sounds", "follow", "light", "state",
+        "map", "ground", "water", "cliffs", "terrain", "objects", "instances", "overlays", "palette", "objects palette", "sounds", "follow", "light", "state",
     ]);
 }
 

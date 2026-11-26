@@ -83,6 +83,8 @@ const VIEW = 'wc3.editors'
  * @property {number | undefined} icons  how many of the object palette's icons the page has
  * @property {Map<string, string> | undefined} follow  the paths of the pieces with a text form, by their lower case
  * @property {string | undefined} picked  what the last click picked, said ('' nothing)
+ * @property {{count: number, names: string[], picked: object | null} | undefined} sounds  the map's sounds and the one picked (the Sounds tool)
+ * @property {{file: string, bytes: number, error: string, played: boolean} | undefined} played  the last sound file played: its bytes, whether it played
  * @property {{file: number, index: number, fields: [string, number][]} | null | undefined} thing  the thing picked and its fields as its panel shows them (the Select tool)
  * @property {{width: number, height: number, layers: number, water: number, cliffs: number, objects: number, animated: number, billboards: number, startLocations: number, geosetAnimated: number, emitters: number, tails: number, modelSpace: number, ribbons: number, error: number} | null} drawn  what the page drew of the terrain first
  */
@@ -146,6 +148,15 @@ function registerWorldEditor(context, binary, pickManifest) {
     <button id="camera-set" disabled title="The camera picked looks as the view does">Set to view</button>
     <button id="camera-look" disabled title="The view looks as the camera picked does">Look through it</button>
     <button id="camera-delete" disabled>Delete camera</button>
+  </div>
+  <div id="sound-panel" class="region-panel" hidden>
+    <select id="sound-list" class="camera-list" size="8"></select>
+    <input id="sound-new-file" type="text" placeholder="Sound\\Ambient\\…\\….wav">
+    <button id="sound-new" title="A new sound of that file">New sound</button>
+    <span id="sound-hint" class="region-bounds"></span>
+    <div id="sound-fields" class="camera-fields"></div>
+    <button id="sound-play" disabled title="Plays its file">Play</button>
+    <button id="sound-delete" disabled>Delete sound</button>
   </div>
   <div id="thing-panel" class="region-panel" hidden>
     <span id="thing-hint" class="region-bounds"></span>
@@ -314,6 +325,10 @@ function registerWorldEditor(context, binary, pickManifest) {
                 editor.region = msg.region
             } else if (msg.type === 'camera') {
                 editor.camera = msg.camera
+            } else if (msg.type === 'sounds') {
+                editor.sounds = msg.sounds
+            } else if (msg.type === 'played') {
+                editor.played = msg.played
             } else if (msg.type === 'thing') {
                 editor.thing = msg.thing
             } else if (msg.type === 'overlays') {

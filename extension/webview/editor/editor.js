@@ -275,11 +275,12 @@
         {tool: 'place', label: 'Place'},
         {tool: 'regions', label: 'Regions'},
         {tool: 'cameras', label: 'Cameras'},
+        {tool: 'sounds', label: 'Sounds'},
         {tool: 'pathingOn', label: 'Pathing +'},
         {tool: 'pathingOff', label: 'Pathing −'},
     ]
     /** The tools that lay no brush. */
-    const NO_BRUSH = ['select', 'place', 'regions', 'cameras']
+    const NO_BRUSH = ['select', 'place', 'regions', 'cameras', 'sounds']
     const brush = {tool: 'select', size: 4, strength: 0.25, texture: '', cliff: 0, flags: 2, ...(vscode.getState()?.brush ?? {})}
     const keep = () => vscode.setState({...(vscode.getState() ?? {}), brush})
     const tools = $('tools')
@@ -293,6 +294,7 @@
         $('region-panel').hidden = brush.tool !== 'regions'
         $('camera-panel').hidden = brush.tool !== 'cameras'
         $('thing-panel').hidden = brush.tool !== 'select'
+        $('sound-panel').hidden = brush.tool !== 'sounds'
         $('size-label').hidden = NO_BRUSH.includes(brush.tool)
         $('strength-label').hidden = NO_BRUSH.includes(brush.tool) || pathing
         for (const c of $('pathing-flags').querySelectorAll('input')) c.checked = (brush.flags & Number(c.value)) !== 0
@@ -618,6 +620,138 @@
             f.input.value = String(v)
         }
         vscode.postMessage({type: 'thing', thing: t})
+    }
+
+    // Sounds (`war3map.w3s`, the Sounds tool): the list, New of a file,
+    // the one picked's fields set as they're typed (`SoundSet`: empty is
+    // "use default"), Play (its file's bytes asked of the editor, played
+    // here), Delete.
+    let sounds = []
+    let selectedSound = null
+    let selectNewSound = false
+    /** `w3s_rs::Sound::numbers`' order: where each field is in a sound's `numbers`. */
+    const SOUND_NUMBERS = ['fade_in', 'fade_out', 'volume', 'pitch', 'unknown_1', 'unknown_2', 'channel', 'min_distance', 'max_distance', 'distance_cutoff', 'cone_inside', 'cone_outside', 'cone_outside_volume', 'cone_x', 'cone_y', 'cone_z']
+    /** What "use default" is stored as: -1, or 2^32. */
+    const isDefault = v => v === -1 || v === 4294967296
+    const CHANNELS = ['default', 'General', 'Unit Selection', 'Unit Acknowledgement', 'Unit Movement', 'Unit Ready', 'Combat', 'Error', 'Music', 'User Interface', 'Looping Movement', 'Looping Ambient', 'Animations', 'Construction', 'Birth', 'Fire']
+    const SOUND_FLAGS = [[1, 'Looping'], [2, '3D sound'], [4, 'Stop when out of range'], [8, 'Music']]
+    const SOUND_FIELDS = [
+        {field: 'name', label: 'Variable', text: true},
+        {field: 'file', label: 'File', text: true},
+        {field: 'eax', label: 'EAX', text: true, list: ['DefaultEAXON', 'CombatSoundsEAX', 'KotoDrumsEAX', 'SpellsEAX', 'MissilesEAX', 'HeroAcksEAX', 'DoodadsEAX']},
+        ...SOUND_FLAGS.map(([bit, label]) => ({field: 'flags', bit, label})),
+        {field: 'channel', label: 'Channel', options: CHANNELS.map((name, i) => [i - 1, name])},
+        {field: 'volume', label: 'Volume (0 to 127)', step: 1},
+        {field: 'pitch', label: 'Pitch', step: 0.05},
+        {field: 'fade_in', label: 'Fade in', step: 1},
+        {field: 'fade_out', label: 'Fade out', step: 1},
+        {field: 'min_distance', label: 'Min distance', step: 50},
+        {field: 'max_distance', label: 'Max distance', step: 50},
+        {field: 'distance_cutoff', label: 'Distance cutoff', step: 50},
+        {field: 'cone_inside', label: 'Cone inside', step: 5},
+        {field: 'cone_outside', label: 'Cone outside', step: 5},
+        {field: 'cone_outside_volume', label: 'Cone outside volume', step: 1},
+        {field: 'cone_x', label: 'Cone x', step: 0.1},
+        {field: 'cone_y', label: 'Cone y', step: 0.1},
+        {field: 'cone_z', label: 'Cone z', step: 0.1},
+    ]
+    for (const f of SOUND_FIELDS) {
+        f.row = Object.assign(document.createElement('label'), {className: 'camera-field' + (f.text ? ' sound-text' : f.bit ? ' sound-flag' : ''), textContent: f.label + ' '})
+        let timer = 0
+        const sendLater = (value, ms) => {
+            clearTimeout(timer)
+            const index = selectedSound
+            if (index === null) return
+            timer = setTimeout(() => send(encode.soundSet(index, f.field, value)), ms)
+        }
+        if (f.bit) {
+            f.input = Object.assign(document.createElement('input'), {type: 'checkbox'})
+            f.input.onchange = () => {
+                const s = sounds[selectedSound]
+                if (s) sendLater((f.input.checked ? s.flags | f.bit : s.flags & ~f.bit) >>> 0, 0)
+            }
+            f.row.prepend(f.input)
+        } else if (f.options) {
+            f.input = document.createElement('select')
+            f.input.append(...f.options.map(([v, text]) => Object.assign(document.createElement('option'), {value: v, textContent: text})))
+            f.input.onchange = () => sendLater(f.input.value === '-1' ? '' : f.input.value, 0)
+            f.row.append(f.input)
+        } else {
+            f.input = Object.assign(document.createElement('input'), f.text ? {type: 'text'} : {type: 'number', step: f.step, placeholder: 'default'})
+            if (f.list) {
+                const list = Object.assign(document.createElement('datalist'), {id: 'sound-eax-list'})
+                list.append(...f.list.map(v => Object.assign(document.createElement('option'), {value: v})))
+                f.row.append(list)
+                f.input.setAttribute('list', list.id)
+            }
+            f.input.oninput = () => {
+                if (f.text && !f.input.value.trim()) return
+                sendLater(f.input.value, f.text ? 400 : 250)
+            }
+            f.row.append(f.input)
+        }
+        f.input.dataset.field = f.field
+        $('sound-fields').append(f.row)
+    }
+    function showSounds() {
+        const s = selectedSound !== null ? sounds[selectedSound] : null
+        for (const id of ['sound-play', 'sound-delete']) $(id).disabled = !s
+        for (const f of SOUND_FIELDS) {
+            f.input.disabled = !s
+            if (!s || document.activeElement === f.input) continue
+            if (f.bit) f.input.checked = (s.flags & f.bit) !== 0
+            else if (f.text) f.input.value = s[f.field]
+            else {
+                const v = s.numbers[SOUND_NUMBERS.indexOf(f.field)]
+                f.input.value = isDefault(v) ? (f.options ? '-1' : '') : String(Math.round(v * 1000) / 1000)
+            }
+        }
+        $('sound-hint').hidden = !!s
+        $('sound-hint').textContent = sounds.length ? 'Pick a sound' : 'The map has no sounds'
+        const list = $('sound-list')
+        if (list.options.length !== sounds.length || sounds.some((x, i) => list.options[i].textContent !== x.name)) {
+            list.replaceChildren(...sounds.map((x, i) => Object.assign(document.createElement('option'), {value: i, textContent: x.name, title: x.file})))
+        }
+        list.value = s ? String(selectedSound) : ''
+        vscode.postMessage({type: 'sounds', sounds: {count: sounds.length, names: sounds.map(x => x.name), picked: s && {index: selectedSound, ...s}}})
+    }
+    $('sound-list').onchange = () => {
+        selectedSound = $('sound-list').value === '' ? null : Number($('sound-list').value)
+        showSounds()
+    }
+    $('sound-list').ondblclick = () => $('sound-play').onclick()
+    $('sound-new').onclick = () => {
+        const file = $('sound-new-file').value.trim()
+        if (!file) return
+        selectNewSound = true
+        send(encode.soundNew(file))
+    }
+    $('sound-delete').onclick = () => {
+        if (selectedSound !== null) send(encode.soundDelete(selectedSound))
+    }
+    $('sound-play').onclick = () => {
+        if (selectedSound !== null) send(encode.soundPlay(sounds[selectedSound].file))
+    }
+    /** The sound playing, stopped when another starts. */
+    let playing = null
+    async function playSound(msg) {
+        const said = {file: msg.file, bytes: msg.bytes.length, error: msg.error, played: false}
+        if (msg.bytes.length) {
+            try {
+                playing?.stop()
+                const audio = new AudioContext()
+                const buffer = await audio.decodeAudioData(msg.bytes.slice().buffer)
+                playing = audio.createBufferSource()
+                playing.buffer = buffer
+                playing.connect(audio.destination)
+                playing.start()
+                said.played = true
+            } catch (e) {
+                said.error = `Can't play ${msg.file}: ${e.message || e}`
+            }
+        }
+        if (said.error) $('status').textContent = said.error
+        vscode.postMessage({type: 'played', played: said})
     }
 
     // Regions: a click picks one (the last drawn over the point); a drag
@@ -1028,6 +1162,16 @@
             askThing()
             $('status').textContent = msg.found ? msg.text : ''
             vscode.postMessage({type: 'picked', text: msg.found ? msg.text : ''})
+        } else if (msg.kind === 'sounds') {
+            sounds = msg.sounds
+            if (selectNewSound) {
+                selectedSound = sounds.length ? sounds.length - 1 : null
+                selectNewSound = false
+            }
+            if (selectedSound !== null && selectedSound >= sounds.length) selectedSound = null
+            showSounds()
+        } else if (msg.kind === 'soundData') {
+            playSound(msg)
         } else if (msg.kind === 'thing') {
             thing = msg.fields.length ? msg : null
             showThing()
@@ -1112,6 +1256,30 @@
                 send(encode.camera(true, c, camera.ray(msg.x, msg.y, aspect())))
                 send(encode.strokeEnd())
             }
+        } else if (msg.type === 'sound') {
+            // The Sounds tool's, for the tests: `new` of a `file`, `pick`
+            // one (`index`), a `field` typed (a flag's `bit` checked or not),
+            // `play`, `delete`.
+            if (msg.action === 'new') {
+                $('sound-new-file').value = msg.file
+                $('sound-new').onclick()
+            } else if (msg.action === 'pick') {
+                $('sound-list').value = String(msg.index)
+                $('sound-list').onchange()
+            } else if (msg.action === 'field') {
+                const f = SOUND_FIELDS.find(f => f.field === msg.field && (f.bit ?? 0) === (msg.bit ?? 0))
+                if (f.bit) {
+                    f.input.checked = !!msg.value
+                    f.input.onchange()
+                } else if (f.options) {
+                    f.input.value = String(msg.value)
+                    f.input.onchange()
+                } else {
+                    f.input.value = String(msg.value)
+                    f.input.oninput()
+                }
+            } else if (msg.action === 'play') $('sound-play').onclick()
+            else if (msg.action === 'delete') $('sound-delete').onclick()
         } else if (msg.type === 'thingField') {
             // A field of the thing picked typed (`scale_x` ...): for the tests.
             const f = THING_FIELDS.find(f => f.field === msg.field)

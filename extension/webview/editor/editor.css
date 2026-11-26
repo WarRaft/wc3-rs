@@ -346,6 +346,24 @@ button:hover {
     width: 5em;
 }
 
+.tools .camera-field.sound-text {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1px;
+}
+
+.tools .camera-field.sound-text input {
+    width: auto;
+}
+
+.tools .camera-field.sound-flag {
+    justify-content: flex-start;
+}
+
+.tools .camera-field.sound-flag input {
+    width: auto;
+}
+
 .tools .camera-field[hidden] {
     display: none;
 }

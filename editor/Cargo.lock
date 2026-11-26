@@ -992,6 +992,7 @@ dependencies = [
  "w3e-rs",
  "w3i-rs",
  "w3r-rs",
+ "w3s-rs",
  "wc3-server",
  "wpm-rs",
  "wts-rs",
