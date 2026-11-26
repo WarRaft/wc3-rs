@@ -291,7 +291,8 @@ async function steps() {
     await we.panel.webview.postMessage({type: 'mapOpen'})
     const tiles = (await until(() => we.mapSettings, "the map's settings")).mapTiles
     await we.panel.webview.postMessage({type: 'mapTiles', ids: [tiles[1], tiles[0], ...tiles.slice(2)], to: tiles.map((_, i) => (i === 0 ? 1 : i === 1 ? 0 : i)), tileset: we.mapSettings.tileset})
-    await until(() => groundLine() !== firstGround, 'the document has the tiles set')
+    // Until it has them (the document can change more than once on the way).
+    await until(() => groundLine().startsWith(`ground=${tiles[1]},${tiles[0]}`), 'the document has the tiles set')
     check(groundLine().startsWith(`ground=${tiles[1]},${tiles[0]}`) && w3eDoc.isDirty, `the document follows: ${groundLine().slice(0, 40)}…`)
     await we.panel.webview.postMessage({type: 'undo'})
     await until(() => groundLine() === firstGround, 'the document undone with the editor')

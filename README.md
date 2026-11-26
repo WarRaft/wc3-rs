@@ -1957,9 +1957,13 @@ step), this list updated.
        `editor/src/types.rs` reads them over the tables. The Diablo III
        beta map with Reforged HD: all 13221 things placed, 103 models
        and 326 textures read, none failing (`e2e/editor-look.js`,
-       `E2E_HD=1`). Its trees come out reddish-orange where the
-       classic's are green-yellow: their texture as Reforged names it,
-       not looked into yet.
+       `E2E_HD=1`). Its trees (FTtw, Lordaeron's fall trees:
+       autumn's by their `texFile`) came out red: an HD layer's
+       replaceable texture (all three of a tree's, diffuse, normal, ORM,
+       are 31) was the stand-in itself in every slot, the ORM's alpha
+       team colour over all of it; now, as HiveWE does, the stand-in
+       with the slot's suffix (`LordaeronFallTree_Diffuse`, `_Normal`,
+       `_ORM`, `_Emissive`).
      - **e, the HD shaders** (done): an HD layer (its textures by slot,
        more than a diffuse one) sends its normal map, ORM, emissive and
        team colour textures (`placed::Layer`), its geoset its tangents

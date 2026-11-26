@@ -594,9 +594,25 @@ fn load_model(
                     .iter()
                     .map(|l| {
                         let slots = l.textures(version).unwrap_or_default();
-                        let slot = |n: u32| slots.iter().find(|t| t.slot == n).and_then(|t| texs.get(t.texture_id as usize).copied()).unwrap_or(texture::NONE);
+                        let hd = slots.len() > 1;
+                        // A replaceable texture of an HD layer (a tree's):
+                        // its stand-in with the slot's suffix
+                        // (`LordaeronFallTree_Diffuse`, `_Normal`, `_ORM`,
+                        // `_Emissive`), as HiveWE takes it: the texture
+                        // doesn't say which it is, its slot does.
+                        let mut slot = |n: u32| -> i32 {
+                            let Some(t) = slots.iter().find(|t| t.slot == n) else { return texture::NONE };
+                            let rid = m.textures().get(t.texture_id as usize).map_or(0, |x| x.replaceable_id);
+                            if let (true, Some((r, file)), Some(suffix)) = (hd && rid > 1, replaceable, ["_Diffuse", "_Normal", "_ORM", "_Emissive"].get(n as usize))
+                                && *r == rid
+                            {
+                                return texture(&format!("{}{suffix}.blp", strip_extension(file)));
+                            }
+                            texs.get(t.texture_id as usize).copied().unwrap_or(texture::NONE)
+                        };
+                        let diffuse = if hd { slot(0) } else { texs.get(l.diffuse(version) as usize).copied().unwrap_or(texture::NONE) };
                         Layer {
-                            texture: texs.get(l.diffuse(version) as usize).copied().unwrap_or(texture::NONE),
+                            texture: diffuse,
                             filter_mode: l.filter_mode,
                             shading: l.shading,
                             alpha: l.alpha,
