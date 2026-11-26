@@ -57,6 +57,7 @@ fn doodads_and_units_with_their_models_and_what_a_ray_meets() {
         item_table: -1,
         item_sets: vec![],
         number: 0,
+        reforged: Default::default(),
     };
     let mut rock = doodad(b"LTrc", 256.0, 128.0);
     rock.placement.variation = 1;
@@ -112,4 +113,26 @@ fn a_start_locations_model_world_edit_art_says() {
     // The .mdl as the game reads it.
     assert_eq!(world_edit_art(&s.game, "StartLocation").as_deref(), Some("Objects\\StartLocation\\StartLocation.mdx"));
     assert_eq!(world_edit_art(&s.game, "Nothing"), None);
+}
+
+/// A model that isn't anywhere (a dummy unit's `1.mdx`, a map's trick to
+/// have nothing drawn) and one that's a text model (`.mdl`, as Reforged
+/// maps import them): each said, as its own error.
+#[test]
+fn a_dummys_missing_model_and_a_text_model_said() {
+    let dir = TestDir::new("placed-missing");
+    dir.write("Units/UnitUI.slk", &testdir::slk(&[&["unitUIID", "file"], &["hdum", "1"], &["hmdl", "war3mapImported\\Cliff"]]));
+    dir.write("war3mapImported/Cliff.mdl", b"Version {\n\tFormatVersion 800,\n}\n");
+    let mut units = doo_rs::Units { version: 8, subversion: 11, layout: doo_rs::Layout::Classic, units: vec![] };
+    units.units.push(doo_rs::Unit::new(Rawcode(*b"hdum"), 0.0, 0.0, 0));
+    units.units.push(doo_rs::Unit::new(Rawcode(*b"hdum"), 64.0, 0.0, 0));
+    units.units.push(doo_rs::Unit::new(Rawcode(*b"hmdl"), 0.0, 64.0, 0));
+    dir.write("war3mapUnits.doo", &units.to_bytes().unwrap());
+    let game = wc3_server::game::Lookup { roots: vec![dir.path().to_path_buf()], ..Default::default() }.open().0;
+    let types = Types::load(&game);
+    let t = w3e_rs::parse(&testdir::terrain()).unwrap();
+    let draw = crate::terrain::Draw::new(&t, &crate::terrain::Grounds { ids: vec![], blight: 0, cliff_ground: vec![] }, crate::terrain::tile_flags(&t), &|_| false, 0.0);
+    let o = Objects::load(&game, &types, &draw);
+    assert_eq!(o.notes, ["Models not in the game's files or the roots: 1.mdx", "Text models (.mdl), not read yet: war3mapImported\\Cliff.mdl"]);
+    assert!(o.things.is_empty());
 }

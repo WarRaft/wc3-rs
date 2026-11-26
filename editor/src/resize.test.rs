@@ -70,7 +70,7 @@ fn whats_off_the_map_removed_regions_cut() {
     // The terrain: x from -2048 to -2048 + 32 cells.
     let right = -2048.0 + 32.0 * 128.0;
     let mut files = crate::placed::Files::default();
-    let thing = |x: f32| doo_rs::Doodad { placement: doo_rs::Placement::new(Rawcode(*b"LTlt"), x, 0.0), flags: 2, life: 100, item_table: -1, item_sets: Vec::new(), number: 0 };
+    let thing = |x: f32| doo_rs::Doodad { placement: doo_rs::Placement::new(Rawcode(*b"LTlt"), x, 0.0), flags: 2, life: 100, item_table: -1, item_sets: Vec::new(), number: 0, reforged: Default::default() };
     let mut d = crate::edit::new_doodads(Default::default());
     d.doodads = vec![thing(0.0), thing(right + 10.0)];
     files.doodads = Some(d);

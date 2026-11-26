@@ -1129,7 +1129,7 @@ impl Session {
                 let mut placement = doo_rs::Placement::new(code, x, y);
                 (placement.z, placement.angle, placement.variation) = (z, angle, variation);
                 let number = list.iter().map(|d| d.number).max().unwrap_or(-1) + 1;
-                list.push(doo_rs::Doodad { placement, flags: 2, life: 100, item_table: -1, item_sets: Vec::new(), number });
+                list.push(doo_rs::Doodad { placement, flags: 2, life: 100, item_table: -1, item_sets: Vec::new(), number, reforged: Default::default() });
             } else {
                 let list = &mut files.units.as_mut().unwrap().units;
                 let mut unit = doo_rs::Unit::new(code, x, y, if kind == 3 { 15 } else { player });

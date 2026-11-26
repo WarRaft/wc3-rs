@@ -89,6 +89,7 @@ fn the_things_placed_undone_and_redone_with_the_terrain() {
         item_table: -1,
         item_sets: vec![],
         number: 0,
+        reforged: Default::default(),
     });
     e.apply(&mut t, 4.0, 4.0, &brush(Tool::Raise), true).unwrap();
     e.end();

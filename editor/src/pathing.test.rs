@@ -97,6 +97,7 @@ fn the_destructables_pathing_a_blockers_and_a_bridges_deck() {
         item_table: -1,
         item_sets: Vec::new(),
         number: 0,
+        reforged: Default::default(),
     };
     let mut doodads = crate::edit::new_doodads(Default::default());
     // At cells (4, 4) and (12, 4); a non-solid blocker at (8, 4): nothing.

@@ -413,6 +413,9 @@ impl Objects {
         }
 
         let mut missing: Vec<String> = Vec::new();
+        // Text models (`.mdl`, which Reforged reads as they are): there,
+        // not read yet.
+        let mut text_models: Vec<String> = Vec::new();
         for place in places {
             let key = (place.paths[0].to_ascii_lowercase(), place.replaceable.clone());
             let model = match self.model_of.get(&key) {
@@ -429,8 +432,10 @@ impl Objects {
                 }
             };
             let Some(model) = model else {
-                if !missing.contains(&place.paths[0]) {
-                    missing.push(place.paths[0].clone());
+                let mdl = format!("{}.mdl", strip_extension(&place.paths[0]));
+                let (list, name) = if game.read(&mdl).is_some() { (&mut text_models, mdl) } else { (&mut missing, place.paths[0].clone()) };
+                if !list.contains(&name) {
+                    list.push(name);
                 }
                 continue;
             };
@@ -452,6 +457,9 @@ impl Objects {
         }
         if !missing.is_empty() {
             self.notes.push(format!("Models not in the game's files or the roots: {}", missing.join(", ")));
+        }
+        if !text_models.is_empty() {
+            self.notes.push(format!("Text models (.mdl), not read yet: {}", text_models.join(", ")));
         }
     }
 

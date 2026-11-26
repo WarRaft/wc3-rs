@@ -28,7 +28,13 @@ item's details are in its section below):
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
-  Castle, CruiserCommand, LastGuards, three-corridors). three-corridors'
+  Castle, CruiserCommand, LastGuards, three-corridors, Edemium; Castle
+  Revival and Diablo Reforged, Reforged 2.0 maps: `w3i` 39, `doo` 13,
+  `w3r` 7, read; their files over 90 MB not in the repository: GitHub's
+  limit), each a project of its own (`wc3.bni`). Edemium's dummy units
+  name models nowhere (`1.mdx`, `null.mdx`), Castle Revival imports text
+  models (`.mdl`, which Reforged reads; not read here yet): each said as
+  its own error (`placed::tests`). three-corridors'
   custom script is vJASS and Zinc as real libraries write them (95
   textmacros, 13 Zinc blocks, 43 libraries: Nestharus', Bribe's,
   BPower's) and builds clean (`wc3-build`'s README, Tests); none uses
