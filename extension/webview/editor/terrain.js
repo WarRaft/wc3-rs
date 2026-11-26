@@ -31,6 +31,8 @@ flat out uvec4 v_tex;
 out vec3 v_normal;
 out vec2 v_pos;
 out float v_boundary;
+out float v_dist;
+uniform vec3 u_eye;
 const vec2 P[6] = vec2[6](vec2(1, 1), vec2(0, 1), vec2(0, 0), vec2(0, 0), vec2(1, 0), vec2(1, 1));
 void main() {
     int tw = u_size.x - 1;
@@ -52,6 +54,7 @@ void main() {
     // (terrain::tile::has_ground).
     uint tf = texelFetch(u_tileFlags, tile, 0).r;
     bool ground = (tf & 5u) == 0u || (tf & 2u) != 0u;
+    v_dist = distance(vec3(vec2(c), z), u_eye) * 128.0;
     gl_Position = ground ? u_mvp * vec4(vec2(c), z, 1.0) : vec4(2.0, 0.0, 0.0, 1.0);
 }`
 
@@ -62,6 +65,17 @@ precision highp sampler2DArray;
 uniform sampler2DArray u_layers;
 uniform uint u_first[64];
 uniform vec3 u_light;
+${EditorLight.GLSL}
+uniform sampler2D u_shadows;
+uniform bool u_showShadows;
+// The map's baked shadows (war3map.shd, four cells a terrain cell).
+float shadowed(vec2 pos) {
+    if (!u_showShadows) return 1.0;
+    ivec2 cell = ivec2(floor(pos * 4.0));
+    ivec2 size = textureSize(u_shadows, 0);
+    if (any(lessThan(cell, ivec2(0))) || any(greaterThanEqual(cell, size))) return 1.0;
+    return 1.0 - 0.45 * texelFetch(u_shadows, cell, 0).r;
+}
 uniform bool u_grid;
 uniform vec3 u_brush;
 uniform highp usampler2D u_pathing;
@@ -95,6 +109,7 @@ flat in uvec4 v_tex;
 in vec3 v_normal;
 in vec2 v_pos;
 in float v_boundary;
+in float v_dist;
 out vec4 color;
 vec4 layer(uint e) {
     uint t = e & 0xFFFFu;
@@ -106,8 +121,8 @@ void main() {
     color = mix(layer(v_tex.b), color, color.a);
     color = mix(layer(v_tex.g), color, color.a);
     color = mix(layer(v_tex.r), color, color.a);
-    float light = clamp((dot(-u_light, normalize(v_normal)) + 1.0) * 0.5, 0.0, 1.0);
-    color.rgb *= light;
+    color.rgb = lit(color.rgb, v_normal, clamp((dot(-u_light, normalize(v_normal)) + 1.0) * 0.5, 0.0, 1.0));
+    color.rgb *= shadowed(v_pos);
     color.rgb *= 1.0 - 0.55 * v_boundary;
     color.rgb = overlays(color.rgb, v_pos);
     // The brush: a ring where it would be laid.
@@ -120,6 +135,7 @@ void main() {
         float line = 1.0 - clamp(min(g.x, g.y), 0.0, 1.0);
         color.rgb = mix(color.rgb, vec3(1.0), line * 0.25);
     }
+    color.rgb = fogged(color.rgb, v_dist);
     color.a = 1.0;
 }`
 
@@ -137,6 +153,8 @@ uniform sampler2D u_ground;
 out vec3 v_uv;
 out vec3 v_normal;
 out vec2 v_pos;
+out float v_dist;
+uniform vec3 u_eye;
 float ground(ivec2 c) { return texelFetch(u_ground, clamp(c, ivec2(0), u_size - 1), 0).r; }
 void main() {
     // The models lie a quarter turn round (HiveWE's cliff.vert).
@@ -147,6 +165,7 @@ void main() {
     v_normal = normalize(vec3(n.xy + terrain.xy, n.z * terrain.z));
     v_uv = vec3(a_uv, a_inst.w);
     v_pos = p.xy;
+    v_dist = distance(vec3(p.xy, p.z + ground(c)), u_eye) * 128.0;
     gl_Position = u_mvp * vec4(p.xy, p.z + ground(c), 1.0);
 }`
 
@@ -155,6 +174,17 @@ precision highp float;
 precision highp sampler2DArray;
 uniform sampler2DArray u_cliffs;
 uniform vec3 u_light;
+${EditorLight.GLSL}
+uniform sampler2D u_shadows;
+uniform bool u_showShadows;
+// The map's baked shadows (war3map.shd, four cells a terrain cell).
+float shadowed(vec2 pos) {
+    if (!u_showShadows) return 1.0;
+    ivec2 cell = ivec2(floor(pos * 4.0));
+    ivec2 size = textureSize(u_shadows, 0);
+    if (any(lessThan(cell, ivec2(0))) || any(greaterThanEqual(cell, size))) return 1.0;
+    return 1.0 - 0.45 * texelFetch(u_shadows, cell, 0).r;
+}
 uniform highp usampler2D u_pathing;
 uniform sampler2D u_regions;
 uniform bool u_showPathing;
@@ -184,11 +214,14 @@ vec3 overlays(vec3 c, vec2 pos) {
 in vec3 v_uv;
 in vec3 v_normal;
 in vec2 v_pos;
+in float v_dist;
 out vec4 color;
 void main() {
     color = texture(u_cliffs, v_uv);
-    color.rgb *= clamp((dot(-u_light, normalize(v_normal)) + 1.0) * 0.5, 0.0, 1.0);
+    color.rgb = lit(color.rgb, v_normal, clamp((dot(-u_light, normalize(v_normal)) + 1.0) * 0.5, 0.0, 1.0));
+    color.rgb *= shadowed(v_pos);
     color.rgb = overlays(color.rgb, v_pos);
+    color.rgb = fogged(color.rgb, v_dist);
     color.a = 1.0;
 }`
 
@@ -306,6 +339,12 @@ void main() {
             this.pathing = dataTexture(gl, gl.R8UI, gl.RED_INTEGER, gl.UNSIGNED_BYTE, 1, 1, new Uint8Array(1))
             this.regions = dataTexture(gl, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, 1, 1, new Uint8Array(4))
             this.show = {pathing: false, regions: false}
+            this.shadows = dataTexture(gl, gl.R8, gl.RED, gl.UNSIGNED_BYTE, 1, 1, new Uint8Array(1))
+            this.showShadows = true
+            /** The light (`EditorLight.Light`), the hour, the camera's place: set before drawing. */
+            this.light = null
+            this.hours = 12
+            this.eye = [0, 0, 0]
             /** The brush's ring: x, y, radius (cells); radius 0 none. */
             this.brush = [0, 0, 0]
             this.vao = gl.createVertexArray()
@@ -392,6 +431,25 @@ void main() {
             const r = msg.regionPicture.width ? msg.regionPicture : {width: 1, height: 1, data: new Uint8Array(4)}
             this.pathing = dataTexture(gl, gl.R8UI, gl.RED_INTEGER, gl.UNSIGNED_BYTE, p.width, p.height, p.data)
             this.regions = dataTexture(gl, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, r.width, r.height, r.data)
+        }
+
+        /** The map's shadows (`war3map.shd`): a byte a cell, rows from the bottom. */
+        setShadows(grid) {
+            const gl = this.gl
+            gl.deleteTexture(this.shadows)
+            this.shadows = grid.width ? dataTexture(gl, gl.R8, gl.RED, gl.UNSIGNED_BYTE, grid.width, grid.height, grid.data) : dataTexture(gl, gl.R8, gl.RED, gl.UNSIGNED_BYTE, 1, 1, new Uint8Array(1))
+        }
+
+        /** The light, the shadows (unit 8) and the camera's place for program `p`. */
+        bindLight(p) {
+            const gl = this.gl
+            gl.uniform3fv(p.uniforms.u_eye, this.eye)
+            gl.activeTexture(gl.TEXTURE8)
+            gl.bindTexture(gl.TEXTURE_2D, this.shadows)
+            gl.uniform1i(p.uniforms.u_shadows, 8)
+            gl.uniform1i(p.uniforms.u_showShadows, this.showShadows ? 1 : 0)
+            if (this.light) this.light.apply(gl, p.uniforms, 'terrain', this.hours)
+            else gl.uniform1i(p.uniforms.u_daylight, 0)
         }
 
         /** Binds the overlays' pictures (units 6 and 7) for program `p`. */
@@ -490,6 +548,7 @@ void main() {
             bind(4, gl.TEXTURE_2D_ARRAY, this.layers, g.uniforms.u_layers)
             bind(5, gl.TEXTURE_2D, t.textures.tileFlags, g.uniforms.u_tileFlags)
             this.bindOverlays(g)
+            this.bindLight(g)
             gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, tiles)
 
             if (this.cliffs.length && this.cliffTextures) {
@@ -501,6 +560,7 @@ void main() {
                 bind(0, gl.TEXTURE_2D, t.textures.ground, c.uniforms.u_ground)
                 bind(1, gl.TEXTURE_2D_ARRAY, this.cliffTextures, c.uniforms.u_cliffs)
                 this.bindOverlays(c)
+                this.bindLight(c)
                 for (const m of this.cliffs) {
                     gl.bindVertexArray(m.vao)
                     gl.drawElementsInstanced(gl.TRIANGLES, m.count, gl.UNSIGNED_SHORT, 0, m.instances)

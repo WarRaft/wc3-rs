@@ -54,8 +54,10 @@ fn the_terrain_drawn_with_the_tables_of_the_roots() {
     dir.write("map/T/Dirt.blp", &testdir::tga(8, 4, |_, _| [9, 9, 9, 255]));
     let mut s = Session::open(dir.path()).unwrap();
     let msgs = s.draw();
-    let [ServerMsg::Ground(g), ServerMsg::Water(w), ServerMsg::Cliffs(c), ServerMsg::Terrain(t), ServerMsg::Objects(o), ServerMsg::Instances(_), ServerMsg::Overlays(v), ServerMsg::Palette(_), ServerMsg::ObjectPalette(_), ServerMsg::Follow(f), ServerMsg::State(st)] = &msgs[..] else { panic!("{} messages", msgs.len()) };
+    let [ServerMsg::Ground(g), ServerMsg::Water(w), ServerMsg::Cliffs(c), ServerMsg::Terrain(t), ServerMsg::Objects(o), ServerMsg::Instances(_), ServerMsg::Overlays(v), ServerMsg::Palette(_), ServerMsg::ObjectPalette(_), ServerMsg::Follow(f), ServerMsg::Light(l), ServerMsg::State(st)] = &msgs[..] else { panic!("{} messages", msgs.len()) };
     assert_eq!(st, &StateMsg::default());
+    // No game: no day and night (the view's own light), said.
+    assert!(l.terrain.is_empty() && l.notes.iter().any(|n| n.contains("TerrainLights")), "{:?}", l.notes);
     // The pieces with a text form, at the top root (the map has none of them).
     assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.doo", "war3mapUnits.doo", "war3map.w3r"]);
     assert!(f[0].1.ends_with("map/war3map.doo"), "{f:?}");
@@ -358,4 +360,24 @@ fn a_text_form_open_follows_the_editor_and_the_editor_it() {
     s.text_closed(&path);
     s.region_rename(0, "Mine");
     assert!(s.sync_docs().is_empty() && s.edits.dirty.regions);
+}
+
+#[test]
+fn the_light_the_shadows_and_the_fog_of_the_map() {
+    let dir = TestDir::new("session-light");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    // Its info: the fog on (0x2000), blue, green, red, alpha as stored.
+    let mut info = w3i_rs::parse(&testdir::info()).unwrap();
+    info.flags |= 0x2000;
+    info.fog = w3i_rs::Fog { style: 1, start_z: 1000.0, end_z: 3000.0, density: 0.5, color: [10, 20, 30, 255] };
+    dir.write("map/war3map.w3i", &info.to_bytes().unwrap());
+    // A shadow on the first cell.
+    let mut shd = vec![0u8; 8 * 4];
+    shd[0] = 255;
+    dir.write("map/war3map.shd", &shd);
+    let s = Session::open(dir.path()).unwrap();
+    let l = s.light();
+    assert_eq!(l.fog, Some((1, 1000.0, 3000.0, 0.5, [30, 20, 10, 255])));
+    assert_eq!((l.shadows.width, l.shadows.height, l.shadows.data[0], l.shadows.data[1]), (8, 4, 255, 0));
 }

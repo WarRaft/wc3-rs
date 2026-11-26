@@ -38,6 +38,7 @@ const EditorProtocol = (() => {
         REGION_RENAME: 14,
         REGION_DELETE: 15,
         RELOAD: 16,
+        LIGHT: 145,
     }
 
     /** The tools by their code (`edit::TOOLS`). */
@@ -363,6 +364,14 @@ const EditorProtocol = (() => {
                 return {kind: 'instances', models: r.list(r => r.f32s())}
             case KIND.OBJECT_PALETTE:
                 return {kind: 'objectPalette', entries: r.list(r => ({kind: r.u8(), id: r.string(), name: r.string(), group: r.string(), custom: r.u8() !== 0}))}
+            case KIND.LIGHT: {
+                const terrain = r.f32s()
+                const units = r.f32s()
+                const shadows = {width: r.u32(), height: r.u32(), data: r.bytes()}
+                const on = r.u8() !== 0
+                const fog = {style: r.i32(), start: r.f32(), end: r.f32(), density: r.f32(), color: [r.u8(), r.u8(), r.u8(), r.u8()]}
+                return {kind: 'light', terrain, units, shadows, fog: on ? fog : null, notes: r.list(r => r.string())}
+            }
             case KIND.ICONS_ANSWER:
                 return {kind: 'icons', icons: r.list(r => ({kind: r.u8(), id: r.string(), width: r.u32(), height: r.u32(), rgba: r.bytes()}))}
             case KIND.STATE:

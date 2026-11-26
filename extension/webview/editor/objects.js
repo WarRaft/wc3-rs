@@ -51,6 +51,8 @@ out vec3 v_normal;
 out vec3 v_tint;
 out vec3 v_team;
 out float v_selected;
+out float v_dist;
+uniform vec3 u_eye;
 void main() {
     vec3 pos = a_pos;
     vec3 normal = a_normal;
@@ -70,6 +72,7 @@ void main() {
     v_tint = a_tint;
     v_team = a_team;
     v_selected = gl_InstanceID == u_selected ? 1.0 : 0.0;
+    v_dist = distance(p, u_eye) * 128.0;
     gl_Position = u_mvp * vec4(p, 1.0);
 }`
 
@@ -81,6 +84,8 @@ uniform float u_alpha;
 uniform bool u_cutout;
 uniform bool u_unshaded;
 uniform vec3 u_light;
+${EditorLight.GLSL}
+in float v_dist;
 in vec2 v_uv;
 in vec3 v_normal;
 in vec3 v_tint;
@@ -93,8 +98,9 @@ void main() {
     color.a *= u_alpha;
     if (u_cutout && color.a < 0.75) discard;
     if (!u_unshaded) {
-        color.rgb *= clamp((dot(-u_light, normalize(v_normal)) + 1.0) * 0.5, 0.0, 1.0) * 1.2;
+        color.rgb = lit(color.rgb, v_normal, clamp((dot(-u_light, normalize(v_normal)) + 1.0) * 0.5, 0.0, 1.0) * 1.2);
     }
+    color.rgb = fogged(color.rgb, v_dist);
     color.rgb = mix(color.rgb, vec3(0.3, 1.0, 0.3), v_selected * 0.35);
 }`
 
@@ -118,7 +124,8 @@ void main() {
         gl.linkProgram(p)
         if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p))
         const u = name => gl.getUniformLocation(p, name)
-        return {program: p, u_animated: u('u_animated'), u_matrices: u('u_matrices'), u_time: u('u_time'), u_fps: u('u_fps'), u_frames: u('u_frames'), u_mvp: u('u_mvp'), u_selected: u('u_selected'), u_texture: u('u_texture'), u_source: u('u_source'), u_alpha: u('u_alpha'), u_cutout: u('u_cutout'), u_unshaded: u('u_unshaded'), u_light: u('u_light')}
+        const light = Object.fromEntries(['u_daylight', 'u_sun', 'u_diffuse', 'u_ambient', 'u_fog', 'u_fogStart', 'u_fogEnd', 'u_fogColor', 'u_eye'].map(n => [n, u(n)]))
+        return {...light, program: p, u_animated: u('u_animated'), u_matrices: u('u_matrices'), u_time: u('u_time'), u_fps: u('u_fps'), u_frames: u('u_frames'), u_mvp: u('u_mvp'), u_selected: u('u_selected'), u_texture: u('u_texture'), u_source: u('u_source'), u_alpha: u('u_alpha'), u_cutout: u('u_cutout'), u_unshaded: u('u_unshaded'), u_light: u('u_light')}
     }
 
     class Objects {
@@ -267,7 +274,7 @@ void main() {
             this.selected = {model, instance}
         }
 
-        draw(mvp, time = 0, camera = null) {
+        draw(mvp, time = 0, camera = null, light = null, hours = 12) {
             const gl = this.gl
             const p = this.program
             gl.useProgram(p.program)
@@ -276,6 +283,9 @@ void main() {
             gl.uniform1i(p.u_texture, 0)
             gl.uniform1i(p.u_matrices, 1)
             gl.uniform1f(p.u_time, time)
+            gl.uniform3fv(p.u_eye, camera?.eye ?? [0, 0, 0])
+            if (light) light.apply(gl, p, 'units', hours)
+            else gl.uniform1i(p.u_daylight, 0)
             gl.activeTexture(gl.TEXTURE0)
             gl.enable(gl.DEPTH_TEST)
             for (const pass of [0, 1]) {

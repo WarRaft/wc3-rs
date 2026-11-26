@@ -8,7 +8,7 @@ use wc3_server::game::{Game, Lookup};
 use wc3_server::names::Names;
 use wc3_server::project::{self, Project};
 
-use crate::protocol::{CliffsMsg, GroundMsg, IconEntry, MapInfo, ObjectEntry, ObjectsMsg, PaletteEntry, PaletteMsg, PickedMsg, ServerMsg, StateMsg, WaterMsg};
+use crate::protocol::{CliffsMsg, GroundMsg, IconEntry, LightMsg, MapInfo, ObjectEntry, ObjectsMsg, PaletteEntry, PaletteMsg, PickedMsg, ServerMsg, StateMsg, WaterMsg};
 use crate::terrain::{Draw, Grounds};
 use crate::tileset::Tileset;
 
@@ -253,6 +253,7 @@ impl Session {
         terrain.push(ServerMsg::Palette(self.palette()));
         terrain.push(ServerMsg::ObjectPalette(self.object_palette()));
         terrain.push(ServerMsg::Follow(self.follow()));
+        terrain.push(ServerMsg::Light(self.light()));
         terrain.push(ServerMsg::State(self.state(String::new())));
         terrain
     }
@@ -279,6 +280,29 @@ impl Session {
         }
         out.push(ServerMsg::Instances(objects.models.iter().map(|m| m.instances.clone()).collect()));
         out
+    }
+
+    /// The light through the day (the tileset's whose light the map uses:
+    /// `war3map.w3i`'s, else the terrain's), the shadows
+    /// (`war3map.shd`), the fog (when the map's options use it, the
+    /// colour stored blue, green, red, alpha).
+    pub fn light(&self) -> LightMsg {
+        let letter = self.info.as_ref().map(|i| i.light_tileset).filter(|l| *l != 0).unwrap_or(self.terrain.tileset) as char;
+        let (terrain, units, mut notes) = crate::light::load(&self.game, letter);
+        let (w, h) = shd_rs::size_for_terrain(self.terrain.width, self.terrain.height);
+        let shadows = match self.game.read("war3map.shd").map(|(b, _)| shd_rs::parse(&b, w, h)) {
+            Some(Ok(s)) => crate::overlays::Grid { width: s.width, height: s.height, data: s.cells },
+            Some(Err(e)) => {
+                notes.push(format!("Can't read war3map.shd: {e}"));
+                Default::default()
+            }
+            None => Default::default(),
+        };
+        let fog = self.info.as_ref().filter(|i| i.flags & 0x2000 != 0 && i.fog.style != 0).map(|i| {
+            let [b, g, r, a] = i.fog.color;
+            (i.fog.style, i.fog.start_z, i.fog.end_z, i.fog.density, [r, g, b, a])
+        });
+        LightMsg { terrain: terrain.samples, units: units.samples, shadows, fog, notes }
     }
 
     /// What the terrain palette offers: the tileset's ground textures

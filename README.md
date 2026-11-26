@@ -21,8 +21,8 @@ item's details are in its section below):
 - **The World Editor** (see [World Editor](#world-editor)): its steps,
   in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs), 4 (doodads and units),
   5 (overlays), 6 (editing: terrain brushes, things placed, regions and
-  pathing), 7 (in step with the rest), 8a (animation), 8b (particles).
-  Next: 8c.
+  pathing), 7 (in step with the rest), 8a (animation), 8b (particles),
+  8c (light). Next: 8d.
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1798,8 +1798,22 @@ step), this list updated.
      things. On the Diablo III beta map 137 emitters (waterfalls' spray,
      torches). Tails (`head_or_tail` 1, 2), emitters in model space, and
      ribbons (`RIBB`) are next. MCP: `mdx_info` says the emitters.
-   - **8c, light**: the day and night (`Environment\DNC`), the map's
-     light, fog, shadows.
+   - **8c, light** (done): `mdx-rs` reads lights (`LITE`, up to 1100);
+     `editor/src/light.rs` finds the day and night models of the tileset
+     whose light the map uses (`war3map.w3i`'s, else its terrain's) in
+     `UI\WorldEditData.txt` (`[TerrainLights]` for the ground and cliffs,
+     `[UnitLights]` for what's placed) and bakes their sun through a day
+     (`Stand`, midnight to midnight) every half an hour: its direction
+     (its node's turn), its colour times its intensity, the ambient's
+     (the model's colours blue, green, red); a global sequence of no
+     length a track doesn't move by (the sun's turn, its first key; the
+     game reads it so, HiveWE's default didn't). The `Light` message
+     with the shadows (`war3map.shd`, laid on the ground and cliffs) and
+     the fog (the map's options' when it uses it: linear by the
+     distance); the page's `light.js`: the time of day (noon; the
+     slider; Day cycle: eight minutes a day, as the game's), Shadows,
+     Fog. MCP: `mdx_info` says the lights. The fog's exponential styles
+     are drawn linear for now.
    - **8d, the terrain's size and tiles**: resize, the tile setter
      (the map's ground textures) and pather.
    - **Reforged HD assets** (CASC, `.dds`, the HD shaders): when a

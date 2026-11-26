@@ -61,6 +61,7 @@
 //! | 142 | `Follow` | the pieces that have a text form and where their files are: a list of (name, path); the extension sends their documents' texts |
 //! | 143 | `TextOut` | a piece's text form as the editor changed it: path, text; the extension puts it in the open document |
 //! | 144 | `SaveDocs` | the documents VS Code saves (their paths), the rest the editor saved |
+//! | 145 | `Light` | the light through the day, the shadows, the fog: see [`LightMsg`] |
 //! | 141 | `Icons` | a list of (`u8` kind, id, `u32` width, height, RGBA; 0 by 0 for none) |
 //!
 //! After an edit the terrain's messages come again: `Cliffs` with no
@@ -102,6 +103,7 @@ mod kind {
     pub const FOLLOW: u8 = 142;
     pub const TEXT_OUT: u8 = 143;
     pub const SAVE_DOCS: u8 = 144;
+    pub const LIGHT: u8 = 145;
     pub const ICONS_ANSWER: u8 = 141;
     pub const OBJECTS: u8 = 134;
     pub const PICKED: u8 = 135;
@@ -309,6 +311,20 @@ pub struct IconEntry {
     pub icon: crate::textures::Icon,
 }
 
+/// Kind 145's body: the ground's light through the day (`f32` array,
+/// `light::SAMPLE` a time, `light::SAMPLES` times from midnight; empty
+/// for the view's own), the things', the shadows (`u32` width, height,
+/// a byte a cell, rows from the bottom: `war3map.shd`), the fog (`u8` on,
+/// `i32` style, `f32` start, end, density, `u8` r, g, b, a), notes.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LightMsg {
+    pub terrain: Vec<f32>,
+    pub units: Vec<f32>,
+    pub shadows: crate::overlays::Grid,
+    pub fog: Option<(i32, f32, f32, f32, [u8; 4])>,
+    pub notes: Vec<String>,
+}
+
 /// Editor → page.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServerMsg {
@@ -346,6 +362,8 @@ pub enum ServerMsg {
     TextOut { path: String, text: String },
     /// Kind 144.
     SaveDocs(Vec<String>),
+    /// Kind 145.
+    Light(LightMsg),
 }
 
 /// A frame's body was shorter than its fields, or not UTF-8.
@@ -710,6 +728,22 @@ impl ServerMsg {
                 w.list(paths, |w, p| w.string(p));
                 kind::SAVE_DOCS
             }
+            ServerMsg::Light(l) => {
+                w.f32s(&l.terrain);
+                w.f32s(&l.units);
+                w.u32(l.shadows.width);
+                w.u32(l.shadows.height);
+                w.bytes(&l.shadows.data);
+                let (style, start, end, density, color) = l.fog.unwrap_or_default();
+                w.u8(l.fog.is_some() as u8);
+                w.u32(style as u32);
+                w.f32(start);
+                w.f32(end);
+                w.f32(density);
+                color.iter().for_each(|v| w.u8(*v));
+                w.list(&l.notes, |w, n| w.string(n));
+                kind::LIGHT
+            }
             ServerMsg::Icons(list) => {
                 w.list(list, |w, e| {
                     w.u8(e.kind);
@@ -880,6 +914,13 @@ impl ServerMsg {
             kind::FOLLOW => ServerMsg::Follow(r.list(|r| Ok((r.string()?, r.string()?)))?),
             kind::TEXT_OUT => ServerMsg::TextOut { path: r.string()?, text: r.string()? },
             kind::SAVE_DOCS => ServerMsg::SaveDocs(r.list(|r| r.string())?),
+            kind::LIGHT => {
+                let (terrain, units) = (r.f32s()?, r.f32s()?);
+                let shadows = crate::overlays::Grid { width: r.u32()?, height: r.u32()?, data: r.bytes()? };
+                let on = r.u8()? != 0;
+                let fog = (r.u32()? as i32, r.f32()?, r.f32()?, r.f32()?, [r.u8()?, r.u8()?, r.u8()?, r.u8()?]);
+                ServerMsg::Light(LightMsg { terrain, units, shadows, fog: on.then_some(fog), notes: r.list(|r| r.string())? })
+            }
             kind::ICONS_ANSWER => ServerMsg::Icons(r.list(|r| {
                 Ok(IconEntry { kind: r.u8()?, id: r.string()?, icon: crate::textures::Icon { width: r.u32()?, height: r.u32()?, rgba: r.bytes()? } })
             })?),

@@ -344,3 +344,15 @@ button:hover {
     border: 1px solid var(--vscode-panel-border, #555);
     padding: 2px 4px;
 }
+.hours {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--vscode-descriptionForeground);
+    font-size: .9em;
+    white-space: nowrap;
+}
+
+.hours input {
+    width: 90px;
+}

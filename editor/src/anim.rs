@@ -34,7 +34,7 @@ pub struct Baked {
 }
 
 /// A value tracks key, in a way interpolation can use.
-trait Lerp: Copy {
+pub trait Lerp: Copy {
     fn lerp(a: Self, b: Self, t: f32) -> Self;
     fn hermite(a: Self, out: Self, inn: Self, b: Self, t: f32) -> Self;
     fn bezier(a: Self, out: Self, inn: Self, b: Self, t: f32) -> Self;
@@ -50,6 +50,12 @@ impl Lerp for f32 {
     fn bezier(a: Self, out: Self, inn: Self, b: Self, t: f32) -> Self {
         <[f32; 3]>::bezier([a; 3], [out; 3], [inn; 3], [b; 3], t)[0]
     }
+}
+
+/// A track's value at `frame` of the sequence `start..=end`.
+#[allow(clippy::too_many_arguments)]
+pub fn value_at<T: Lerp + mdx_rs::Value>(track: Option<&Track<T>>, default: T, frame: u32, start: u32, end: u32, since: u32, globals: &[u32]) -> T {
+    value(track, default, frame, start, end, since, globals)
 }
 
 fn value_f32(track: Option<&Track<f32>>, default: f32, frame: u32, start: u32, end: u32, since: u32, globals: &[u32]) -> f32 {
@@ -98,7 +104,9 @@ fn value<T: Lerp + mdx_rs::Value>(track: Option<&Track<T>>, default: T, frame: u
     let Some(track) = track else { return default };
     let (now, start, end) = match usize::try_from(track.global_sequence).ok().and_then(|g| globals.get(g)) {
         Some(&len) if len > 0 => ((since % len) as i64, 0i64, len as i64),
-        Some(_) => (0, 0, 0),
+        // A global sequence of no length: the track doesn't move, its
+        // first key (the day and night models' sun's turn is one).
+        Some(_) => return track.keys.first().map_or(default, |k| k.value),
         None => (frame as i64, start as i64, end as i64),
     };
     let keys: Vec<&Key<T>> = track.keys.iter().filter(|k| (start..=end).contains(&(k.frame as i64))).collect();
@@ -177,7 +185,7 @@ pub struct Skeleton<'a> {
 impl<'a> Skeleton<'a> {
     pub fn of(m: &'a Model) -> Skeleton<'a> {
         let all: HashMap<u32, &Node> =
-            m.bones().iter().map(|b| &b.node).chain(m.helpers()).chain(m.emitters2().iter().map(|e| &e.node)).map(|n| (n.object_id, n)).collect();
+            m.bones().iter().map(|b| &b.node).chain(m.helpers()).chain(m.emitters2().iter().map(|e| &e.node)).chain(m.lights().iter().map(|l| &l.node)).map(|n| (n.object_id, n)).collect();
         // Parents first.
         let mut order: Vec<&Node> = Vec::new();
         let mut placed = std::collections::HashSet::new();
@@ -245,6 +253,11 @@ impl Skeleton<'_> {
     /// Every node's matrix at frame `f` of `tl`, by its id.
     pub fn world(&self, m: &Model, tl: &Timeline, f: usize) -> HashMap<u32, Mat> {
         let (frame, since) = tl.at(f);
+        self.world_at(m, tl, frame, since)
+    }
+
+    /// Every node's matrix at `frame` (`since` the sequence started).
+    pub fn world_at(&self, m: &Model, tl: &Timeline, frame: u32, since: u32) -> HashMap<u32, Mat> {
         let (pivots, globals) = (m.pivots(), m.global_sequences());
         let mut world: HashMap<u32, Mat> = HashMap::new();
         for n in &self.nodes {

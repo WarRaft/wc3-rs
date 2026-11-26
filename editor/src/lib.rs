@@ -13,6 +13,7 @@
 pub mod anim;
 pub mod cliffs;
 pub mod edit;
+pub mod light;
 pub mod lock;
 pub mod overlays;
 pub mod pathing;

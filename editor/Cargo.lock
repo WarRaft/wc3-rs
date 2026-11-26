@@ -978,6 +978,7 @@ dependencies = [
  "mdx-rs",
  "notify",
  "parser-rs",
+ "shd-rs",
  "slk-rs",
  "w3abdhqtu-rs",
  "w3c-rs",

@@ -1,4 +1,4 @@
-/* global acquireVsCodeApi, EditorProtocol, EditorCamera, EditorTerrain, EditorObjects, EditorOverlays */
+/* global acquireVsCodeApi, EditorProtocol, EditorCamera, EditorTerrain, EditorObjects, EditorOverlays, EditorLight */
 
 /**
  * The World Editor's page: it draws what the editor's process
@@ -29,6 +29,8 @@
     } catch (e) {
         shaderError = e.message
     }
+    const light = new EditorLight.Light()
+    let lightNotes = []
     const camera = new EditorCamera.Camera()
     camera.heightAt = (x, y) => terrain?.heightAt(x, y) ?? 0
     let placed = false
@@ -50,10 +52,17 @@
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
         if (terrain?.ready) {
             const mvp = camera.matrix(w / h)
+            const hours = light.now(now / 1000, show.cycle)
+            showHours(hours)
+            terrain.light = light
+            terrain.hours = hours
+            terrain.eye = camera.eye()
+            terrain.showShadows = show.shadows
+            light.showFog = show.fog
             terrain.draw(mvp, now / 1000)
             const {x: right, forward} = camera.axes()
             const up = [right[1] * camera.direction[2] - right[2] * camera.direction[1], right[2] * camera.direction[0] - right[0] * camera.direction[2], right[0] * camera.direction[1] - right[1] * camera.direction[0]]
-            objects?.draw(mvp, now / 1000, {right, up, forward})
+            objects?.draw(mvp, now / 1000, {right, up, forward, eye: camera.eye()}, light, hours)
             lines?.draw(mvp, show)
         }
     }
@@ -154,8 +163,11 @@
         {key: 'bounds', label: 'Bounds', code: 'KeyB'},
         {key: 'minimap', label: 'Minimap', code: 'KeyM'},
         {key: 'animate', label: 'Animate', code: 'KeyN'},
+        {key: 'shadows', label: 'Shadows', code: 'KeyH'},
+        {key: 'fog', label: 'Fog', code: 'KeyF'},
+        {key: 'cycle', label: 'Day cycle', code: 'KeyT'},
     ]
-    const show = {pathing: false, regions: false, cameras: false, bounds: true, minimap: true, animate: true, ...(vscode.getState()?.show ?? {})}
+    const show = {pathing: false, regions: false, cameras: false, bounds: true, minimap: true, animate: true, shadows: true, fog: false, cycle: false, ...(vscode.getState()?.show ?? {})}
     const toggles = $('toggles')
     function applyShow() {
         if (terrain) terrain.show = {pathing: show.pathing, regions: show.regions}
@@ -554,8 +566,22 @@
         vscode.postMessage({type: 'state', state: st})
     }
 
+    // The time of day: the slider, or the day going round.
+    $('hours').value = String(light.hours)
+    $('hours').oninput = () => {
+        light.hours = Number($('hours').value)
+    }
+    let shownHours = -1
+    function showHours(hours) {
+        const minutes = Math.floor(hours * 60)
+        if (minutes === shownHours) return
+        shownHours = minutes
+        $('hours-value').textContent = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+        if (show.cycle) $('hours').value = String(hours)
+    }
+
     function showNotes() {
-        const all = [...mapNotes, ...(terrain?.notes ?? []), ...(terrain?.cliffNotes ?? []), ...(objects?.notes ?? []), ...overlayNotes]
+        const all = [...mapNotes, ...(terrain?.notes ?? []), ...(terrain?.cliffNotes ?? []), ...(objects?.notes ?? []), ...overlayNotes, ...lightNotes]
         const notes = $('notes')
         notes.replaceChildren(...all.map(n => Object.assign(document.createElement('li'), {textContent: n})))
         notes.hidden = !all.length
@@ -667,6 +693,12 @@
             if (thingDrag) thingDrag.pending = false
             if (regionDrag) regionDrag.pending = false
             showState(msg)
+        } else if (msg.kind === 'light' && terrain) {
+            light.set(msg)
+            terrain.setShadows(msg.shadows)
+            lightNotes = msg.notes
+            showNotes()
+            vscode.postMessage({type: 'light', light: {day: msg.terrain.length > 0, shadows: msg.shadows.width, fog: !!msg.fog}})
         } else if (msg.kind === 'icons') {
             for (const i of msg.icons) {
                 const key = `${i.kind}:${i.id}`
@@ -757,6 +789,9 @@
             selected = null
         } else if (msg.type === 'undo' || msg.type === 'redo' || msg.type === 'save') {
             send(encode[msg.type]())
+        } else if (msg.type === 'hours') {
+            light.hours = msg.hours
+            $('hours').value = String(msg.hours)
         } else if (msg.type === 'show') {
             // Layers turned on or off, as the buttons do: for the tests.
             Object.assign(show, msg.show)

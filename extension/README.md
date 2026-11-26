@@ -152,8 +152,9 @@ coming is listed below.
   war3mapUnits.doo or war3map.w3r open beside it is in step with it both
   ways; what changes on disk is read again; the pathing is made again on
   every save. Models play their Stand, their particles too (the Animate
-  button). Light and the day and night come next (the repository README,
-  "World Editor").
+  button). Its light is the game's day and night (a time of day, or the
+  day going round), with the map's shadows and fog. The map's size and
+  its tiles come next (the repository README, "World Editor").
 
 ## Not yet
 

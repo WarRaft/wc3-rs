@@ -75,6 +75,7 @@ const VIEW = 'wc3.editors'
  * @property {{pathing: number, regions: number, cameras: number, bounds: number, minimap: number, region?: {name: string, x: number, y: number}} | undefined} overlays  what the page has of the overlays
  * @property {{dirty: boolean, undo: boolean, redo: boolean, message: string} | undefined} state  the edits' state the page last showed
  * @property {{name: string, bounds: number[]} | null | undefined} region  the region picked (the Regions tool)
+ * @property {{day: boolean, shadows: number, fog: boolean} | undefined} light  the map's light the page has
  * @property {number | undefined} icons  how many of the object palette's icons the page has
  * @property {Map<string, string> | undefined} follow  the paths of the pieces with a text form, by their lower case
  * @property {string | undefined} picked  what the last click picked, said ('' nothing)
@@ -113,7 +114,7 @@ function registerWorldEditor(context, binary, pickManifest) {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'">
 <link rel="stylesheet" href="${asset('editor.css')}">
 </head><body>
-<div class="bar"><span id="name" class="name">Opening…</span><span id="meta" class="meta"></span><span class="spacer"></span><span id="toggles" class="toggles"></span><span class="hint">Click: pick (drag it to move, Q/E turn, Delete) · Right drag: move · Ctrl + right drag: turn · Wheel: zoom · WASD · G: grid · Home: all of it</span></div>
+<div class="bar"><span id="name" class="name">Opening…</span><span id="meta" class="meta"></span><span class="spacer"></span><label class="hours" title="The time of day">Time <input id="hours" type="range" min="0" max="24" step="0.25"> <span id="hours-value"></span></label><span id="toggles" class="toggles"></span><span class="hint">Click: pick (drag it to move, Q/E turn, Delete) · Right drag: move · Ctrl + right drag: turn · Wheel: zoom · WASD · G: grid · Home: all of it</span></div>
 <div class="stage"><canvas id="view"></canvas><canvas id="minimap" class="minimap" hidden></canvas>
 <div id="tools" class="tools">
   <div id="tool-buttons" class="tool-buttons"></div>
@@ -145,6 +146,7 @@ function registerWorldEditor(context, binary, pickManifest) {
 <div id="status" class="status"></div>
 <script nonce="${nonce}" src="${asset('protocol.js')}"></script>
 <script nonce="${nonce}" src="${asset('camera.js')}"></script>
+<script nonce="${nonce}" src="${asset('light.js')}"></script>
 <script nonce="${nonce}" src="${asset('terrain.js')}"></script>
 <script nonce="${nonce}" src="${asset('particles.js')}"></script>
 <script nonce="${nonce}" src="${asset('objects.js')}"></script>
@@ -276,6 +278,8 @@ function registerWorldEditor(context, binary, pickManifest) {
                 editor.drawn = msg.terrain
             } else if (msg.type === 'picked') {
                 editor.picked = msg.text
+            } else if (msg.type === 'light') {
+                editor.light = msg.light
             } else if (msg.type === 'icons') {
                 editor.icons = msg.icons
             } else if (msg.type === 'region') {
