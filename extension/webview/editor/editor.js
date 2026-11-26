@@ -718,8 +718,8 @@
         if (index === null || !name.trim()) return
         cameraRenameTimer = setTimeout(() => send(encode.cameraRename(index, name)), 250)
     }
-    // The view's roll; a new one's field of view the view's (70, World Editor's), one set to the view keeps its own.
-    const fromView = index => send(encode.cameraView(index, camera.position, camera.distance, camera.horizontal, camera.vertical, index < 0 ? camera.fov : cameras[index].view[3], camera.roll))
+    // The view's field of view (70, World Editor's, but through a camera) and roll.
+    const fromView = index => send(encode.cameraView(index, camera.position, camera.distance, camera.horizontal, camera.vertical, camera.fov, camera.roll))
     $('camera-new').onclick = () => {
         selectNewCamera = true
         fromView(-1)
