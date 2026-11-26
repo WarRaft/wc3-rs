@@ -588,3 +588,69 @@ fn the_terrains_text_form_its_header_in_step_its_points_saved_by_the_editor() {
     assert!(matches!(saved.last(), Some(ServerMsg::State(st)) if st.message.contains("war3map.w3e")), "{saved:?}");
     assert!(saved.iter().any(|m| matches!(m, ServerMsg::SaveDocs(p) if p == &vec![path.clone()])), "{saved:?}");
 }
+
+#[test]
+fn a_things_fields_said_set_in_their_ranges_undone_and_saved() {
+    let dir = TestDir::new("session-thing-fields");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    dir.write("map/Doodads/Doodads.slk", &testdir::slk(&[&["doodID", "file", "numVar"], &["LTrc", "Doodads\\Rock", "3"]]));
+    dir.write("map/Units/DestructableData.slk", &testdir::slk(&[&["DestructableID", "file", "numVar"], &["LTbr", "Doodads\\Barrel", "1"]]));
+    dir.write("map/Units/UnitData.slk", &testdir::slk(&[&["unitID", "file"], &["hfoo", "Units\\Footman"], &["Hpal", "Units\\Paladin"], &["ngol", "Buildings\\GoldMine"]]));
+    dir.write("map/Units/UnitAbilities.slk", &testdir::slk(&[&["unitAbilID", "abilList"], &["ngol", "Agld,Abgm"]]));
+    dir.write("map/Units/ItemData.slk", &testdir::slk(&[&["itemID", "file"], &["ratc", "Objects\\Claws"]]));
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let down = [0.0, 0.0, -1.0];
+    s.place(0, "LTrc", 0, [1.0, 0.5, 10.0], down);
+    s.place(1, "LTbr", 0, [2.0, 0.5, 10.0], down);
+    for id in ["hfoo", "Hpal", "ngol"] {
+        s.place(2, id, 3, [1.0, 0.5, 10.0], down);
+    }
+    s.place(3, "ratc", 0, [1.0, 0.5, 10.0], down);
+    let names = |s: &Session, file, index| s.thing(file, index).fields.into_iter().map(|(n, _)| n).collect::<Vec<_>>().join(" ");
+    let value = |s: &Session, file, index, name: &str| s.thing(file, index).fields.into_iter().find(|(n, _)| n == name).map(|(_, v)| v);
+    let common = "x y facing scale_x scale_y scale_z";
+    assert_eq!(names(&s, 0, 0), "x y z facing scale_x scale_y scale_z variation state");
+    assert_eq!(names(&s, 0, 1), "x y z facing scale_x scale_y scale_z variation state life");
+    assert_eq!(names(&s, 1, 0), format!("{common} player hp mana target_acquisition color"));
+    assert_eq!(names(&s, 1, 1), format!("{common} player hp mana target_acquisition color level strength agility intelligence"));
+    assert_eq!(names(&s, 1, 2), format!("{common} player hp mana target_acquisition color gold"));
+    assert_eq!(names(&s, 1, 3), common);
+    assert!(s.thing(1, 9).fields.is_empty());
+    assert_eq!((value(&s, 1, 0, "facing"), value(&s, 1, 0, "player"), value(&s, 1, 0, "hp")), (Some(270.0), Some(3.0), Some(-1.0)));
+    assert_eq!(value(&s, 1, 2, "gold"), Some(12500.0));
+    // Set, an undo each; out of its range, or one it hasn't, said and not set.
+    let said = |msgs: Vec<ServerMsg>| match msgs.last() {
+        Some(ServerMsg::State(st)) => st.message.clone(),
+        m => panic!("{m:?}"),
+    };
+    assert_eq!(said(s.thing_set(0, 0, "variation", 2.0)), "");
+    assert!(said(s.thing_set(0, 0, "variation", 3.0)).contains("variation can't be 3"));
+    assert!(said(s.thing_set(0, 0, "life", 50.0)).contains("has no life"));
+    assert_eq!(said(s.thing_set(0, 1, "life", 40.0)), "");
+    assert!(said(s.thing_set(0, 1, "life", 140.0)).contains("can't be 140"));
+    assert_eq!(said(s.thing_set(0, 0, "scale_z", 2.5)), "");
+    assert!(said(s.thing_set(0, 0, "scale_x", 0.0)).contains("can't be 0"));
+    assert_eq!(said(s.thing_set(1, 1, "facing", 90.0)), "");
+    assert_eq!(said(s.thing_set(1, 1, "level", 5.0)), "");
+    assert_eq!(said(s.thing_set(1, 1, "strength", 30.0)), "");
+    assert_eq!(said(s.thing_set(1, 0, "hp", 50.0)), "");
+    assert!(said(s.thing_set(1, 0, "hp", 0.0)).contains("can't be 0"));
+    assert_eq!(said(s.thing_set(1, 0, "player", 12.0)), "");
+    assert_eq!(said(s.thing_set(1, 2, "gold", 30000.0)), "");
+    assert!(said(s.thing_set(1, 3, "player", 1.0)).contains("has no player"));
+    let u = &s.placed.units.as_ref().unwrap().units;
+    assert!((u[1].placement.angle - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+    assert_eq!((u[1].level, u[1].stats, u[0].hp, u[0].player, u[2].gold), (5, [30, 0, 0], 50, 12, 30000));
+    let d = &s.placed.doodads.as_ref().unwrap().doodads;
+    assert_eq!((d[0].placement.variation, d[0].placement.scale, d[1].life), (2, [1.0, 1.0, 2.5], 40));
+    // The gold mine's, then the owner's undone.
+    s.undo(false);
+    s.undo(false);
+    let u = &s.placed.units.as_ref().unwrap().units;
+    assert_eq!((u[0].player, u[2].gold), (3, 12500));
+    s.save();
+    let back = doo_rs::parse_units_any(&std::fs::read(dir.path().join("map/war3mapUnits.doo")).unwrap()).unwrap();
+    assert_eq!((back.units[1].level, back.units[0].hp, back.units[0].player), (5, 50, 3));
+}

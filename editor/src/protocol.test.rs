@@ -44,6 +44,8 @@ fn edits_round_trip() {
         ClientMsg::Undo,
         ClientMsg::Redo,
         ClientMsg::Save,
+        ClientMsg::ThingAsk { file: 1, index: 7 },
+        ClientMsg::ThingSet { file: 0, index: 2, field: "scale_x".into(), value: 1.5 },
     ] {
         let frame = msg.encode();
         let (kind, body) = read_frame(&mut &frame[..]).unwrap().unwrap();
@@ -57,6 +59,7 @@ fn edits_round_trip() {
         brush: crate::edit::Brush { tool: crate::edit::Tool::Texture, size: 4.0, strength: 0.5, texture: parser_rs::bin::Rawcode::parse("Lgrs"), cliff: -1, flags: 0 },
     };
     assert_eq!(page.encode().len(), 52);
+    round_trip(ServerMsg::Thing(ThingMsg { file: 1, index: 7, fields: vec![("x".into(), 64.0), ("hp".into(), -1.0)] }));
     round_trip(ServerMsg::State(StateMsg { dirty: true, undo: true, redo: false, message: "Saved".into() }));
     round_trip(ServerMsg::Palette(PaletteMsg {
         grounds: vec![PaletteEntry { id: "Ldrt".into(), name: "Dirt".into(), icon: crate::textures::Icon { width: 1, height: 1, rgba: vec![1, 2, 3, 4] } }],

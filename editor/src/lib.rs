@@ -226,6 +226,8 @@ impl Editor {
                     ClientMsg::CameraRename { index, name } => s.camera_rename(index, &name),
                     ClientMsg::CameraDelete { index } => s.camera_delete(index),
                     ClientMsg::CameraSet { index, field, value } => s.camera_set(index, &field, value),
+                    ClientMsg::ThingAsk { file, index } => vec![ServerMsg::Thing(s.thing(file, index))],
+                    ClientMsg::ThingSet { file, index, field, value } => s.thing_set(file, index, &field, value),
                     ClientMsg::Text { path, text } => s.text_changed(&path, &text),
                     ClientMsg::MapAsk => vec![ServerMsg::MapSettings(s.map_settings())],
                     ClientMsg::Resize { sides, margins } => s.resize(sides, margins),

@@ -346,6 +346,18 @@ button:hover {
     width: 5em;
 }
 
+.tools .camera-field[hidden] {
+    display: none;
+}
+
+.tools .camera-field select {
+    width: 9em;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, #555);
+    font: inherit;
+}
+
 .camera-fields {
     display: flex;
     flex-direction: column;

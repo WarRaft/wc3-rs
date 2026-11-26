@@ -47,6 +47,8 @@
 //! | 25 | `CameraRename` | `u32` index, its name; answered the same |
 //! | 26 | `CameraDelete` | `u32` index; answered the same |
 //! | 27 | `CameraSet` | a camera's field set: `u32` index, the field's name (`w3c_rs::Camera::fields`': `field_of_view` ...), `f32` its value; answered the same |
+//! | 28 | `ThingAsk` | the fields of a thing placed: `u8` file, `u32` index; answered by `Thing` |
+//! | 29 | `ThingSet` | a thing's field set: `u8` file, `u32` index, the field's name (`Session::thing`'s: `facing`, `scale_x`, `player`, `hp` ...), `f32` its value; answered as `Move` |
 //! | 22 | `TilePathing` | the tile pather's: `u8` a tile's index in the terrain's list, `u8` what it forbids (`wpm` flags: 2 walking, 4 flying, 8 building); answered by `Overlays` and `State` |
 //! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id); answered by `Icons` |
 //!
@@ -72,6 +74,7 @@
 //! | 144 | `SaveDocs` | the documents VS Code saves (their paths), the rest the editor saved |
 //! | 146 | `MapSettings` | the map's size, tiles, the game's tiles: see [`MapSettingsMsg`] |
 //! | 145 | `Light` | the light through the day, the shadows, the fog: see [`LightMsg`] |
+//! | 147 | `Thing` | a thing's fields: `u8` file, `u32` index, a list of (name, `f32` value); none for no such thing |
 //! | 141 | `Icons` | a list of (`u8` kind, id, `u32` width, height, RGBA; 0 by 0 for none) |
 //!
 //! After an edit the terrain's messages come again: `Cliffs` with no
@@ -119,6 +122,9 @@ mod kind {
     pub const CAMERA_RENAME: u8 = 25;
     pub const CAMERA_DELETE: u8 = 26;
     pub const CAMERA_SET: u8 = 27;
+    pub const THING_ASK: u8 = 28;
+    pub const THING_SET: u8 = 29;
+    pub const THING: u8 = 147;
     pub const FOLLOW: u8 = 142;
     pub const TEXT_OUT: u8 = 143;
     pub const SAVE_DOCS: u8 = 144;
@@ -194,6 +200,10 @@ pub enum ClientMsg {
     CameraDelete { index: u32 },
     /// Kind 27.
     CameraSet { index: u32, field: String, value: f32 },
+    /// Kind 28.
+    ThingAsk { file: u8, index: u32 },
+    /// Kind 29.
+    ThingSet { file: u8, index: u32, field: String, value: f32 },
 }
 
 /// A tile the tile setter offers: its id, name, tileset's letter (its
@@ -332,6 +342,16 @@ pub struct PickedMsg {
     pub ground: Option<[f32; 3]>,
 }
 
+/// Kind 147's body: a thing placed (`file` 0 `war3map.doo`, 1
+/// `war3mapUnits.doo`, its `index` there) and its fields as the panel
+/// shows them (`Session::thing`); none for no such thing.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ThingMsg {
+    pub file: u8,
+    pub index: u32,
+    pub fields: Vec<(String, f32)>,
+}
+
 /// Kind 136's body: the pathing (`u32` width, height, a byte a cell, an
 /// array), the destructables' (the same; 1 a walkable one's deck,
 /// `pathing::DECK`), the regions' picture (`u32` width, height, RGBA), a list of
@@ -419,6 +439,8 @@ pub enum ServerMsg {
     Objects(ObjectsMsg),
     /// Kind 135.
     Picked(PickedMsg),
+    /// Kind 147.
+    Thing(ThingMsg),
     /// Kind 136.
     Overlays(OverlaysMsg),
     /// Kind 137.
@@ -538,6 +560,8 @@ impl ClientMsg {
             kind::CAMERA_RENAME => Some(ClientMsg::CameraRename { index: r.u32()?, name: r.string()? }),
             kind::CAMERA_DELETE => Some(ClientMsg::CameraDelete { index: r.u32()? }),
             kind::CAMERA_SET => Some(ClientMsg::CameraSet { index: r.u32()?, field: r.string()?, value: r.f32()? }),
+            kind::THING_ASK => Some(ClientMsg::ThingAsk { file: r.u8()?, index: r.u32()? }),
+            kind::THING_SET => Some(ClientMsg::ThingSet { file: r.u8()?, index: r.u32()?, field: r.string()?, value: r.f32()? }),
             _ => None,
         })
     }
@@ -662,6 +686,18 @@ impl ClientMsg {
                 w.string(field);
                 w.f32(*value);
                 kind::CAMERA_SET
+            }
+            ClientMsg::ThingAsk { file, index } => {
+                w.u8(*file);
+                w.u32(*index);
+                kind::THING_ASK
+            }
+            ClientMsg::ThingSet { file, index, field, value } => {
+                w.u8(*file);
+                w.u32(*index);
+                w.string(field);
+                w.f32(*value);
+                kind::THING_SET
             }
             ClientMsg::Icons(list) => {
                 w.list(list, |w, (k, id)| {
@@ -824,6 +860,15 @@ impl ServerMsg {
                 w.u8(p.ground.is_some() as u8);
                 p.ground.unwrap_or_default().iter().for_each(|v| w.f32(*v));
                 kind::PICKED
+            }
+            ServerMsg::Thing(t) => {
+                w.u8(t.file);
+                w.u32(t.index);
+                w.list(&t.fields, |w, (name, value)| {
+                    w.string(name);
+                    w.f32(*value);
+                });
+                kind::THING
             }
             ServerMsg::Overlays(o) => {
                 for g in [&o.pathing, &o.destructables, &o.region_picture] {
@@ -1086,6 +1131,10 @@ impl ServerMsg {
                 let on = r.u8()? != 0;
                 let p = [r.f32()?, r.f32()?, r.f32()?];
                 ServerMsg::Picked(PickedMsg { found, model, instance, file, index, region, text, ground: on.then_some(p) })
+            }
+            kind::THING => {
+                let (file, index) = (r.u8()?, r.u32()?);
+                ServerMsg::Thing(ThingMsg { file, index, fields: r.list(|r| Ok((r.string()?, r.f32()?)))? })
             }
             kind::OVERLAYS => {
                 use crate::overlays::{Camera, Grid, Overlays, Region};

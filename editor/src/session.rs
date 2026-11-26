@@ -8,7 +8,7 @@ use wc3_server::game::{Game, Lookup};
 use wc3_server::names::Names;
 use wc3_server::project::{self, Project};
 
-use crate::protocol::{CliffsMsg, GroundMsg, IconEntry, LightMsg, MapInfo, MapSettingsMsg, TileEntry, ObjectEntry, ObjectsMsg, PaletteEntry, PaletteMsg, PickedMsg, ServerMsg, StateMsg, WaterMsg};
+use crate::protocol::{CliffsMsg, GroundMsg, IconEntry, LightMsg, MapInfo, MapSettingsMsg, TileEntry, ObjectEntry, ObjectsMsg, PaletteEntry, PaletteMsg, PickedMsg, ServerMsg, StateMsg, ThingMsg, WaterMsg};
 use crate::terrain::{Draw, Grounds};
 use crate::tileset::Tileset;
 
@@ -1334,6 +1334,135 @@ impl Session {
         self.things_edit(file, |files| {
             let p = placement(files, file, index)?;
             p.angle = (p.angle + delta).rem_euclid(std::f32::consts::TAU);
+            Ok(())
+        })
+    }
+
+    /// Thing `index` of `file`'s fields, as the panel shows them: where
+    /// (`x`, `y`, a doodad's `z`, the game's units), `facing` (degrees),
+    /// `scale_x` ...; a doodad's `variation`, `state` (its flags: 0
+    /// invisible and walkable, 1 visible and walkable, 2 normal), a
+    /// destructable's `life` (percent); a unit's, building's or start
+    /// location's `player` (0 Player 1); a unit's or building's `hp`
+    /// (percent) and `mana` (-1 its type's), `target_acquisition` (-1
+    /// normal, -2 camp), `color` (-1 its owner's); a hero's (an id of a
+    /// capital letter first, as the game tells them) `level`,
+    /// `strength`, `agility`, `intelligence` (0 its type's); a gold
+    /// mine's (an ability `Agld`) `gold`. None for no such thing.
+    pub fn thing(&self, file: u8, index: u32) -> ThingMsg {
+        let fields = self.thing_fields(file, index).unwrap_or_default();
+        ThingMsg { file, index, fields: fields.into_iter().map(|(n, v)| (n.to_string(), v)).collect() }
+    }
+
+    fn thing_fields(&self, file: u8, index: u32) -> Option<Vec<(&'static str, f32)>> {
+        let i = index as usize;
+        let p = if file == 0 { &self.placed.doodads.as_ref()?.doodads.get(i)?.placement } else { &self.placed.units.as_ref()?.units.get(i)?.placement };
+        let mut out = vec![("x", p.x), ("y", p.y)];
+        if file == 0 {
+            out.push(("z", p.z));
+        }
+        out.push(("facing", (p.angle.to_degrees() * 100.0).round() / 100.0));
+        out.extend([("scale_x", p.scale[0]), ("scale_y", p.scale[1]), ("scale_z", p.scale[2])]);
+        let id = p.id.to_string();
+        let types = self.types.as_ref();
+        if file == 0 {
+            let d = &self.placed.doodads.as_ref()?.doodads[i];
+            out.extend([("variation", d.placement.variation as f32), ("state", d.flags as f32)]);
+            if types.is_some_and(|t| t.has(w3abdhqtu_rs::Kind::Destructable, &id)) {
+                out.push(("life", d.life as f32));
+            }
+            return Some(out);
+        }
+        let u = &self.placed.units.as_ref()?.units[i];
+        let item = id == "iDNR" || types.is_some_and(|t| t.has(w3abdhqtu_rs::Kind::Item, &id));
+        if item {
+            return Some(out);
+        }
+        out.push(("player", u.player as f32));
+        if id == crate::placed::START_LOCATION {
+            return Some(out);
+        }
+        out.extend([("hp", u.hp as f32), ("mana", u.mana as f32), ("target_acquisition", u.target_acquisition), ("color", u.color as f32)]);
+        if id.starts_with(|c: char| c.is_ascii_uppercase()) {
+            out.extend([("level", u.level as f32), ("strength", u.stats[0] as f32), ("agility", u.stats[1] as f32), ("intelligence", u.stats[2] as f32)]);
+        }
+        let gold_mine = types.and_then(|t| t.get(w3abdhqtu_rs::Kind::Unit, &id, "abilList")).is_some_and(|a| a.split(',').any(|a| a.trim() == "Agld"));
+        if gold_mine {
+            out.push(("gold", u.gold as f32));
+        }
+        Some(out)
+    }
+
+    /// Thing `index` of `file`'s `field` ([`thing`](Self::thing)'s) set
+    /// to `value`, if it's one it has and in its range; an undo each.
+    pub fn thing_set(&mut self, file: u8, index: u32, field: &str, value: f32) -> Vec<ServerMsg> {
+        let has = self.thing_fields(file, index).is_some_and(|f| f.iter().any(|(n, _)| *n == field));
+        let variations = (|| {
+            let id = self.placed.doodads.as_ref()?.doodads.get(index as usize)?.placement.id.to_string();
+            let k = if self.types.as_ref()?.has(w3abdhqtu_rs::Kind::Destructable, &id) { w3abdhqtu_rs::Kind::Destructable } else { w3abdhqtu_rs::Kind::Doodad };
+            self.types.as_ref()?.number(k, &id, "numVar")
+        })()
+        .unwrap_or(1.0)
+        .max(1.0);
+        let whole = value.fract() == 0.0;
+        let fine = value.is_finite()
+            && match field {
+                "scale_x" | "scale_y" | "scale_z" => value > 0.0,
+                "variation" => whole && value >= 0.0 && value < variations,
+                "state" => whole && (0.0..=2.0).contains(&value),
+                "life" => whole && (0.0..=100.0).contains(&value),
+                "player" => whole && (0.0..=27.0).contains(&value),
+                "hp" => whole && (value == -1.0 || (1.0..=100.0).contains(&value)),
+                "mana" => whole && value >= -1.0,
+                "target_acquisition" => value == -1.0 || value == -2.0 || value >= 0.0,
+                "color" => whole && (-1.0..=23.0).contains(&value),
+                "level" => whole && value >= 1.0,
+                "strength" | "agility" | "intelligence" | "gold" => whole && value >= 0.0,
+                _ => true,
+            };
+        if !has {
+            let what = if file == 0 { "war3map.doo" } else { "war3mapUnits.doo" };
+            return vec![ServerMsg::State(self.state(format!("Thing {index} of {what} has no {}.", field.replace('_', " "))))];
+        }
+        if !fine {
+            return vec![ServerMsg::State(self.state(format!("A thing's {} can't be {value}.", field.replace('_', " "))))];
+        }
+        let field = field.to_string();
+        self.things_edit(file, move |files| {
+            let i = index as usize;
+            let p = placement(files, file, index)?;
+            match field.as_str() {
+                "x" => p.x = value,
+                "y" => p.y = value,
+                "z" => p.z = value,
+                "facing" => p.angle = value.to_radians().rem_euclid(std::f32::consts::TAU),
+                "scale_x" => p.scale[0] = value,
+                "scale_y" => p.scale[1] = value,
+                "scale_z" => p.scale[2] = value,
+                "variation" => p.variation = value as u32,
+                _ if file == 0 => {
+                    let d = &mut files.doodads.as_mut().unwrap().doodads[i];
+                    match field.as_str() {
+                        "state" => d.flags = value as u8,
+                        _ => d.life = value as u8,
+                    }
+                }
+                _ => {
+                    let u = &mut files.units.as_mut().unwrap().units[i];
+                    match field.as_str() {
+                        "player" => u.player = value as u32,
+                        "hp" => u.hp = value as i32,
+                        "mana" => u.mana = value as i32,
+                        "target_acquisition" => u.target_acquisition = value,
+                        "color" => u.color = value as i32,
+                        "level" => u.level = value as u32,
+                        "strength" => u.stats[0] = value as u32,
+                        "agility" => u.stats[1] = value as u32,
+                        "intelligence" => u.stats[2] = value as u32,
+                        _ => u.gold = value as u32,
+                    }
+                }
+            }
             Ok(())
         })
     }

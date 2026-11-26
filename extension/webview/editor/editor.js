@@ -292,6 +292,7 @@
         $('pathing-flags').hidden = !pathing
         $('region-panel').hidden = brush.tool !== 'regions'
         $('camera-panel').hidden = brush.tool !== 'cameras'
+        $('thing-panel').hidden = brush.tool !== 'select'
         $('size-label').hidden = NO_BRUSH.includes(brush.tool)
         $('strength-label').hidden = NO_BRUSH.includes(brush.tool) || pathing
         for (const c of $('pathing-flags').querySelectorAll('input')) c.checked = (brush.flags & Number(c.value)) !== 0
@@ -549,6 +550,75 @@
             e.stopImmediatePropagation()
         }
     }, true)
+
+    // The thing picked's fields (the Select tool): those it has, as the
+    // editor says (`thing`, asked when it's picked and after every edit),
+    // each set as it's typed (in its range) by `ThingSet`.
+    let thing = null
+    const PLAYERS = [...[...Array(24).keys()].map(p => [p, `Player ${p + 1}`]), [24, 'Neutral Hostile'], [25, 'Neutral Victim'], [26, 'Neutral Extra'], [27, 'Neutral Passive']]
+    const THING_FIELDS = [
+        {field: 'x', label: 'X', step: 16},
+        {field: 'y', label: 'Y', step: 16},
+        {field: 'z', label: 'Z', step: 16},
+        {field: 'facing', label: 'Facing', step: 15},
+        {field: 'scale_x', label: 'Scale X', step: 0.1},
+        {field: 'scale_y', label: 'Scale Y', step: 0.1},
+        {field: 'scale_z', label: 'Scale Z', step: 0.1},
+        {field: 'variation', label: 'Variation', step: 1},
+        {field: 'state', label: 'State', options: [[2, 'Normal'], [1, 'Visible, walkable'], [0, 'Invisible, walkable']]},
+        {field: 'life', label: 'Life %', step: 5},
+        {field: 'player', label: 'Owner', options: PLAYERS},
+        {field: 'hp', label: 'Hit points % (-1 its type\'s)', step: 5},
+        {field: 'mana', label: 'Mana (-1 its type\'s)', step: 10},
+        {field: 'level', label: 'Level', step: 1},
+        {field: 'strength', label: 'Strength (0 its type\'s)', step: 1},
+        {field: 'agility', label: 'Agility (0 its type\'s)', step: 1},
+        {field: 'intelligence', label: 'Intelligence (0 its type\'s)', step: 1},
+        {field: 'gold', label: 'Gold', step: 500},
+        {field: 'target_acquisition', label: 'Acquisition (-1 normal, -2 camp)', step: 50},
+        {field: 'color', label: 'Colour (-1 its owner\'s)', step: 1},
+    ]
+    for (const f of THING_FIELDS) {
+        f.row = Object.assign(document.createElement('label'), {className: 'camera-field', textContent: f.label + ' ', hidden: true})
+        if (f.options) {
+            f.input = document.createElement('select')
+            f.input.append(...f.options.map(([v, text]) => Object.assign(document.createElement('option'), {value: v, textContent: text})))
+        } else {
+            f.input = Object.assign(document.createElement('input'), {type: 'number', step: f.step})
+        }
+        f.input.dataset.field = f.field
+        let timer = 0
+        f.input.oninput = () => {
+            clearTimeout(timer)
+            const at = selected
+            const v = Number(f.input.value)
+            if (!at || f.input.value === '' || !Number.isFinite(v)) return
+            timer = setTimeout(() => send(encode.thingSet(at.file, at.index, f.field, v)), 250)
+        }
+        f.row.append(f.input)
+        $('thing-fields').append(f.row)
+    }
+    function askThing() {
+        if (selected) send(encode.thingAsk(selected.file, selected.index))
+        else showThing()
+    }
+    function showThing() {
+        const t = thing && selected && thing.file === selected.file && thing.index === selected.index ? thing : null
+        $('thing-panel').hidden = brush.tool !== 'select'
+        $('thing-hint').hidden = !!t
+        $('thing-hint').textContent = 'Click a thing placed'
+        const values = new Map(t?.fields ?? [])
+        for (const f of THING_FIELDS) {
+            f.row.hidden = !values.has(f.field)
+            if (!values.has(f.field) || document.activeElement === f.input) continue
+            const v = Math.round(values.get(f.field) * 100) / 100
+            if (f.options && ![...f.input.options].some(o => Number(o.value) === v)) {
+                f.input.append(Object.assign(document.createElement('option'), {value: v, textContent: String(v)}))
+            }
+            f.input.value = String(v)
+        }
+        vscode.postMessage({type: 'thing', thing: t})
+    }
 
     // Regions: a click picks one (the last drawn over the point); a drag
     // on the ground makes one, inside the one picked moves it, with Shift
@@ -854,6 +924,7 @@
             const found = selected && objects.find(selected.file, selected.index)
             if (selected && !found) selected = null
             objects.select(found ? found.model : -1, found ? found.instance : -1)
+            askThing()
             if (!drawnSaid) {
                 drawnSaid = true
                 requestAnimationFrame(() => vscode.postMessage({
@@ -926,6 +997,8 @@
             if (regionDrag) regionDrag.pending = false
             if (cameraDrag) cameraDrag.pending = false
             showState(msg)
+            // A value refused: the thing's fields as they are again.
+            if (msg.message && selected) askThing()
         } else if (msg.kind === 'light' && terrain) {
             light.set(msg)
             terrain.setShadows(msg.shadows)
@@ -952,8 +1025,12 @@
             }
             selected = msg.found ? {file: msg.file, index: msg.index} : null
             objects.select(msg.found ? msg.model : -1, msg.found ? msg.instance : -1)
+            askThing()
             $('status').textContent = msg.found ? msg.text : ''
             vscode.postMessage({type: 'picked', text: msg.found ? msg.text : ''})
+        } else if (msg.kind === 'thing') {
+            thing = msg.fields.length ? msg : null
+            showThing()
         } else if (msg.kind === 'error') {
             $('name').textContent = 'Can\'t open the map'
             say('Can\'t open the map', msg.message, true)
@@ -1035,6 +1112,11 @@
                 send(encode.camera(true, c, camera.ray(msg.x, msg.y, aspect())))
                 send(encode.strokeEnd())
             }
+        } else if (msg.type === 'thingField') {
+            // A field of the thing picked typed (`scale_x` ...): for the tests.
+            const f = THING_FIELDS.find(f => f.field === msg.field)
+            f.input.value = String(msg.value)
+            f.input.oninput()
         } else if (msg.type === 'tool') {
             // A tool picked, as its button does: for the tests.
             brush.tool = msg.tool

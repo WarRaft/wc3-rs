@@ -83,6 +83,7 @@ const VIEW = 'wc3.editors'
  * @property {number | undefined} icons  how many of the object palette's icons the page has
  * @property {Map<string, string> | undefined} follow  the paths of the pieces with a text form, by their lower case
  * @property {string | undefined} picked  what the last click picked, said ('' nothing)
+ * @property {{file: number, index: number, fields: [string, number][]} | null | undefined} thing  the thing picked and its fields as its panel shows them (the Select tool)
  * @property {{width: number, height: number, layers: number, water: number, cliffs: number, objects: number, animated: number, billboards: number, startLocations: number, geosetAnimated: number, emitters: number, tails: number, modelSpace: number, ribbons: number, error: number} | null} drawn  what the page drew of the terrain first
  */
 
@@ -145,6 +146,10 @@ function registerWorldEditor(context, binary, pickManifest) {
     <button id="camera-set" disabled title="The camera picked looks as the view does">Set to view</button>
     <button id="camera-look" disabled title="The view looks as the camera picked does">Look through it</button>
     <button id="camera-delete" disabled>Delete camera</button>
+  </div>
+  <div id="thing-panel" class="region-panel" hidden>
+    <span id="thing-hint" class="region-bounds"></span>
+    <div id="thing-fields" class="camera-fields"></div>
   </div>
   <div id="objects-palette" class="objects-palette" hidden>
     <div id="object-kinds" class="object-kinds"></div>
@@ -309,6 +314,8 @@ function registerWorldEditor(context, binary, pickManifest) {
                 editor.region = msg.region
             } else if (msg.type === 'camera') {
                 editor.camera = msg.camera
+            } else if (msg.type === 'thing') {
+                editor.thing = msg.thing
             } else if (msg.type === 'overlays') {
                 editor.overlays = msg.overlays
             } else if (msg.type === 'error') {

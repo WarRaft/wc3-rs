@@ -48,6 +48,9 @@ const EditorProtocol = (() => {
         CAMERA_RENAME: 25,
         CAMERA_DELETE: 26,
         CAMERA_SET: 27,
+        THING_ASK: 28,
+        THING_SET: 29,
+        THING: 147,
         MAP_SETTINGS: 146,
     }
 
@@ -280,6 +283,22 @@ const EditorProtocol = (() => {
             w.f32(value)
             return w.frame(KIND.CAMERA_SET)
         },
+        /** The fields of thing `index` of `file` asked for: answered by `thing`. */
+        thingAsk(file, index) {
+            const w = new Writer()
+            w.u8(file)
+            w.u32(index)
+            return w.frame(KIND.THING_ASK)
+        },
+        /** A thing's field (`facing`, `scale_x`, `player` ...) set. */
+        thingSet(file, index, field, value) {
+            const w = new Writer()
+            w.u8(file)
+            w.u32(index)
+            w.string(field)
+            w.f32(value)
+            return w.frame(KIND.THING_SET)
+        },
         mapAsk: () => new Writer().frame(KIND.MAP_ASK),
         /** Cells added on each side {left, right, bottom, top}, the playable area's margins [l, r, b, t] or null. */
         resize(sides, margins) {
@@ -413,6 +432,11 @@ const EditorProtocol = (() => {
                 const on = r.u8() !== 0
                 const p = [r.f32(), r.f32(), r.f32()]
                 return {...m, ground: on ? p : null}
+            }
+            case KIND.THING: {
+                const file = r.u8()
+                const index = r.u32()
+                return {kind: 'thing', file, index, fields: r.list(r => [r.string(), r.f32()])}
             }
             case KIND.OVERLAYS: {
                 const grid = r => ({width: r.u32(), height: r.u32(), data: r.bytes()})

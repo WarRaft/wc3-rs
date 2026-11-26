@@ -21,7 +21,7 @@ item's details are in its section below):
 - **The World Editor** (see [World Editor](#world-editor)): its steps,
   in order; the first not done is next. Done: 1 (the shell), 2 (terrain), 3 (cliffs), 4 (doodads and units),
   5 (overlays), 6 (editing: terrain brushes, things placed, regions,
-  pathing, cameras), 7 (in step with the rest), 8a (animation), 8b (particles),
+  pathing, cameras, a thing's properties), 7 (in step with the rest), 8a (animation), 8b (particles),
   8c (light), 8d (the map's size and tiles), the leftovers; Reforged HD
   a (the storage), b (the game's layers), c (`.dds`), d (its
   models), e (the HD shaders), f (2.0's mods and HD terrain).
@@ -1773,6 +1773,24 @@ step), this list updated.
      `CameraSet`;
      `Overlays` says each camera's rotation, angle of attack, distance,
      field of view, height and roll. MCP: the `w3c_*` tools already change the file.
+   - **6e, a thing's properties** (done after 6d): the Select tool's
+     panel shows the fields of the thing picked that it has
+     (`Session::thing`, asked by `ThingAsk` when it's picked and after
+     every edit, so an undo or its text form typed shows too): where
+     (`x`, `y`, a doodad's `z`, the game's units), facing (degrees),
+     scale x, y, z; a doodad's variation (below its type's `numVar`) and
+     state (its flags: normal, visible and walkable, invisible and
+     walkable), a destructable's life (percent); a unit's, building's or
+     start location's owner (Player 1 to 24, the four neutrals); a
+     unit's hit points (percent, -1 its type's, as `wc3-build` writes
+     them into the script) and mana (-1 its type's), acquisition range
+     (-1 normal, -2 camp), colour (-1 its owner's); a hero's (an id of a
+     capital letter first, as the game tells them) level, strength,
+     agility, intelligence (0 its type's); a gold mine's (its
+     `abilList`, `Units\UnitAbilities.slk`, has `Agld`) gold. Each set
+     as it's typed (`ThingSet`), in its range or said and put back; an
+     undo each. Messages `ThingAsk`, `ThingSet`, `Thing`. MCP: the
+     `doo_*` tools already change them.
 
 7. **In step with the rest** (done). Decided with the user: a text form
    open in VS Code and the editor are one (the text is the truth, as

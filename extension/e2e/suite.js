@@ -203,10 +203,34 @@ async function steps() {
     await we.panel.webview.postMessage({type: 'place', kind: 2, id: 'hfoo', player: 1, x: 0, y: 0})
     await until(() => we.state?.undo && we.state.dirty, 'placed')
     we.picked = undefined
+    we.thing = undefined
     await we.panel.webview.postMessage({type: 'click', x: 0, y: 0})
     const footman = await until(() => we.picked !== undefined && we.picked, 'the footman picked')
     check(/^Footman \(hfoo\) · Player 2 · .* war3mapUnits\.doo #\d+/.test(footman), `picked: ${footman}`)
     await shot('world-editor-placed')
+    log("the footman's properties: its owner, hit points and scale typed in the Select tool's panel")
+    await we.panel.webview.postMessage({type: 'tool', tool: 'select'})
+    const owned = await until(() => we.thing?.fields?.length && new Map(we.thing.fields), "the footman's fields")
+    check(owned.get('player') === 1 && owned.get('hp') === -1 && owned.get('scale_x') === 1 && owned.has('mana') && !owned.has('level') && !owned.has('z'),
+        `its fields: ${[...owned].join(' ')}`)
+    for (const [field, value] of [['scale_x', 2], ['hp', 50], ['player', 3], ['hp', 0]]) {
+        we.state = undefined
+        await we.panel.webview.postMessage({type: 'thingField', field, value})
+        await until(() => we.state, field)
+        check(value ? !we.state.message : /hp can't be 0/.test(we.state.message), `${field} ${value}: ${we.state.message || 'set'}`)
+    }
+    await until(() => {
+        const f = new Map(we.thing?.fields ?? [])
+        return f.get('player') === 3 && f.get('hp') === 50 && f.get('scale_x') === 2
+    }, 'the fields as typed')
+    await shot('world-editor-thing')
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'undo'})
+    await until(() => new Map(we.thing?.fields ?? []).get('player') === 1, 'the owner undone')
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'redo'})
+    await until(() => new Map(we.thing?.fields ?? []).get('player') === 3, 'and done again')
+
     for (const m of [{type: 'rotate', delta: Math.PI / 2}, {type: 'drag', x: 0.2, y: 0}, {type: 'delete'}]) {
         we.state = undefined
         await we.panel.webview.postMessage(m)
@@ -216,6 +240,7 @@ async function steps() {
     we.state = undefined
     await we.panel.webview.postMessage({type: 'undo'})
     await until(() => we.state?.redo, 'the delete undone')
+
     const stamp1 = fs.statSync(map).mtimeMs
     we.state = undefined
     await we.panel.webview.postMessage({type: 'save'})

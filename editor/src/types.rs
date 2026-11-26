@@ -25,7 +25,7 @@ fn files(kind: Kind) -> (&'static [&'static str], &'static [&'static str]) {
         Kind::Doodad => (&["Doodads\\Doodads.slk"], &["Doodads\\DoodadSkins.txt", "Doodads\\DoodadSkinsAddons.txt"]),
         Kind::Destructable => (&["Units\\DestructableData.slk"], &["Units\\DestructableSkin.txt"]),
         Kind::Unit => (
-            &["Units\\UnitData.slk", "Units\\UnitBalance.slk", "Units\\UnitUI.slk"],
+            &["Units\\UnitData.slk", "Units\\UnitBalance.slk", "Units\\UnitUI.slk", "Units\\UnitAbilities.slk"],
             &[
                 "Units\\CampaignUnitFunc.txt",
                 "Units\\HumanUnitFunc.txt",
