@@ -79,8 +79,9 @@ fn edits_round_trip() {
         base: "AHbz".into(),
         name: "Blizzard".into(),
         levels: 3,
-        fields: vec![FieldRow { field: "Hbz1".into(), name: "Number of Waves".into(), category: "data".into(), ty: "int".into(), level: 2, column: 1, value: "8".into(), default: "6".into(), changed: true }],
+        fields: vec![FieldRow { field: "Hbz1".into(), name: "Number of Waves".into(), category: "data".into(), ty: "int".into(), level: 2, column: 1, value: "8".into(), default: "6".into(), changed: true, hint: String::new() }],
     }));
+    round_trip(ServerMsg::ObjectEnums(vec![("attackType".into(), false, vec![("normal".into(), "Normal".into())]), ("targetList".into(), true, vec![])]));
     round_trip(ServerMsg::Thing(ThingMsg { file: 1, index: 7, fields: vec![("x".into(), 64.0), ("hp".into(), -1.0)] }));
     round_trip(ServerMsg::State(StateMsg { dirty: true, undo: true, redo: false, message: "Saved".into() }));
     round_trip(ServerMsg::Palette(PaletteMsg {

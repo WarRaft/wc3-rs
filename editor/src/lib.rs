@@ -227,7 +227,7 @@ impl Editor {
                     ClientMsg::CameraRename { index, name } => s.camera_rename(index, &name),
                     ClientMsg::CameraDelete { index } => s.camera_delete(index),
                     ClientMsg::CameraSet { index, field, value } => s.camera_set(index, &field, value),
-                    ClientMsg::ObjectList { kind } => vec![s.object_list(kind)],
+                    ClientMsg::ObjectList { kind } => s.object_list_first(kind),
                     ClientMsg::ObjectAsk { kind, id } => vec![s.object_fields(kind, &id)],
                     ClientMsg::ObjectSet { kind, id, field, level, column, value } => s.object_set(kind, &id, &field, level, column, &value),
                     ClientMsg::ObjectNew { kind, base } => s.object_new(kind, &base),

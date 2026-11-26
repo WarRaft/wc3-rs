@@ -59,7 +59,7 @@
 //! | 37 | `ObjectNew` | a custom object: `u8` kind, the id of the one it's based on; answered the same, `ObjectFields` of it |
 //! | 38 | `ObjectDelete` | `u8` kind, an id: a custom object taken away, a standard one's changes; answered the same |
 //! | 22 | `TilePathing` | the tile pather's: `u8` a tile's index in the terrain's list, `u8` what it forbids (`wpm` flags: 2 walking, 4 flying, 8 building); answered by `Overlays` and `State` |
-//! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id); answered by `Icons` |
+//! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id; kind 255: id a texture's path); answered by `Icons` |
 //!
 //! Editor → page:
 //!
@@ -88,6 +88,7 @@
 //! | 149 | `SoundData` | a sound file: its path, its bytes (an array of `u8`), why not (empty: found) |
 //! | 150 | `ObjectList` | a kind's objects: see [`ObjectListMsg`] |
 //! | 151 | `ObjectFields` | an object's fields: see [`ObjectFieldsMsg`] |
+//! | 152 | `ObjectEnums` | the field types World Editor offers values of: a list of (type, `u8` a list of them, a list of (the stored text, its name)); before the first `ObjectList` |
 //! | 141 | `Icons` | a list of (`u8` kind, id, `u32` width, height, RGBA; 0 by 0 for none) |
 //!
 //! After an edit the terrain's messages come again: `Cliffs` with no
@@ -151,6 +152,7 @@ mod kind {
     pub const OBJECT_DELETE: u8 = 38;
     pub const OBJECT_LIST_ANSWER: u8 = 150;
     pub const OBJECT_FIELDS: u8 = 151;
+    pub const OBJECT_ENUMS: u8 = 152;
     pub const FOLLOW: u8 = 142;
     pub const TEXT_OUT: u8 = 143;
     pub const SAVE_DOCS: u8 = 144;
@@ -410,7 +412,8 @@ pub struct ObjectFieldsMsg {
 
 /// A field of an object at a level: its id, World Editor's name, its
 /// category, its metadata type, `u32` level (0: none), `u32` data column,
-/// its value as text, the game's, `u8` changed by the map.
+/// its value as text, the game's, `u8` changed by the map, what the
+/// value names (an id list's objects' names).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FieldRow {
     pub field: String,
@@ -422,6 +425,9 @@ pub struct FieldRow {
     pub value: String,
     pub default: String,
     pub changed: bool,
+    /// What its value names, shown beside it: an id list's objects
+    /// (`Holy Light, Devotion Aura`); empty for none.
+    pub hint: String,
 }
 
 /// Kind 147's body: a thing placed (`file` 0 `war3map.doo`, 1
@@ -529,6 +535,9 @@ pub enum ServerMsg {
     ObjectList(ObjectListMsg),
     /// Kind 151.
     ObjectFields(ObjectFieldsMsg),
+    /// Kind 152: each type, whether its value is a list, its values and
+    /// their names.
+    ObjectEnums(Vec<(String, bool, Vec<(String, String)>)>),
     /// Kind 149.
     SoundData { file: String, bytes: Vec<u8>, error: String },
     /// Kind 136.
@@ -1031,8 +1040,20 @@ impl ServerMsg {
                     w.string(&f.value);
                     w.string(&f.default);
                     w.u8(f.changed as u8);
+                    w.string(&f.hint);
                 });
                 kind::OBJECT_FIELDS
+            }
+            ServerMsg::ObjectEnums(list) => {
+                w.list(list, |w, (ty, multi, values)| {
+                    w.string(ty);
+                    w.u8(*multi as u8);
+                    w.list(values, |w, (v, name)| {
+                        w.string(v);
+                        w.string(name);
+                    });
+                });
+                kind::OBJECT_ENUMS
             }
             ServerMsg::Sounds(list) => {
                 w.list(list, |w, s| {
@@ -1343,10 +1364,12 @@ impl ServerMsg {
                         value: r.string()?,
                         default: r.string()?,
                         changed: r.u8()? != 0,
+                        hint: r.string()?,
                     })
                 })?;
                 ServerMsg::ObjectFields(ObjectFieldsMsg { kind, id, base, name, levels, fields })
             }
+            kind::OBJECT_ENUMS => ServerMsg::ObjectEnums(r.list(|r| Ok((r.string()?, r.u8()? != 0, r.list(|r| Ok((r.string()?, r.string()?)))?)))?),
             kind::SOUNDS => ServerMsg::Sounds(r.list(|r| {
                 let mut s = w3s_rs::Sound::new(r.string()?, r.string()?);
                 s.eax = r.string()?;

@@ -604,3 +604,67 @@ button:hover {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+.obj-panel select {
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, #555);
+    font: inherit;
+    min-width: 0;
+}
+
+.obj-flags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+}
+
+.obj-flags label {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.obj-value-box {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.obj-value-box.with-icon {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 4px;
+}
+
+.obj-value-box.with-icon .obj-hint {
+    grid-column: 2;
+}
+
+.obj-icon {
+    width: 24px;
+    height: 24px;
+}
+
+.obj-hint {
+    color: var(--vscode-descriptionForeground);
+    font-size: .9em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.obj-group {
+    padding: 4px 4px 1px;
+    font-weight: bold;
+    color: var(--vscode-descriptionForeground);
+    position: sticky;
+    top: 0;
+    background: var(--vscode-editor-background);
+}
+
+.obj-field > input[type=checkbox] {
+    justify-self: start;
+}

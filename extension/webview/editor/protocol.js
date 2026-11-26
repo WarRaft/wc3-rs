@@ -64,6 +64,7 @@ const EditorProtocol = (() => {
         OBJECT_DELETE: 38,
         OBJECT_LIST_ANSWER: 150,
         OBJECT_FIELDS: 151,
+        OBJECT_ENUMS: 152,
         MAP_SETTINGS: 146,
     }
 
@@ -510,9 +511,11 @@ const EditorProtocol = (() => {
                 return {kind: 'objectList', objectKind: r.u8(), objects: r.list(r => ({id: r.string(), name: r.string(), group: r.string(), state: r.u8()}))}
             case KIND.OBJECT_FIELDS: {
                 const m = {kind: 'objectFields', objectKind: r.u8(), id: r.string(), base: r.string(), name: r.string(), levels: r.u32()}
-                m.fields = r.list(r => ({field: r.string(), name: r.string(), category: r.string(), ty: r.string(), level: r.u32(), column: r.u32(), value: r.string(), default: r.string(), changed: r.u8() !== 0}))
+                m.fields = r.list(r => ({field: r.string(), name: r.string(), category: r.string(), ty: r.string(), level: r.u32(), column: r.u32(), value: r.string(), default: r.string(), changed: r.u8() !== 0, hint: r.string()}))
                 return m
             }
+            case KIND.OBJECT_ENUMS:
+                return {kind: 'objectEnums', enums: r.list(r => ({ty: r.string(), multi: r.u8() !== 0, values: r.list(r => [r.string(), r.string()])}))}
             case KIND.SOUNDS:
                 // `numbers` as `w3s_rs::Sound::numbers` has them.
                 return {kind: 'sounds', sounds: r.list(r => ({name: r.string(), file: r.string(), eax: r.string(), flags: r.u32(), numbers: Array.from(r.f32s())}))}

@@ -408,6 +408,13 @@ async function steps(only) {
             const footman = await until(() => we.objects?.picked?.id === 'hfoo' && we.objects.picked, "the footman's fields")
             check(field('uhpm')?.[2] === '420' && footman.fields.length > 50, `${footman.name}: ${footman.fields.length} fields, hit points ${field('uhpm')?.[2]}`)
             check(!field('ustr'), 'a unit: no hero\'s strength')
+            // Its fields by their types: choices, checkboxes, its abilities by name, its icon drawn.
+            const typed = await until(() => we.objects?.controls?.icons > 0 && we.objects, 'its icon drawn')
+            check(/Defend/.test(field('uabi')?.[4] ?? '') && typed.controls.selects > 3 && typed.controls.checkboxes > 5,
+                `abilities ${field('uabi')?.[2]}: ${field('uabi')?.[4]}; ${typed.controls.selects} choices, ${typed.controls.checkboxes} checkboxes, ${typed.controls.icons} icon`)
+            await we.panel.webview.postMessage({type: 'object', action: 'field', field: 'ua1t', value: 'pierce'})
+            await until(() => field('ua1t')?.[2] === 'pierce' && field('ua1t')[3], 'its attack type chosen')
+            check(true, `attack type ${field('ua1t')[2]} (${field('ua1t')[5]})`)
             await we.panel.webview.postMessage({type: 'object', action: 'pick', id: 'Hpal'})
             const paladin = await until(() => we.objects?.picked?.id === 'Hpal' && we.objects.picked, "the paladin's fields")
             check(!!field('ustr'), `${paladin.name}, a hero: ${paladin.fields.length} fields, strength ${field('ustr')?.[2]}`)

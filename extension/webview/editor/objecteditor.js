@@ -18,6 +18,15 @@ const EditorObjectEditor = (() => {
     }
     const STATES = ['', 'changed', 'custom']
 
+    /** An icon (`ImageData`) drawn on a canvas, its size. */
+    const paint = (canvas, image) => {
+        if (!image) return
+        canvas.width = image.width
+        canvas.height = image.height
+        canvas.getContext('2d').putImageData(image, 0, 0)
+        canvas.dataset.painted = '1'
+    }
+
     const el = (tag, props = {}, ...children) => {
         const e = Object.assign(document.createElement(tag), props)
         e.append(...children)
@@ -42,6 +51,10 @@ const EditorObjectEditor = (() => {
             /** The picked one's fields as last sent. */
             this.fields = null
             this.filter = ''
+            /** The field types' values (`ObjectEnums`), by type. */
+            this.enums = new Map()
+            /** Icons by path (`null`: none), and the canvases waiting for them. */
+            this.icons = new Map()
             this.build()
         }
 
@@ -122,13 +135,91 @@ const EditorObjectEditor = (() => {
         renderList() {
             const words = this.filter.toLowerCase().split(/\s+/).filter(Boolean)
             const shown = this.objects.filter(o => words.every(w => `${o.name} ${o.id} ${o.group}`.toLowerCase().includes(w)))
-            this.list.replaceChildren(...shown.map(o => {
+            // Under their places in World Editor's tree (`Melee · Human · Units`).
+            const rows = []
+            let group = null
+            for (const o of shown) {
+                if (o.group !== group) {
+                    group = o.group
+                    rows.push(el('div', {className: 'obj-group', textContent: group || 'Other'}))
+                }
                 const row = el('div', {className: `obj-row ${STATES[o.state]}${o.id === this.picked ? ' on' : ''}`, textContent: `${o.name} (${o.id})`, title: o.group})
                 row.onclick = () => this.pick(o.id)
-                return row
-            }))
+                rows.push(row)
+            }
+            this.list.replaceChildren(...rows)
             this.newButton.disabled = this.deleteButton.disabled = !this.picked
             this.report()
+        }
+
+        /** The field types' values (`objectEnums`). */
+        setEnums(list) {
+            this.enums = new Map(list.map(e => [e.ty, e]))
+            if (this.fields) this.renderFields()
+        }
+
+        /** An icon read (`icons`, kind 255): drawn where it's shown. */
+        setIcon(path, image) {
+            this.icons.set(path.toLowerCase(), image)
+            for (const c of this.table.querySelectorAll('canvas.obj-icon')) if (c.dataset.path === path.toLowerCase()) paint(c, image)
+            this.report()
+        }
+
+        /**
+         * The control of a field: what it is by its type (a checkbox, a
+         * choice, a list's checkboxes, text), sending `value` as text.
+         */
+        control(r, send) {
+            const values = this.enums.get(r.ty)
+            if (r.ty === 'bool') {
+                const box = el('input', {type: 'checkbox', checked: r.value.trim() === '1'})
+                box.onchange = () => send(box.checked ? '1' : '0')
+                return box
+            }
+            if (values && !values.multi) {
+                const select = el('select', {className: 'obj-value'})
+                const known = values.values.some(([v]) => v === r.value)
+                select.append(...(known ? [] : [[r.value, r.value || '(none)']]).concat(values.values).map(([v, name]) => el('option', {value: v, textContent: name})))
+                select.value = r.value
+                select.onchange = () => send(select.value)
+                return select
+            }
+            if (values) {
+                // A list: a checkbox each; what isn't one of them kept.
+                const now = r.value.split(',').map(v => v.trim()).filter(Boolean)
+                const others = now.filter(v => !values.values.some(([x]) => x.toLowerCase() === v.toLowerCase()))
+                const boxes = el('div', {className: 'obj-flags'})
+                for (const [v, name] of values.values) {
+                    const box = el('input', {type: 'checkbox', checked: now.some(x => x.toLowerCase() === v.toLowerCase())})
+                    box.dataset.value = v
+                    box.onchange = () => send([...boxes.querySelectorAll('input:checked')].map(b => b.dataset.value).concat(others).join(','))
+                    boxes.append(el('label', {}, box, name))
+                }
+                return boxes
+            }
+            const input = el('input', {type: 'text', value: r.value, className: 'obj-value'})
+            let timer = 0
+            input.oninput = () => {
+                clearTimeout(timer)
+                timer = setTimeout(() => send(input.value), 400)
+            }
+            if (!r.hint && r.ty !== 'icon') return input
+            const box = el('div', {className: 'obj-value-box'}, input)
+            if (r.hint) box.append(el('div', {className: 'obj-hint', textContent: r.hint}))
+            if (r.ty === 'icon' && r.value.trim()) {
+                const path = r.value.split(',')[0].trim()
+                const canvas = el('canvas', {className: 'obj-icon', width: 32, height: 32})
+                canvas.dataset.path = path.toLowerCase()
+                const image = this.icons.get(path.toLowerCase())
+                if (image) paint(canvas, image)
+                else if (image === undefined) {
+                    this.icons.set(path.toLowerCase(), null)
+                    this.send(this.encode.icons([[255, path]]))
+                }
+                box.prepend(canvas)
+                box.classList.add('with-icon')
+            }
+            return box
         }
 
         /** The picked one's fields (`objectFields`). */
@@ -164,16 +255,11 @@ const EditorObjectEditor = (() => {
                 }
                 const key = `${r.field}:${r.level}:${r.column}`
                 const name = el('span', {className: 'obj-name', textContent: r.level ? `${r.name} - Level ${r.level}` : r.name, title: `${r.field} · ${r.ty}${r.changed ? ` · the game's: ${r.default}` : ''}`})
-                const input = el('input', {type: 'text', value: r.value, className: 'obj-value'})
+                const [kind, id] = [this.kind, f.id]
+                const input = this.control(r, value => this.send(this.encode.objectSet(kind, id, r.field, r.level, r.column, value)))
                 input.dataset.key = key
                 input.dataset.field = r.field
                 input.dataset.level = r.level
-                let timer = 0
-                input.oninput = () => {
-                    clearTimeout(timer)
-                    const [kind, id, value] = [this.kind, f.id, input.value]
-                    timer = setTimeout(() => this.send(this.encode.objectSet(kind, id, r.field, r.level, r.column, value)), 400)
-                }
                 const reset = el('button', {className: 'obj-reset', textContent: '↺', title: `The game's: ${r.default}`, disabled: !r.changed})
                 reset.onclick = () => this.send(this.encode.objectSet(this.kind, f.id, r.field, r.level, r.column, ''))
                 const row = el('div', {className: `obj-field${r.changed ? ' changed' : ''}`}, name, input, reset)
@@ -191,10 +277,24 @@ const EditorObjectEditor = (() => {
 
         /** A field typed (for the tests): as the keyboard would. */
         type(field, level, value) {
-            const input = [...this.table.querySelectorAll('input')].find(i => i.dataset.field === field && Number(i.dataset.level) === (level ?? 0))
-            if (!input) return false
-            input.value = String(value)
-            input.oninput()
+            const c = [...this.table.querySelectorAll('[data-field]')].find(i => i.dataset.field === field && Number(i.dataset.level) === (level ?? 0))
+            if (!c) return false
+            if (c.tagName === 'SELECT') {
+                c.value = String(value)
+                c.onchange()
+            } else if (c.type === 'checkbox') {
+                c.checked = String(value) === '1'
+                c.onchange()
+            } else if (c.classList.contains('obj-flags')) {
+                const want = String(value).split(',')
+                const boxes = [...c.querySelectorAll('input')]
+                boxes.forEach(b => (b.checked = want.includes(b.dataset.value)))
+                boxes[0]?.onchange()
+            } else {
+                const input = c.tagName === 'INPUT' ? c : c.querySelector('input[type=text]')
+                input.value = String(value)
+                input.oninput()
+            }
             return true
         }
 
@@ -205,7 +305,12 @@ const EditorObjectEditor = (() => {
                 count: this.objects.length,
                 custom: this.objects.filter(o => o.state === 2).map(o => o.id),
                 changed: this.objects.filter(o => o.state === 1).map(o => o.id),
-                picked: f && f.id === this.picked ? {id: f.id, base: f.base, name: f.name, levels: f.levels, fields: f.fields.map(r => [r.field, r.level, r.value, r.changed])} : null,
+                picked: f && f.id === this.picked ? {id: f.id, base: f.base, name: f.name, levels: f.levels, fields: f.fields.map(r => [r.field, r.level, r.value, r.changed, r.hint, r.ty])} : null,
+                controls: {
+                    selects: this.table.querySelectorAll('select').length,
+                    checkboxes: this.table.querySelectorAll('input[type=checkbox]').length,
+                    icons: [...this.table.querySelectorAll('canvas.obj-icon')].filter(c => c.dataset.painted).length,
+                },
             })
         }
     }

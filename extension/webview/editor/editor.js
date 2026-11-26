@@ -1147,7 +1147,13 @@
         } else if (msg.kind === 'icons') {
             for (const i of msg.icons) {
                 const key = `${i.kind}:${i.id}`
-                icons.cache.set(key, i.width ? new ImageData(new Uint8ClampedArray(i.rgba.buffer, i.rgba.byteOffset, i.rgba.byteLength), i.width, i.height) : null)
+                const image = i.width ? new ImageData(new Uint8ClampedArray(i.rgba.buffer, i.rgba.byteOffset, i.rgba.byteLength), i.width, i.height) : null
+                // A texture's by its path: the object editor's.
+                if (i.kind === 255) {
+                    objectsPanel.setIcon(i.id, image)
+                    continue
+                }
+                icons.cache.set(key, image)
                 const row = $('object-list').querySelector(`[data-key="${CSS.escape(key)}"]`)
                 if (row) paintIcon(row)
             }
@@ -1167,6 +1173,8 @@
             askThing()
             $('status').textContent = msg.found ? msg.text : ''
             vscode.postMessage({type: 'picked', text: msg.found ? msg.text : ''})
+        } else if (msg.kind === 'objectEnums') {
+            objectsPanel.setEnums(msg.enums)
         } else if (msg.kind === 'objectList') {
             objectsPanel.setList(msg)
         } else if (msg.kind === 'objectFields') {

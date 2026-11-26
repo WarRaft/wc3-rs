@@ -1851,7 +1851,21 @@ step), this list updated.
      of the session too (`Snapshot::Strings`, the file's text whole, its
      byte order mark kept; saved; taken in when changed on disk; open in
      VS Code, on disk or inside the map, in step as a text form is: the
-     file its own). MCP: the `obj_*` tools already change them.
+     file its own). Fields by their types (6h, after 6g): the values
+     World Editor offers a type (`UI\UnitEditorData.txt`: a section per
+     metadata type, `01=pierce,WESTRING_...`, their names World Editor's;
+     `ObjectEnums`, once a page) as a choice, or a list's (`targetList`,
+     `pathingList...`, `unitClass`) as checkboxes, a `bool` a checkbox;
+     an id list's (`abilityList`, `unitList`, `techList` ..., `abilCode`)
+     objects named under it (`Adef,Aihn`: Defend, Unit Inventory
+     (Human)); an icon's picture beside it (`Icons` of kind 255, a
+     path). The list in World Editor's tree: a unit under melee (first)
+     or campaign (`campaign`), its race (the `unitRace` names), units,
+     buildings (`isbldg`), heroes or special (`special`); an item under
+     its class; an ability under units, heroes (`hero`) or items (`item`)
+     and its race; a buff or upgrade under its race; a doodad or
+     destructable its category; the map's own under Custom. MCP: the
+     `obj_*` tools already change them.
 
 7. **In step with the rest** (done). Decided with the user: a text form
    open in VS Code and the editor are one (the text is the truth, as

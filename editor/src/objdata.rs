@@ -322,6 +322,60 @@ pub fn metadata(game: &Game) -> HashMap<Kind, Metadata> {
     KINDS.iter().map(|k| (*k, Metadata::load(*k, read))).collect()
 }
 
+/// A field type's values (`UI\\UnitEditorData.txt`, a section per type
+/// of the metadata's: `[attackType]` `01=normal,WESTRING_...`): each its
+/// stored text and the key of the name World Editor shows; `multi` for
+/// a type whose value is a list of them (`targetList`: `air,ground`).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Enum {
+    pub ty: String,
+    pub multi: bool,
+    pub values: Vec<(String, String)>,
+}
+
+/// The field types World Editor offers values of, through `game`.
+pub fn enums(game: &Game) -> Vec<Enum> {
+    let Some((bytes, _)) = game.read("UI\\UnitEditorData.txt") else { return Vec::new() };
+    let text = String::from_utf8_lossy(&bytes);
+    let mut out = Vec::new();
+    for section in bni_rs::parse(&text).sections {
+        let ty = section.name.text.trim().to_string();
+        let mut values: Vec<(u32, String, String)> = Vec::new();
+        for item in &section.items {
+            let Some(key) = &item.key else { continue };
+            // `00`, `01` ...; not `01_Alt` (other spellings it reads).
+            let Ok(n) = key.text.trim().parse::<u32>() else { continue };
+            let fields: Vec<String> = item.fields.iter().map(|f| f.text().trim().trim_matches('"').to_string()).collect();
+            if let [data, label, ..] = &fields[..] {
+                values.push((n, data.clone(), label.clone()));
+            }
+        }
+        if values.is_empty() {
+            continue;
+        }
+        values.sort_by_key(|v| v.0);
+        let multi = ty.ends_with("List") || ty == "unitClass";
+        out.push(Enum { ty, multi, values: values.into_iter().map(|(_, d, l)| (d, l)).collect() });
+    }
+    out
+}
+
+/// The kinds of objects a field of type `ty` names by id (`abilityList`
+/// abilities, `abilCode` one; `techList` units or upgrades); none for
+/// another type.
+pub fn id_kinds(ty: &str) -> &'static [Kind] {
+    match ty {
+        "abilityList" | "heroAbilityList" | "abilCode" | "abilityCode" => &[Kind::Ability],
+        "unitList" | "unitCode" => &[Kind::Unit],
+        "itemList" | "itemCode" => &[Kind::Item],
+        "upgradeList" | "upgradeCode" => &[Kind::Upgrade],
+        "buffList" | "buffCode" | "effectList" => &[Kind::Buff],
+        "techList" => &[Kind::Unit, Kind::Upgrade, Kind::Item],
+        "destructableList" | "destructableCode" => &[Kind::Destructable],
+        _ => &[],
+    }
+}
+
 /// The game's tables the object editor reads, each once, when first
 /// asked: every kind's metadata, the profile, each kind's standard
 /// objects.
@@ -330,6 +384,9 @@ pub struct Tables {
     pub meta: HashMap<Kind, Metadata>,
     profile: Option<HashMap<String, HashMap<String, String>>>,
     pub standard: HashMap<Kind, Standard>,
+    /// The field types' values' names (`unitRace:human` Human), once
+    /// asked.
+    pub enum_names: HashMap<String, String>,
 }
 
 impl Tables {

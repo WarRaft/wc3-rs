@@ -65,6 +65,9 @@ pub struct Session {
     pub shadows: Option<shd_rs::Shadows>,
     /// What was read with a problem, gone past.
     pub notes: Vec<String>,
+    /// Whether the page has the object editor's field types' values
+    /// (`ObjectEnums`), since it (re)loaded.
+    enums_sent: bool,
     /// The game's tables the object editor reads, once asked.
     object_tables: crate::objdata::Tables,
 }
@@ -146,6 +149,7 @@ impl Session {
             shadows,
             notes,
             object_tables: Default::default(),
+            enums_sent: false,
         })
     }
 
@@ -250,6 +254,7 @@ impl Session {
             self.pathing_made = Some(self.made_pathing());
         }
         // All of it again: the page (re)loaded.
+        self.enums_sent = false;
         self.objects = None;
         self.sent = None;
         let objects_msg = self.place_objects();
@@ -760,8 +765,8 @@ impl Session {
             .iter()
             .map(|(kind, id)| {
                 let k = crate::placed::PLACED_CODES.get(*kind as usize).copied().unwrap_or(w3abdhqtu_rs::Kind::Doodad);
-                // A list (`Art=a.blp,b.blp`): its first.
-                let art = types.get(k, id, "Art").map(|a| a.split(',').next().unwrap_or(a).trim().to_string());
+                // A list (`Art=a.blp,b.blp`): its first; kind 255: a path.
+                let art = if *kind == 255 { Some(id.clone()) } else { types.get(k, id, "Art").map(|a| a.split(',').next().unwrap_or(a).trim().to_string()) };
                 let icon = art.and_then(|path| {
                     let path = crate::tileset::with_extension(&path);
                     self.icon_cache
@@ -1415,22 +1420,103 @@ impl Session {
         if suffix.trim().is_empty() { name } else { format!("{name} {}", suffix.trim()) }
     }
 
+    /// Object `id`'s name, of the first of `kinds` that has it (their
+    /// tables read): as the object editor's list names it; else the id.
+    fn id_name(&self, kinds: &[w3abdhqtu_rs::Kind], id: &str) -> String {
+        for kind in kinds {
+            let Some(std) = self.object_tables.standard.get(kind) else { continue };
+            let custom = parser_rs::bin::Rawcode::parse(id).and_then(|code| self.placed.objects.get(kind)?.customs.iter().find(|o| o.id == code));
+            if let Some(o) = custom {
+                return self.object_name(*kind, Some(o), &o.base.to_string());
+            }
+            if std.has(id) {
+                let changed = self.placed.objects.get(kind).and_then(|d| d.originals.iter().find(|o| o.base.to_string() == id));
+                return self.object_name(*kind, changed, id);
+            }
+        }
+        id.to_string()
+    }
+
+    /// Kind `k`'s objects, as the page asks for them: the field types'
+    /// values first, when the page hasn't them.
+    pub fn object_list_first(&mut self, k: u8) -> Vec<ServerMsg> {
+        let mut out = Vec::new();
+        if !self.enums_sent {
+            self.enums_sent = true;
+            let enums = crate::objdata::enums(&self.game)
+                .into_iter()
+                .map(|e| (e.ty, e.multi, e.values.into_iter().map(|(v, key)| (v, wc3_server::names::plain(&self.names.resolve(&key)))).collect()))
+                .collect();
+            out.push(ServerMsg::ObjectEnums(enums));
+        }
+        out.push(self.object_list(k));
+        out
+    }
+
+    /// Where World Editor's tree puts the game's object `base`: a unit
+    /// under melee or campaign, its race, units, buildings, heroes or
+    /// special; an item under its class; an ability under units, heroes
+    /// or items and its race; a buff or upgrade under its race; a doodad
+    /// or destructable under its category.
+    fn object_group(&self, kind: w3abdhqtu_rs::Kind, base: &str) -> String {
+        use w3abdhqtu_rs::Kind;
+        let std = &self.object_tables.standard[&kind];
+        let g = |key: &str| std.get(base, key).unwrap_or("").trim().to_string();
+        let named = |ty: &str, v: String| self.object_tables.enum_names.get(&format!("{ty}:{}", v.to_ascii_lowercase())).cloned().unwrap_or(v);
+        let race = || named("unitRace", g("race"));
+        match kind {
+            Kind::Unit => {
+                let mode = if g("campaign") == "1" { "Campaign" } else { "Melee" };
+                let what = if base.starts_with(|c: char| c.is_ascii_uppercase()) {
+                    "Heroes"
+                } else if g("isbldg") == "1" {
+                    "Buildings"
+                } else if g("special") == "1" {
+                    "Special"
+                } else {
+                    "Units"
+                };
+                format!("{mode} · {} · {what}", race())
+            }
+            Kind::Item => named("itemClass", g("class")),
+            Kind::Ability => {
+                let what = if g("hero") == "1" { "Heroes" } else if g("item") == "1" { "Items" } else { "Units" };
+                format!("{what} · {}", race())
+            }
+            Kind::Buff | Kind::Upgrade => race(),
+            _ => g("category"),
+        }
+    }
+
     /// Kind `k`'s objects: the game's (changed by the map or not), then
     /// the map's own.
     pub fn object_list(&mut self, k: u8) -> ServerMsg {
         let Some(kind) = self.object_kind(k) else { return ServerMsg::ObjectList(Default::default()) };
-        let data = self.placed.objects.get(&kind);
-        let std = &self.object_tables.standard[&kind];
-        let group = |base: &str| std.get(base, crate::objdata::group_key(kind)).unwrap_or("").to_string();
-        let mut objects = Vec::new();
-        for id in &std.ids {
-            let changed = data.and_then(|d| d.originals.iter().find(|o| o.base.to_string() == *id));
-            objects.push((id.clone(), self.object_name(kind, changed, id), group(id), changed.is_some() as u8));
+        if self.object_tables.enum_names.is_empty() {
+            for e in crate::objdata::enums(&self.game) {
+                for (v, key) in e.values {
+                    let name = wc3_server::names::plain(&self.names.resolve(&key));
+                    self.object_tables.enum_names.insert(format!("{}:{}", e.ty, v.to_ascii_lowercase()), name);
+                }
+            }
         }
+        let data = self.placed.objects.get(&kind);
+        let mut objects = Vec::new();
+        for id in &self.object_tables.standard[&kind].ids {
+            let changed = data.and_then(|d| d.originals.iter().find(|o| o.base.to_string() == *id));
+            objects.push((id.clone(), self.object_name(kind, changed, id), self.object_group(kind, id), changed.is_some() as u8));
+        }
+        // By their place in World Editor's tree (melee before campaign),
+        // then name.
+        let campaign = |g: &str| g.starts_with("Campaign");
+        objects.sort_by(|a, b| (campaign(&a.2), &a.2, &a.1, &a.0).cmp(&(campaign(&b.2), &b.2, &b.1, &b.0)));
+        let mut customs = Vec::new();
         for o in data.map(|d| d.customs.as_slice()).unwrap_or_default() {
             let base = o.base.to_string();
-            objects.push((o.id.to_string(), self.object_name(kind, Some(o), &base), group(&base), 2));
+            customs.push((o.id.to_string(), self.object_name(kind, Some(o), &base), format!("Custom · {}", self.object_group(kind, &base)), 2));
         }
+        customs.sort_by(|a, b| (a.2.contains("Campaign"), &a.2, &a.1, &a.0).cmp(&(b.2.contains("Campaign"), &b.2, &b.1, &b.0)));
+        objects.extend(customs);
         ServerMsg::ObjectList(crate::protocol::ObjectListMsg { kind: k, objects })
     }
 
@@ -1533,11 +1619,26 @@ impl Session {
                     value: changed.map_or_else(|| default.clone(), |m| self.text(&crate::objdata::shown(&m.value))),
                     default,
                     changed: changed.is_some(),
+                    hint: String::new(),
                 });
             }
         }
         fields.sort_by(|a, b| (&a.category, &a.name, a.level).cmp(&(&b.category, &b.name, b.level)));
         let name = self.object_name(kind, object, &base_text);
+        // An id list's objects by name, as the lists name them.
+        for kinds in fields.iter().map(|r| crate::objdata::id_kinds(&r.ty)).collect::<Vec<_>>() {
+            for k in kinds {
+                self.object_tables.load(&self.game, *k);
+            }
+        }
+        for r in &mut fields {
+            let kinds = crate::objdata::id_kinds(&r.ty);
+            if kinds.is_empty() || r.value.trim().is_empty() {
+                continue;
+            }
+            let names: Vec<String> = r.value.split(',').map(str::trim).filter(|id| !id.is_empty()).map(|id| self.id_name(kinds, id)).collect();
+            r.hint = names.join(", ");
+        }
         ServerMsg::ObjectFields(crate::protocol::ObjectFieldsMsg { kind: k, id: id.to_string(), base: base_text, name, levels, fields })
     }
 

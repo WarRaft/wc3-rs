@@ -736,11 +736,17 @@ fn objects_listed_their_fields_set_reset_made_deleted_undone_saved_and_in_step_w
             &["umvs", "spd", "UnitBalance", "unreal", "0", "522", "move", "0", "1", "1", "0"],
             &["ustr", "STR", "UnitBalance", "int", "0", "100", "stats", "0", "0", "1", "0"],
             &["ubdg", "isbldg", "UnitData", "bool", "", "", "stats", "0", "1", "1", "1"],
+            &["uabi", "abilList", "UnitAbilities", "abilityList", "", "", "abil", "0", "1", "1", "1"],
         ]),
     );
     dir.write("map/Units/UnitData.slk", &testdir::slk(&[&["unitID", "race", "isbldg"], &["hfoo", "human", "0"], &["ogru", "orc", "0"], &["Hpal", "human", "0"], &["htow", "human", "1"]]));
     dir.write("map/Units/UnitBalance.slk", &testdir::slk(&[&["unitBalanceID", "HP", "spd"], &["hfoo", "420", "270"], &["ogru", "700", "270"]]));
     dir.write("map/Units/HumanUnitStrings.txt", b"[hfoo]\nName=Footman\n");
+    dir.write("map/Units/UnitAbilities.slk", &testdir::slk(&[&["unitAbilID", "abilList"], &["hfoo", "AHhb,Adef"]]));
+    dir.write("map/Units/HumanAbilityStrings.txt", b"[AHhb]\nName=Holy Light\n");
+    dir.write("map/Units/AbilityData.slk", &testdir::slk(&[&["alias", "code"], &["AHhb", "AHhb"]]));
+    dir.write("map/UI/UnitEditorData.txt", b"[attackType]\n00=normal,WESTRING_A\n01=pierce,Pierce\nNumValues=2\n\n[targetList]\n00=air,Air\n01_Alt=aliv\n01=alive,Alive\n");
+    dir.write("map/UI/WorldEditStrings.txt", b"[WorldEditStrings]\nWESTRING_A=Normal\n");
     let mut s = Session::open(dir.path()).unwrap();
     s.draw();
     let said = |msgs: &[ServerMsg]| match msgs.last() {
@@ -755,13 +761,26 @@ fn objects_listed_their_fields_set_reset_made_deleted_undone_saved_and_in_step_w
         ServerMsg::ObjectFields(f) => f,
         m => panic!("{m:?}"),
     };
-    assert_eq!(list(&mut s)[..2], [("Hpal".into(), "Hpal".into(), "human".into(), 0), ("hfoo".into(), "Footman".into(), "human".into(), 0)]);
+    let groups: Vec<(String, String)> = list(&mut s).into_iter().map(|o| (o.0, o.2)).collect();
+    assert_eq!(groups, [
+        ("htow".to_string(), "Melee · human · Buildings".to_string()),
+        ("Hpal".into(), "Melee · human · Heroes".into()),
+        ("hfoo".into(), "Melee · human · Units".into()),
+        ("ogru".into(), "Melee · orc · Units".into()),
+    ]);
+    // The field types' values first, their names World Editor's.
+    let first = s.object_list_first(0);
+    let ServerMsg::ObjectEnums(enums) = &first[0] else { panic!("{first:?}") };
+    assert_eq!(enums[0], ("attackType".into(), false, vec![("normal".into(), "Normal".into()), ("pierce".into(), "Pierce".into())]));
+    assert_eq!((enums[1].0.as_str(), enums[1].1, enums[1].2.len()), ("targetList", true, 2));
+    assert!(matches!(&s.object_list_first(0)[..], [ServerMsg::ObjectList(_)]), "once");
     let f = fields(&mut s, "hfoo");
     let row = |f: &crate::protocol::ObjectFieldsMsg, id: &str| f.fields.iter().find(|r| r.field == id).cloned().unwrap();
+    assert_eq!((row(&f, "uabi").value.as_str(), row(&f, "uabi").hint.as_str()), ("AHhb,Adef", "Holy Light, Adef"), "an id list's names");
     let ids = |f: &crate::protocol::ObjectFieldsMsg| f.fields.iter().map(|r| r.field.as_str()).collect::<Vec<_>>().join(" ");
-    assert_eq!(ids(&f), "umvs uhpm ubdg unam", "by category: move, stats, text; a unit's");
-    assert_eq!(ids(&fields(&mut s, "Hpal")), "umvs uhpm ustr ubdg unam", "a hero's");
-    assert_eq!(ids(&fields(&mut s, "htow")), "uhpm ubdg unam", "a building's");
+    assert_eq!(ids(&f), "uabi umvs uhpm ubdg unam", "by category: abil, move, stats, text; a unit's");
+    assert_eq!(ids(&fields(&mut s, "Hpal")), "uabi umvs uhpm ustr ubdg unam", "a hero's");
+    assert_eq!(ids(&fields(&mut s, "htow")), "uabi uhpm ubdg unam", "a building's");
     assert_eq!((row(&f, "uhpm").value.as_str(), row(&f, "uhpm").changed), ("420", false));
     // Set in its limits, an undo each; empty: the game's again.
     assert_eq!(said(&s.object_set(0, "hfoo", "uhpm", 0, 0, "500")), "");
@@ -770,7 +789,7 @@ fn objects_listed_their_fields_set_reset_made_deleted_undone_saved_and_in_step_w
     let f = fields(&mut s, "hfoo");
     assert_eq!((row(&f, "uhpm").value.as_str(), row(&f, "uhpm").default.as_str(), row(&f, "uhpm").changed), ("500", "420", true));
     assert_eq!(s.types.as_ref().unwrap().get(w3abdhqtu_rs::Kind::Unit, "hfoo", "HP"), Some("500"), "the types follow");
-    assert_eq!(list(&mut s)[1], ("hfoo".into(), "Swordsman".into(), "human".into(), 1));
+    assert_eq!(list(&mut s)[2], ("hfoo".into(), "Swordsman".into(), "Melee · human · Units".into(), 1));
     s.object_set(0, "hfoo", "uhpm", 0, 0, "");
     assert!(!row(&fields(&mut s, "hfoo"), "uhpm").changed);
     // A custom one: its id World Editor's, its base's changes copied.
@@ -779,7 +798,7 @@ fn objects_listed_their_fields_set_reset_made_deleted_undone_saved_and_in_step_w
     assert!(matches!(&made[1], ServerMsg::ObjectFields(f) if f.id == "h000" && f.base == "hfoo"), "{made:?}");
     assert!(said(&s.object_new(0, "zzzz")).contains("isn't one of the game's"));
     s.object_set(0, "h000", "uhpm", 0, 0, "900");
-    assert_eq!(list(&mut s)[4], ("h000".into(), "Swordsman".into(), "human".into(), 2), "its base's name change copied");
+    assert_eq!(list(&mut s)[4], ("h000".into(), "Swordsman".into(), "Custom · Melee · human · Units".into(), 2), "its base's name change copied");
     assert_eq!(row(&fields(&mut s, "h000"), "uhpm").value, "900");
     // Deleted, undone.
     s.object_delete(0, "h000");
