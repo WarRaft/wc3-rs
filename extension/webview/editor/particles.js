@@ -191,7 +191,8 @@ void main() {
     float slot = u_r[4];
     float col = mod(slot, cols);
     float row = floor(slot / cols);
-    v_uv = vec2((col + 1.0 - clamp(age / life, 0.0, 1.0)) / cols, (row + (corner.y > 0.0 ? 0.0 : 1.0)) / rows);
+    // Along it by age, the newest at the cell's left (as Retera's Model Studio).
+    v_uv = vec2((col + clamp(age / life, 0.0, 1.0)) / cols, (row + (corner.y > 0.0 ? 0.0 : 1.0)) / rows);
     v_color = vec4(u_color, extra.w);
     float cs = cos(a_place.w);
     float sn = sin(a_place.w);

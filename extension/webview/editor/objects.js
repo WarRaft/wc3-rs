@@ -10,7 +10,9 @@
  * with the depth kept. What's picked (`select`) is drawn lighter. A model
  * that moves (its Stand, baked by the editor: `anim::Baked`) has its
  * vertices moved on the GPU by its bones' matrices, a texture of them,
- * each one at its own place in the loop.
+ * each one at its own place in the loop; a bone under a billboarded node
+ * turned here to face the camera (or about one of its axes) about where
+ * the node is.
  */
 const EditorObjects = (() => {
     const VS = `#version 300 es
@@ -26,23 +28,61 @@ layout(location = 7) in vec4 a_bones;
 layout(location = 8) in vec4 a_weights;
 uniform mat4 u_mvp;
 uniform int u_selected;
-// The model's animation: its bones' matrices, a row of three texels a
-// bone, a row of the texture a frame (anim::Baked).
+// The model's animation: its bones' matrices, a row of four texels a
+// bone (three of the matrix, then its billboard and where it's
+// anchored), a row of the texture a frame (anim::Baked).
 uniform bool u_animated;
+uniform bool u_still;
 uniform highp sampler2D u_matrices;
 uniform float u_time;
 uniform float u_fps;
 uniform int u_frames;
+// The camera's right, up and forward (the world's), for billboards.
+uniform vec3 u_camRight;
+uniform vec3 u_camUp;
+uniform vec3 u_camForward;
+vec3 unturn(vec3 v) {
+    float c = cos(-a_place.w);
+    float s = sin(-a_place.w);
+    return vec3(v.x * c - v.y * s, v.x * s + v.y * c, v.z);
+}
+// A billboard's turn in the model (the thing's own turn taken back):
+// its x toward the camera, y to the camera's right, z up; or about its
+// x, y or z alone (2, 3, 4).
+mat3 facing(int kind) {
+    vec3 toward = -unturn(u_camForward);
+    vec3 right = unturn(u_camRight);
+    vec3 up = unturn(u_camUp);
+    vec3 x = toward, y = right, z = up;
+    if (kind == 2) {
+        x = vec3(1.0, 0.0, 0.0);
+        y = normalize(right - x * dot(right, x));
+        z = cross(x, y);
+    } else if (kind == 3) {
+        y = vec3(0.0, 1.0, 0.0);
+        x = normalize(toward - y * dot(toward, y) + vec3(1e-5, 0.0, 0.0));
+        z = cross(x, y);
+    } else if (kind == 4) {
+        z = vec3(0.0, 0.0, 1.0);
+        x = normalize(vec3(toward.xy, 0.0) + vec3(1e-5, 0.0, 0.0));
+        y = cross(z, x);
+    }
+    return mat3(x, y, z);
+}
 vec3 skinned(vec4 v, int frame) {
     vec3 sum = vec3(0.0);
     for (int k = 0; k < 4; k++) {
         float w = a_weights[k];
         if (w <= 0.0) continue;
-        int b = int(a_bones[k]) * 3;
+        int b = int(a_bones[k]) * 4;
         vec4 r0 = texelFetch(u_matrices, ivec2(b, frame), 0);
         vec4 r1 = texelFetch(u_matrices, ivec2(b + 1, frame), 0);
         vec4 r2 = texelFetch(u_matrices, ivec2(b + 2, frame), 0);
-        sum += w * vec3(dot(r0, v), dot(r1, v), dot(r2, v));
+        vec4 anchor = texelFetch(u_matrices, ivec2(b + 3, frame), 0);
+        vec3 x = vec3(dot(r0, v), dot(r1, v), dot(r2, v));
+        int kind = int(anchor.x + 0.5);
+        if (kind > 0) x = facing(kind) * x + anchor.yzw * v.w;
+        sum += w * x;
     }
     return sum;
 }
@@ -59,7 +99,7 @@ void main() {
     if (u_animated) {
         // Each one at its own place in the loop, by where it stands.
         float phase = fract(sin(dot(a_place.xy, vec2(12.9898, 78.233))) * 43758.5453) * float(u_frames);
-        int frame = int(mod(floor(u_time * u_fps + phase), float(u_frames)));
+        int frame = u_still ? 0 : int(mod(floor(u_time * u_fps + phase), float(u_frames)));
         pos = skinned(vec4(a_pos, 1.0), frame);
         normal = skinned(vec4(a_normal, 0.0), frame);
     }
@@ -125,7 +165,7 @@ void main() {
         if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p))
         const u = name => gl.getUniformLocation(p, name)
         const light = Object.fromEntries(['u_daylight', 'u_sun', 'u_diffuse', 'u_ambient', 'u_fog', 'u_fogStart', 'u_fogEnd', 'u_fogColor', 'u_eye'].map(n => [n, u(n)]))
-        return {...light, program: p, u_animated: u('u_animated'), u_matrices: u('u_matrices'), u_time: u('u_time'), u_fps: u('u_fps'), u_frames: u('u_frames'), u_mvp: u('u_mvp'), u_selected: u('u_selected'), u_texture: u('u_texture'), u_source: u('u_source'), u_alpha: u('u_alpha'), u_cutout: u('u_cutout'), u_unshaded: u('u_unshaded'), u_light: u('u_light')}
+        return {...light, program: p, u_animated: u('u_animated'), u_still: u('u_still'), u_camRight: u('u_camRight'), u_camUp: u('u_camUp'), u_camForward: u('u_camForward'), u_matrices: u('u_matrices'), u_time: u('u_time'), u_fps: u('u_fps'), u_frames: u('u_frames'), u_mvp: u('u_mvp'), u_selected: u('u_selected'), u_texture: u('u_texture'), u_source: u('u_source'), u_alpha: u('u_alpha'), u_cutout: u('u_cutout'), u_unshaded: u('u_unshaded'), u_light: u('u_light')}
     }
 
     class Objects {
@@ -196,10 +236,12 @@ void main() {
                     // Three texels a bone, a row a frame.
                     const t = gl.createTexture()
                     gl.bindTexture(gl.TEXTURE_2D, t)
-                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, m.anim.bones * 3, m.anim.frames, 0, gl.RGBA, gl.FLOAT, m.anim.matrices)
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, m.anim.bones * 4, m.anim.frames, 0, gl.RGBA, gl.FLOAT, m.anim.matrices)
                     for (const k of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, k, gl.NEAREST)
                     model.matrices = t
                     model.anim = {fps: m.anim.fps, frames: m.anim.frames}
+                    // Any bone of its first frame a billboard's (`anim::BONE`: the 13th float).
+                    model.billboards = Array.from({length: m.anim.bones}, (_, b) => m.anim.matrices[b * 16 + 12]).some(k => k > 0)
                 }
                 for (const g of m.geosets) {
                     const vao = gl.createVertexArray()
@@ -284,6 +326,11 @@ void main() {
             gl.uniform1i(p.u_matrices, 1)
             gl.uniform1f(p.u_time, time)
             gl.uniform3fv(p.u_eye, camera?.eye ?? [0, 0, 0])
+            gl.uniform3fv(p.u_camRight, camera?.right ?? [1, 0, 0])
+            gl.uniform3fv(p.u_camUp, camera?.up ?? [0, 0, 1])
+            gl.uniform3fv(p.u_camForward, camera?.view ?? [0, 1, 0])
+            // Not animated: the first frame still (billboards face the camera all the same).
+            gl.uniform1i(p.u_still, this.animate ? 0 : 1)
             if (light) light.apply(gl, p, 'units', hours)
             else gl.uniform1i(p.u_daylight, 0)
             gl.activeTexture(gl.TEXTURE0)
@@ -292,7 +339,7 @@ void main() {
                 this.models.forEach((m, mi) => {
                     if (!m.instances) return
                     gl.uniform1i(p.u_selected, this.selected.model === mi ? this.selected.instance : -1)
-                    gl.uniform1i(p.u_animated, m.anim && this.animate ? 1 : 0)
+                    gl.uniform1i(p.u_animated, m.anim ? 1 : 0)
                     if (m.anim) {
                         gl.uniform1f(p.u_fps, m.anim.fps)
                         gl.uniform1i(p.u_frames, m.anim.frames)

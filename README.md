@@ -1783,7 +1783,20 @@ step), this list updated.
      moves the vertices on the GPU, each thing at its own place in the
      loop (no work a frame); the Animate button (N) turns it off. On the
      Diablo III beta map 85 of 298 models move (2.5 MB of matrices).
-     Billboarded nodes (facing the camera) and geosets shown or hidden
+     Billboards (done after 8c): a node flagged 0x8 faces the camera,
+     0x10, 0x20, 0x40 turn about its x, y or z alone; a bone under one
+     (or one itself) is baked within it (`anim::BONE`, 16 floats a bone:
+     its matrix the node's inverse times the bone's, scaled by the
+     node's size, about its pivot; then the billboard and where the
+     node's pivot is), and the shader turns it to the camera there (its
+     x toward the camera, y to the right, z up; the thing's own turn
+     taken back), the node's own turn and its parents' left out as the
+     game does (Retera's Model Studio's `RenderModel` does it so; its
+     axis-locked ones are unfinished there, ours are worked out the
+     same way about the model's axes). A model with a billboard is
+     baked if nothing moves too; with Animate off its first frame
+     stands still, facing the camera. On the Diablo III beta map 31
+     models have them (torches' flames, glows). Geosets shown or hidden
      as the sequence goes are next. MCP: `mdx_info` says the skeleton.
    - **8b, particles** (done): `mdx-rs` reads the particle emitters
      (`PRE2`, all 3320 models still written back as they were);

@@ -36,7 +36,7 @@ fn model(first: Vec<NodeTrack>, second: Vec<NodeTrack>) -> Model {
 
 /// Bone `slot`'s translation (the matrix's last column) at frame `f`.
 fn moved(b: &Baked, f: usize, slot: usize) -> [f32; 3] {
-    let m = &b.matrices[(f * b.bones as usize + slot) * 12..][..12];
+    let m = &b.matrices[(f * b.bones as usize + slot) * BONE..][..12];
     [m[3], m[7], m[11]]
 }
 
@@ -83,4 +83,44 @@ fn past_the_last_key_the_game_s_way_round() {
     let t = Track { interpolation: 1, global_sequence: -1, keys: vec![key(0, [0.0f32; 3]), key(500, [100.0, 0.0, 0.0])] };
     let v = value(Some(&t), [0.0; 3], 750, 0, 1000, 750, &[]);
     assert!((v[0] - 50.0).abs() < 1e-3, "{v:?}");
+}
+
+#[test]
+fn an_affine_inverse() {
+    let m = local([0.0, 0.0, 0.38268343, 0.9238795], [5.0, -3.0, 2.0], [2.0, 2.0, 2.0], [1.0, 1.0, 0.0]);
+    let i = mul(&inverse(&m), &m);
+    for (k, v) in i.iter().enumerate() {
+        assert!((v - identity()[k]).abs() < 1e-5, "{i:?}");
+    }
+}
+
+#[test]
+fn a_billboarded_bone_its_place_and_size_its_turn_left_to_the_shader() {
+    // The first bone goes up 100 and doubles; the second faces the
+    // camera (0x8).
+    let up = NodeTrack::Translation(Track { interpolation: 1, global_sequence: -1, keys: vec![key(0, [0.0, 0.0, 0.0]), key(1000, [0.0, 0.0, 100.0])] });
+    let big = NodeTrack::Scaling(Track { interpolation: 0, global_sequence: -1, keys: vec![key(0, [2.0; 3])] });
+    let mut m = model(vec![up, big], vec![]);
+    if let Some(Chunk::Bones(b)) = m.chunks.iter_mut().find(|c| matches!(c, Chunk::Bones(_))) {
+        b[1].node.flags |= 0x8;
+    }
+    let b = bake(&m).unwrap();
+    let bone = |f: usize, slot: usize| b.matrices[(f * b.bones as usize + slot) * BONE..][..BONE].to_vec();
+    // The first as before; the second: billboard 1, its pivot (10, 0, 0)
+    // where its node puts it, (20, 0, 50) at frame 10; within it, the
+    // vertex about the pivot, doubled.
+    assert_eq!(bone(10, 0)[12], 0.0);
+    let x = bone(10, 1);
+    assert_eq!(x[12], 1.0);
+    assert!((x[13] - 20.0).abs() < 1e-3 && (x[15] - 50.0).abs() < 1e-3, "{x:?}");
+    assert!((x[0] - 2.0).abs() < 1e-4 && (x[3] + 20.0).abs() < 1e-3, "{x:?}");
+    // Nothing moving, a billboard: baked all the same, one frame.
+    let mut still = model(vec![], vec![]);
+    if let Some(Chunk::Bones(b)) = still.chunks.iter_mut().find(|c| matches!(c, Chunk::Bones(_))) {
+        b[0].node.flags |= 0x40;
+    }
+    let b = bake(&still).unwrap();
+    assert_eq!(b.frames, 1);
+    // Both under it: the child too.
+    assert_eq!((b.matrices[12], b.matrices[BONE + 12]), (4.0, 4.0));
 }

@@ -274,6 +274,11 @@ impl Skeleton<'_> {
         world
     }
 
+    /// Node `id`.
+    pub fn node(&self, id: u32) -> Option<&Node> {
+        self.nodes.iter().find(|n| n.object_id == id).copied()
+    }
+
     /// Does anything move: a node with a track?
     pub fn moves(&self) -> bool {
         self.nodes.iter().any(|n| !n.tracks.is_empty())
@@ -295,23 +300,117 @@ pub fn track_at(m: &Model, tl: &Timeline, f: usize, track: Option<&Track<f32>>, 
     value_f32(track, default, frame, tl.start, tl.end, since, m.global_sequences())
 }
 
+/// Floats a bone has a frame: its matrix's three rows of four, then its
+/// billboard ([`billboard`]: 0 none) and where it's anchored.
+pub const BONE: usize = 16;
+
+/// A node's billboard by its flags: 1 facing the camera (0x8), 2, 3, 4
+/// turning about its x, y, z alone (0x10, 0x20, 0x40); 0 none.
+pub fn billboard(flags: u32) -> u32 {
+    if flags & 0x8 != 0 {
+        1
+    } else if flags & 0x10 != 0 {
+        2
+    } else if flags & 0x20 != 0 {
+        3
+    } else if flags & 0x40 != 0 {
+        4
+    } else {
+        0
+    }
+}
+
 /// The model's `Stand` (or first sequence) baked; `None` when nothing
-/// moves (no node has a track in it) or it has too many bones.
+/// moves (no node has a track in it) and nothing faces the camera, or it
+/// has too many bones.
+///
+/// A bone under a billboarded node (or one itself) is the node's
+/// business: the shader turns the node to the camera, as the game does
+/// (its parents' turn and its own left out, its place and size kept).
+/// Its matrix is then the bone's within the node, scaled by the node's
+/// size, about the node's pivot (`S·(N⁻¹·B·v - pivot)`); the fourth
+/// texel the billboard and where the node's pivot is (`N·pivot`).
 pub fn bake(m: &Model) -> Option<Baked> {
     let sk = Skeleton::of(m);
-    if sk.slots.is_empty() || sk.slots.len() > 255 || !sk.moves() {
+    if sk.slots.is_empty() || sk.slots.len() > 255 {
+        return None;
+    }
+    // Each slot's billboarded node: itself or its nearest above.
+    let anchor = |id: u32| -> Option<(u32, u32)> {
+        let mut at = Some(id);
+        for _ in 0..64 {
+            let n = sk.node(at?)?;
+            let kind = billboard(n.flags);
+            if kind != 0 {
+                return Some((n.object_id, kind));
+            }
+            at = n.parent();
+        }
+        None
+    };
+    let anchors: HashMap<u32, (u32, u32)> = sk.slots.keys().filter_map(|id| Some((*id, anchor(*id)?))).collect();
+    if !sk.moves() && anchors.is_empty() {
         return None;
     }
     let tl = Timeline::of(m);
-    let mut matrices = vec![0.0f32; tl.frames * sk.slots.len() * 12];
-    for f in 0..tl.frames {
+    let frames = if sk.moves() { tl.frames } else { 1 };
+    let pivots = m.pivots();
+    let mut matrices = vec![0.0f32; frames * sk.slots.len() * BONE];
+    for f in 0..frames {
         let world = sk.world(m, &tl, f);
         for (id, slot) in &sk.slots {
-            let at = (f * sk.slots.len() + slot) * 12;
-            rows(&world.get(id).copied().unwrap_or_else(identity), &mut matrices[at..at + 12]);
+            let at = (f * sk.slots.len() + slot) * BONE;
+            let bone = world.get(id).copied().unwrap_or_else(identity);
+            let out = &mut matrices[at..at + BONE];
+            match anchors.get(id) {
+                None => rows(&bone, &mut out[..12]),
+                Some((node, kind)) => {
+                    let n = world.get(node).copied().unwrap_or_else(identity);
+                    let pivot = pivots.get(*node as usize).copied().unwrap_or_default();
+                    let size: Vec<f32> = (0..3).map(|c| (n[c * 4] * n[c * 4] + n[c * 4 + 1] * n[c * 4 + 1] + n[c * 4 + 2] * n[c * 4 + 2]).sqrt()).collect();
+                    let within = mul(&inverse(&n), &bone);
+                    // S·T(-pivot)·within.
+                    let mut moved = identity();
+                    for k in 0..3 {
+                        moved[k * 5] = size[k];
+                        moved[12 + k] = -pivot[k] * size[k];
+                    }
+                    rows(&mul(&moved, &within), &mut out[..12]);
+                    out[12] = *kind as f32;
+                    for k in 0..3 {
+                        out[13 + k] = n[k] * pivot[0] + n[4 + k] * pivot[1] + n[8 + k] * pivot[2] + n[12 + k];
+                    }
+                }
+            }
         }
     }
-    Some(Baked { bones: sk.slots.len() as u32, frames: tl.frames as u32, fps: tl.fps(), matrices })
+    Some(Baked { bones: sk.slots.len() as u32, frames: frames as u32, fps: tl.fps(), matrices })
+}
+
+/// An affine matrix's inverse (its last row 0, 0, 0, 1); identity when
+/// it has none.
+pub fn inverse(m: &Mat) -> Mat {
+    let a = |r: usize, c: usize| m[c * 4 + r];
+    let det = a(0, 0) * (a(1, 1) * a(2, 2) - a(1, 2) * a(2, 1)) - a(0, 1) * (a(1, 0) * a(2, 2) - a(1, 2) * a(2, 0)) + a(0, 2) * (a(1, 0) * a(2, 1) - a(1, 1) * a(2, 0));
+    if det.abs() < 1e-12 {
+        return identity();
+    }
+    let inv = |r: usize, c: usize| {
+        // The cofactor of (c, r), over the determinant.
+        let (r1, r2) = ((c + 1) % 3, (c + 2) % 3);
+        let (c1, c2) = ((r + 1) % 3, (r + 2) % 3);
+        (a(r1, c1) * a(r2, c2) - a(r1, c2) * a(r2, c1)) / det
+    };
+    let mut out = identity();
+    for r in 0..3 {
+        for c in 0..3 {
+            out[c * 4 + r] = inv(r, c);
+        }
+    }
+    for r in 0..3 {
+        out[12 + r] = -(0..3).map(|c| out[c * 4 + r] * m[12 + c]).sum::<f32>();
+    }
+    out
 }
 
 pub fn identity() -> Mat {
