@@ -565,6 +565,7 @@ impl Session {
                 crate::edit::Snapshot::Objects(kind, _) => {
                     let k = crate::objdata::KINDS.iter().position(|x| *x == kind).unwrap_or(0) as u8;
                     out.push(self.object_list(k));
+                    out.extend(self.object_types_changed(kind));
                 }
                 crate::edit::Snapshot::Whole(_) => {
                     let changed = self.tileset_letter() != self.terrain.tileset;
@@ -877,8 +878,10 @@ impl Session {
             out.push(ServerMsg::Overlays(self.overlays()));
             out.push(self.sounds_msg());
             for name in &taken {
-                if let Some(k) = crate::objdata::kind_of(name).and_then(|kind| crate::objdata::KINDS.iter().position(|x| *x == kind)) {
-                    out.push(self.object_list(k as u8));
+                if let Some(kind) = crate::objdata::kind_of(name) {
+                    let k = crate::objdata::KINDS.iter().position(|x| *x == kind).unwrap_or(0) as u8;
+                    out.push(self.object_list(k));
+                    out.extend(self.object_types_changed(kind));
                 }
             }
         }
@@ -1023,6 +1026,7 @@ impl Session {
         self.edits.record(crate::edit::Snapshot::Objects(kind, before));
         let k = crate::objdata::KINDS.iter().position(|x| *x == kind).unwrap_or(0) as u8;
         let mut out = vec![self.object_list(k)];
+        out.extend(self.object_types_changed(kind));
         out.extend(self.sync_docs());
         out.push(ServerMsg::State(self.state(String::new())));
         out
@@ -1407,6 +1411,32 @@ impl Session {
         ServerMsg::ObjectList(crate::protocol::ObjectListMsg { kind: k, objects })
     }
 
+    /// `kind`'s object data changed: the types of what's placed (a unit's
+    /// model, scale ...) as the map's object data has them now, and, for a
+    /// kind that's placed, everything placed again.
+    fn object_types_changed(&mut self, kind: w3abdhqtu_rs::Kind) -> Vec<ServerMsg> {
+        if !crate::types::PLACED.contains(&kind) || self.drawn.is_none() {
+            return Vec::new();
+        }
+        if let Some(t) = self.types.as_mut() {
+            t.apply(&self.placed.objects);
+        }
+        // The palette's names: the map's own objects as they are now, a
+        // changed one's name.
+        self.object_tables.load(&self.game, kind);
+        let mut names = std::mem::take(&mut self.names.objects);
+        if let Some(of) = names.of.get_mut(&kind) {
+            of.retain(|_, n| !n.custom);
+        }
+        if let Some(data) = self.placed.objects.get(&kind) {
+            names.add_object_data(data, &self.object_tables.meta[&kind], |t| self.text(t));
+        }
+        self.names.objects = names;
+        let mut out = self.place_objects();
+        out.push(ServerMsg::ObjectPalette(self.object_palette()));
+        out
+    }
+
     /// The version a new object data file of the map takes: its other
     /// files' (3 since 1.33), else 2.
     fn object_version(&self) -> u32 {
@@ -1443,8 +1473,21 @@ impl Session {
                 v.trim().parse::<f64>().ok()
             })
             .map_or(1, |n| (n as u32).clamp(1, 100));
+        // A unit's fields are a unit's, a hero's or a building's (a hero's
+        // id a capital first, as the game tells them; a building by its
+        // `isbldg`, the map's or the game's).
+        let which = (kind == w3abdhqtu_rs::Kind::Unit).then(|| {
+            let building = meta
+                .keys(kind, base)
+                .field("isbldg")
+                .and_then(|f| own(f, 0, 0))
+                .map(|m| crate::objdata::shown(&m.value))
+                .or_else(|| std.get(&base_text, "isbldg").map(String::from))
+                .is_some_and(|v| v.trim() == "1");
+            if base.0[0].is_ascii_uppercase() { 1 } else if building { 2 } else { 0 }
+        });
         let mut fields = Vec::new();
-        for (field, f) in meta.fields().filter(|(_, f)| meta.applies(kind, base, f)) {
+        for (field, f) in meta.fields().filter(|(_, f)| meta.applies(kind, base, f) && which.is_none_or(|w| w3abdhqtu_rs::Metadata::for_unit(f, w))) {
             let column = if leveled && kind == w3abdhqtu_rs::Kind::Ability { f.column } else { 0 };
             let rows: Vec<u32> = if leveled && f.levels { (1..=levels).collect() } else { vec![0] };
             for level in rows {
@@ -1474,15 +1517,19 @@ impl Session {
     fn objects_edit(&mut self, k: u8, kind: w3abdhqtu_rs::Kind, change: impl FnOnce(&mut w3abdhqtu_rs::ObjectData, &w3abdhqtu_rs::Metadata) -> Result<String, String>) -> Vec<ServerMsg> {
         let before = self.placed.objects.get(&kind).cloned();
         let mut data = before.clone().unwrap_or_else(|| w3abdhqtu_rs::ObjectData { version: self.object_version(), ..w3abdhqtu_rs::ObjectData::new(kind) });
+        let mut out = Vec::new();
         let message = match change(&mut data, &self.object_tables.meta[&kind]) {
             Ok(said) => {
                 self.edits.record(crate::edit::Snapshot::Objects(kind, before));
                 self.placed.objects.insert(kind, data);
+                out = self.object_types_changed(kind);
                 said
             }
             Err(message) => message,
         };
-        vec![self.object_list(k), ServerMsg::State(self.state(message))]
+        out.insert(0, self.object_list(k));
+        out.push(ServerMsg::State(self.state(message)));
+        out
     }
 
     /// Object `id`'s field `field` (an id) at `level` in data `column`

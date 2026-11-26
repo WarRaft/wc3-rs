@@ -45,6 +45,10 @@ fn files(kind: Kind) -> (&'static [&'static str], &'static [&'static str]) {
 #[derive(Debug, Default)]
 pub struct Types {
     of: HashMap<Kind, HashMap<String, HashMap<String, String>>>,
+    /// The game's alone, before the map's object data.
+    game: HashMap<Kind, HashMap<String, HashMap<String, String>>>,
+    /// Each kind's metadata: an object data field's key.
+    meta: HashMap<Kind, Metadata>,
     /// A field's HD value (`file:hd`) over its own (`Game::hd`).
     pub hd: bool,
 }
@@ -83,10 +87,27 @@ impl Types {
                     }
                 }
             }
-            // The map's object data over them.
-            let Some((bytes, _)) = game.read(&format!("war3map.{}", kind.extension())) else { continue };
-            let Ok(data) = w3abdhqtu_rs::parse(&bytes, kind) else { continue };
-            let meta = Metadata::load(kind, text);
+            out.meta.insert(kind, Metadata::load(kind, text));
+        }
+        out.game = out.of.clone();
+        // The map's object data over them.
+        let data: HashMap<Kind, w3abdhqtu_rs::ObjectData> = PLACED
+            .iter()
+            .filter_map(|kind| {
+                let (bytes, _) = game.read(&format!("war3map.{}", kind.extension()))?;
+                Some((*kind, w3abdhqtu_rs::parse(&bytes, *kind).ok()?))
+            })
+            .collect();
+        out.apply(&data);
+        out
+    }
+
+    /// The game's types with `data` (the map's object data, as the editor
+    /// has it now) over them.
+    pub fn apply(&mut self, data: &HashMap<Kind, w3abdhqtu_rs::ObjectData>) {
+        self.of = self.game.clone();
+        for kind in PLACED {
+            let (Some(data), Some(meta), Some(objects)) = (data.get(&kind), self.meta.get(&kind), self.of.get_mut(&kind)) else { continue };
             for (o, custom) in data.originals.iter().map(|o| (o, false)).chain(data.customs.iter().map(|o| (o, true))) {
                 let id = if custom { o.id } else { o.base }.to_string();
                 let mut fields = objects.get(&o.base.to_string()).cloned().unwrap_or_default();
@@ -109,7 +130,6 @@ impl Types {
                 objects.insert(id, fields);
             }
         }
-        out
     }
 
     /// Field `key` (any case) of type `id` of `kind` (its `key:hd` first

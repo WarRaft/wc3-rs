@@ -407,6 +407,12 @@ async function steps(only) {
             await we.panel.webview.postMessage({type: 'object', action: 'pick', id: 'hfoo'})
             const footman = await until(() => we.objects?.picked?.id === 'hfoo' && we.objects.picked, "the footman's fields")
             check(field('uhpm')?.[2] === '420' && footman.fields.length > 50, `${footman.name}: ${footman.fields.length} fields, hit points ${field('uhpm')?.[2]}`)
+            check(!field('ustr'), 'a unit: no hero\'s strength')
+            await we.panel.webview.postMessage({type: 'object', action: 'pick', id: 'Hpal'})
+            const paladin = await until(() => we.objects?.picked?.id === 'Hpal' && we.objects.picked, "the paladin's fields")
+            check(!!field('ustr'), `${paladin.name}, a hero: ${paladin.fields.length} fields, strength ${field('ustr')?.[2]}`)
+            await we.panel.webview.postMessage({type: 'object', action: 'pick', id: 'hfoo'})
+            await until(() => we.objects?.picked?.id === 'hfoo', 'the footman again')
             we.state = undefined
             await we.panel.webview.postMessage({type: 'object', action: 'field', field: 'uhpm', value: 500})
             await until(() => field('uhpm')?.[2] === '500' && field('uhpm')[3], 'its hit points typed')

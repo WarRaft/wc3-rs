@@ -1836,11 +1836,15 @@ step), this list updated.
      custom one; a standard one's changes). An undo each. A new file
      takes the map's other files' version, else 2. Messages
      `ObjectList`, `ObjectAsk`, `ObjectSet`, `ObjectNew`,
-     `ObjectDelete`, `ObjectFields`. Not yet: a unit's fields told apart
-     as a hero's, a building's or a unit's (the metadata's `useHero`,
-     `useBuilding` are one flag here: a footman lists heroes' fields
-     too); what's placed drawn again by the changed types (a model, a
-     scale: the view takes them in on the next open); `TRIGSTR_` values
+     `ObjectDelete`, `ObjectFields`. A unit's fields a unit's, a hero's
+     or a building's (`useUnit`, `useHero`, `useBuilding`: a hero's id a
+     capital first, as the game tells them; a building by its `isbldg`):
+     a footman 196, the paladin 219 with a hero's. A change to a kind
+     that's placed takes effect at once: the types (`Types::apply`: the
+     game's tables read once, the map's object data as the editor has it
+     over them) and everything placed again (a unit's model, scale), the
+     palette's names (the map's own objects) sent again; so too after an
+     undo, the text typed, a change on disk. Not yet: `TRIGSTR_` values
      shown as their ids. MCP: the `obj_*` tools already change them.
 
 7. **In step with the rest** (done). Decided with the user: a text form

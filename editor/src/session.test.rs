@@ -730,13 +730,15 @@ fn objects_listed_their_fields_set_reset_made_deleted_undone_saved_and_in_step_w
     dir.write(
         "map/Units/UnitMetaData.slk",
         &testdir::slk(&[
-            &["ID", "field", "slk", "type", "minVal", "maxVal", "category", "useItem"],
-            &["uhpm", "HP", "UnitBalance", "int", "1", "100000", "stats", "0"],
-            &["unam", "Name", "Profile", "string", "", "", "text", "1"],
-            &["umvs", "spd", "UnitBalance", "unreal", "0", "522", "move", "0"],
+            &["ID", "field", "slk", "type", "minVal", "maxVal", "category", "useItem", "useUnit", "useHero", "useBuilding"],
+            &["uhpm", "HP", "UnitBalance", "int", "1", "100000", "stats", "0", "1", "1", "1"],
+            &["unam", "Name", "Profile", "string", "", "", "text", "1", "1", "1", "1"],
+            &["umvs", "spd", "UnitBalance", "unreal", "0", "522", "move", "0", "1", "1", "0"],
+            &["ustr", "STR", "UnitBalance", "int", "0", "100", "stats", "0", "0", "1", "0"],
+            &["ubdg", "isbldg", "UnitData", "bool", "", "", "stats", "0", "1", "1", "1"],
         ]),
     );
-    dir.write("map/Units/UnitData.slk", &testdir::slk(&[&["unitID", "race"], &["hfoo", "human"], &["ogru", "orc"]]));
+    dir.write("map/Units/UnitData.slk", &testdir::slk(&[&["unitID", "race", "isbldg"], &["hfoo", "human", "0"], &["ogru", "orc", "0"], &["Hpal", "human", "0"], &["htow", "human", "1"]]));
     dir.write("map/Units/UnitBalance.slk", &testdir::slk(&[&["unitBalanceID", "HP", "spd"], &["hfoo", "420", "270"], &["ogru", "700", "270"]]));
     dir.write("map/Units/HumanUnitStrings.txt", b"[hfoo]\nName=Footman\n");
     let mut s = Session::open(dir.path()).unwrap();
@@ -753,10 +755,13 @@ fn objects_listed_their_fields_set_reset_made_deleted_undone_saved_and_in_step_w
         ServerMsg::ObjectFields(f) => f,
         m => panic!("{m:?}"),
     };
-    assert_eq!(list(&mut s), [("hfoo".into(), "Footman".into(), "human".into(), 0), ("ogru".into(), "ogru".into(), "orc".into(), 0)]);
+    assert_eq!(list(&mut s)[..2], [("Hpal".into(), "Hpal".into(), "human".into(), 0), ("hfoo".into(), "Footman".into(), "human".into(), 0)]);
     let f = fields(&mut s, "hfoo");
     let row = |f: &crate::protocol::ObjectFieldsMsg, id: &str| f.fields.iter().find(|r| r.field == id).cloned().unwrap();
-    assert_eq!(f.fields.iter().map(|r| r.field.as_str()).collect::<Vec<_>>(), ["umvs", "uhpm", "unam"], "by category: move, stats, text");
+    let ids = |f: &crate::protocol::ObjectFieldsMsg| f.fields.iter().map(|r| r.field.as_str()).collect::<Vec<_>>().join(" ");
+    assert_eq!(ids(&f), "umvs uhpm ubdg unam", "by category: move, stats, text; a unit's");
+    assert_eq!(ids(&fields(&mut s, "Hpal")), "umvs uhpm ustr ubdg unam", "a hero's");
+    assert_eq!(ids(&fields(&mut s, "htow")), "uhpm ubdg unam", "a building's");
     assert_eq!((row(&f, "uhpm").value.as_str(), row(&f, "uhpm").changed), ("420", false));
     // Set in its limits, an undo each; empty: the game's again.
     assert_eq!(said(&s.object_set(0, "hfoo", "uhpm", 0, 0, "500")), "");
@@ -764,21 +769,23 @@ fn objects_listed_their_fields_set_reset_made_deleted_undone_saved_and_in_step_w
     assert_eq!(said(&s.object_set(0, "hfoo", "unam", 0, 0, "Swordsman")), "");
     let f = fields(&mut s, "hfoo");
     assert_eq!((row(&f, "uhpm").value.as_str(), row(&f, "uhpm").default.as_str(), row(&f, "uhpm").changed), ("500", "420", true));
-    assert_eq!(list(&mut s)[0], ("hfoo".into(), "Swordsman".into(), "human".into(), 1));
+    assert_eq!(s.types.as_ref().unwrap().get(w3abdhqtu_rs::Kind::Unit, "hfoo", "HP"), Some("500"), "the types follow");
+    assert_eq!(list(&mut s)[1], ("hfoo".into(), "Swordsman".into(), "human".into(), 1));
     s.object_set(0, "hfoo", "uhpm", 0, 0, "");
     assert!(!row(&fields(&mut s, "hfoo"), "uhpm").changed);
     // A custom one: its id World Editor's, its base's changes copied.
     let made = s.object_new(0, "hfoo");
+    assert!(made.iter().any(|m| matches!(m, ServerMsg::ObjectPalette(p) if p.iter().any(|e| e.id == "h000" && e.custom))), "the palette has it");
     assert!(matches!(&made[1], ServerMsg::ObjectFields(f) if f.id == "h000" && f.base == "hfoo"), "{made:?}");
     assert!(said(&s.object_new(0, "zzzz")).contains("isn't one of the game's"));
     s.object_set(0, "h000", "uhpm", 0, 0, "900");
-    assert_eq!(list(&mut s)[2], ("h000".into(), "Swordsman".into(), "human".into(), 2), "its base's name change copied");
+    assert_eq!(list(&mut s)[4], ("h000".into(), "Swordsman".into(), "human".into(), 2), "its base's name change copied");
     assert_eq!(row(&fields(&mut s, "h000"), "uhpm").value, "900");
     // Deleted, undone.
     s.object_delete(0, "h000");
-    assert_eq!(list(&mut s).len(), 2);
+    assert_eq!(list(&mut s).len(), 4);
     let undone = s.undo(false);
-    assert!(matches!(&undone[0], ServerMsg::ObjectList(l) if l.objects.len() == 3));
+    assert!(matches!(undone.iter().find(|m| matches!(m, ServerMsg::ObjectList(_))), Some(ServerMsg::ObjectList(l)) if l.objects.len() == 5));
     // Saved into the root.
     assert!(said(&s.save()).contains("war3map.w3u"));
     let back = w3abdhqtu_rs::parse(&std::fs::read(dir.path().join("map/war3map.w3u")).unwrap(), w3abdhqtu_rs::Kind::Unit).unwrap();
