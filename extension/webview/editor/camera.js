@@ -58,12 +58,13 @@ const EditorCamera = (() => {
             this.heightAt = () => 0
         }
 
-        /** Looks at the middle of a map `w` by `h` cells, all of it in view. */
+        /** Looks at the middle of a map `w` by `h` cells, all of it in view, at 70°. */
         reset(w, h) {
             this.position = [w / 2, h / 2, 0]
             this.horizontal = 0
             this.vertical = -0.977
             this.distance = Math.min(Math.max(w, h) * 0.9, 1000)
+            this.fov = 70
             this.position[2] = this.heightAt(this.position[0], this.position[1])
         }
 

@@ -262,7 +262,7 @@ async function steps() {
     we.camera = undefined
     await we.panel.webview.postMessage({type: 'camera', action: 'look'})
     const looked = await until(() => we.camera?.looking && we.camera, 'looked through')
-    check(Math.hypot(looked.looking.position[0] - looked.target[0], looked.looking.position[1] - looked.target[1]) < 1e-3 && Math.abs(looked.looking.distance * 128 - looked.view[2]) < 1, `the view at its target, ${Math.round(looked.looking.distance * 128)} away`)
+    check(Math.hypot(looked.looking.position[0] - looked.target[0], looked.looking.position[1] - looked.target[1]) < 1e-3 && Math.abs(looked.looking.distance * 128 - looked.view[2]) < 1 && looked.looking.fov === looked.view[3], `the view at its target, ${Math.round(looked.looking.distance * 128)} away, its field of view ${looked.looking.fov}`)
     await shot('world-editor-cameras')
     await we.panel.webview.postMessage({type: 'camera', action: 'delete'})
     await until(() => we.overlays?.cameras === camsAt, 'deleted')

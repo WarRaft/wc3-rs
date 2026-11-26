@@ -703,6 +703,7 @@
         camera.distance = Math.max(0.5, len)
         camera.vertical = Math.max(-Math.PI / 2 + 0.001, Math.min(Math.PI / 2 - 0.001, Math.asin(d[2] / len)))
         camera.horizontal = Math.atan2(d[0], d[1])
+        camera.fov = Math.max(1, Math.min(179, c.view[3]))
     }
     $('camera-delete').onclick = () => {
         if (selectedCamera === null) return
@@ -986,7 +987,7 @@
             else if (msg.action === 'set') $('camera-set').onclick()
             else if (msg.action === 'look') {
                 $('camera-look').onclick()
-                vscode.postMessage({type: 'camera', camera: c !== null && {index: c, name: cameras[c].name, target: cameras[c].target, view: cameras[c].view, count: cameras.length, looking: {position: camera.position, distance: camera.distance, horizontal: camera.horizontal, vertical: camera.vertical}}})
+                vscode.postMessage({type: 'camera', camera: c !== null && {index: c, name: cameras[c].name, target: cameras[c].target, view: cameras[c].view, count: cameras.length, looking: {position: camera.position, distance: camera.distance, horizontal: camera.horizontal, vertical: camera.vertical, fov: camera.fov}}})
             } else if (msg.action === 'rename' && c !== null) send(encode.cameraRename(c, msg.name))
             else if (msg.action === 'delete') $('camera-delete').onclick()
             else if (msg.action === 'drag' && c !== null) {
