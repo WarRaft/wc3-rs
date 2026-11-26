@@ -328,6 +328,25 @@ async function steps() {
     await we.panel.webview.postMessage({type: 'save'})
     await until(() => !w3rDoc.isDirty, 'the document saved by VS Code')
     check(!w3rDoc.isDirty, 'saved: the document')
+    log('the map cut: the cameras looking off it removed, said, saved')
+    // The text forms closed first: the cut is what's looked at.
+    const textTabs = vscode.window.tabGroups.all.flatMap(g => g.tabs).filter(t => t.input?.uri && /war3map\.(w3e|w3r)$/i.test(t.input.uri.path) && t.input.uri.scheme === api.OBJECTS_SCHEME)
+    await vscode.window.tabGroups.close(textTabs)
+    await sleep(500)
+    // Cut on the left (last: what's off it is gone): the cameras looking off it removed, said, saved.
+    const camsBefore = we.overlays.cameras
+    we.overlays = undefined
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'mapResize', sides: {left: -40, right: 0, bottom: 0, top: 0}})
+    // The terrain's and the regions' text forms are open: they follow first.
+    const cutState = await until(() => we.state?.message && we.state, 'cut', 240000)
+    const cutOv = await until(() => we.overlays, 'the overlays after the cut', 240000)
+    const camsCut = Number((/(\d+) cameras/.exec(cutState.message) || [0, 0])[1])
+    check(cutOv.cameras === camsBefore - camsCut, `${cutState.message} (cameras ${camsBefore} → ${cutOv.cameras})`)
+    we.state = undefined
+    await we.panel.webview.postMessage({type: 'save'})
+    const savedCut = await until(() => we.state?.message && we.state, 'the cut saved', 240000)
+    check(!savedCut.dirty && (camsCut === 0 || savedCut.message.includes('war3map.w3c')), savedCut.message)
     await vscode.commands.executeCommand('wc3.editor.close', {root})
     check(!api.worldEditors.has(root), 'closed: no editor of the project')
     await vscode.commands.executeCommand('workbench.action.closeAllEditors')
