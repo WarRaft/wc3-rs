@@ -522,6 +522,17 @@ pub const PLACED_CODES: [Kind; 4] = [Kind::Doodad, Kind::Destructable, Kind::Uni
 /// The ground's height (or the water's, over it) at `(x, y)` cells,
 /// between its corners.
 pub fn ground_at(draw: &Draw, x: f32, y: f32) -> f32 {
+    surface_at(draw, x, y, true)
+}
+
+/// The terrain's height at `(x, y)` without the water over it: what a
+/// camera's target stands on (its z offset over it), as Waric reads the
+/// game (`CM_GetHeightAtPoint`).
+pub fn terrain_at(draw: &Draw, x: f32, y: f32) -> f32 {
+    surface_at(draw, x, y, false)
+}
+
+fn surface_at(draw: &Draw, x: f32, y: f32, water: bool) -> f32 {
     let (w, h) = (draw.width as usize, draw.height as usize);
     if w < 2 || h < 2 {
         return 0.0;
@@ -532,7 +543,7 @@ pub fn ground_at(draw: &Draw, x: f32, y: f32) -> f32 {
     let (fx, fy) = (cx - ix as f32, cy - iy as f32);
     let at = |i: usize, j: usize| {
         let k = j * w + i;
-        let wet = draw.corners[k] & crate::terrain::corner::WATER != 0;
+        let wet = water && draw.corners[k] & crate::terrain::corner::WATER != 0;
         if wet { draw.heights[k].max(draw.water[k]) } else { draw.heights[k] }
     };
     let bottom = at(ix, iy) * (1.0 - fx) + at(ix + 1, iy) * fx;

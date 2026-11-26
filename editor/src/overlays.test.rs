@@ -92,3 +92,24 @@ fn reforged_cameras() {
     assert!(!o.notes.iter().any(|n| n.contains("w3c")), "{:?}", o.notes);
     assert_eq!(o.cameras.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Camera 002"]);
 }
+
+#[test]
+fn a_cameras_target_over_the_terrain_not_the_water() {
+    use crate::terrain::{Draw, corner};
+    // Two by two corners, the ground at 0, water at 1 over all of it.
+    let draw = Draw { width: 2, height: 2, heights: vec![0.0; 4], water: vec![1.0; 4], corners: vec![corner::WATER; 4], ..Default::default() };
+    assert_eq!(crate::placed::ground_at(&draw, 0.5, 0.5), 1.0);
+    assert_eq!(crate::placed::terrain_at(&draw, 0.5, 0.5), 0.0);
+    let mut files = crate::placed::Files::default();
+    let mut cams = w3c_rs::Cameras::new(Default::default());
+    let mut c = w3c_rs::Camera::new("Lake", 64.0, 64.0);
+    c.z_offset = 64.0;
+    cams.cameras.push(c);
+    files.cameras = Some(cams);
+    let t = w3e_rs::parse(&testdir::terrain()).unwrap();
+    let o = Overlays::load(&t, &draw, &crate::placed::Objects::default(), &files, None, (0, 0, Vec::new()));
+    // Half a layer over the lake's bottom, under its water.
+    assert_eq!(o.cameras[0].target, [0.5, 0.5, 0.5]);
+    // A line straight down from 3 layers up is half a layer over the terrain 2.5 along.
+    assert!((at_height(&draw, [0.5, 0.5, 3.0], [0.0, 0.0, -1.0], 0.5, 1.0).unwrap() - 2.5).abs() < 1e-3);
+}

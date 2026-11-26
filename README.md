@@ -1756,7 +1756,10 @@ step), this list updated.
      view's too; its height over the ground kept: it looks exactly as
      the view does, from the same eye along the same line, its target
      where that line is its height over the ground, nearest the view's,
-     `overlays::at_height`), Look through it (a double
+     `overlays::at_height`); a camera's height is over the terrain,
+     the water left out (`placed::terrain_at`, as Waric reads the game;
+     Waric's target is a further 128 lower, unexplained and unchecked
+     against the game, not taken; HiveWE draws no cameras), Look through it (a double
      click in the list) puts the view where it looks from, at its field
      of view and roll (the picture turned clockwise by it; Home: 70 and
      no roll again; the view's rays and billboards turned with it); its height (z offset), rotation, angle

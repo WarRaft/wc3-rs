@@ -162,7 +162,8 @@ impl Overlays {
         if let Some(cams) = files.cameras.as_ref() {
             for c in &cams.cameras {
                 let [x, y] = cells(c.target_x, c.target_y);
-                let target = [x, y, ground_at(draw, x, y) + c.z_offset / 128.0];
+                // Its z offset over the terrain, not the water.
+                let target = [x, y, crate::placed::terrain_at(draw, x, y) + c.z_offset / 128.0];
                 let (rot, aoa) = (c.rotation.to_radians(), c.angle_of_attack.to_radians());
                 let forward = [rot.cos() * aoa.cos(), rot.sin() * aoa.cos(), aoa.sin()];
                 let d = c.distance / 128.0;
@@ -238,7 +239,7 @@ pub fn ground_hit(draw: &Draw, origin: [f32; 3], dir: [f32; 3]) -> Option<[f32; 
 }
 
 /// How far from `eye` along `dir` (cells, layers; `dir` of length 1) the
-/// line is `height` over the ground (within the map), the place nearest
+/// line is `height` over the terrain (not the water; within the map), the place nearest
 /// `near` of those in front of the eye; none if it never is.
 pub fn at_height(draw: &Draw, eye: [f32; 3], dir: [f32; 3], height: f32, near: f32) -> Option<f32> {
     let inside = |p: [f32; 3]| p[0] >= 0.0 && p[1] >= 0.0 && p[0] <= draw.width as f32 - 1.0 && p[1] <= draw.height as f32 - 1.0;
@@ -246,7 +247,7 @@ pub fn at_height(draw: &Draw, eye: [f32; 3], dir: [f32; 3], height: f32, near: f
     // Over (> 0) or under the height.
     let over = |t: f32| {
         let p = at(t);
-        inside(p).then(|| p[2] - ground_at(draw, p[0], p[1]) - height)
+        inside(p).then(|| p[2] - crate::placed::terrain_at(draw, p[0], p[1]) - height)
     };
     let (step, far) = (0.05, 4000.0);
     let mut best: Option<f32> = None;

@@ -1174,7 +1174,8 @@ impl Session {
             let d = (d * 100.0).round() / 100.0;
             if d >= 360.0 { 0.0 } else { d }
         };
-        let ground = crate::placed::ground_at(&draw, x, y);
+        // A camera's z offset is over the terrain, the water left out.
+        let ground = crate::placed::terrain_at(&draw, x, y);
         let out = self.cameras_edit(true, |cameras| {
             let c = if index < 0 {
                 let n = cameras.cameras.iter().filter_map(|c| c.name.strip_prefix("Camera ")?.parse::<u32>().ok()).max().map_or(1, |n| n + 1);
