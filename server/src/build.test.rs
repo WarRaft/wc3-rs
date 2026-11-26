@@ -27,7 +27,7 @@ fn a_real_project_built() {
     let script = String::from_utf8_lossy(&out.read_file("war3map.j").unwrap()).into_owned();
     let manifest = crate::project::find_manifest(&Path::new(&dir).join(crate::project::MANIFEST)).unwrap();
     let (project, _) = crate::project::load(manifest.parent().unwrap(), &std::fs::read_to_string(&manifest).unwrap());
-    let (game, _) = Lookup { game: project.game.clone(), roots: vec![] }.open();
+    let (game, _) = Lookup { game: project.game.clone(), roots: vec![], ..Default::default() }.open();
     let mut env = jass_rs::names::Declarations::default();
     for name in ["Scripts\\common.j", "Scripts\\Blizzard.j"] {
         let text = crate::document::decode(game.read(name).unwrap().0);
@@ -59,7 +59,7 @@ fn triggers_taken_out_with_their_code_build() {
     let (Some(map), Some(out)) = (std::env::var_os("EXTRACT_MAP"), std::env::var_os("EXTRACT_OUT")) else { return };
     let (map, out) = (PathBuf::from(map), PathBuf::from(out));
     let game: Vec<PathBuf> = std::env::split_paths(&std::env::var_os("WC3_GAME").expect("WC3_GAME")).collect();
-    let names = crate::names::names(&Lookup { game: game.clone(), roots: vec![] });
+    let names = crate::names::names(&Lookup { game: game.clone(), roots: vec![], ..Default::default() });
     let wtg = crate::map::bytes(&map.join("war3map.wtg")).unwrap();
     let wtg_rs::File::Classic(f) = wtg_rs::parse_any(&wtg, &names.triggers).unwrap() else { panic!("1.31's layout") };
     let script = map.join("war3map.wct");
@@ -112,7 +112,7 @@ fn code_put_beside_extracted_triggers() {
     let (map, dir) = (PathBuf::from(map), PathBuf::from(dir));
     let manifest = crate::project::find_manifest(&dir.join("x")).unwrap();
     let (project, _) = crate::project::load(manifest.parent().unwrap(), &std::fs::read_to_string(&manifest).unwrap());
-    let names = crate::names::names(&Lookup { game: project.game.clone(), roots: vec![map.clone()] });
+    let names = crate::names::names(&Lookup { game: project.game.clone(), roots: vec![map.clone()], ..Default::default() });
     let wtg = crate::map::bytes(&map.join("war3map.wtg")).unwrap();
     let wtg_rs::File::Classic(f) = wtg_rs::parse_any(&wtg, &names.triggers).unwrap() else { panic!("1.31's layout") };
     let script = map.join("war3map.wct");

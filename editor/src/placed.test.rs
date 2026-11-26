@@ -74,7 +74,7 @@ fn doodads_and_units_with_their_models_and_what_a_ray_meets() {
     units.units.push(doo_rs::Unit::new(Rawcode(*b"hfoo"), 128.0, 128.0, 1));
     dir.write("war3mapUnits.doo", &units.to_bytes().unwrap());
 
-    let game = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()] }.open().0;
+    let game = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()], ..Default::default() }.open().0;
     let types = Types::load(&game);
     let t = w3e_rs::parse(&testdir::terrain()).unwrap();
     let draw = Draw { offset: [0.0, 0.0], ..crate::terrain::Draw::new(&t, &crate::terrain::Grounds { ids: vec![], blight: 0, cliff_ground: vec![] }, crate::terrain::tile_flags(&t), &|_| false, 0.0) };

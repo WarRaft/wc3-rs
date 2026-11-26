@@ -40,7 +40,7 @@ fn terrain(w: u32, h: u32, point: impl Fn(u32, u32, &mut Point)) -> Terrain {
 
 fn setup(dir: &TestDir) -> (Game, Tileset) {
     dir.write("TerrainArt/CliffTypes.slk", &testdir::slk(&[&["cliffID", "cliffModelDir", "rampModelDir", "groundTile"], &["CLdi", "Cliffs", "CliffTrans", "Ldrt"]]));
-    let game = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()] }.open().0;
+    let game = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()], ..Default::default() }.open().0;
     let tileset = Tileset::load(&game, 'L');
     (game, tileset)
 }

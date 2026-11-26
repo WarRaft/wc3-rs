@@ -17,7 +17,7 @@ fn names_come_from_the_layers_and_the_last_wins() {
     write(&game, "UI/WorldEditStrings.txt", "[WorldEditStrings]\nWESTRING_WEATHER_RAIN=\"Rain (Heavy)\"\nWESTRING_LOCALE_L=Lordaeron Summer\nWESTRING_EAX_SPELLS=Spells\nWESTRING_SOUNDCHANNEL_COMBAT=Combat\nWESTRING_SNDPROPS_LOOPING=&Looping\nWESTRING_PLAYER_NEUTRAL=WESTRING_NEUTRAL\nWESTRING_NEUTRAL=Neutral\nWESTRING_AMP=Rock && Roll\n");
     write(&game, "UI/WorldEditData.txt", "[TileSets]\nL=WESTRING_LOCALE_L,TerrainArt\\Blight\\Lords_Blight\nAB=bad\n[Other]\nX=no\n[SoundChannels]\n05=1,WESTRING_SOUNDCHANNEL_COMBAT\nxx=1,No\n");
     write(&game, "UI/SoundInfo/EAXDefs.slk", "ID;PWXL;N;E\nC;X1;Y1;K\"EAXLabel\"\nC;X2;K\"DisplayText\"\nC;X1;Y2;K\"SpellsEAX\"\nC;X2;K\"WESTRING_EAX_SPELLS\"\nE\n");
-    let lookup = Lookup { game: vec![game.clone()], roots: vec![] };
+    let lookup = Lookup { game: vec![game.clone()], roots: vec![], ..Default::default() };
     let names = names(&lookup);
     assert_eq!(names.weather("RAhr"), Some("Rain (Heavy)"));
     assert_eq!(names.weather("XXxx"), Some("Plain Name"));
@@ -38,7 +38,7 @@ fn names_come_from_the_layers_and_the_last_wins() {
     // A root replaces the strings: the names change with it.
     let root = tmp.0.join("map");
     write(&root, "ui/worldeditstrings.txt", "[WorldEditStrings]\nWESTRING_WEATHER_RAIN=Downpour\n");
-    let lookup = Lookup { game: vec![game.clone()], roots: vec![root.clone()] };
+    let lookup = Lookup { game: vec![game.clone()], roots: vec![root.clone()], ..Default::default() };
     let over = super::names(&lookup);
     assert_eq!(over.weather("RAhr"), Some("Downpour"));
     // The whole file is replaced, not merged.
@@ -65,7 +65,7 @@ fn the_editors_files_read_with_their_patches() {
     write(&root, "UI/TriggerData.patch.txt", "[TriggerActions]\nMyAction=0,unit,real\n_MyAction_Category=TC_UNIT\n");
     write(&root, "UI/TriggerStrings.patch.txt", "[TriggerActionStrings]\nMyAction=\"My Action\"\nMyAction=\"Hit \",~Unit,\" for \",~Amount\n");
     write(&root, "UI/WorldEditStrings.patch.txt", "[WorldEditStrings]\nWESTRING_WEATHER_RAIN=Downpour\nWESTRING_MINE=Mine\n");
-    let lookup = Lookup { game: vec![game.clone()], roots: vec![root.clone()] };
+    let lookup = Lookup { game: vec![game.clone()], roots: vec![root.clone()], ..Default::default() };
     let names = names(&lookup);
     assert_eq!(names.triggers.params(wtg_rs::FunctionKind::Action, "MyAction"), Some(2));
     assert_eq!(names.triggers.params(wtg_rs::FunctionKind::Action, "DoNothing"), Some(0));
@@ -86,7 +86,7 @@ fn the_editors_files_read_with_their_patches() {
 #[ignore]
 fn the_games_names() {
     let game = std::env::var("WC3_GAME").expect("WC3_GAME");
-    let names = names(&Lookup { game: vec![game.into()], roots: vec![] });
+    let names = names(&Lookup { game: vec![game.into()], roots: vec![], ..Default::default() });
     println!("{} weathers, {} tilesets", names.weather.len(), names.tilesets.len());
     assert_eq!(names.weather("RAhr"), Some("Ashenvale Rain (Heavy)"));
     assert_eq!(names.weather("WNcw"), Some("Wind (Heavy)"));
@@ -116,6 +116,7 @@ fn names_load_time() {
     let lookup = crate::game::Lookup {
         game: std::env::split_paths(&std::env::var_os("WC3_GAME").expect("WC3_GAME")).collect(),
         roots: vec![std::path::PathBuf::from(std::env::var("MAP").expect("MAP"))],
+        ..Default::default()
     };
     for _ in 0..2 {
         let t = std::time::Instant::now();

@@ -5,7 +5,7 @@ use super::*;
 #[test]
 fn lordaeron_through_a_day() {
     let Some(folder) = std::env::var_os("WC3_GAME") else { return };
-    let game = wc3_server::game::Lookup { game: vec![folder.into()], roots: vec![] }.open().0;
+    let game = wc3_server::game::Lookup { game: vec![folder.into()], roots: vec![], ..Default::default() }.open().0;
     let (terrain, unit, notes) = load(&game, 'L');
     assert!(notes.is_empty(), "{notes:?}");
     assert!(terrain.path.contains("DNCLordaeronTerrain") && unit.path.contains("DNCLordaeronUnit"));

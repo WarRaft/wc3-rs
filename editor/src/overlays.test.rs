@@ -36,7 +36,7 @@ fn regions_bounds_cameras_and_the_minimap() {
     (c.rotation, c.angle_of_attack, c.distance, c.z_offset) = (90.0, 270.0, 256.0, 0.0);
     cams.cameras.push(c);
     dir.write("war3map.w3c", &cams.to_bytes().unwrap());
-    let game = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()] }.open().0;
+    let game = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()], ..Default::default() }.open().0;
     let (t, d) = draw();
     let minimap = (3, 2, vec![0u8; 3 * 2 * 4]);
     let files = crate::placed::Files::read(&game).0;

@@ -419,7 +419,7 @@ fn read_game_objects(game: &Game, names: &Names) -> GameObjects {
 /// map's roots replace one of their files: then through `game`, the whole
 /// lookup), the map's object data over them.
 fn add_objects(names: &mut Names, lookup: &Lookup, game: &Game) {
-    let roots = Lookup { game: Vec::new(), roots: lookup.roots.clone() }.open().0;
+    let roots = Lookup { game: Vec::new(), roots: lookup.roots.clone(), ..Default::default() }.open().0;
     let replaced = !lookup.roots.is_empty() && game_object_files().iter().any(|f| roots.read(f).is_some());
     let base = if replaced {
         Arc::new(read_game_objects(game, names))

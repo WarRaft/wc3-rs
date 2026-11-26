@@ -82,7 +82,7 @@ fn the_destructables_pathing_a_blockers_and_a_bridges_deck() {
     dir.write("PathTextures/Block.tga", &crate::testdir::tga(2, 2, |_, _| [255, 255, 0, 255]));
     dir.write("PathTextures/Bridge.tga", &crate::testdir::tga(2, 3, |_, y| if y == 1 { [0, 0, 255, 255] } else { [255, 0, 255, 255] }));
     dir.write("PathTextures/Gone.tga", &crate::testdir::tga(2, 3, |_, _| [255, 0, 255, 255]));
-    let game = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()] }.open().0;
+    let game = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()], ..Default::default() }.open().0;
     let types = Types::load(&game);
     // A terrain of 4 by 2 cells: 16 by 8 pathing cells, from (0, 0).
     let mut t = w3e_rs::parse(&crate::testdir::terrain()).unwrap();

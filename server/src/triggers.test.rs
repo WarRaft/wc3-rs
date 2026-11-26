@@ -751,7 +751,7 @@ fn wtg_slices_of_a_real_map() {
     // with the editor's files of the game folders in `WC3_GAME` (a path
     // list, as PATH), when given.
     let names = match std::env::var_os("WC3_GAME") {
-        Some(g) => crate::names::names(&crate::game::Lookup { game: std::env::split_paths(&g).collect(), roots: vec![] }),
+        Some(g) => crate::names::names(&crate::game::Lookup { game: std::env::split_paths(&g).collect(), roots: vec![], ..Default::default() }),
         None => return,
     };
     let mut bad = Vec::new();
@@ -844,7 +844,7 @@ fn wtg_jass_is_the_picked_triggers() {
 fn wtg_jass_files() {
     let text = std::fs::read_to_string(std::env::var("WTG_TEXT").expect("WTG_TEXT")).unwrap();
     let out = std::path::PathBuf::from(std::env::var("WTG_OUT").expect("WTG_OUT"));
-    let names = crate::names::names(&crate::game::Lookup { game: std::env::split_paths(&std::env::var_os("WC3_GAME").expect("WC3_GAME")).collect(), roots: vec![] });
+    let names = crate::names::names(&crate::game::Lookup { game: std::env::split_paths(&std::env::var_os("WC3_GAME").expect("WC3_GAME")).collect(), roots: vec![], ..Default::default() });
     let _ = std::fs::remove_dir_all(&out);
     std::fs::create_dir_all(&out).unwrap();
     let map = Map::of(&text);

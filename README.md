@@ -23,7 +23,7 @@ item's details are in its section below):
   5 (overlays), 6 (editing: terrain brushes, things placed, regions and
   pathing), 7 (in step with the rest), 8a (animation), 8b (particles),
   8c (light), 8d (the map's size and tiles), the leftovers; Reforged HD
-  a (the storage). Next: Reforged HD b.
+  a (the storage), b (the game's layers). Next: Reforged HD c.
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1921,10 +1921,19 @@ step), this list updated.
        them, `War3.w3mod:` the game's, `War3.w3mod:_HD.w3mod:` the HD
        ones, locales and tilesets as mods; all 93777 files on disk
        read. MCP: `casc_list`, `casc_read`.
-     - **b, the game's layers**: a project's game folder a Reforged
-       install (`wc3.bni` `[project] game=`), its files through
-       `game::Lookup` as the game layers them (the base, the tileset's,
-       the locale's, HD over SD when the project says HD).
+     - **b, the game's layers** (done): a Reforged install as a
+       `[project] game=` folder (`server/src/casc.rs`: a `.build.info`
+       and `Data`), its storage one layer of `game::Game`
+       (`storm_rs::archive::Store`, `Layers::push_store`; `Source::
+       Storage`), its mods in the order the game reads them: with
+       `[project] hd=1` `_HD.w3mod:_Locales/<locale>`, `_HD.w3mod:`; then
+       `_Locales/<locale>`, then `War3.w3mod:` (the locale `locale=`, else
+       the one installed); a storage opened once is kept. The Diablo
+       III beta map with Reforged as its game: its tables read, its
+       pathing worked out the same (99.86 / 99.46 / 99.45%); textures
+       (`.dds` where `.blp` is asked for: 94 of 112) and Reforged's
+       models (32 of 103: `GEOS` past its vertices) are c and d. MCP:
+       `project_info` says `hd`, `locale`.
      - **c, `.dds`**: BC1, BC3, BC5 and the rest Reforged's textures use.
      - **d, Reforged's models**: MDX 1100 and later (a layer's several
        textures, its shader), `mdx-rs`.

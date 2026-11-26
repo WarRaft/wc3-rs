@@ -12,6 +12,10 @@
 //! 4. `War3Patch.mpq`
 //! 5. the folder (`<folder>/Scripts/common.j`)
 //!
+//! A Reforged install (a CASC storage: `.build.info`, `Data`) is a game
+//! folder too: its storage one layer, its mods inside it as the game
+//! reads them (HD and the locale over the game's files: `crate::casc`).
+//!
 //! A later `game=` folder sits over an earlier one, archives and files
 //! alike, so a folder with only `Scripts/common.j` in it replaces just
 //! that file of the game below it. Archives a folder doesn't have are
@@ -105,6 +109,7 @@ pub fn scripts(lookup: &Lookup) -> Vec<(PathBuf, crate::document::Document)> {
             let path = match source {
                 Source::Archive(archive) => crate::map::inner_path(&archive, name),
                 Source::File(path) => path,
+                Source::Storage(folder, inner) => folder.join(inner),
             };
             let text = crate::document::decode(bytes);
             let doc = crate::document::Document {
@@ -144,6 +149,11 @@ pub fn is_archive_name(path: &Path) -> bool {
 pub struct Lookup {
     pub game: Vec<PathBuf>,
     pub roots: Vec<PathBuf>,
+    /// A Reforged game folder's HD files over its others (`[project]
+    /// hd=1`), and its locale (`locale=`; `None`: the one installed):
+    /// see `crate::casc`.
+    pub hd: bool,
+    pub locale: Option<String>,
 }
 
 impl Lookup {
@@ -152,6 +162,8 @@ impl Lookup {
         Lookup {
             game: project.game.clone(),
             roots: project.roots.clone(),
+            hd: project.hd,
+            locale: project.locale.clone(),
         }
     }
 
@@ -165,7 +177,7 @@ impl Lookup {
         // By the path, so it holds for a map the project names nowhere.
         let map = path.ancestors().skip(1).find(|a| crate::map::is_map_name(a));
         match map.filter(|m| !project.roots.iter().any(|r| r == m)) {
-            Some(map) => Lookup { game: project.game.clone(), roots: vec![map.to_path_buf()] },
+            Some(map) => Lookup { game: project.game.clone(), roots: vec![map.to_path_buf()], hd: project.hd, locale: project.locale.clone() },
             None => Lookup::of(project),
         }
     }
@@ -178,7 +190,7 @@ impl Lookup {
     /// be opened is left out and reported (`path: error`), and the rest
     /// still apply; a game folder or root that doesn't exist adds nothing.
     pub fn open(&self) -> (Game, Vec<String>) {
-        let (mut game, mut errors) = Game::open(&self.game);
+        let (mut game, mut errors) = Game::open_with(&self.game, self.hd, self.locale.as_deref());
         for root in self.roots.iter().filter(|r| r.exists()) {
             if let Err(e) = game.0.push(root) {
                 errors.push(e);
@@ -220,7 +232,26 @@ impl Game {
     /// can't be opened is left out and reported (`path: error`), and the
     /// rest still apply. A folder that doesn't exist adds nothing.
     pub fn open(folders: &[PathBuf]) -> (Game, Vec<String>) {
-        let (layers, errors) = storm_rs::archive::Layers::open(folders, &ARCHIVES);
+        Game::open_with(folders, false, None)
+    }
+
+    /// [`open`](Self::open), a Reforged folder (`crate::casc`) its
+    /// storage's mods for `hd` and `locale`.
+    pub fn open_with(folders: &[PathBuf], hd: bool, locale: Option<&str>) -> (Game, Vec<String>) {
+        let mut layers = storm_rs::archive::Layers::default();
+        let mut errors = Vec::new();
+        for folder in folders {
+            if crate::casc::is_storage(folder) {
+                match crate::casc::Mods::open(folder, hd, locale) {
+                    Ok(mods) => layers.push_store(Box::new(mods)),
+                    Err(e) => errors.push(e),
+                }
+                continue;
+            }
+            let (l, e) = storm_rs::archive::Layers::open(std::slice::from_ref(folder), &ARCHIVES);
+            layers.extend(l);
+            errors.extend(e);
+        }
         (Game(layers), errors)
     }
 

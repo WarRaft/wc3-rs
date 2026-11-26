@@ -67,6 +67,12 @@ pub struct Project {
     /// absolute path stays as written), in the order written. A file in a
     /// later folder overrides the same file in an earlier one; see `game`.
     pub game: Vec<PathBuf>,
+    /// `[project] hd=1|0`: a Reforged game folder's HD files over its
+    /// others (`crate::casc`); 0 by default.
+    pub hd: bool,
+    /// `[project] locale=`: a Reforged game folder's locale (`ruRU`);
+    /// the one installed by default.
+    pub locale: Option<String>,
     /// `[map] root=`: the map's roots, resolved against `root` (an
     /// absolute path stays as written), in the order written. Each is a
     /// folder or a map whose top is the map's top (`war3map.w3i`,
@@ -317,6 +323,21 @@ pub fn load(root: &Path, src: &str) -> (Project, Vec<Issue>) {
                 for item in items {
                     match key_of(item, &mut issues) {
                         Some("game") => read_game(root, item, &mut project, &mut issues),
+                        Some("hd") => {
+                            let key = item.key.as_ref().expect("key_of returned a key");
+                            match item.fields.as_slice() {
+                                [field] if field.text().trim() == "1" => project.hd = true,
+                                [field] if field.text().trim() == "0" => project.hd = false,
+                                _ => issues.push(at_name(key, Level::Error, "'hd' is 1 or 0".into())),
+                            }
+                        }
+                        Some("locale") => {
+                            let key = item.key.as_ref().expect("key_of returned a key");
+                            match item.fields.as_slice() {
+                                [field] if field.text().trim().len() == 4 => project.locale = Some(field.text().trim().to_string()),
+                                _ => issues.push(at_name(key, Level::Error, "'locale' is a locale's four letters: ruRU, enUS ...".into())),
+                            }
+                        }
                         Some(key @ ("sources" | "exclude")) => issues.push(at_name(
                             item.key.as_ref().expect("key_of returned a key"),
                             Level::Error,
@@ -438,7 +459,7 @@ fn key_of<'a>(item: &'a Item, issues: &mut Vec<Issue>) -> Option<&'a str> {
 fn unknown_key(item: &Item, section: &str, issues: &mut Vec<Issue>) {
     let key = item.key.as_ref().expect("key_of returned a key");
     let expected = match section {
-        "project" => "game",
+        "project" => "game', 'hd' or 'locale",
         "code" => "sources' or 'exclude",
         "map" => "root",
         "build" => "name', 'out', 'script', 'uglify', 'inline', 'dead_code' or 'string_hash",

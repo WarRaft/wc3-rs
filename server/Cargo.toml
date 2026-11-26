@@ -39,6 +39,7 @@ wtg-rs = { path = "../../wtg-rs" }
 w3o-rs = { path = "../../w3o-rs" }
 txt2-rs = { path = "../../txt2-rs" }
 storm-rs = { path = "../../storm-rs" }
+casc-rs = { path = "../../casc-rs" }
 # Building a project's map (`build`).
 wc3-build = { path = "../../wc3-build" }
 # Decoding only: no libjpeg-turbo (a C build), so cross-compiling stays

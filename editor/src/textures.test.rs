@@ -2,7 +2,7 @@ use super::*;
 use crate::testdir::{TestDir, tga};
 
 fn game(dir: &TestDir) -> Game {
-    let lookup = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()] };
+    let lookup = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()], ..Default::default() };
     lookup.open().0
 }
 

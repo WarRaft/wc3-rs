@@ -138,7 +138,7 @@ fn patches_from_the_base_layer_up_change_it_by_meaning() {
     std::fs::create_dir_all(high.join("ui")).unwrap();
     std::fs::write(low.join("UI/TriggerData.patch.txt"), "[A]\nc=low\n").unwrap();
     std::fs::write(high.join("ui/triggerdata.PATCH.txt"), "[A]\nc=high\n[B]\nd=high\n").unwrap();
-    let lookup = Lookup { game: vec![wc3.clone()], roots: vec![low.clone(), high.clone()] };
+    let lookup = Lookup { game: vec![wc3.clone()], roots: vec![low.clone(), high.clone()], ..Default::default() };
     let (game, _) = lookup.open();
     // Lowest first: each one over the ones before.
     assert_eq!(game.read_patched("UI\\TriggerData.txt").as_deref(), Some("[A]\na=game\nb=game patch\nc=high\n[B]\nd=high\n"));
@@ -149,6 +149,6 @@ fn patches_from_the_base_layer_up_change_it_by_meaning() {
     assert_eq!(game.read_patched("UI\\TriggerData.txt").as_deref(), Some("[A]\na=low\nc=high\n[B]\nd=high\n"));
 
     // Only patches: on an empty file.
-    let only = Lookup { game: vec![], roots: vec![high] };
+    let only = Lookup { game: vec![], roots: vec![high], ..Default::default() };
     assert_eq!(only.open().0.read_patched("UI\\TriggerData.txt").as_deref(), Some("[A]\nc=high\n[B]\nd=high\n"));
 }

@@ -81,7 +81,7 @@ fn unknown_sections_and_keys_are_warnings() {
         messages,
         vec![
             (1, "unknown section [jas] (expected [project], [code], [map], [build], [jass], [lint] or [external])"),
-            (4, "unknown setting 'source' in [project] (expected 'game')"),
+            (4, "unknown setting 'source' in [project] (expected 'game', 'hd' or 'locale')"),
             (5, "setting without a name"),
         ]
     );
@@ -458,4 +458,15 @@ fn externals_name_their_programs() {
         (4, "'Empty' needs its program: Empty=\"path/to/tool\" (and arguments, comma-separated)"),
         (5, "'ObjectMerger' is named already: the first is run"),
     ]);
+}
+
+#[test]
+fn a_reforged_games_hd_and_locale() {
+    let (p, issues) = load(Path::new("/p"), "[project]\nhd=1\nlocale=enUS\n");
+    assert!(issues.is_empty(), "{issues:?}");
+    assert_eq!((p.hd, p.locale.as_deref()), (true, Some("enUS")));
+    let (p, _) = load(Path::new("/p"), "[project]\n");
+    assert_eq!((p.hd, p.locale), (false, None));
+    let (_, issues) = load(Path::new("/p"), "[project]\nhd=yes\nlocale=russian\n");
+    assert_eq!(issues.iter().map(|i| i.message.as_str()).collect::<Vec<_>>(), ["'hd' is 1 or 0", "'locale' is a locale's four letters: ruRU, enUS ..."]);
 }

@@ -8,7 +8,7 @@ fn a_pixel_per_corner_north_up_in_its_textures_colour() {
     dir.write("TerrainArt/CliffTypes.slk", &testdir::slk(&[&["cliffID", "groundTile"], &["CLdi", "Ldrt"]]));
     // Its full cell (15: column 3, row 3) red, the rest blue.
     dir.write("T/Dirt.blp", &testdir::tga(16, 16, |x, y| if x >= 12 && y >= 12 { [200, 0, 0, 255] } else { [0, 0, 200, 255] }));
-    let game = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()] }.open().0;
+    let game = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()], ..Default::default() }.open().0;
     let mut t = w3e_rs::parse(&testdir::terrain()).unwrap();
     // The top left corner a boundary: darker.
     let v = t.flags_version();
@@ -33,7 +33,7 @@ fn regions_and_units_marked_over_it() {
     (r.red, r.green, r.blue) = (0, 255, 0);
     regions.regions.push(r);
     dir.write("war3map.w3r", &regions.to_bytes().unwrap());
-    let game = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()] }.open().0;
+    let game = wc3_server::game::Lookup { game: vec![], roots: vec![dir.path().to_path_buf()], ..Default::default() }.open().0;
     let t = w3e_rs::parse(&testdir::terrain()).unwrap();
     let mut p = Picture { width: 6, height: 4, rgba: vec![0; 6 * 4 * 4], notes: vec![] };
     mark(&game, &t, &mut p, 2, Marks { regions: true, ..Default::default() });
