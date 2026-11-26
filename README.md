@@ -23,7 +23,8 @@ item's details are in its section below):
   5 (overlays), 6 (editing: terrain brushes, things placed, regions and
   pathing), 7 (in step with the rest), 8a (animation), 8b (particles),
   8c (light), 8d (the map's size and tiles), the leftovers; Reforged HD
-  a (the storage), b (the game's layers). Next: Reforged HD c.
+  a (the storage), b (the game's layers), c (`.dds`). Next: Reforged
+  HD d.
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
@@ -1934,7 +1935,13 @@ step), this list updated.
        (`.dds` where `.blp` is asked for: 94 of 112) and Reforged's
        models (32 of 103: `GEOS` past its vertices) are c and d. MCP:
        `project_info` says `hd`, `locale`.
-     - **c, `.dds`**: BC1, BC3, BC5 and the rest Reforged's textures use.
+     - **c, `.dds`** (done): Reforged's textures are DXT5 (BC3), DXT1
+       (BC1), ATI2 (BC5, normal maps), a few DX10 (BC1 sRGB: the
+       environment maps); `blp-rs`'s `dds` reads the header (and
+       `DX10`'s), every mip, BC1 to BC5 (BC5's z worked out) and 8-bit
+       RGBA by masks, its blocks the BLP2 DXT decoder's; `wc3_server::
+       texture::decode` takes a DDS by its `DDS `; the storage's layer
+       reads a `.blp` it hasn't as its `.dds`, as the game does.
      - **d, Reforged's models**: MDX 1100 and later (a layer's several
        textures, its shader), `mdx-rs`.
      - **e, the HD shaders**: diffuse, normal, ORM, emissive, team

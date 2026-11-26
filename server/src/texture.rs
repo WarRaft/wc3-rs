@@ -1,5 +1,6 @@
 //! Pictures for the editor's viewer: a BLP decoded with `blp-rs` into what
-//! the page draws, its header and every mip as RGBA; a TGA (map previews,
+//! the page draws, its header and every mip as RGBA (a DDS, Reforged's,
+//! with `blp-rs`'s `dds` too); a TGA (map previews,
 //! loading screens, model textures) with the `image` crate; and a pathing map
 //! (`war3map.wpm`, `wpm-rs`), which has no text, drawn as the game's
 //! pathing textures draw pathing, with each cell's flags for the page to
@@ -121,6 +122,9 @@ pub fn decode(bytes: &[u8]) -> Texture {
     if bytes.starts_with(&wpm_rs::MAGIC) {
         return pathing(bytes);
     }
+    if blp::dds::is_dds(bytes) {
+        return dds(bytes);
+    }
     if !<Blp as blp::FormatDetector>::detect(bytes) && looks_like_tga(bytes) {
         return tga(bytes);
     }
@@ -161,6 +165,23 @@ pub fn decode(bytes: &[u8]) -> Texture {
         cells: Vec::new(),
         flags: Vec::new(),
     }
+}
+
+/// A DDS (Reforged's textures: `blp::dds`), every mip.
+fn dds(bytes: &[u8]) -> Texture {
+    let d = match blp::dds::Dds::parse(bytes) {
+        Ok(d) => d,
+        Err(e) => return Texture { error: format!("Can't read this DDS: {e}"), ..Default::default() },
+    };
+    let mips = d
+        .mips
+        .iter()
+        .map(|m| match d.decode(m, bytes) {
+            Ok(rgba) => Mip { width: m.width, height: m.height, error: String::new(), rgba },
+            Err(e) => Mip { width: m.width, height: m.height, error: e.to_string(), rgba: Vec::new() },
+        })
+        .collect();
+    Texture { version: "DDS".into(), encoding: d.format.to_string(), alpha_bits: 8, width: d.width, height: d.height, mips, ..Default::default() }
 }
 
 /// Does `bytes` start like a TGA? It has no signature: its header says
