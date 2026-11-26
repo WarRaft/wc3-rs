@@ -42,8 +42,22 @@ pub struct GroundTexture {
 /// A picture's base mip: width, height, RGBA.
 pub type Picture = (u32, u32, Vec<u8>);
 
+/// A picture's bytes; one the layers haven't under its name (a model's
+/// `Cliff0.tga`), its `.blp`, as the game reads it.
+fn read(game: &Game, path: &str) -> Result<Vec<u8>, String> {
+    if let Some((bytes, _)) = game.read(path) {
+        return Ok(bytes);
+    }
+    let file = path.rfind(['\\', '/']).map_or(0, |i| i + 1);
+    let blp = match path[file..].rfind('.') {
+        Some(dot) if !path[file + dot..].eq_ignore_ascii_case(".blp") => format!("{}.blp", &path[..file + dot]),
+        _ => return Err(format!("{path}: not in the game's files or the roots")),
+    };
+    game.read(&blp).map(|(b, _)| b).ok_or_else(|| format!("{path}: not in the game's files or the roots, nor {blp}"))
+}
+
 fn picture(game: &Game, path: &str) -> Result<Picture, String> {
-    let (bytes, _) = game.read(path).ok_or_else(|| format!("{path}: not in the game's files or the roots"))?;
+    let bytes = read(game, path)?;
     let t = wc3_server::texture::decode_file(path, &bytes);
     if !t.error.is_empty() {
         return Err(format!("{path}: {}", t.error));
@@ -58,7 +72,7 @@ fn picture(game: &Game, path: &str) -> Result<Picture, String> {
 /// A picture's biggest mip no wider or higher than `max`, else its
 /// smallest: what a model's texture is drawn with.
 pub fn capped(game: &Game, path: &str, max: u32) -> Result<Picture, String> {
-    let (bytes, _) = game.read(path).ok_or_else(|| format!("{path}: not in the game's files or the roots"))?;
+    let bytes = read(game, path)?;
     let t = wc3_server::texture::decode_file(path, &bytes);
     if !t.error.is_empty() {
         return Err(format!("{path}: {}", t.error));
