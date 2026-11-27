@@ -560,7 +560,7 @@ impl Session {
 
     /// Undo (or redo): the terrain as it was, worked out again.
     pub fn undo(&mut self, redo: bool) -> Vec<ServerMsg> {
-        let target = crate::edit::Target { terrain: &mut self.terrain, files: &mut self.placed };
+        let target = crate::edit::Target { terrain: &mut self.terrain, files: &mut self.placed, info: &mut self.info };
         let done = if redo { self.edits.redo(target) } else { self.edits.undo(target) };
         let mut out = Vec::new();
         if let Some(what) = done
@@ -578,8 +578,16 @@ impl Session {
         match what {
             crate::edit::Snapshot::Regions(_) | crate::edit::Snapshot::Cameras(_) | crate::edit::Snapshot::Pathing(_) => out.push(ServerMsg::Overlays(self.overlays())),
             crate::edit::Snapshot::Sounds(_) => out.push(self.sounds_msg()),
-            crate::edit::Snapshot::Strings(_) => self.strings_changed(),
+            crate::edit::Snapshot::Strings(_) => {
+                self.strings_changed();
+                out.push(self.info_msg());
+                out.push(self.map_msg());
+            }
             crate::edit::Snapshot::Imports(..) => out.push(self.imports_msg()),
+            crate::edit::Snapshot::Info(_) => {
+                out.push(self.info_msg());
+                out.push(self.map_msg());
+            }
             crate::edit::Snapshot::Many(all) => {
                 for s in all {
                     if let Some(whole) = self.undone(s, out) {
@@ -1867,6 +1875,204 @@ impl Session {
             }
             Ok(String::new())
         })
+    }
+
+    /// The map's info as the page shows it ([`info_fields`](Self::info_fields)).
+    pub fn info_msg(&self) -> ServerMsg {
+        ServerMsg::Info(self.info_fields())
+    }
+
+    /// The map's info, a field each as text: `name`, `author`,
+    /// `description`, `players_recommended` (a string of the map's as its
+    /// text); `loading_screen` (-1 none), `loading_screen_model`,
+    /// `loading_text`, `loading_title`, `loading_subtitle`,
+    /// `game_data_set`, `prologue_path`, `prologue_text`, `prologue_title`,
+    /// `prologue_subtitle`; `flags` (`w3i_rs::FLAGS`' bits); The Frozen
+    /// Throne's `fog_style`, `fog_start`, `fog_end`, `fog_density`,
+    /// `fog_color` and `water_color` (`r,g,b,a`), `weather` (an id, empty
+    /// none), `sound_environment`, `light_tileset` (a letter, empty the
+    /// map's own); each player's `player.<i>.name`, `.kind`, `.race`,
+    /// `.fixed_start` and its `.number`; each force's `force.<i>.name`,
+    /// `.flags`, `.players` (a bit a player). And what to choose from:
+    /// `version`, `tft` (1: its fields), `weathers` and `tilesets` (a line
+    /// each, id and name by a tab).
+    pub fn info_fields(&self) -> Vec<(String, String)> {
+        let Some(i) = self.info.as_ref() else { return Vec::new() };
+        let has = w3i_rs::Has::of(i.version);
+        let text = |t: &str| self.text(t);
+        let rgba = |c: [u8; 4]| format!("{},{},{},{}", c[0], c[1], c[2], c[3]);
+        let mut out: Vec<(String, String)> = vec![
+            ("version".into(), i.version.to_string()),
+            ("tft".into(), (has.tft as u8).to_string()),
+            ("name".into(), text(&i.name)),
+            ("author".into(), text(&i.author)),
+            ("description".into(), text(&i.description)),
+            ("players_recommended".into(), text(&i.players_recommended)),
+            ("loading_screen".into(), i.loading_screen.to_string()),
+            ("loading_text".into(), text(&i.loading_text)),
+            ("loading_title".into(), text(&i.loading_title)),
+            ("loading_subtitle".into(), text(&i.loading_subtitle)),
+            ("game_data_set".into(), i.game_data_set.to_string()),
+            ("prologue_text".into(), text(&i.prologue_text)),
+            ("prologue_title".into(), text(&i.prologue_title)),
+            ("prologue_subtitle".into(), text(&i.prologue_subtitle)),
+            ("flags".into(), i.flags.to_string()),
+        ];
+        if has.tft {
+            // The fog's colour is stored blue, green, red, alpha.
+            let f = i.fog.color;
+            out.extend([
+                ("loading_screen_model".into(), i.loading_screen_model.clone()),
+                ("prologue_path".into(), i.prologue_path.clone()),
+                ("fog_style".into(), i.fog.style.to_string()),
+                ("fog_start".into(), i.fog.start_z.to_string()),
+                ("fog_end".into(), i.fog.end_z.to_string()),
+                ("fog_density".into(), i.fog.density.to_string()),
+                ("fog_color".into(), rgba([f[2], f[1], f[0], f[3]])),
+                ("weather".into(), if i.weather.0 == [0; 4] { String::new() } else { i.weather.to_string() }),
+                ("sound_environment".into(), i.sound_environment.clone()),
+                ("light_tileset".into(), if i.light_tileset == 0 { String::new() } else { (i.light_tileset as char).to_string() }),
+                ("water_color".into(), rgba(i.water_color)),
+            ]);
+        }
+        for (n, p) in i.players.iter().enumerate() {
+            for (k, v) in [("number", p.number.to_string()), ("name", text(&p.name)), ("kind", p.kind.to_string()), ("race", p.race.to_string()), ("fixed_start", p.fixed_start.to_string())] {
+                out.push((format!("player.{n}.{k}"), v));
+            }
+        }
+        for (n, f) in i.forces.iter().enumerate() {
+            for (k, v) in [("name", text(&f.name)), ("flags", f.flags.to_string()), ("players", f.players.to_string())] {
+                out.push((format!("force.{n}.{k}"), v));
+            }
+        }
+        let mut weathers: Vec<(&String, &String)> = self.names.weather.iter().collect();
+        weathers.sort_by(|a, b| a.1.cmp(b.1));
+        out.push(("weathers".into(), weathers.iter().map(|(id, n)| format!("{id}\t{n}")).collect::<Vec<_>>().join("\n")));
+        let mut tilesets: Vec<(&char, &String)> = self.names.tilesets.iter().collect();
+        tilesets.sort();
+        out.push(("tilesets".into(), tilesets.iter().map(|(l, n)| format!("{l}\t{n}")).collect::<Vec<_>>().join("\n")));
+        out
+    }
+
+    /// The map's info's `field` ([`info_fields`](Self::info_fields)') set
+    /// from `value`; a text that names a string of the map's (`TRIGSTR_3`)
+    /// sets that string. An undo each; said when it doesn't read.
+    pub fn info_set(&mut self, field: &str, value: &str) -> Vec<ServerMsg> {
+        let Some(info) = self.info.as_ref() else { return vec![ServerMsg::State(self.state("The map has no war3map.w3i.".into()))] };
+        // A text that's a string of the map's: the string set.
+        let raw = match field {
+            "name" => Some(&info.name),
+            "author" => Some(&info.author),
+            "description" => Some(&info.description),
+            "players_recommended" => Some(&info.players_recommended),
+            "loading_text" => Some(&info.loading_text),
+            "loading_title" => Some(&info.loading_title),
+            "loading_subtitle" => Some(&info.loading_subtitle),
+            "prologue_text" => Some(&info.prologue_text),
+            "prologue_title" => Some(&info.prologue_title),
+            "prologue_subtitle" => Some(&info.prologue_subtitle),
+            f if f.starts_with("player.") && f.ends_with(".name") => f.split('.').nth(1).and_then(|n| n.parse::<usize>().ok()).and_then(|n| info.players.get(n)).map(|p| &p.name),
+            f if f.starts_with("force.") && f.ends_with(".name") => f.split('.').nth(1).and_then(|n| n.parse::<usize>().ok()).and_then(|n| info.forces.get(n)).map(|p| &p.name),
+            _ => None,
+        };
+        if let Some(n) = raw.and_then(|r| r.strip_prefix("TRIGSTR_")).and_then(|n| n.parse::<u32>().ok()) {
+            let mut out = self.string_set(n, value);
+            out.insert(0, self.info_msg());
+            out.insert(1, self.map_msg());
+            return out;
+        }
+        let mut info = info.clone();
+        let tft = w3i_rs::Has::of(info.version).tft;
+        let int = |v: &str| v.trim().parse::<i32>().map_err(|_| format!("{v:?} isn't a whole number"));
+        let real = |v: &str| v.trim().parse::<f32>().ok().filter(|f| f.is_finite()).ok_or(format!("{v:?} isn't a number"));
+        let rgba = |v: &str| -> Result<[u8; 4], String> {
+            let parts: Vec<u8> = v.split(',').map(|p| p.trim().parse::<u8>()).collect::<Result<_, _>>().map_err(|_| format!("{v:?}: r,g,b,a, each 0 to 255"))?;
+            <[u8; 4]>::try_from(parts).map_err(|_| format!("{v:?}: r,g,b,a, each 0 to 255"))
+        };
+        let changed: Result<(), String> = (|| {
+            let tft_only = || if tft { Ok(()) } else { Err(format!("{field} is The Frozen Throne's")) };
+            match field {
+                "name" => info.name = value.into(),
+                "author" => info.author = value.into(),
+                "description" => info.description = value.into(),
+                "players_recommended" => info.players_recommended = value.into(),
+                "loading_screen" => info.loading_screen = int(value)?.max(-1),
+                "loading_text" => info.loading_text = value.into(),
+                "loading_title" => info.loading_title = value.into(),
+                "loading_subtitle" => info.loading_subtitle = value.into(),
+                "game_data_set" => info.game_data_set = int(value)?,
+                "prologue_text" => info.prologue_text = value.into(),
+                "prologue_title" => info.prologue_title = value.into(),
+                "prologue_subtitle" => info.prologue_subtitle = value.into(),
+                "flags" => info.flags = value.trim().parse().map_err(|_| format!("{value:?} isn't flags"))?,
+                "loading_screen_model" => (tft_only()?, info.loading_screen_model = value.into()).1,
+                "prologue_path" => (tft_only()?, info.prologue_path = value.into()).1,
+                "fog_style" => {
+                    tft_only()?;
+                    let v = int(value)?;
+                    if !(0..=3).contains(&v) {
+                        return Err("a fog style is 0 to 3".into());
+                    }
+                    info.fog.style = v;
+                }
+                "fog_start" => (tft_only()?, info.fog.start_z = real(value)?).1,
+                "fog_end" => (tft_only()?, info.fog.end_z = real(value)?).1,
+                "fog_density" => (tft_only()?, info.fog.density = real(value)?).1,
+                "fog_color" => {
+                    tft_only()?;
+                    let [r, g, b, a] = rgba(value)?;
+                    info.fog.color = [b, g, r, a];
+                }
+                "water_color" => (tft_only()?, info.water_color = rgba(value)?).1,
+                "weather" => {
+                    tft_only()?;
+                    info.weather = if value.trim().is_empty() { parser_rs::bin::Rawcode([0; 4]) } else { parser_rs::bin::Rawcode::parse(value.trim()).ok_or(format!("{value:?} isn't an id"))? };
+                }
+                "sound_environment" => (tft_only()?, info.sound_environment = value.into()).1,
+                "light_tileset" => {
+                    tft_only()?;
+                    info.light_tileset = match value.trim().as_bytes() {
+                        [] => 0,
+                        [c] if c.is_ascii_alphabetic() => *c,
+                        _ => return Err(format!("{value:?} isn't a tileset's letter")),
+                    };
+                }
+                f => {
+                    let parts: Vec<&str> = f.split('.').collect();
+                    let [list, n, key] = parts[..] else { return Err(format!("no field {f}")) };
+                    let n: usize = n.parse().map_err(|_| format!("no field {f}"))?;
+                    match (list, key) {
+                        ("player", _) => {
+                            let p = info.players.get_mut(n).ok_or(format!("no player {n}"))?;
+                            match key {
+                                "name" => p.name = value.into(),
+                                "kind" => p.kind = int(value)?.clamp(1, 4),
+                                "race" => p.race = int(value)?.clamp(0, 4),
+                                "fixed_start" => p.fixed_start = int(value)?.clamp(0, 1),
+                                _ => return Err(format!("no field {f}")),
+                            }
+                        }
+                        ("force", _) => {
+                            let force = info.forces.get_mut(n).ok_or(format!("no force {n}"))?;
+                            match key {
+                                "name" => force.name = value.into(),
+                                "flags" => force.flags = value.trim().parse().map_err(|_| format!("{value:?} isn't flags"))?,
+                                "players" => force.players = value.trim().parse().map_err(|_| format!("{value:?} isn't players"))?,
+                                _ => return Err(format!("no field {f}")),
+                            }
+                        }
+                        _ => return Err(format!("no field {f}")),
+                    }
+                }
+            }
+            Ok(())
+        })();
+        if let Err(e) = changed {
+            return vec![ServerMsg::State(self.state(format!("The map's {}: {e}.", field.replace('_', " "))))];
+        }
+        let before = self.info.replace(info);
+        self.edits.record(crate::edit::Snapshot::Info(Box::new(before)));
+        vec![self.info_msg(), self.map_msg(), ServerMsg::State(self.state(String::new()))]
     }
 
     /// The map's imported files (`war3map.imp`), as the page lists them:

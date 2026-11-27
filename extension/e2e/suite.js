@@ -13,7 +13,7 @@ const path = require('path')
  * The steps of the work in hand (`node e2e/run.js current`): moved on as
  * the work does; `all` runs every step.
  */
-const CURRENT = ['imports']
+const CURRENT = ['info']
 
 const out = process.env.E2E_OUT
 const map = process.env.E2E_MAP
@@ -536,6 +536,35 @@ async function steps(only) {
             const saved = await until(() => we.state?.message && we.state, 'saved')
             check(!saved.dirty && saved.message.includes('war3map.imp') && saved.message.includes('Scripts\\Setup.j'), saved.message)
             await we.panel.webview.postMessage({type: 'import', action: 'close'})
+        }},
+        {name: 'info', editor: true, run: async () => {
+            log("the map's info: shown, its author and a flag, a player's race, the weather set; its name (a string of the map's) set and undone; saved")
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'open'})
+            const info = await until(() => we.info?.name && we.info, 'the info shown')
+            const name = info.name
+            const players = Object.keys(info).filter(k => /^player\.\d+\.name$/.test(k)).length
+            check(!/TRIGSTR/.test(name) && players > 0, `"${name}" by ${info.author}, version ${info.version}, ${players} players, ${Object.keys(info).filter(k => /^force\.\d+\.name$/.test(k)).length} forces`)
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: 'author', value: 'E2E Author'})
+            await until(() => we.info?.author === 'E2E Author', 'its author typed')
+            const fog = (Number(info.flags) & 0x2000) !== 0
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: 'flags', value: !fog, bit: 0x2000})
+            await until(() => ((Number(we.info?.flags) & 0x2000) !== 0) === !fog, 'its fog flag')
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: 'player.0.race', value: 2})
+            await until(() => we.info?.['player.0.race'] === '2', 'a race chosen')
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: 'weather', value: 'RAhr'})
+            await until(() => we.info?.weather === 'RAhr', 'the weather chosen')
+            check(true, `author ${we.info.author}, terrain fog ${!fog}, player 1 an orc, weather ${we.info.weather}`)
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: 'name', value: 'E2E Map'})
+            await until(() => we.map?.name === 'E2E Map' && we.panel.title.includes('E2E Map'), 'its name typed: the tab follows')
+            await shot('world-editor-info')
+            await we.panel.webview.postMessage({type: 'undo'})
+            await until(() => we.map?.name === name, 'its name undone')
+            check(true, `its name: E2E Map, then ${we.map.name} again`)
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'save'})
+            const saved = await until(() => we.state?.message && we.state, 'saved')
+            check(!saved.dirty && saved.message.includes('war3map.w3i'), saved.message)
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'close'})
         }},
         {name: 'map', editor: true, run: async () => {
             log("the map's settings: its tiles reordered and undone, a tile's pathing and undone, four cells added on the right, saved")

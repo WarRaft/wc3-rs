@@ -25,11 +25,11 @@ fn raise_most_in_the_middle_then_undo_and_redo() {
     assert!(e.dirty.terrain && !e.dirty.doodads && !e.can_undo(), "the stroke goes on");
     e.end();
     let mut files = crate::placed::Files::default();
-    assert!(e.undo(Target { terrain: &mut t, files: &mut files }).is_some());
+    assert!(e.undo(Target { terrain: &mut t, files: &mut files, info: &mut None }).is_some());
     assert_eq!(h(&t, 4, 4), 0x2000);
-    assert!(e.redo(Target { terrain: &mut t, files: &mut files }).is_some());
+    assert!(e.redo(Target { terrain: &mut t, files: &mut files, info: &mut None }).is_some());
     assert_eq!(h(&t, 4, 4), 0x2000 + 512);
-    assert!(e.redo(Target { terrain: &mut t, files: &mut files }).is_none());
+    assert!(e.redo(Target { terrain: &mut t, files: &mut files, info: &mut None }).is_none());
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn texture_added_to_the_list_cliffs_and_water() {
     e.end();
     let mut files = crate::placed::Files::default();
     for _ in 0..3 {
-        assert!(e.undo(Target { terrain: &mut t, files: &mut files }).is_some());
+        assert!(e.undo(Target { terrain: &mut t, files: &mut files, info: &mut None }).is_some());
     }
     assert!(!e.can_undo());
     assert!(!t.ground.contains(&grass));
@@ -95,9 +95,9 @@ fn the_things_placed_undone_and_redone_with_the_terrain() {
     e.end();
     assert_eq!(e.dirty, Dirty { terrain: true, doodads: true, ..Default::default() });
     // The terrain's stroke undone first, then the doodad.
-    assert!(matches!(e.undo(Target { terrain: &mut t, files: &mut files }), Some(Snapshot::Terrain(..))));
-    assert!(matches!(e.undo(Target { terrain: &mut t, files: &mut files }), Some(Snapshot::Doodads(_))));
+    assert!(matches!(e.undo(Target { terrain: &mut t, files: &mut files, info: &mut None }), Some(Snapshot::Terrain(..))));
+    assert!(matches!(e.undo(Target { terrain: &mut t, files: &mut files, info: &mut None }), Some(Snapshot::Doodads(_))));
     assert!(files.doodads.as_ref().unwrap().doodads.is_empty());
-    assert!(e.redo(Target { terrain: &mut t, files: &mut files }).is_some());
+    assert!(e.redo(Target { terrain: &mut t, files: &mut files, info: &mut None }).is_some());
     assert_eq!(files.doodads.as_ref().unwrap().doodads.len(), 1);
 }

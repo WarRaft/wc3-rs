@@ -1824,6 +1824,22 @@ step), this list updated.
      `AudioContext`); Delete. An undo each. Messages `SoundNew`,
      `SoundSet`, `SoundDelete`, `SoundPlay`, `Sounds`, `SoundData`. MCP:
      the `w3s_*` tools already change the file.
+   - **6j, the map's info** (done after 6i): the page's Info… panel
+     (`mapinfo.js`, as World Editor's Scenario menu has it): the
+     description (name, author, suggested players, description), loading
+     screen and prologue, options (`w3i_rs::FLAGS` as checkboxes), The
+     Frozen Throne's environment (fog: style, start, end, density, colour
+     as `r,g,b,a`, stored blue first; weather by name; lighting by
+     tileset; sound environment; water tint), each player (name,
+     controller, race, a fixed start) and force (name, flags, players);
+     each set as it's typed (`InfoSet`: `Session::info_set` reads and
+     checks it), an undo each (`Snapshot::Info`, `edit::Target`'s `info`
+     now); a text that's a string of the map's (the Diablo III beta map's
+     name: `TRIGSTR_`) sets it in `war3map.wts`; the map's name and author
+     follow on the bar and the tab. Messages `InfoAsk`, `InfoSet`,
+     `Info`. Not yet: players and forces added or taken out; the tech
+     tree, upgrades, random groups and item tables; `war3map.w3i`'s text
+     form in step. MCP: `w3i_text`, `w3i_write`.
    - **6i, the import manager** (done after 6h): `war3map.imp` a piece
      of the session (read, taken in when changed on disk, its text form
      in step), with the files to write into the map on save or take out

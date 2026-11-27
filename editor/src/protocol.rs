@@ -64,6 +64,8 @@
 //! | 42 | `ImportSet` | `u32` index, its new path in the map; answered the same |
 //! | 43 | `ImportDelete` | `u32` index; answered the same |
 //! | 44 | `ImportPreview` | `u32` index; answered by `ImportPreview` |
+//! | 45 | `InfoAsk` | nothing; answered by `Info` |
+//! | 46 | `InfoSet` | a field of the map's info set: its name (`Session::info_fields`'), its value as text; answered by `Info`, `Map`, `State` |
 //! | 22 | `TilePathing` | the tile pather's: `u8` a tile's index in the terrain's list, `u8` what it forbids (`wpm` flags: 2 walking, 4 flying, 8 building); answered by `Overlays` and `State` |
 //! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id; kind 255: id a texture's path); answered by `Icons` |
 //!
@@ -97,6 +99,7 @@
 //! | 152 | `ObjectEnums` | the field types World Editor offers values of: a list of (type, `u8` a list of them, a list of (the stored text, its name)); before the first `ObjectList` |
 //! | 153 | `Imports` | the imported files: a list of (its path in the map, as `war3map.imp` keeps it, `u8` flags, `u8` found: the map has it or will, `u8` to be written on save) |
 //! | 154 | `ImportPreview` | an imported file: its path, `u8` what it is (0 other, 1 a texture, 2 a sound, 3 a model), `u32` its size, a picture (`u32` width, height, RGBA; 0 by 0 for none), why not (empty: fine) |
+//! | 155 | `Info` | the map's info: a list of (field, its value as text): `Session::info_fields` |
 //! | 141 | `Icons` | a list of (`u8` kind, id, `u32` width, height, RGBA; 0 by 0 for none) |
 //!
 //! After an edit the terrain's messages come again: `Cliffs` with no
@@ -165,6 +168,9 @@ mod kind {
     pub const IMPORT_DELETE: u8 = 43;
     pub const IMPORT_PREVIEW: u8 = 44;
     pub const IMPORTS: u8 = 153;
+    pub const INFO_ASK: u8 = 45;
+    pub const INFO_SET: u8 = 46;
+    pub const INFO: u8 = 155;
     pub const IMPORT_PREVIEW_ANSWER: u8 = 154;
     pub const OBJECT_LIST_ANSWER: u8 = 150;
     pub const OBJECT_FIELDS: u8 = 151;
@@ -256,6 +262,10 @@ pub enum ClientMsg {
     SoundDelete { index: u32 },
     /// Kind 33.
     SoundPlay { file: String },
+    /// Kind 45.
+    InfoAsk,
+    /// Kind 46.
+    InfoSet { field: String, value: String },
     /// Kind 40.
     ImportList,
     /// Kind 41.
@@ -562,6 +572,8 @@ pub enum ServerMsg {
     Thing(ThingMsg),
     /// Kind 148.
     Sounds(Vec<w3s_rs::Sound>),
+    /// Kind 155: each field and its value as text.
+    Info(Vec<(String, String)>),
     /// Kind 153: (path in the map, as kept, flags, found, to be written).
     Imports(Vec<(String, String, u8, bool, bool)>),
     /// Kind 154.
@@ -694,6 +706,8 @@ impl ClientMsg {
             kind::CAMERA_RENAME => Some(ClientMsg::CameraRename { index: r.u32()?, name: r.string()? }),
             kind::CAMERA_DELETE => Some(ClientMsg::CameraDelete { index: r.u32()? }),
             kind::CAMERA_SET => Some(ClientMsg::CameraSet { index: r.u32()?, field: r.string()?, value: r.f32()? }),
+            kind::INFO_ASK => Some(ClientMsg::InfoAsk),
+            kind::INFO_SET => Some(ClientMsg::InfoSet { field: r.string()?, value: r.string()? }),
             kind::IMPORT_LIST => Some(ClientMsg::ImportList),
             kind::IMPORT_ADD => Some(ClientMsg::ImportAdd { source: r.string()?, path: r.string()? }),
             kind::IMPORT_SET => Some(ClientMsg::ImportSet { index: r.u32()?, path: r.string()? }),
@@ -835,6 +849,12 @@ impl ClientMsg {
                 w.string(field);
                 w.f32(*value);
                 kind::CAMERA_SET
+            }
+            ClientMsg::InfoAsk => kind::INFO_ASK,
+            ClientMsg::InfoSet { field, value } => {
+                w.string(field);
+                w.string(value);
+                kind::INFO_SET
             }
             ClientMsg::ImportList => kind::IMPORT_LIST,
             ClientMsg::ImportAdd { source, path } => {
@@ -1121,6 +1141,13 @@ impl ServerMsg {
                     });
                 });
                 kind::OBJECT_ENUMS
+            }
+            ServerMsg::Info(list) => {
+                w.list(list, |w, (k, v)| {
+                    w.string(k);
+                    w.string(v);
+                });
+                kind::INFO
             }
             ServerMsg::Imports(list) => {
                 w.list(list, |w, (path, kept, flags, found, pending)| {
@@ -1461,6 +1488,7 @@ impl ServerMsg {
                 ServerMsg::ObjectFields(ObjectFieldsMsg { kind, id, base, name, levels, fields })
             }
             kind::OBJECT_ENUMS => ServerMsg::ObjectEnums(r.list(|r| Ok((r.string()?, r.u8()? != 0, r.list(|r| Ok((r.string()?, r.string()?)))?)))?),
+            kind::INFO => ServerMsg::Info(r.list(|r| Ok((r.string()?, r.string()?)))?),
             kind::IMPORTS => ServerMsg::Imports(r.list(|r| Ok((r.string()?, r.string()?, r.u8()?, r.u8()? != 0, r.u8()? != 0)))?),
             kind::IMPORT_PREVIEW_ANSWER => {
                 let (path, what, size) = (r.string()?, r.u8()?, r.u32()?);

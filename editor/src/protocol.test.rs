@@ -46,6 +46,8 @@ fn edits_round_trip() {
         ClientMsg::Save,
         ClientMsg::ThingAsk { file: 1, index: 7 },
         ClientMsg::ImportList,
+        ClientMsg::InfoAsk,
+        ClientMsg::InfoSet { field: "player.0.name".into(), value: "Red".into() },
         ClientMsg::ImportAdd { source: "/a/b.blp".into(), path: "".into() },
         ClientMsg::ImportSet { index: 2, path: "Textures\\b.blp".into() },
         ClientMsg::ImportDelete { index: 1 },
@@ -88,6 +90,7 @@ fn edits_round_trip() {
         fields: vec![FieldRow { field: "Hbz1".into(), name: "Number of Waves".into(), category: "data".into(), ty: "int".into(), level: 2, column: 1, value: "8".into(), default: "6".into(), changed: true, hint: String::new() }],
     }));
     round_trip(ServerMsg::ObjectEnums(vec![("attackType".into(), false, vec![("normal".into(), "Normal".into())]), ("targetList".into(), true, vec![])]));
+    round_trip(ServerMsg::Info(vec![("name".into(), "A Map".into())]));
     round_trip(ServerMsg::Imports(vec![("war3mapImported\\a.blp".into(), "a.blp".into(), 0, true, false)]));
     round_trip(ServerMsg::ImportPreview { path: "a.blp".into(), what: 1, size: 9, picture: crate::textures::Icon { width: 1, height: 1, rgba: vec![1, 2, 3, 4] }, error: String::new() });
     round_trip(ServerMsg::Thing(ThingMsg { file: 1, index: 7, fields: vec![("x".into(), 64.0), ("hp".into(), -1.0)], texts: vec![("items".into(), "ratc,,,,,".into())] }));

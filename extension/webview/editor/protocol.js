@@ -57,6 +57,9 @@ const EditorProtocol = (() => {
         IMPORT_DELETE: 43,
         IMPORT_PREVIEW: 44,
         IMPORTS: 153,
+        INFO_ASK: 45,
+        INFO_SET: 46,
+        INFO: 155,
         IMPORT_PREVIEW_ANSWER: 154,
         THING: 147,
         SOUND_NEW: 30,
@@ -330,6 +333,14 @@ const EditorProtocol = (() => {
             w.string(value)
             return w.frame(KIND.THING_SET_TEXT)
         },
+        infoAsk: () => new Writer().frame(KIND.INFO_ASK),
+        /** A field of the map's info (`name`, `player.0.race` ...) set from its text. */
+        infoSet(field, value) {
+            const w = new Writer()
+            w.string(field)
+            w.string(value)
+            return w.frame(KIND.INFO_SET)
+        },
         importList: () => new Writer().frame(KIND.IMPORT_LIST),
         /** A file on disk imported at `path` ('' war3mapImported\ and its name). */
         importAdd(source, path) {
@@ -557,6 +568,8 @@ const EditorProtocol = (() => {
             }
             case KIND.OBJECT_ENUMS:
                 return {kind: 'objectEnums', enums: r.list(r => ({ty: r.string(), multi: r.u8() !== 0, values: r.list(r => [r.string(), r.string()])}))}
+            case KIND.INFO:
+                return {kind: 'info', fields: r.list(r => [r.string(), r.string()])}
             case KIND.IMPORTS:
                 return {kind: 'imports', files: r.list(r => ({path: r.string(), kept: r.string(), flags: r.u8(), found: r.u8() !== 0, pending: r.u8() !== 0}))}
             case KIND.IMPORT_PREVIEW_ANSWER: {

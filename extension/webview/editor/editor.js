@@ -350,17 +350,18 @@
     const mapPanel = new EditorMapSettings.Panel($('map-panel'), send, encode)
     $('map-open').onclick = () => (mapPanel.isOpen ? mapPanel.close() : mapPanel.open())
     const importsPanel = new EditorImports.Panel($('imports-panel'), send, encode, msg => vscode.postMessage(msg))
-    $('imports-open').onclick = () => {
-        if (importsPanel.isOpen) return importsPanel.close()
-        objectsPanel.close()
-        importsPanel.open()
+    const infoPanel = new EditorMapInfo.Panel($('info-panel'), send, encode, info => vscode.postMessage({type: 'info', info}))
+    // One of these panels at a time.
+    const panels = () => [importsPanel, objectsPanel, infoPanel]
+    const toggle = panel => {
+        if (panel.isOpen) return panel.close()
+        for (const p of panels()) if (p !== panel) p.close()
+        panel.open()
     }
+    $('imports-open').onclick = () => toggle(importsPanel)
+    $('info-open').onclick = () => toggle(infoPanel)
     const objectsPanel = new EditorObjectEditor.Panel($('objects-panel'), send, encode, objects => vscode.postMessage({type: 'objects', objects}))
-    $('objects-open').onclick = () => {
-        if (objectsPanel.isOpen) return objectsPanel.close()
-        importsPanel.close()
-        objectsPanel.open()
-    }
+    $('objects-open').onclick = () => toggle(objectsPanel)
     $('reload').onclick = () => send(encode.reload())
     showTools()
 
@@ -1202,6 +1203,8 @@
             askThing()
             $('status').textContent = msg.found ? msg.text : ''
             vscode.postMessage({type: 'picked', text: msg.found ? msg.text : ''})
+        } else if (msg.kind === 'info') {
+            infoPanel.set(msg.fields)
         } else if (msg.kind === 'imports') {
             importsPanel.set(msg.files)
         } else if (msg.kind === 'importPreview') {
@@ -1308,6 +1311,11 @@
                 send(encode.camera(true, c, camera.ray(msg.x, msg.y, aspect())))
                 send(encode.strokeEnd())
             }
+        } else if (msg.type === 'mapInfo') {
+            // The map info panel's, for the tests: `open`, a field `set` (`field`, `value`, a flag's `bit`), `close`.
+            if (msg.action === 'open') toggle(infoPanel)
+            else if (msg.action === 'set') infoPanel.type(msg.field, msg.value, msg.bit)
+            else if (msg.action === 'close') infoPanel.close()
         } else if (msg.type === 'import') {
             // The import manager's, for the tests: `open`, `add` (a file on
             // disk, at `path`), `pick` (`index`), `move` (to `path`), `delete`, `close`.

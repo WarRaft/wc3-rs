@@ -91,6 +91,8 @@ pub enum Snapshot {
     Strings(Option<(String, bool)>),
     /// The imported files' list and the files to write or take out.
     Imports(Option<imp_rs::Imports>, std::collections::BTreeMap<String, Option<Vec<u8>>>),
+    /// The map's info (`war3map.w3i`), whole.
+    Info(Box<Option<w3i_rs::Info>>),
     /// Several, undone as one (an object pasted and the strings it
     /// copied).
     Many(Vec<Snapshot>),
@@ -132,6 +134,8 @@ impl Dirty {
 pub struct Target<'a> {
     pub terrain: &'a mut Terrain,
     pub files: &'a mut crate::placed::Files,
+    /// The map's info (`war3map.w3i`).
+    pub info: &'a mut Option<w3i_rs::Info>,
 }
 
 /// The changes: undo and redo, what's unsaved.
@@ -269,6 +273,7 @@ impl Edits {
             Snapshot::Objects(kind, _) => self.dirty.objects |= crate::objdata::bit(*kind),
             Snapshot::Strings(_) => self.dirty.strings = true,
             Snapshot::Imports(..) => self.dirty.imports = true,
+            Snapshot::Info(_) => self.dirty.info = true,
             Snapshot::Pathing(_) => self.dirty.pathing = true,
             Snapshot::Many(all) => all.iter().for_each(|s| self.mark(s)),
         }
@@ -383,9 +388,13 @@ impl Edits {
                 Snapshot::Objects(kind, before)
             }
             Snapshot::Many(all) => {
-                let mut back: Vec<Snapshot> = all.into_iter().rev().map(|s| self.swap(s, Target { terrain: &mut *t.terrain, files: &mut *t.files })).collect();
+                let mut back: Vec<Snapshot> = all.into_iter().rev().map(|s| self.swap(s, Target { terrain: &mut *t.terrain, files: &mut *t.files, info: &mut *t.info })).collect();
                 back.reverse();
                 Snapshot::Many(back)
+            }
+            Snapshot::Info(info) => {
+                self.dirty.info = true;
+                Snapshot::Info(Box::new(std::mem::replace(t.info, *info)))
             }
             Snapshot::Imports(list, files) => {
                 self.dirty.imports = true;

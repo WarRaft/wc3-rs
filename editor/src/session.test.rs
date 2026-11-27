@@ -950,3 +950,51 @@ fn files_imported_moved_deleted_undone_and_saved_with_their_list() {
     assert_eq!(back.files.iter().map(|f| f.path_in_map()).collect::<Vec<_>>(), ["Docs\\old.txt", "Sound\\Custom\\Rain.wav"]);
     assert_eq!(list(&s), ["Docs\\old.txt 1 true false", "Sound\\Custom\\Rain.wav 1 true false"]);
 }
+
+#[test]
+fn the_maps_info_shown_set_its_strings_in_war3map_wts_undone_and_saved() {
+    let dir = TestDir::new("session-info");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    let mut info = w3i_rs::parse(&testdir::info()).unwrap();
+    info.name = "TRIGSTR_001".into();
+    info.players = vec![w3i_rs::Player { number: 0, kind: 1, race: 1, name: "Red".into(), ..Default::default() }];
+    info.forces = vec![w3i_rs::Force { flags: 0, players: 1, name: "Force 1".into() }];
+    dir.write("map/war3map.w3i", &info.to_bytes().unwrap());
+    dir.write("map/war3map.wts", b"STRING 1\n{\nThe Map\n}\n");
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let get = |s: &Session, k: &str| s.info_fields().into_iter().find(|(f, _)| f == k).map(|(_, v)| v);
+    let said = |msgs: &[ServerMsg]| match msgs.last() {
+        Some(ServerMsg::State(st)) => st.message.clone(),
+        m => panic!("{m:?}"),
+    };
+    assert_eq!(get(&s, "name").as_deref(), Some("The Map"), "a string of the map's as its text");
+    assert_eq!(get(&s, "tft").as_deref(), Some("1"));
+    assert_eq!(get(&s, "player.0.name").as_deref(), Some("Red"));
+    assert_eq!(get(&s, "force.0.players").as_deref(), Some("1"));
+    // Its name a string: the string set; the author a text: set.
+    let msgs = s.info_set("name", "The Renamed Map");
+    assert!(matches!(&msgs[1], ServerMsg::Map(m) if m.name == "The Renamed Map"), "{msgs:?}");
+    assert_eq!(s.info.as_ref().unwrap().name, "TRIGSTR_001");
+    assert_eq!(said(&s.info_set("author", "Someone")), "");
+    assert_eq!(said(&s.info_set("fog_style", "2")), "");
+    assert_eq!(said(&s.info_set("fog_color", "255,0,0,255")), "");
+    assert_eq!(said(&s.info_set("player.0.race", "2")), "");
+    assert_eq!(said(&s.info_set("force.0.flags", "3")), "");
+    assert_eq!(said(&s.info_set("weather", "RAhr")), "");
+    assert!(said(&s.info_set("fog_style", "7")).contains("0 to 3"));
+    assert!(said(&s.info_set("fog_color", "300,0,0,0")).contains("r,g,b,a"));
+    assert!(said(&s.info_set("player.3.name", "X")).contains("no player 3"));
+    assert!(said(&s.info_set("nothing", "X")).contains("no field nothing"));
+    let i = s.info.as_ref().unwrap();
+    assert_eq!((i.author.as_str(), i.fog.style, i.fog.color, i.players[0].race, i.forces[0].flags, i.weather.to_string().as_str()), ("Someone", 2, [0, 0, 255, 255], 2, 3, "RAhr"));
+    assert_eq!(get(&s, "fog_color").as_deref(), Some("255,0,0,255"));
+    s.undo(false);
+    assert_eq!(get(&s, "weather").as_deref(), Some(""));
+    s.undo(true);
+    let saved = s.save();
+    assert!(said(&saved).contains("war3map.w3i") && said(&saved).contains("war3map.wts"), "{saved:?}");
+    let back = w3i_rs::parse(&std::fs::read(dir.path().join("map/war3map.w3i")).unwrap()).unwrap();
+    assert_eq!((back.author.as_str(), back.players[0].race), ("Someone", 2));
+}
