@@ -67,6 +67,9 @@ const EditorProtocol = (() => {
         MAP_FIND: 49,
         COPY: 50,
         PASTE: 51,
+        GROUP_MOVE: 52,
+        GROUP_ROTATE: 53,
+        GROUP_DELETE: 54,
         PASTED: 159,
         MAP_FOUND: 158,
         IMPORT_PREVIEW_ANSWER: 154,
@@ -201,6 +204,15 @@ const EditorProtocol = (() => {
             out[4] = kind
             out.set(this.bytes, 5)
             return out
+        }
+    }
+
+    /** Things placed: a list of (`u8` file, `u32` index). */
+    function writeThings(w, things) {
+        w.u32(things.length)
+        for (const t of things) {
+            w.u8(t.file)
+            w.u32(t.index)
         }
     }
 
@@ -351,12 +363,32 @@ const EditorProtocol = (() => {
             w.string(name)
             return w.frame(KIND.MAP_FIND)
         },
-        /** Thing `index` of `file` copied (the editor keeps it). */
-        copy(file, index) {
+        /** Things ({file, index} each) copied (the editor keeps them). */
+        copy(things) {
             const w = new Writer()
-            w.u8(file)
-            w.u32(index)
+            writeThings(w, things)
             return w.frame(KIND.COPY)
+        },
+        /** Things moved together by a drag: as far as the ray's point from where its first met the ground. */
+        groupMove(start, things, origin, dir) {
+            const w = new Writer()
+            w.u8(start ? 1 : 0)
+            writeThings(w, things)
+            for (const v of [...origin, ...dir]) w.f32(v)
+            return w.frame(KIND.GROUP_MOVE)
+        },
+        /** Things each turned by `delta` radians where it stands. */
+        groupRotate(things, delta) {
+            const w = new Writer()
+            writeThings(w, things)
+            w.f32(delta)
+            return w.frame(KIND.GROUP_ROTATE)
+        },
+        /** Things taken away. */
+        groupDelete(things) {
+            const w = new Writer()
+            writeThings(w, things)
+            return w.frame(KIND.GROUP_DELETE)
         },
         /** The thing copied placed anew where the ray meets the ground. */
         paste(origin, dir) {
@@ -607,7 +639,7 @@ const EditorProtocol = (() => {
             case KIND.OBJECT_ENUMS:
                 return {kind: 'objectEnums', enums: r.list(r => ({ty: r.string(), multi: r.u8() !== 0, values: r.list(r => [r.string(), r.string()])}))}
             case KIND.PASTED:
-                return {kind: 'pasted', file: r.u8(), index: r.u32()}
+                return {kind: 'pasted', things: r.list(r => ({file: r.u8(), index: r.u32()}))}
             case KIND.MAP_FOUND:
                 return {kind: 'mapFound', name: r.string(), what: r.u8(), file: r.u8(), index: r.u32(), at: [r.f32(), r.f32(), r.f32()], said: r.string()}
             case KIND.MAP_NAME:

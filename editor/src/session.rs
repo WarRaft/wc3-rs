@@ -68,8 +68,11 @@ pub struct Session {
     /// Whether the page has the object editor's field types' values
     /// (`ObjectEnums`), since it (re)loaded.
     enums_sent: bool,
-    /// The thing copied (`Copy`), as it was then, for `Paste`.
-    clipboard: Option<Copied>,
+    /// The things copied (`Copy`), as they were then, for `Paste`.
+    clipboard: Vec<Copied>,
+    /// A group's drag: where it started on the ground and where each
+    /// thing (file, index) stood then.
+    group_drag: Option<([f32; 2], Vec<(u8, u32, f32, f32)>)>,
     /// The game's tables the object editor reads, once asked.
     object_tables: crate::objdata::Tables,
 }
@@ -163,7 +166,8 @@ impl Session {
             notes,
             object_tables: Default::default(),
             enums_sent: false,
-            clipboard: None,
+            clipboard: Vec::new(),
+            group_drag: None,
         })
     }
 
@@ -564,6 +568,7 @@ impl Session {
     /// brush's.
     pub fn stroke_end(&mut self) -> Vec<ServerMsg> {
         self.edits.end();
+        self.group_drag = None;
         let mut out = Vec::new();
         if std::mem::take(&mut self.terrain_stroke) {
             out.push(ServerMsg::Overlays(self.overlays()));
@@ -2678,54 +2683,189 @@ impl Session {
         })
     }
 
-    /// Thing `index` of `file` copied, as it is now (a cut deletes it
+    /// Things (file, index) copied, as they are now (a cut deletes them
     /// after), for [`paste`](Self::paste). Not a start location: a
     /// player has one.
-    pub fn copy(&mut self, file: u8, index: u32) -> Vec<ServerMsg> {
-        let copied = match file {
-            0 => self.placed.doodads.as_ref().and_then(|d| d.doodads.get(index as usize)).cloned().map(Copied::Doodad),
-            _ => self.placed.units.as_ref().and_then(|u| u.units.get(index as usize)).cloned().map(Copied::Unit),
-        };
-        let message = match copied {
-            None => format!("no thing {index} to copy"),
-            Some(Copied::Unit(u)) if u.placement.id == START_LOCATION => "A start location isn't copied: a player has one.".to_string(),
-            Some(c) => {
-                self.clipboard = Some(c);
-                String::new()
+    pub fn copy(&mut self, things: &[(u8, u32)]) -> Vec<ServerMsg> {
+        let mut copied = Vec::new();
+        for &(file, index) in things {
+            let c = match file {
+                0 => self.placed.doodads.as_ref().and_then(|d| d.doodads.get(index as usize)).cloned().map(Copied::Doodad),
+                _ => self.placed.units.as_ref().and_then(|u| u.units.get(index as usize)).cloned().map(Copied::Unit),
+            };
+            match c {
+                None => return vec![ServerMsg::State(self.state(format!("no thing {index} to copy")))],
+                Some(Copied::Unit(u)) if u.placement.id == START_LOCATION => {
+                    return vec![ServerMsg::State(self.state("A start location isn't copied: a player has one.".into()))];
+                }
+                Some(c) => copied.push(c),
             }
-        };
-        vec![ServerMsg::State(self.state(message))]
+        }
+        if !copied.is_empty() {
+            self.clipboard = copied;
+        }
+        vec![ServerMsg::State(self.state(String::new()))]
     }
 
-    /// The thing copied placed anew where the ray meets the ground (on it:
-    /// its height there), all else as it was (a unit's items, abilities,
-    /// drops ...), a number no other has; then `Pasted`, which it is.
+    /// The things copied placed anew, their middle where the ray meets
+    /// the ground and each as far from it as it was (on the ground there:
+    /// its height), all else as it was (a unit's items, abilities, drops
+    /// ...), a number no other has; an undo for all; then `Pasted`, which
+    /// they are.
     pub fn paste(&mut self, origin: [f32; 3], dir: [f32; 3]) -> Vec<ServerMsg> {
-        let Some(copied) = self.clipboard.clone() else { return vec![ServerMsg::State(self.state("Nothing copied to paste.".into()))] };
-        let Some([x, y, z]) = self.ground_point(origin, dir) else { return vec![ServerMsg::State(self.state(String::new()))] };
-        let file = if matches!(copied, Copied::Doodad(_)) { 0 } else { 1 };
-        let mut index = 0;
-        let mut out = self.things_edit(file, |files| {
-            match copied {
-                Copied::Doodad(mut d) => {
-                    let list = &mut files.doodads.as_mut().unwrap().doodads;
-                    (d.placement.x, d.placement.y, d.placement.z) = (x, y, z);
-                    d.number = list.iter().map(|d| d.number).max().unwrap_or(-1) + 1;
-                    list.push(d);
-                    index = list.len() - 1;
-                }
-                Copied::Unit(mut u) => {
-                    let list = &mut files.units.as_mut().unwrap().units;
-                    (u.placement.x, u.placement.y, u.placement.z) = (x, y, z);
-                    u.number = list.iter().map(|u| u.number).max().unwrap_or(-1) + 1;
-                    list.push(u);
-                    index = list.len() - 1;
+        if self.clipboard.is_empty() {
+            return vec![ServerMsg::State(self.state("Nothing copied to paste.".into()))];
+        }
+        let Some([x, y, _]) = self.ground_point(origin, dir) else { return vec![ServerMsg::State(self.state(String::new()))] };
+        let at = |c: &Copied| match c {
+            Copied::Doodad(d) => (d.placement.x, d.placement.y),
+            Copied::Unit(u) => (u.placement.x, u.placement.y),
+        };
+        let n = self.clipboard.len() as f32;
+        let (mx, my) = self.clipboard.iter().map(at).fold((0.0, 0.0), |(a, b), (x, y)| (a + x / n, b + y / n));
+        let placed: Vec<(Copied, f32, f32, f32)> = self
+            .clipboard
+            .clone()
+            .into_iter()
+            .map(|c| {
+                let (cx, cy) = at(&c);
+                let (nx, ny) = (x + cx - mx, y + cy - my);
+                let z = self.ground_z(nx, ny).unwrap_or(0.0);
+                (c, nx, ny, z)
+            })
+            .collect();
+        let files: Vec<u8> = placed.iter().map(|(c, ..)| if matches!(c, Copied::Doodad(_)) { 0 } else { 1 }).collect();
+        let mut made = Vec::new();
+        let mut out = self.group_edit(&files, |f| {
+            for (c, x, y, z) in placed {
+                match c {
+                    Copied::Doodad(mut d) => {
+                        let list = &mut f.doodads.as_mut().unwrap().doodads;
+                        (d.placement.x, d.placement.y, d.placement.z) = (x, y, z);
+                        d.number = list.iter().map(|d| d.number).max().unwrap_or(-1) + 1;
+                        list.push(d);
+                        made.push((0, list.len() as u32 - 1));
+                    }
+                    Copied::Unit(mut u) => {
+                        let list = &mut f.units.as_mut().unwrap().units;
+                        (u.placement.x, u.placement.y, u.placement.z) = (x, y, z);
+                        u.number = list.iter().map(|u| u.number).max().unwrap_or(-1) + 1;
+                        list.push(u);
+                        made.push((1, list.len() as u32 - 1));
+                    }
                 }
             }
             Ok(())
         });
-        out.push(ServerMsg::Pasted { file, index: index as u32 });
+        out.push(ServerMsg::Pasted(made));
         out
+    }
+
+    /// The ground's height at `(x, y)` (the game's units).
+    fn ground_z(&self, x: f32, y: f32) -> Option<f32> {
+        let d = self.drawn.as_ref()?;
+        let (cx, cy) = ((x - d.offset[0]) / 128.0, (y - d.offset[1]) / 128.0);
+        self.ground_point([cx, cy, 1000.0], [0.0, 0.0, -1.0]).map(|p| p[2])
+    }
+
+    /// An edit of things in `files` (each 0 `war3map.doo` or 1
+    /// `war3mapUnits.doo`): one undo for the files it touches.
+    fn group_edit(&mut self, files: &[u8], change: impl FnOnce(&mut crate::placed::Files) -> Result<(), String>) -> Vec<ServerMsg> {
+        let layout = self.placed.layout;
+        let mut before = Vec::new();
+        if files.contains(&0) {
+            before.push(crate::edit::Snapshot::Doodads(self.placed.doodads.get_or_insert_with(|| crate::edit::new_doodads(layout)).doodads.clone()));
+        }
+        if files.contains(&1) {
+            before.push(crate::edit::Snapshot::Units(self.placed.units.get_or_insert_with(|| crate::edit::new_units(layout)).units.clone()));
+        }
+        let mut probe = self.placed.clone();
+        if let Err(message) = change(&mut probe) {
+            return vec![ServerMsg::State(self.state(message))];
+        }
+        self.edits.record(if before.len() == 1 { before.pop().unwrap() } else { crate::edit::Snapshot::Many(before) });
+        self.placed = probe;
+        let mut out = self.place_objects();
+        out.push(ServerMsg::State(self.state(String::new())));
+        out
+    }
+
+    /// Things moved together by a drag: as far as the ray's point on the
+    /// ground from where the drag's first (`start`) met it; a doodad on the
+    /// ground where it comes. One undo for the drag.
+    pub fn group_move(&mut self, start: bool, things: &[(u8, u32)], origin: [f32; 3], dir: [f32; 3]) -> Vec<ServerMsg> {
+        let Some([x, y, _]) = self.ground_point(origin, dir) else { return vec![ServerMsg::State(self.state(String::new()))] };
+        let start = start || self.group_drag.is_none();
+        if start {
+            let mut was = Vec::new();
+            for &(file, index) in things {
+                match placement(&mut self.placed, file, index) {
+                    Ok(p) => was.push((file, index, p.x, p.y)),
+                    Err(message) => return vec![ServerMsg::State(self.state(message))],
+                }
+            }
+            self.group_drag = Some(([x, y], was));
+        }
+        let ([fx, fy], was) = self.group_drag.clone().unwrap();
+        let (dx, dy) = (x - fx, y - fy);
+        let heights: Vec<Option<f32>> = was.iter().map(|&(file, _, px, py)| if file == 0 { self.ground_z(px + dx, py + dy) } else { None }).collect();
+        let set = move |files: &mut crate::placed::Files| -> Result<(), String> {
+            for (&(file, index, px, py), z) in was.iter().zip(&heights) {
+                let p = placement(files, file, index)?;
+                (p.x, p.y) = (px + dx, py + dy);
+                if let Some(z) = z {
+                    p.z = *z;
+                }
+            }
+            Ok(())
+        };
+        if start {
+            let files: Vec<u8> = things.iter().map(|t| t.0).collect();
+            return self.group_edit(&files, set);
+        }
+        if let Err(message) = set(&mut self.placed) {
+            return vec![ServerMsg::State(self.state(message))];
+        }
+        let mut out = self.place_objects();
+        out.push(ServerMsg::State(self.state(String::new())));
+        out
+    }
+
+    /// Things each turned by `delta` radians where it stands; one undo.
+    pub fn group_rotate(&mut self, things: &[(u8, u32)], delta: f32) -> Vec<ServerMsg> {
+        let files: Vec<u8> = things.iter().map(|t| t.0).collect();
+        let things = things.to_vec();
+        self.group_edit(&files, |f| {
+            for (file, index) in things {
+                let p = placement(f, file, index)?;
+                p.angle = (p.angle + delta).rem_euclid(std::f32::consts::TAU);
+            }
+            Ok(())
+        })
+    }
+
+    /// Things taken away (those after each move up); one undo.
+    pub fn group_delete(&mut self, things: &[(u8, u32)]) -> Vec<ServerMsg> {
+        let files: Vec<u8> = things.iter().map(|t| t.0).collect();
+        let mut things = things.to_vec();
+        // The last first, so the indices before stay.
+        things.sort_unstable_by(|a, b| b.cmp(a));
+        things.dedup();
+        self.group_edit(&files, |f| {
+            for (file, index) in things {
+                let i = index as usize;
+                let len = if file == 0 { f.doodads.as_ref().map_or(0, |d| d.doodads.len()) } else { f.units.as_ref().map_or(0, |u| u.units.len()) };
+                if i >= len {
+                    return Err(format!("no thing {index} to delete"));
+                }
+                if file == 0 {
+                    f.doodads.as_mut().unwrap().doodads.remove(i);
+                } else {
+                    f.units.as_mut().unwrap().units.remove(i);
+                }
+            }
+            Ok(())
+        })
     }
 
     /// Thing `index` of `file` moved to where the ray meets the ground;

@@ -29,6 +29,8 @@ layout(location = 8) in vec4 a_weights;
 // Reforged's tangents (the fourth the bitangent's sign); (0, 0, 0, 1)
 // without them.
 layout(location = 9) in vec4 a_tangent;
+// 1: one of the things picked together (the instance's last float, the page's).
+layout(location = 10) in float a_picked;
 uniform mat4 u_mvp;
 uniform int u_selected;
 // The model's animation: its bones' matrices, a row of four texels a
@@ -135,7 +137,7 @@ void main() {
     v_uv = a_uv;
     v_tint = a_tint;
     v_team = a_team;
-    v_selected = gl_InstanceID == u_selected ? 1.0 : 0.0;
+    v_selected = gl_InstanceID == u_selected || a_picked > 0.5 ? 1.0 : 0.0;
     v_dist = distance(p, u_eye) * 128.0;
     v_view = u_eye - p;
     gl_Position = u_mvp * vec4(p, 1.0);
@@ -352,7 +354,7 @@ void main() {
                     }
                     gl.bindBuffer(gl.ARRAY_BUFFER, ib)
                     const stride = INSTANCE * 4
-                    for (const [location, size, offset] of [[3, 4, 0], [4, 3, 4], [5, 3, 7], [6, 3, 10]]) {
+                    for (const [location, size, offset] of [[3, 4, 0], [4, 3, 4], [5, 3, 7], [6, 3, 10], [10, 1, 15]]) {
                         gl.enableVertexAttribArray(location)
                         gl.vertexAttribPointer(location, size, gl.FLOAT, false, stride, offset * 4)
                         gl.vertexAttribDivisor(location, 1)
@@ -372,6 +374,7 @@ void main() {
         setInstances(list) {
             const gl = this.gl
             this.instanceData = list
+            this.markGroup(list)
             this.count = 0
             list.forEach((data, i) => {
                 const m = this.models[i]
@@ -396,6 +399,52 @@ void main() {
 
         select(model, instance) {
             this.selected = {model, instance}
+        }
+
+        /** The things picked together (`file:index` keys), shown as the one picked is. */
+        setGroup(keys) {
+            this.group = keys
+            const gl = this.gl
+            ;(this.instanceData ?? []).forEach((data, i) => {
+                const m = this.models[i]
+                if (!this.markGroup([data]) || !m?.instanceBuffer) return
+                gl.bindBuffer(gl.ARRAY_BUFFER, m.instanceBuffer)
+                gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW)
+            })
+        }
+
+        /** The group's flag in each instance of `list`; whether one changed. */
+        markGroup(list) {
+            let changed = false
+            list.forEach(data => {
+                for (let i = 0; i < data.length / INSTANCE; i++) {
+                    const at = i * INSTANCE
+                    const key = `${data[at + 13] < 2 ? 0 : 1}:${data[at + 14]}`
+                    const flag = this.group?.has(key) ? 1 : 0
+                    if (data[at + 15] !== flag) {
+                        data[at + 15] = flag
+                        changed = true
+                    }
+                }
+            })
+            return changed
+        }
+
+        /** The things whose place `mvp` puts inside the box of clip space [x0, y0, x1, y1]: (file, index) each. */
+        inside(mvp, [x0, y0, x1, y1]) {
+            const out = []
+            for (const data of this.instanceData ?? []) {
+                for (let i = 0; i < data.length / INSTANCE; i++) {
+                    const at = i * INSTANCE
+                    const [x, y, z] = [data[at], data[at + 1], data[at + 2]]
+                    const w = mvp[3] * x + mvp[7] * y + mvp[11] * z + mvp[15]
+                    if (w <= 0) continue
+                    const cx = (mvp[0] * x + mvp[4] * y + mvp[8] * z + mvp[12]) / w
+                    const cy = (mvp[1] * x + mvp[5] * y + mvp[9] * z + mvp[13]) / w
+                    if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) out.push({file: data[at + 13] < 2 ? 0 : 1, index: data[at + 14]})
+                }
+            }
+            return out
         }
 
         draw(mvp, time = 0, camera = null, light = null, hours = 12) {

@@ -69,8 +69,11 @@
 //! | 47 | `SoundFiles` | nothing; answered by `SoundFiles`: the game's and the map's sound files |
 //! | 48 | `MapName` | the script's name of what's on the map, for a trigger's parameter: its kind (`unit`, `item`, `destructable`, `rect`, `camerasetup`), `i32` a camera's index (-1: by the ray), the ray; answered by `MapName` |
 //! | 49 | `MapFind` | what a name of the map's script is (`gg_unit_hfoo_0012`, `gg_rct_Spawn` ...): the name; answered by `MapFound` |
-//! | 50 | `Copy` | a thing copied (the editor keeps it, so a cut's delete after it doesn't lose it): `u8` file, `u32` index; answered by `State` |
-//! | 51 | `Paste` | the thing copied placed anew where a ray meets the ground: the ray; answered as `Place` is, then `Pasted` |
+//! | 50 | `Copy` | things copied (the editor keeps them, so a cut's delete after it doesn't lose them): a list of (`u8` file, `u32` index); answered by `State` |
+//! | 51 | `Paste` | the things copied placed anew, their middle where a ray meets the ground: the ray; answered as `Place` is, then `Pasted` |
+//! | 52 | `GroupMove` | things moved together by a drag: `u8` its first, the things (as `Copy`'s), the ray; answered as `Place` is |
+//! | 53 | `GroupRotate` | things each turned where it stands: the things, `f32` radians; answered the same |
+//! | 54 | `GroupDelete` | things taken away: the things; answered the same |
 //! | 22 | `TilePathing` | the tile pather's: `u8` a tile's index in the terrain's list, `u8` what it forbids (`wpm` flags: 2 walking, 4 flying, 8 building); answered by `Overlays` and `State` |
 //! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id; kind 255: id a texture's path); answered by `Icons` |
 //!
@@ -108,7 +111,7 @@
 //! | 156 | `SoundFiles` | the sound files of the game's and the map's layers (`.wav`, `.mp3`, `.flac`, `.ogg`): a list of names, sorted |
 //! | 157 | `MapName` | its kind, the name (`gg_unit_hfoo_0012`, `gg_rct_Spawn` ...; empty: none), what was picked or why none |
 //! | 158 | `MapFound` | the name, `u8` what it is (0 nothing, 1 a thing placed, 2 a region, 3 a camera), `u8` a thing's file, `u32` its index (or the region's, the camera's), `f32` where (the game's units, x, y, z), what it is in words or why nothing |
-//! | 159 | `Pasted` | the thing a `Paste` made: `u8` file, `u32` index |
+//! | 159 | `Pasted` | the things a `Paste` made: a list of (`u8` file, `u32` index) |
 //! | 141 | `Icons` | a list of (`u8` kind, id, `u32` width, height, RGBA; 0 by 0 for none) |
 //!
 //! After an edit the terrain's messages come again: `Cliffs` with no
@@ -187,6 +190,9 @@ mod kind {
     pub const MAP_FIND: u8 = 49;
     pub const COPY: u8 = 50;
     pub const PASTE: u8 = 51;
+    pub const GROUP_MOVE: u8 = 52;
+    pub const GROUP_ROTATE: u8 = 53;
+    pub const GROUP_DELETE: u8 = 54;
     pub const PASTED: u8 = 159;
     pub const MAP_FOUND: u8 = 158;
     pub const IMPORT_PREVIEW_ANSWER: u8 = 154;
@@ -284,10 +290,16 @@ pub enum ClientMsg {
     SoundFiles,
     /// Kind 49.
     MapFind { name: String },
-    /// Kind 50.
-    Copy { file: u8, index: u32 },
+    /// Kind 50: the things (file, index).
+    Copy { things: Vec<(u8, u32)> },
     /// Kind 51.
     Paste { origin: [f32; 3], dir: [f32; 3] },
+    /// Kind 52.
+    GroupMove { start: bool, things: Vec<(u8, u32)>, origin: [f32; 3], dir: [f32; 3] },
+    /// Kind 53.
+    GroupRotate { things: Vec<(u8, u32)>, delta: f32 },
+    /// Kind 54.
+    GroupDelete { things: Vec<(u8, u32)> },
     /// Kind 48.
     MapName { kind: String, index: i32, origin: [f32; 3], dir: [f32; 3] },
     /// Kind 45.
@@ -605,8 +617,8 @@ pub enum ServerMsg {
     /// Kind 158: the name, what it is (0 nothing, 1 a thing, 2 a region,
     /// 3 a camera), a thing's file, its index, where, said.
     MapFound { name: String, what: u8, file: u8, index: u32, at: [f32; 3], said: String },
-    /// Kind 159: the thing a paste made, its file and index.
-    Pasted { file: u8, index: u32 },
+    /// Kind 159: the things a paste made, each its file and index.
+    Pasted(Vec<(u8, u32)>),
     /// Kind 157.
     MapName { kind: String, name: String, said: String },
     /// Kind 155: each field and its value as text.
@@ -746,7 +758,10 @@ impl ClientMsg {
             kind::CAMERA_SET => Some(ClientMsg::CameraSet { index: r.u32()?, field: r.string()?, value: r.f32()? }),
             kind::SOUND_FILES_ASK => Some(ClientMsg::SoundFiles),
             kind::MAP_FIND => Some(ClientMsg::MapFind { name: r.string()? }),
-            kind::COPY => Some(ClientMsg::Copy { file: r.u8()?, index: r.u32()? }),
+            kind::COPY => Some(ClientMsg::Copy { things: r.things()? }),
+            kind::GROUP_MOVE => Some(ClientMsg::GroupMove { start: r.u8()? != 0, things: r.things()?, origin: [r.f32()?, r.f32()?, r.f32()?], dir: [r.f32()?, r.f32()?, r.f32()?] }),
+            kind::GROUP_ROTATE => Some(ClientMsg::GroupRotate { things: r.things()?, delta: r.f32()? }),
+            kind::GROUP_DELETE => Some(ClientMsg::GroupDelete { things: r.things()? }),
             kind::PASTE => Some(ClientMsg::Paste { origin: [r.f32()?, r.f32()?, r.f32()?], dir: [r.f32()?, r.f32()?, r.f32()?] }),
             kind::MAP_NAME_ASK => Some(ClientMsg::MapName { kind: r.string()?, index: r.u32()? as i32, origin: [r.f32()?, r.f32()?, r.f32()?], dir: [r.f32()?, r.f32()?, r.f32()?] }),
             kind::INFO_ASK => Some(ClientMsg::InfoAsk),
@@ -841,10 +856,24 @@ impl ClientMsg {
                 kind::REGION_DELETE
             }
             ClientMsg::Reload => kind::RELOAD,
-            ClientMsg::Copy { file, index } => {
-                w.u8(*file);
-                w.u32(*index);
+            ClientMsg::Copy { things } => {
+                w.things(things);
                 kind::COPY
+            }
+            ClientMsg::GroupMove { start, things, origin, dir } => {
+                w.u8(*start as u8);
+                w.things(things);
+                origin.iter().chain(dir).for_each(|v| w.f32(*v));
+                kind::GROUP_MOVE
+            }
+            ClientMsg::GroupRotate { things, delta } => {
+                w.things(things);
+                w.f32(*delta);
+                kind::GROUP_ROTATE
+            }
+            ClientMsg::GroupDelete { things } => {
+                w.things(things);
+                kind::GROUP_DELETE
             }
             ClientMsg::Paste { origin, dir } => {
                 origin.iter().chain(dir).for_each(|v| w.f32(*v));
@@ -1206,9 +1235,8 @@ impl ServerMsg {
                 });
                 kind::OBJECT_ENUMS
             }
-            ServerMsg::Pasted { file, index } => {
-                w.u8(*file);
-                w.u32(*index);
+            ServerMsg::Pasted(things) => {
+                w.things(things);
                 kind::PASTED
             }
             ServerMsg::MapFound { name, what, file, index, at, said } => {
@@ -1576,7 +1604,7 @@ impl ServerMsg {
                 ServerMsg::ObjectFields(ObjectFieldsMsg { kind, id, base, name, levels, fields })
             }
             kind::OBJECT_ENUMS => ServerMsg::ObjectEnums(r.list(|r| Ok((r.string()?, r.u8()? != 0, r.list(|r| Ok((r.string()?, r.string()?)))?)))?),
-            kind::PASTED => ServerMsg::Pasted { file: r.u8()?, index: r.u32()? },
+            kind::PASTED => ServerMsg::Pasted(r.things()?),
             kind::MAP_FOUND => ServerMsg::MapFound { name: r.string()?, what: r.u8()?, file: r.u8()?, index: r.u32()?, at: [r.f32()?, r.f32()?, r.f32()?], said: r.string()? },
             kind::MAP_NAME => ServerMsg::MapName { kind: r.string()?, name: r.string()?, said: r.string()? },
             kind::SOUND_FILES => ServerMsg::SoundFiles(r.list(|r| r.string())?),
@@ -1715,6 +1743,14 @@ impl Writer {
         self.buf.extend_from_slice(s.as_bytes());
     }
 
+    /// Things placed: a list of (`u8` file, `u32` index).
+    fn things(&mut self, things: &[(u8, u32)]) {
+        self.list(things, |w, (file, index)| {
+            w.u8(*file);
+            w.u32(*index);
+        });
+    }
+
     fn list<T>(&mut self, items: &[T], mut each: impl FnMut(&mut Writer, &T)) {
         self.u32(items.len() as u32);
         for item in items {
@@ -1773,6 +1809,11 @@ impl Reader<'_> {
     fn string(&mut self) -> Result<String, DecodeError> {
         let n = self.u32()? as usize;
         String::from_utf8(self.take(n)?.to_vec()).map_err(|_| DecodeError("a string isn't UTF-8".into()))
+    }
+
+    /// Things placed: a list of (`u8` file, `u32` index).
+    fn things(&mut self) -> Result<Vec<(u8, u32)>, DecodeError> {
+        self.list(|r| Ok((r.u8()?, r.u32()?)))
     }
 
     fn list<T>(&mut self, mut each: impl FnMut(&mut Self) -> Result<T, DecodeError>) -> Result<Vec<T>, DecodeError> {

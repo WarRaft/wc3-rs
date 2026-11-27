@@ -458,7 +458,7 @@ async function steps(only) {
             we.pasted = undefined
             we.thing = undefined
             await we.panel.webview.postMessage({type: 'paste', x: -0.2, y: 0})
-            const pasted = await until(() => we.pasted, 'pasted')
+            const [pasted] = await until(() => we.pasted, 'pasted')
             const copy = await until(() => we.thing?.index === pasted.index && we.thing, 'the copy picked')
             const f = new Map(copy.fields)
             check(pasted.file === 1 && pasted.index === at && f.get('player') === 3 && f.get('scale_x') === 2 && texts().get('abilities') === 'AHhb:1:0' && texts().get('drops') === 'ratc:100',
@@ -470,9 +470,50 @@ async function steps(only) {
             await until(() => we.state?.undo && !we.thing, 'cut')
             we.pasted = undefined
             await we.panel.webview.postMessage({type: 'paste', x: 0.3, y: 0})
-            const again = await until(() => we.pasted, 'pasted after the cut')
+            const [again] = await until(() => we.pasted, 'pasted after the cut')
             check(again.index === at, `cut and pasted again: #${again.index}`)
-            for (let i = 0; i < 3; i++) {
+            // The footman and its copy picked together (a click with Shift), dragged
+            // together (each as far), taken away together and back (one undo).
+            await we.panel.webview.postMessage({type: 'select', file: 1, index: at - 1})
+            await until(() => we.thing?.index === at - 1, 'the footman alone')
+            const xOf = async index => {
+                we.thing = undefined
+                await we.panel.webview.postMessage({type: 'select', file: 1, index, adds: index === at})
+                return new Map((await until(() => we.thing?.index === index && we.thing, `#${index}'s fields`)).fields).get('x')
+            }
+            const footX = new Map(we.thing.fields).get('x')
+            we.picked = undefined
+            await we.panel.webview.postMessage({type: 'click', x: 0.3, y: 0, shift: true})
+            const two = await until(() => we.picked !== undefined && we.picked, 'the copy picked with it')
+            check(two === '2 picked together', `with Shift: ${two}`)
+            const copyX = new Map((await until(() => we.thing?.index === at && we.thing, "the copy's fields")).fields).get('x')
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'drag', from: [0, 0], x: 0.15, y: 0})
+            await until(() => we.state?.undo && we.state, 'dragged together')
+            await sleep(300)
+            const [copyX1, footX1] = [await xOf(at), await xOf(at - 1)]
+            check(Math.abs(copyX1 - copyX - (footX1 - footX)) < 1, `dragged together: x ${footX.toFixed(0)}, ${copyX.toFixed(0)} → ${footX1.toFixed(0)}, ${copyX1.toFixed(0)}`)
+            // (Both picked again: the footman, then the copy with it.)
+            await xOf(at)
+            we.state = undefined
+            we.thing = undefined
+            await we.panel.webview.postMessage({type: 'delete'})
+            await until(() => we.state?.undo && we.state, 'both deleted')
+            we.thing = undefined
+            await we.panel.webview.postMessage({type: 'select', file: 1, index: at})
+            await sleep(500)
+            check(!we.thing || we.thing.index !== at || !we.thing.fields?.length, 'both taken away: no copy left')
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'undo'})
+            await until(() => we.state?.redo, 'the delete undone')
+            check(await xOf(at - 1) === footX1 && await xOf(at) === copyX1, 'one undo: both back')
+            // A box over the whole view: everything standing in it picked.
+            we.picked = undefined
+            await we.panel.webview.postMessage({type: 'box', x0: -1, y0: -1, x1: 1, y1: 1})
+            const boxed = await until(() => we.picked !== undefined && we.picked, 'a box')
+            check(Number(/^(\d+) picked together$/.exec(boxed)?.[1]) > 2, `a box over the view: ${boxed}`)
+            await shot('world-editor-picked-together')
+            for (let i = 0; i < 4; i++) {
                 we.state = undefined
                 await we.panel.webview.postMessage({type: 'undo'})
                 await until(() => we.state, 'undone')

@@ -1765,7 +1765,19 @@ step), this list updated.
      there; all else as it was, a unit's owner, items, abilities and
      drops, a doodad's variation and scale; a number no other has; an
      undo), picked (`Pasted` says its file and index). A start
-     location isn't copied: a player has one.
+     location isn't copied: a player has one. Several picked together
+     (after copy and paste): a click with Shift adds one (or lets it
+     go), a drag of nothing picked or with Shift draws a box, and what
+     stands in it is picked (the page puts each instance's place
+     through the camera, `objects.inside`; drawn as the one picked is:
+     the instances' last float, the page's); the first the one whose
+     fields show. A drag moves them all as far as the mouse goes from
+     where it went down (`GroupMove`: a doodad on the ground where it
+     comes), Q and E turn each where it stands (`GroupRotate`),
+     Delete takes them away (`GroupDelete`), Ctrl+C copies them and
+     Ctrl+V lays them anew, their middle under the mouse, each as far
+     from it as it was; each an undo, of both files when they're in
+     both (`Snapshot::Many`).
    - **6c, regions and pathing** (done): the Regions tool (a click
      picks the region drawn last over the point; a drag on the ground
      draws one, `Region 000` ... in a colour of its own; inside the one

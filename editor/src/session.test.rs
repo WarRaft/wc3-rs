@@ -1135,13 +1135,13 @@ fn a_thing_copied_pasted_anew_where_the_ray_meets_the_ground_and_cut() {
     s.place(2, "hfoo", 3, [1.0, 0.5, 10.0], down);
     s.thing_set_text(1, 0, "abilities", "AHhb:2:0");
     // A doodad: its variation, scale kept; where the ray meets, a number of its own.
-    assert_eq!(said(&s.copy(0, 0)), "");
+    assert_eq!(said(&s.copy(&[(0, 0)])), "");
     let msgs = s.paste([2.0, 0.5, 10.0], down);
-    assert!(matches!(msgs.last(), Some(ServerMsg::Pasted { file: 0, index: 1 })), "{msgs:?}");
+    assert!(matches!(msgs.last(), Some(ServerMsg::Pasted(t)) if t == &[(0, 1)]), "{msgs:?}");
     let d = &s.placed.doodads.as_ref().unwrap().doodads;
     assert_eq!((d.len(), d[1].placement.x, d[1].placement.variation, d[1].placement.scale[2], d[1].number), (2, 128.0, 2, 2.5, 1));
     // A unit cut (copied, deleted): pasted after, its owner and abilities kept.
-    s.copy(1, 0);
+    s.copy(&[(1, 0)]);
     s.delete(1, 0);
     assert!(s.placed.units.as_ref().unwrap().units.is_empty());
     s.paste([2.0, 0.5, 10.0], down);
@@ -1151,6 +1151,47 @@ fn a_thing_copied_pasted_anew_where_the_ray_meets_the_ground_and_cut() {
     s.undo(false);
     assert!(s.placed.units.as_ref().unwrap().units.is_empty());
     s.place(2, "sloc", 0, [1.0, 0.5, 10.0], down);
-    assert!(said(&s.copy(1, 0)).contains("start location"));
-    assert!(said(&s.copy(0, 9)).contains("no thing 9"));
+    assert!(said(&s.copy(&[(1, 0)])).contains("start location"));
+    assert!(said(&s.copy(&[(0, 9)])).contains("no thing 9"));
+}
+
+#[test]
+fn things_together_moved_turned_copied_pasted_around_the_mouse_and_deleted_one_undo_each() {
+    let dir = TestDir::new("session-group");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    dir.write("map/Doodads/Doodads.slk", &testdir::slk(&[&["doodID", "file", "numVar"], &["LTrc", "Doodads\\Rock", "1"]]));
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let down = [0.0, 0.0, -1.0];
+    // A doodad at (0, 0), a footman at (128, 0): the game's units.
+    s.place(0, "LTrc", 0, [1.0, 0.5, 10.0], down);
+    s.place(2, "hfoo", 0, [2.0, 0.5, 10.0], down);
+    let both = [(0, 0), (1, 0)];
+    let at = |s: &Session| {
+        let d = &s.placed.doodads.as_ref().unwrap().doodads;
+        let u = &s.placed.units.as_ref().unwrap().units;
+        (d.iter().map(|d| (d.placement.x, d.placement.angle)).collect::<Vec<_>>(), u.iter().map(|u| (u.placement.x, u.placement.angle)).collect::<Vec<_>>())
+    };
+    // Dragged half a cell, then a cell: both a cell right; one undo.
+    s.group_move(true, &both, [1.0, 0.5, 10.0], down);
+    s.group_move(false, &both, [1.5, 0.5, 10.0], down);
+    s.group_move(false, &both, [2.0, 0.5, 10.0], down);
+    s.stroke_end();
+    assert_eq!(at(&s), (vec![(128.0, 270f32.to_radians())], vec![(256.0, 270f32.to_radians())]));
+    s.undo(false);
+    assert_eq!((at(&s).0[0].0, at(&s).1[0].0), (0.0, 128.0));
+    s.undo(true);
+    s.group_rotate(&both, std::f32::consts::FRAC_PI_2);
+    assert!(at(&s).0[0].1.abs() < 1e-5 && at(&s).1[0].1.abs() < 1e-5);
+    // Copied, pasted with their middle (192) at 64: each as far from it.
+    s.copy(&both);
+    let msgs = s.paste([1.5, 0.5, 10.0], down);
+    assert!(matches!(msgs.last(), Some(ServerMsg::Pasted(t)) if t == &[(0, 1), (1, 1)]), "{msgs:?}");
+    assert_eq!((at(&s).0[1].0, at(&s).1[1].0), (0.0, 128.0));
+    // All four taken away at once, one undo brings them back.
+    s.group_delete(&[(0, 0), (1, 0), (0, 1), (1, 1)]);
+    assert_eq!((at(&s).0.len(), at(&s).1.len()), (0, 0));
+    s.undo(false);
+    assert_eq!((at(&s).0.len(), at(&s).1.len()), (2, 2));
 }

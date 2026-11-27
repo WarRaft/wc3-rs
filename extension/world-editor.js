@@ -88,7 +88,7 @@ const VIEW = 'wc3.editors'
  * @property {{name: string, uses: {nth: number, trigger: string, line: number, text: string}[]} | undefined} usedBy  the triggers that use a name of the map's script, as last found
  * @property {{instances: number, ramps: number, missing: number, byVariation: number[]} | undefined} cliffs  the cliffs and ramps the page was last sent (the pieces by their variation)
  * @property {{height: number, water: number, wet: boolean, blight: boolean, boundary: boolean} | undefined} corner  a corner the page was asked of
- * @property {{file: number, index: number} | undefined} pasted  the thing a paste made last
+ * @property {{file: number, index: number}[] | undefined} pasted  the things a paste made last
  * @property {{name: string, what: number, index: number, said: string} | undefined} mapFound  what a name of the map's script was found to be (0 nothing, 1 a thing, 2 a region, 3 a camera)
  * @property {{type: string, waiting?: boolean, name?: string | null} | undefined} mapPick  a pick on the map for a trigger's parameter: waiting, or what it gave
  * @property {Object<string, string> | undefined} info  the map's info as its panel last showed it (`Session::info_fields`)
@@ -132,8 +132,8 @@ function registerWorldEditor(context, binary, pickManifest, triggers) {
 ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extensionUri, 'webview', name))))}
 <link rel="stylesheet" href="${asset('editor.css')}">
 </head><body>
-<div class="bar"><span id="name" class="name">Opening…</span><span id="meta" class="meta"></span><span class="spacer"></span><label class="hours" title="The time of day">Time <input id="hours" type="range" min="0" max="24" step="0.25"> <span id="hours-value"></span></label><span id="toggles" class="toggles"></span><span class="hint">Click: pick (drag it to move, Q/E turn, Delete, Ctrl+C/X/V copy, cut, paste) · Right drag: move · Ctrl + right drag: turn · Wheel: zoom · WASD · G: grid · Home: all of it</span></div>
-<div class="stage"><canvas id="view"></canvas><canvas id="minimap" class="minimap" hidden></canvas>
+<div class="bar"><span id="name" class="name">Opening…</span><span id="meta" class="meta"></span><span class="spacer"></span><label class="hours" title="The time of day">Time <input id="hours" type="range" min="0" max="24" step="0.25"> <span id="hours-value"></span></label><span id="toggles" class="toggles"></span><span class="hint">Click: pick (Shift: more; a drag of nothing picked or with Shift: a box; drag them to move, Q/E turn, Delete, Ctrl+C/X/V copy, cut, paste) · Right drag: move · Ctrl + right drag: turn · Wheel: zoom · WASD · G: grid · Home: all of it</span></div>
+<div class="stage"><canvas id="view"></canvas><canvas id="minimap" class="minimap" hidden></canvas><div id="pick-box" class="pick-box" hidden></div>
 <div id="tools" class="tools">
   <div id="tool-buttons" class="tool-buttons"></div>
   <label id="size-label">Size <span id="size-value"></span><input id="size" type="range" min="1" max="32" step="1"></label>

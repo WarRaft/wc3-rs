@@ -157,6 +157,7 @@
         const nx = ((e.clientX - r.left) / r.width) * 2 - 1
         const ny = 1 - ((e.clientY - r.top) / r.height) * 2
         const {origin, dir} = camera.ray(nx, ny, r.width / r.height)
+        pickAdds = e.shiftKey
         send(encode.pick(origin, dir))
     })
     canvas.addEventListener('mousedown', e => {
@@ -224,14 +225,11 @@
             return
         }
         if (selected && (e.code === 'Delete' || e.code === 'Backspace')) {
-            send(encode.delete(selected.file, selected.index))
-            selected = null
-            objects?.select(-1, -1)
-            $('status').textContent = ''
+            deletePicked()
             return
         }
         if (selected && (e.code === 'KeyQ' || e.code === 'KeyE')) {
-            send(encode.rotate(selected.file, selected.index, (e.code === 'KeyQ' ? 1 : -1) * Math.PI / 12))
+            send(encode.groupRotate(picks(), (e.code === 'KeyQ' ? 1 : -1) * Math.PI / 12))
             return
         }
         const toggle = TOGGLES.find(t => t.code === e.code)
@@ -624,14 +622,15 @@
         return camera.ray(((x - r.left) / r.width) * 2 - 1, 1 - ((y - r.top) / r.height) * 2, r.width / r.height)
     }
     const mouse = {x: 0, y: 0}
-    /** The thing picked copied (the editor keeps it); `cut`: taken away too. */
+    /** The things picked copied (the editor keeps them); `cut`: taken away too. */
     function copy(cut) {
-        send(encode.copy(selected.file, selected.index))
-        if (!cut) return
-        send(encode.delete(selected.file, selected.index))
-        selected = null
-        objects?.select(-1, -1)
-        $('status').textContent = ''
+        send(encode.copy(picks()))
+        if (cut) deletePicked()
+    }
+    /** The things picked taken away. */
+    function deletePicked() {
+        send(encode.groupDelete(picks()))
+        pickNone()
     }
     /** The thing copied pasted where the ray at a point of the page meets the ground (`Pasted` picks it). */
     function paste(x, y) {
@@ -674,6 +673,27 @@
     // a drag of the thing picked moves it, Q and E turn it, Delete takes
     // it away.
     let selected = null
+    /** The others picked with it (Shift and a click, a box): {file, index} each. */
+    let group = []
+    /** Whether the next `Picked` adds to the things picked (a click with Shift). */
+    let pickAdds = false
+    /** The things picked: the one whose fields show, then the others. */
+    const picks = () => selected ? [selected, ...group] : []
+    /** `list` picked ({file, index} each), the first the one whose fields show. */
+    function pickThings(list) {
+        selected = list[0] ?? null
+        group = list.slice(1)
+        objects?.setGroup(new Set(group.map(t => `${t.file}:${t.index}`)))
+        const found = selected && objects?.find(selected.file, selected.index)
+        objects?.select(found ? found.model : -1, found ? found.instance : -1)
+        if (selected) askThing()
+        else {
+            thing = null
+            showThing()
+        }
+        $('status').textContent = group.length ? `${list.length} picked together` : ''
+    }
+    const pickNone = () => pickThings([])
     let objectEntries = []
     const KINDS = ['Doodads', 'Destructables', 'Units', 'Items']
     const placing = {kind: 2, id: '', player: 0, filter: '', ...(vscode.getState()?.placing ?? {})}
@@ -777,19 +797,68 @@
     })
     // Select: a drag of the thing picked moves it.
     let thingDrag = null
+    // A drag with nothing picked, or with Shift: a box; what stands in it picked
+    // (with Shift, added).
+    let boxDrag = null
     canvas.addEventListener('mousedown', e => {
-        if (e.button !== 0 || brush.tool !== 'select' || !selected) return
-        thingDrag = {first: true, pending: false, moved: false, x: e.clientX, y: e.clientY}
+        if (e.button !== 0 || brush.tool !== 'select' || !terrain?.ready) return
+        if (!selected || e.shiftKey) {
+            boxDrag = {x: e.clientX, y: e.clientY, adds: e.shiftKey, moved: false}
+            return
+        }
+        // Dragged from where the mouse went down: the things as far as it goes.
+        thingDrag = {first: true, pending: false, moved: false, x: e.clientX, y: e.clientY, things: picks()}
     })
     canvas.addEventListener('mousemove', e => {
+        if (boxDrag) {
+            if (Math.abs(e.clientX - boxDrag.x) + Math.abs(e.clientY - boxDrag.y) < 4 && !boxDrag.moved) return
+            boxDrag.moved = true
+            const r = canvas.getBoundingClientRect()
+            const b = $('pick-box')
+            b.hidden = false
+            Object.assign(b.style, {
+                left: `${Math.min(boxDrag.x, e.clientX) - r.left}px`, top: `${Math.min(boxDrag.y, e.clientY) - r.top}px`,
+                width: `${Math.abs(e.clientX - boxDrag.x)}px`, height: `${Math.abs(e.clientY - boxDrag.y)}px`,
+            })
+            return
+        }
         if (!thingDrag || (Math.abs(e.clientX - thingDrag.x) + Math.abs(e.clientY - thingDrag.y) < 4 && !thingDrag.moved)) return
-        thingDrag.moved = true
+        if (!thingDrag.moved) {
+            // The first step from where it went down.
+            thingDrag.moved = true
+            const at = rayAt(thingDrag.x, thingDrag.y)
+            send(encode.groupMove(true, thingDrag.things, at.origin, at.dir))
+            thingDrag.first = false
+        }
         if (thingDrag.pending) return
         const {origin, dir} = rayAt(e.clientX, e.clientY)
         thingDrag.pending = true
-        send(encode.move(thingDrag.first, selected.file, selected.index, origin, dir))
-        thingDrag.first = false
+        send(encode.groupMove(false, thingDrag.things, origin, dir))
     })
+    window.addEventListener('mouseup', e => {
+        if (!boxDrag) return
+        const d = boxDrag
+        boxDrag = null
+        $('pick-box').hidden = true
+        if (!d.moved) return
+        suppressClick = true
+        const r = canvas.getBoundingClientRect()
+        const clip = (x, y) => [((x - r.left) / r.width) * 2 - 1, 1 - ((y - r.top) / r.height) * 2]
+        const [ax, ay] = clip(d.x, d.y)
+        const [bx, by] = clip(e.clientX, e.clientY)
+        pickBox([Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)], d.adds)
+    })
+    /** What stands in a box of the view (clip space) picked; `adds`: with those picked. */
+    function pickBox(box, adds) {
+        if (!objects) return
+        const r = canvas.getBoundingClientRect()
+        const inside = objects.inside(camera.matrix(r.width / r.height), box)
+        const had = adds ? picks() : []
+        const key = t => `${t.file}:${t.index}`
+        const seen = new Set(had.map(key))
+        pickThings([...had, ...inside.filter(t => !seen.has(key(t)))])
+        vscode.postMessage({type: 'picked', text: $('status').textContent})
+    }
     window.addEventListener('mouseup', () => {
         if (!thingDrag) return
         const moved = thingDrag.moved
@@ -1486,11 +1555,23 @@
                 vscode.postMessage({type: 'picked', text: msg.text})
                 return
             }
-            selected = msg.found ? {file: msg.file, index: msg.index} : null
-            objects.select(msg.found ? msg.model : -1, msg.found ? msg.instance : -1)
-            askThing()
-            $('status').textContent = msg.found ? msg.text : ''
-            vscode.postMessage({type: 'picked', text: msg.found ? msg.text : ''})
+            const adds = pickAdds
+            pickAdds = false
+            if (adds && msg.found) {
+                // Shift: one more picked together, or one of them let go.
+                const t = {file: msg.file, index: msg.index}
+                const all = picks()
+                const rest = all.filter(p => p.file !== t.file || p.index !== t.index)
+                pickThings(rest.length < all.length ? rest : [t, ...all])
+            } else if (!adds) {
+                group = []
+                objects.setGroup(new Set())
+                selected = msg.found ? {file: msg.file, index: msg.index} : null
+                objects.select(msg.found ? msg.model : -1, msg.found ? msg.instance : -1)
+                askThing()
+            }
+            $('status').textContent = group.length ? `${picks().length} picked together` : msg.found ? msg.text : ''
+            vscode.postMessage({type: 'picked', text: group.length ? $('status').textContent : msg.found ? msg.text : ''})
         } else if (msg.kind === 'info') {
             infoPanel.set(msg.fields)
         } else if (msg.kind === 'imports') {
@@ -1514,12 +1595,9 @@
             if (selectedSound !== null && selectedSound >= sounds.length) selectedSound = null
             showSounds()
         } else if (msg.kind === 'pasted') {
-            // The thing pasted picked.
-            selected = {file: msg.file, index: msg.index}
-            const found = objects?.find(msg.file, msg.index)
-            objects?.select(found ? found.model : -1, found ? found.instance : -1)
-            askThing()
-            vscode.postMessage({type: 'pasted', pasted: {file: msg.file, index: msg.index}})
+            // The things pasted picked, the first the one whose fields show.
+            pickThings(msg.things)
+            vscode.postMessage({type: 'pasted', pasted: msg.things})
         } else if (msg.kind === 'mapFound') {
             showFound(msg)
         } else if (msg.kind === 'mapName') {
@@ -1590,12 +1668,20 @@
             const {origin, dir} = camera.ray(msg.x, msg.y, r.width / r.height)
             send(encode.paste(origin, dir))
         } else if (msg.type === 'drag') {
-            // The thing picked dragged to a point of the view: for the tests.
+            // The things picked dragged from a point of the view (`from`, else the
+            // middle) to another, as the mouse would: for the tests.
             if (!selected) return
             const r = canvas.getBoundingClientRect()
+            const [fx, fy] = msg.from ?? [0, 0]
+            const from = camera.ray(fx, fy, r.width / r.height)
             const {origin, dir} = camera.ray(msg.x, msg.y, r.width / r.height)
-            send(encode.move(true, selected.file, selected.index, origin, dir))
+            send(encode.groupMove(true, picks(), from.origin, from.dir))
+            send(encode.groupMove(false, picks(), origin, dir))
             send(encode.strokeEnd())
+        } else if (msg.type === 'box') {
+            // What stands in a box of the view (x0, y0, x1, y1: -1 to 1, y up) picked,
+            // with Shift (`adds`) added: for the tests.
+            pickBox([msg.x0, msg.y0, msg.x1, msg.y1], !!msg.adds)
         } else if (msg.type === 'region') {
             // A region's drag between points of the view: for the tests.
             const r = canvas.getBoundingClientRect()
@@ -1714,11 +1800,9 @@
             } else if (msg.action === 'play') $('sound-play').onclick()
             else if (msg.action === 'delete') $('sound-delete').onclick()
         } else if (msg.type === 'select') {
-            // A thing picked by its file and index: for the tests.
-            selected = {file: msg.file, index: msg.index}
-            const found = objects?.find(msg.file, msg.index)
-            objects?.select(found ? found.model : -1, found ? found.instance : -1)
-            askThing()
+            // A thing picked by its file and index (`adds`: with those picked): for the tests.
+            const t = {file: msg.file, index: msg.index}
+            pickThings(msg.adds ? [t, ...picks()] : [t])
         } else if (msg.type === 'thingList') {
             // A list's input typed (`list`: `items:2`, `abilities:add`, `drops:new` ...): for the tests.
             const input = $('thing-lists').querySelector(`[data-list="${CSS.escape(msg.list)}"]`)
@@ -1738,10 +1822,9 @@
         } else if (msg.type === 'regionRename' && selectedRegion !== null) {
             send(encode.regionRename(selectedRegion, msg.name))
         } else if (msg.type === 'rotate' && selected) {
-            send(encode.rotate(selected.file, selected.index, msg.delta))
+            send(encode.groupRotate(picks(), msg.delta))
         } else if (msg.type === 'delete' && selected) {
-            send(encode.delete(selected.file, selected.index))
-            selected = null
+            deletePicked()
         } else if (msg.type === 'save') {
             save()
         } else if (msg.type === 'undo' || msg.type === 'redo') {
@@ -1795,6 +1878,7 @@
             // would: for the tests.
             const r = canvas.getBoundingClientRect()
             const {origin, dir} = camera.ray(msg.x, msg.y, r.width / r.height)
+            pickAdds = !!msg.shift
             send(encode.pick(origin, dir))
         } else if (msg.type === 'restarted') {
             $('message').hidden = true
