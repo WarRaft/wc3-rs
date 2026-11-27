@@ -2220,6 +2220,7 @@
                     panels: ['tools', 'map-panel'].map(id => getComputedStyle($(id)).boxSizing),
                     windows: WINDOWS.map(([p, button, root]) => ({button, open: p.isOpen, on: $(button).classList.contains('on'), ...box(root)})),
                     minimap: box('minimap'), camera: [...camera.position], minimapAt, panned, game: camera.game,
+                    objButtons: [...document.querySelectorAll('#objects-panel .obj-tabs button, #objects-panel .obj-buttons button')].map(b => ({tip: b.dataset.tip, text: b.textContent.trim(), icon: !!b.querySelector('i.fa-solid')})),
                     trg: box('trg-root'), stage: box('view'), close: $('window-close').hidden ? null : box('window-close'),
                     hoursAfter: [...document.querySelectorAll('.tool-bar > *')].findIndex(e => e.classList.contains('hours')) > [...document.querySelectorAll('.tool-bar > *')].findIndex(e => e.id === 'toggles'),
                 }})

@@ -11,6 +11,23 @@
  */
 const EditorObjectEditor = (() => {
     const KINDS = ['Units', 'Items', 'Destructables', 'Doodads', 'Abilities', 'Buffs', 'Upgrades']
+    /** The kinds' icons (Font Awesome's), in `KINDS`' order. */
+    const KIND_ICONS = ['chess-rook', 'gem', 'tree', 'mountain-sun', 'wand-sparkles', 'hand-sparkles', 'angles-up']
+    /**
+     * A button of an icon, its tooltip the page's (`data-tip`: its name,
+     * `data-key` its key, `data-more` what it does).
+     */
+    const iconButton = (icon, tip, more, onclick, key) => {
+        const b = document.createElement('button')
+        b.className = 'obj-tool'
+        b.innerHTML = `<i class="fa-solid fa-${icon}"></i>`
+        b.dataset.tip = tip
+        if (more) b.dataset.more = more
+        if (key) b.dataset.key = key
+        b.setAttribute('aria-label', tip)
+        b.onclick = onclick
+        return b
+    }
     /** World Editor's names of the metadata's categories. */
     const CATEGORIES = {
         abil: 'Abilities', art: 'Art', combat: 'Combat', data: 'Data', editor: 'Editor', move: 'Movement', path: 'Pathing',
@@ -75,7 +92,7 @@ const EditorObjectEditor = (() => {
         build() {
             this.tabs = el('div', {className: 'obj-tabs'})
             KINDS.forEach((name, k) => {
-                this.tabs.append(el('button', {textContent: name, onclick: () => this.showKind(k)}))
+                this.tabs.append(iconButton(KIND_ICONS[k], name, null, () => this.showKind(k)))
             })
             this.search = el('input', {type: 'search', placeholder: 'Search', className: 'obj-search'})
             this.search.oninput = () => {
@@ -83,30 +100,29 @@ const EditorObjectEditor = (() => {
                 this.renderList()
             }
             this.list = el('div', {className: 'obj-list'})
-            this.newButton = el('button', {textContent: 'New', title: 'A custom object based on the one picked', onclick: () => {
+            this.newButton = iconButton('plus', 'New', 'A custom object based on the one picked', () => {
                 if (!this.picked) return
                 // The new one comes picked (its fields with the list): the
                 // one not among these (an answer on its way is another's).
                 this.pendingNew = new Set(this.objects.map(o => o.id))
                 this.send(this.encode.objectNew(this.kind, this.base()))
-            }})
-            this.deleteButton = el('button', {textContent: 'Delete', title: 'A custom object taken away; a standard one\'s changes taken out', onclick: () => this.picked && this.send(this.encode.objectDelete(this.kind, this.picked))})
-            this.copyButton = el('button', {textContent: 'Copy', title: 'The one picked, to paste as a new one', onclick: () => {
+            })
+            this.deleteButton = iconButton('trash', 'Delete', 'A custom object taken away; a standard one\'s changes taken out', () => this.picked && this.send(this.encode.objectDelete(this.kind, this.picked)))
+            this.copyButton = iconButton('copy', 'Copy', 'The one picked, to paste as a new one', () => {
                 if (!this.picked) return
                 this.copied = {kind: this.kind, id: this.picked}
                 this.renderList()
-            }})
-            this.pasteButton = el('button', {textContent: 'Paste', title: 'A new one, a copy of the one copied (its base, its changes)', onclick: () => {
+            })
+            this.pasteButton = iconButton('paste', 'Paste', 'A new one, a copy of the one copied (its base, its changes)', () => {
                 if (this.copied?.kind !== this.kind) return
                 // The one that comes not among these.
                 this.pendingNew = new Set(this.objects.map(o => o.id))
                 this.send(this.encode.objectNew(this.kind, this.copied.id))
-            }})
-            this.rawBox = el('input', {type: 'checkbox', title: 'Display values as raw data (Ctrl+D)'})
-            this.rawBox.onchange = () => this.setRaw(this.rawBox.checked)
+            })
+            this.rawButton = iconButton('code', 'Raw data', 'Values displayed as raw data: ids, not names; each as it\'s stored', () => this.setRaw(!this.raw), 'Ctrl+D')
             // World Editor's File > Export and Import: the kind's file, by VS Code's dialogs.
-            this.exportButton = el('button', {textContent: 'Export…', title: "This kind's object data written to a file (.w3u …), the map's strings as their text", onclick: () => this.said({dialog: 'export', kind: this.kind})})
-            this.importButton = el('button', {textContent: 'Import…', title: "A file's object data (.w3u …) in place of this kind's", onclick: () => this.said({dialog: 'import', kind: this.kind})})
+            this.exportButton = iconButton('file-export', 'Export…', "This kind's object data written to a file (.w3u …), the map's strings as their text", () => this.said({dialog: 'export', kind: this.kind}))
+            this.importButton = iconButton('file-import', 'Import…', "A file's object data (.w3u …) in place of this kind's", () => this.said({dialog: 'import', kind: this.kind}))
             this.title = el('div', {className: 'obj-title'})
             this.table = el('div', {className: 'obj-fields'})
             // Ctrl+D: raw data on and off, as in World Editor.
@@ -118,7 +134,7 @@ const EditorObjectEditor = (() => {
             })
             this.root.tabIndex = -1
             this.root.append(
-                el('div', {className: 'obj-side'}, this.tabs, this.search, this.list, el('div', {className: 'obj-buttons'}, this.newButton, this.copyButton, this.pasteButton, this.deleteButton, this.exportButton, this.importButton, el('label', {className: 'obj-raw'}, this.rawBox, 'Raw'))),
+                el('div', {className: 'obj-side'}, this.tabs, this.search, this.list, el('div', {className: 'obj-buttons'}, this.newButton, this.copyButton, this.pasteButton, this.deleteButton, this.exportButton, this.importButton, this.rawButton)),
                 el('div', {className: 'obj-main'}, this.title, this.table),
             )
         }
@@ -140,7 +156,7 @@ const EditorObjectEditor = (() => {
         /** Raw data (ids, values as stored) on or off. */
         setRaw(on) {
             this.raw = on
-            this.rawBox.checked = on
+            this.rawButton.classList.toggle('on', on)
             this.renderList()
             this.renderFields()
         }

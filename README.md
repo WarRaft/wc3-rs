@@ -1663,6 +1663,9 @@ water colours, the camera); none of its code is taken as is.
   picked) and Map open on the right, 12 px in, over the view; the others
   over all of it, 12 px in. A panel closing itself (Triggers' "show on
   the map") turns its button off too.
+- The object editor's kinds (Units ... Upgrades) and its buttons (New,
+  Copy, Paste, Delete, Export, Import, Raw data, Ctrl+D) are icons with
+  the page's tooltips; Raw data a toggle, lit while it's on.
 - The camera, moved (a right drag, WASD, the arrows): the map follows
   the mouse both ways (the vertical was the wrong way round, and W went
   back). Two cameras, the Game camera button (V) between them, kept with

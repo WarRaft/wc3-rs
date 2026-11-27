@@ -716,11 +716,6 @@ kbd {
     padding: 0;
 }
 
-.trg-panel > .trg-root {
-    flex: 1;
-    min-width: 0;
-}
-
 /* The close of the window open: a cross over its top right corner (each
    window's, the controls' too). */
 .window-close {
@@ -771,6 +766,22 @@ kbd {
     border: 1px solid var(--vscode-panel-border, #555);
     padding: 2px 6px;
     font: inherit;
+}
+
+/* The object editor's buttons: icons, the page's tooltips. */
+.obj-panel button.obj-tool {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 26px;
+    padding: 0;
+    border-radius: 3px;
+}
+
+.obj-panel button.obj-tool:disabled {
+    opacity: .4;
+    cursor: default;
 }
 
 .obj-panel button.on {
@@ -1176,6 +1187,13 @@ kbd {
     text-overflow: ellipsis;
 }
 
+}
+
+/* The trigger editor filling the Triggers window: out of the scope, whose
+   limit (.trg-root) it is, so no rule in the scope reaches it. */
+.trg-panel > .trg-root {
+    flex: 1;
+    min-width: 0;
 }
 
 /* What uses what's picked: the triggers naming it. */
