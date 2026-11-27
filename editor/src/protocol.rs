@@ -669,8 +669,9 @@ impl ClientMsg {
                 let texture = r.string()?;
                 let cliff = r.u32()? as i32;
                 let flags = r.u8()?;
+                let variation = r.u32()? as i32;
                 let texture = parser_rs::bin::Rawcode::parse(&texture);
-                Some(ClientMsg::Brush { start, origin, dir, brush: crate::edit::Brush { tool, size, strength, texture, cliff, flags } })
+                Some(ClientMsg::Brush { start, origin, dir, brush: crate::edit::Brush { tool, size, strength, texture, cliff, flags, variation } })
             }
             kind::STROKE_END => Some(ClientMsg::StrokeEnd),
             kind::UNDO => Some(ClientMsg::Undo),
@@ -775,6 +776,7 @@ impl ClientMsg {
                 w.string(&brush.texture.map(|t| t.to_string()).unwrap_or_default());
                 w.u32(brush.cliff as u32);
                 w.u8(brush.flags);
+                w.u32(brush.variation as u32);
                 kind::BRUSH
             }
             ClientMsg::StrokeEnd => kind::STROKE_END,

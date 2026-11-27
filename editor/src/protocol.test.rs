@@ -37,7 +37,7 @@ fn unknown_kinds_are_skipped_and_short_bodies_are_errors() {
 
 #[test]
 fn edits_round_trip() {
-    let brush = crate::edit::Brush { tool: crate::edit::Tool::Texture, size: 4.0, strength: 0.5, texture: parser_rs::bin::Rawcode::parse("Lgrs"), cliff: -1, flags: 0 };
+    let brush = crate::edit::Brush { tool: crate::edit::Tool::Texture, size: 4.0, strength: 0.5, texture: parser_rs::bin::Rawcode::parse("Lgrs"), cliff: -1, flags: 0, variation: -1 };
     for msg in [
         ClientMsg::Brush { start: true, origin: [1.0, 2.0, 3.0], dir: [0.0, 0.0, -1.0], brush },
         ClientMsg::StrokeEnd,
@@ -71,14 +71,14 @@ fn edits_round_trip() {
         let (kind, body) = read_frame(&mut &frame[..]).unwrap().unwrap();
         assert_eq!(ClientMsg::decode(kind, &body).unwrap(), Some(msg));
     }
-    // What the page sends for that brush (`encode.brush`): 52 bytes.
+    // What the page sends for that brush (`encode.brush`): 56 bytes.
     let page = ClientMsg::Brush {
         start: true,
         origin: [1.0, 2.0, 3.0],
         dir: [0.0, 0.0, -1.0],
-        brush: crate::edit::Brush { tool: crate::edit::Tool::Texture, size: 4.0, strength: 0.5, texture: parser_rs::bin::Rawcode::parse("Lgrs"), cliff: -1, flags: 0 },
+        brush: crate::edit::Brush { tool: crate::edit::Tool::Texture, size: 4.0, strength: 0.5, texture: parser_rs::bin::Rawcode::parse("Lgrs"), cliff: -1, flags: 0, variation: -1 },
     };
-    assert_eq!(page.encode().len(), 52);
+    assert_eq!(page.encode().len(), 56);
     let mut rain = w3s_rs::Sound::new("gg_snd_Rain", "Sound\\Ambient\\Rain.wav");
     rain.volume = 100;
     round_trip(ServerMsg::Sounds(vec![rain, w3s_rs::Sound::new("gg_snd_B", "b.mp3")]));

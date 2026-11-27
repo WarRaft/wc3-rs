@@ -10,9 +10,13 @@
 //! - **Smooth**: each point toward the average of it and its neighbours.
 //! - **Texture**: the points' ground texture, a tile id of the palette's
 //!   (added to the terrain's list when it isn't there and there's room),
-//!   a variation the game picks (mostly the first).
+//!   its variation `variation`, or (-1) one at random as World Editor
+//!   gives them (`ground_variation`), when the texture is new there.
 //! - **Cliff up, Cliff down**: the points' cliff layer to the one the
-//!   stroke started on, one up or down, in the cliff texture `value`.
+//!   stroke started on, one up or down, in the cliff texture `value`;
+//!   the cliff variation `variation` (0-7) on the corners under it and
+//!   around (a cliff's piece has its cell's bottom left corner's), or
+//!   (-1) at random 0-2 as World Editor's, on a corner its layer changed.
 //! - **Water, Dry**: water shown or not on the points.
 //! - **Pathing on, Pathing off** (`war3map.wpm`, four cells a terrain
 //!   cell): the brush's `flags` (2 no walking, 4 no flying, 8 no
@@ -87,6 +91,9 @@ pub struct Brush {
     pub cliff: i32,
     /// Pathing: the flags set or cleared.
     pub flags: u8,
+    /// Texture: the ground variation (0-17); Cliff, water: the cliff
+    /// variation (0-7); -1 at random, as World Editor's.
+    pub variation: i32,
 }
 
 /// A stroke going on.
@@ -172,6 +179,12 @@ pub struct Edits {
 }
 
 impl Edits {
+    /// A number below `n`, the next of the brushes' own sequence.
+    fn roll(&mut self, n: u32) -> u32 {
+        self.seed = self.seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        (self.seed >> 16) % n
+    }
+
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
@@ -298,16 +311,25 @@ impl Edits {
                     }
                     Tool::Texture => {
                         p.set_blight(v, false);
+                        let new = p.texture(v) != texture.unwrap() as u16;
                         p.set_texture(v, texture.unwrap() as u16);
-                        // Mostly the first variation, now and then another.
-                        self.seed = self.seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
-                        let roll = (self.seed >> 16) % 100;
-                        p.set_ground_variation(if roll < 85 { 0 } else { (roll % 16) as u8 });
+                        if brush.variation >= 0 {
+                            p.set_ground_variation(brush.variation.min(17) as u8);
+                        } else if new {
+                            // Not again on every step of a stroke.
+                            p.set_ground_variation(ground_variation(self.roll(GROUND_CHANCES_SUM)));
+                        }
                     }
                     Tool::CliffUp | Tool::CliffDown | Tool::ShallowWater | Tool::DeepWater => {
                         // A corner of another layer: no ramp's any more.
                         if p.layer_height() as i32 != start_value {
                             p.set_ramp(v, false);
+                            if brush.variation < 0 {
+                                p.set_cliff_variation(self.roll(3) as u8);
+                            }
+                        }
+                        if brush.variation >= 0 {
+                            p.set_cliff_variation(brush.variation.min(7) as u8);
                         }
                         p.set_layer_height(start_value as u8);
                         match brush.tool {
@@ -345,6 +367,17 @@ impl Edits {
         if !seeds.is_empty() {
             let cliff = (brush.cliff >= 0 && (brush.cliff as usize) < t.cliffs.len()).then_some(brush.cliff as u8);
             pull_nearby(t, &seeds, cliff);
+            // The brush's own variation on the corners around too: a cliff's
+            // piece has its cell's bottom left corner's, often outside it.
+            if brush.variation >= 0 {
+                for &(sx, sy) in &seeds {
+                    for ny in (sy - 1).max(0)..=(sy + 1).min(h - 1) {
+                        for nx in (sx - 1).max(0)..=(sx + 1).min(w - 1) {
+                            t.points[at(nx, ny)].set_cliff_variation(brush.variation.min(7) as u8);
+                        }
+                    }
+                }
+            }
             // A cliff takes the blight off its corners.
             for py in 0..h {
                 for px in 0..w {
@@ -543,6 +576,27 @@ fn water_layers(p: &Point) -> f32 {
 
 fn ground_layers(p: &Point) -> f32 {
     crate::terrain::ground_height(p) + p.layer_height() as f32 - 2.0
+}
+
+/// World Editor's ground variations and how often it gives each (in its
+/// maps: the whole ones 0, 4, 8, 12 and the extended 16, 17 alike, each
+/// first's three after it ever less; HiveWE's table has 0 twice for 17).
+const GROUND_CHANCES: [(u8, u32); 18] = [
+    (0, 85), (16, 85), (17, 85), (1, 10), (2, 4), (3, 1), (4, 85), (5, 10), (6, 4), (7, 1),
+    (8, 85), (9, 10), (10, 4), (11, 1), (12, 85), (13, 10), (14, 4), (15, 1),
+];
+const GROUND_CHANCES_SUM: u32 = 570;
+
+/// The ground variation a roll (below 570) gives.
+pub fn ground_variation(roll: u32) -> u8 {
+    let mut left = roll;
+    for (n, chance) in GROUND_CHANCES {
+        if left < chance {
+            return n;
+        }
+        left -= chance;
+    }
+    0
 }
 
 /// The corners around those a cliff brush set (`seeds`), pulled to within

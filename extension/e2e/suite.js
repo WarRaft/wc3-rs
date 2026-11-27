@@ -325,6 +325,29 @@ async function steps(only) {
                 bounded.push([await cornerAt(44, 69), await cornerAt(45, 70), await cornerAt(46, 70)].map(c => c.boundary))
             }
             check(bounded[0].join() === 'true,true,false' && bounded[1].join() === 'false,false,false', `a boundary on the cells under the brush, then off: ${JSON.stringify(bounded)}`)
+            // A cliff raised with the brush's own variation on the flat ground south of
+            // the cut: 2 (more pieces of 2; a shape without a model of 2 the game's
+            // highest below it), then, undone, 0 (more of 0 alone; those it took the place of fewer).
+            const plain = we.cliffs
+            const raised = []
+            for (const variation of [2, 0]) {
+                we.cliffs = undefined
+                we.state = undefined
+                await we.panel.webview.postMessage({type: 'brush', brush: {tool: 'cliffUp', size: 7, variation}, cells: [[60, 42]]})
+                await until(() => we.state?.undo, `a cliff of variation ${variation}`)
+                raised.push(await until(() => we.cliffs, 'its cliffs'))
+                if (variation === 2) {
+                    await shot('world-editor-cliff-variation')
+                    we.state = undefined
+                    await we.panel.webview.postMessage({type: 'undo'})
+                    await until(() => we.state?.redo, 'undone')
+                }
+            }
+            const [two, zero] = raised.map(c => c.byVariation)
+            const was = plain.byVariation
+            check(two[2] > was[2] && zero[0] > was[0] && zero[1] <= was[1] && zero[2] <= was[2],
+                `a cliff of the brush's variation 2, then 0: its pieces by variation ${JSON.stringify(was)} → ${JSON.stringify(two)}, ${JSON.stringify(zero)}`)
+            await we.panel.webview.postMessage({type: 'brush', brush: {variation: -1}, cells: []})
             we.state = undefined
             await we.panel.webview.postMessage({type: 'save'})
             const saved = await until(() => we.state?.message && we.state, 'saved')

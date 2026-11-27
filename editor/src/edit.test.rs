@@ -10,7 +10,7 @@ fn flat(n: u32) -> Terrain {
 }
 
 fn brush(tool: Tool) -> Brush {
-    Brush { tool, size: 4.0, strength: 1.0, texture: None, cliff: -1, flags: 0 }
+    Brush { tool, size: 4.0, strength: 1.0, texture: None, cliff: -1, flags: 0, variation: -1 }
 }
 
 #[test]
@@ -221,4 +221,42 @@ fn boundary_on_the_cells_under_the_brush_and_off_again() {
     assert!(on(&t, 7, 7) && !on(&t, 8, 8) && !on(&t, 8, 7));
     e.apply(&mut t, 4.0, 4.0, &Brush { size: 1.6, ..brush(Tool::BoundaryOff) }, true).unwrap();
     assert!(!on(&t, 3, 3) && !on(&t, 4, 4));
+}
+
+#[test]
+fn variations_at_random_as_world_editors_or_the_brushs_own() {
+    // The table: its 570 rolls, the whole ones and the extended alike.
+    let mut count = [0u32; 18];
+    for roll in 0..570 {
+        count[ground_variation(roll) as usize] += 1;
+    }
+    assert_eq!(count, [85, 10, 4, 1, 85, 10, 4, 1, 85, 10, 4, 1, 85, 10, 4, 1, 85, 85]);
+
+    let mut t = flat(21);
+    let mut e = Edits::default();
+    let grass = Rawcode(*b"Lgrs");
+    let all = |t: &Terrain, r: std::ops::Range<u32>, f: fn(Point) -> u8| -> Vec<u8> { r.clone().flat_map(|y| r.clone().map(move |x| (x, y))).map(|(x, y)| f(*t.point(x, y).unwrap())).collect() };
+    // At random: not all the first; a second step over it changes none.
+    let paint = Brush { size: 12.0, texture: Some(grass), ..brush(Tool::Texture) };
+    e.apply(&mut t, 10.0, 10.0, &paint, true).unwrap();
+    let first = all(&t, 7..14, Point::ground_variation);
+    assert!(first.iter().any(|&n| n != 0) && first.iter().all(|&n| n <= 17));
+    e.apply(&mut t, 10.0, 10.0, &paint, false).unwrap();
+    assert_eq!(all(&t, 7..14, Point::ground_variation), first);
+    e.end();
+    // The brush's own: 17 on all of them.
+    e.apply(&mut t, 10.0, 10.0, &Brush { variation: 17, ..paint }, true).unwrap();
+    assert!(all(&t, 7..14, Point::ground_variation).iter().all(|&n| n == 17));
+    e.end();
+
+    // A cliff at random: 0-2, each of them somewhere.
+    e.apply(&mut t, 10.0, 10.0, &Brush { size: 12.0, ..brush(Tool::CliffUp) }, true).unwrap();
+    e.end();
+    let cliffs = all(&t, 7..14, Point::cliff_variation);
+    assert!(cliffs.iter().all(|&n| n <= 2) && (0..=2).all(|n| cliffs.contains(&n)), "{cliffs:?}");
+    // Its own: 5, though the layer is as it was, and on the corners around
+    // (a cell's bottom left one outside it); none further.
+    e.apply(&mut t, 10.0, 10.0, &Brush { size: 12.0, variation: 5, ..brush(Tool::CliffUp) }, true).unwrap();
+    assert!(all(&t, 7..14, Point::cliff_variation).iter().all(|&n| n == 5));
+    assert_eq!((t.point(17, 10).unwrap().cliff_variation(), t.point(19, 10).unwrap().cliff_variation()), (5, 0));
 }

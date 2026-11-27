@@ -86,8 +86,8 @@ const VIEW = 'wc3.editors'
  * @property {string | undefined} picked  what the last click picked, said ('' nothing)
  * @property {{kind: number, count: number, custom: string[], changed: string[], picked: {id: string, base: string, name: string, levels: number, fields: [string, number, string, boolean][]} | null} | undefined} objects  the object editor's kind, its objects, the one picked and its fields
  * @property {{name: string, uses: {nth: number, trigger: string, line: number, text: string}[]} | undefined} usedBy  the triggers that use a name of the map's script, as last found
- * @property {{instances: number, ramps: number, missing: number} | undefined} cliffs
- * @property {{height: number, water: number, wet: boolean, blight: boolean, boundary: boolean} | undefined} corner  a corner the page was asked of  the cliffs and ramps the page was last sent
+ * @property {{instances: number, ramps: number, missing: number, byVariation: number[]} | undefined} cliffs  the cliffs and ramps the page was last sent (the pieces by their variation)
+ * @property {{height: number, water: number, wet: boolean, blight: boolean, boundary: boolean} | undefined} corner  a corner the page was asked of
  * @property {{name: string, what: number, index: number, said: string} | undefined} mapFound  what a name of the map's script was found to be (0 nothing, 1 a thing, 2 a region, 3 a camera)
  * @property {{type: string, waiting?: boolean, name?: string | null} | undefined} mapPick  a pick on the map for a trigger's parameter: waiting, or what it gave
  * @property {Object<string, string> | undefined} info  the map's info as its panel last showed it (`Session::info_fields`)
@@ -139,6 +139,7 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
   <label id="strength-label">Strength <span id="strength-value"></span><input id="strength" type="range" min="0.05" max="1" step="0.05"></label>
   <div id="textures" class="textures" hidden></div>
   <select id="cliff-types" hidden></select>
+  <label id="variation-label" hidden>Variation <select id="variation"></select></label>
   <div id="pathing-flags" class="pathing-flags" hidden>
     <label><input type="checkbox" value="2"> No walking</label>
     <label><input type="checkbox" value="4"> No flying</label>

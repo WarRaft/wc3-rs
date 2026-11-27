@@ -114,7 +114,7 @@ fn the_ramp_brush_on_a_cliffs_edge_makes_world_editors_ramp() {
     let (game, tileset) = setup(&dir);
     let mut t = terrain(100, 100, |_, _, _| {});
     let mut e = crate::edit::Edits::default();
-    let b = |tool, size| crate::edit::Brush { tool, size, strength: 1.0, texture: None, cliff: -1, flags: 0 };
+    let b = |tool, size| crate::edit::Brush { tool, size, strength: 1.0, texture: None, cliff: -1, flags: 0, variation: -1 };
     e.apply(&mut t, 60.0, 60.0, &b(crate::edit::Tool::CliffDown, 21.0), true).unwrap();
     e.end();
     e.apply(&mut t, 70.0, 60.5, &b(crate::edit::Tool::Ramp, 3.0), true).unwrap();

@@ -324,13 +324,27 @@
     ]
     /** The tools that lay no brush. */
     const NO_BRUSH = ['select', 'place', 'regions', 'cameras', 'sounds']
-    const brush = {tool: 'select', size: 4, strength: 0.25, texture: '', cliff: 0, flags: 2, ...(vscode.getState()?.brush ?? {})}
+    const brush = {tool: 'select', size: 4, strength: 0.25, texture: '', cliff: 0, flags: 2, variation: -1, ...(vscode.getState()?.brush ?? {})}
+    /** The tools that set a variation, and how many each has: the ground's 18, a cliff's 8. */
+    const variations = tool => tool === 'texture' ? 18 : ['cliffUp', 'cliffDown', 'shallowWater', 'deepWater'].includes(tool) ? 8 : 0
     const keep = () => vscode.setState({...(vscode.getState() ?? {}), brush})
     const tools = $('tools')
     function showTools() {
         for (const b of tools.querySelectorAll('[data-tool]')) b.classList.toggle('on', b.dataset.tool === brush.tool)
         $('textures').hidden = brush.tool !== 'texture'
         $('cliff-types').hidden = !brush.tool.startsWith('cliff')
+        const n = variations(brush.tool)
+        $('variation-label').hidden = n === 0
+        if (n && $('variation').options.length !== n + 1) {
+            $('variation').replaceChildren(
+                Object.assign(document.createElement('option'), {value: -1, textContent: 'Random'}),
+                ...Array.from({length: n}, (_, i) => Object.assign(document.createElement('option'), {value: i, textContent: String(i)})))
+        }
+        if (n) {
+            // A number past this tool's: at random.
+            if (brush.variation >= n) brush.variation = -1
+            $('variation').value = String(brush.variation)
+        }
         $('objects-palette').hidden = brush.tool !== 'place'
         const pathing = brush.tool.startsWith('pathing')
         $('pathing-flags').hidden = !pathing
@@ -378,6 +392,10 @@
         brush.strength = Number($('strength').value)
         keep()
         showTools()
+    }
+    $('variation').onchange = () => {
+        brush.variation = Number($('variation').value)
+        keep()
     }
     $('cliff-types').onchange = () => {
         brush.cliff = Number($('cliff-types').value)
@@ -1304,6 +1322,12 @@
                 instances: msg.meshes.reduce((n, m) => n + count(m), 0),
                 ramps: msg.meshes.filter(m => /trans|ramp/i.test(m.path)).reduce((n, m) => n + count(m), 0),
                 missing: msg.meshes.filter(m => m.error).length + (msg.notes?.length ?? 0),
+                // The cliffs' pieces by their models' variation (`CliffsAAAB1.mdx`: 1).
+                byVariation: msg.meshes.filter(m => !/trans|ramp/i.test(m.path)).reduce((by, m) => {
+                    const n = Number(/(\d)\.mdx$/i.exec(m.path)?.[1] ?? 0)
+                    by[n] = (by[n] ?? 0) + count(m)
+                    return by
+                }, [0, 0, 0]),
             }})
         } else if (msg.kind === 'terrain' && terrain) {
             lastTerrain = msg

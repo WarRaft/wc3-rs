@@ -1725,9 +1725,20 @@ step), this list updated.
      Boundary − (HiveWE's `add_boundary`, `remove_boundary`): a cell
      brush, the cells whose middle is under it (their bottom left
      corner's flag); drawn darker, nothing passes it in the pathing
-     made on save. The tests' `brush`
+     made on save. Variations (a Variation choice for the texture
+     and the cliff and water tools): Random as World Editor gives them
+     (its maps read: every corner's cliff variation 0, 1 or 2 alike;
+     the ground's 0, 4, 8, 12, 16 and 17 alike, each whole one's three
+     after it ever less, `edit::ground_variation`: HiveWE's table has
+     0 twice where 17 is), a texture's only where it is new and a
+     cliff's where the layer changes, so a stroke's steps don't change
+     them again; or a number: the ground's 0-17, the cliff's 0-7 on
+     the corners under the brush and around (a cliff's piece has its
+     cell's bottom left corner's; the game's highest below it when a
+     shape has fewer). The tests' `brush`
      message takes `cells` (from above) for exact places, `corner` asks
-     a corner of the terrain (its height, water, wet, blight, boundary).
+     a corner of the terrain (its height, water, wet, blight, boundary);
+     the `cliffs` report counts the pieces by variation.
    - **6b, things placed** (done): the object palette (every type of
      doodad, destructable, unit and item, the game's and the map's
      object data's, named as World Editor names them, with its group:
