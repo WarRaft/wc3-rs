@@ -14,8 +14,8 @@
 //! The icons ([`icons`]): a gold mine (its type's abilities have
 //! `Agld`), a neutral building (its type's `nbmmIcon`), a player's start
 //! location in its colour ([`PLAYER_COLORS`]); placed as World Editor
-//! places them (Blizzard's maps' and the Diablo beta's: over the
-//! playable area centred as the picture, x rounded down, y up).
+//! places them (Blizzard's melee maps': over the playable area fitted
+//! as the picture is, x rounded down, y up).
 
 /// The picture's size.
 pub const SIZE: u32 = 256;

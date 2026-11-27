@@ -84,11 +84,22 @@ pub fn paint(
                 && draw.corners[i] & corner::WATER != 0
                 && draw.water[i] > draw.heights[i]
             {
+                // Its colour by its depth, as the game's (HiveWE's water
+                // shader): shallow from its least to its most at 10 to 64
+                // of 128, deep to 72 of 128.
+                const MIN_DEPTH: f32 = 10.0 / 128.0;
+                const DEEP: f32 = 64.0 / 128.0;
+                const MAX_DEPTH: f32 = 72.0 / 128.0;
                 let depth = (draw.water[i] - draw.heights[i]).clamp(0.0, 1.0);
-                let [r, g, b, a] = if depth <= 0.5 { wt.colors[1] } else { wt.colors[3] };
+                let mix = |a: [u8; 4], b: [u8; 4], t: f32| [0, 1, 2, 3].map(|k| a[k] as f32 * (1.0 - t) + b[k] as f32 * t);
+                let [r, g, b, a] = if depth <= DEEP {
+                    mix(wt.colors[0], wt.colors[1], (depth - MIN_DEPTH).max(0.0) / (DEEP - MIN_DEPTH))
+                } else {
+                    mix(wt.colors[2], wt.colors[3], (depth - DEEP).clamp(0.0, MAX_DEPTH - DEEP) / (MAX_DEPTH - DEEP))
+                };
                 // As the game: the water's texture, tinted by its colour.
                 let texture = wt.average.unwrap_or([255; 3]).map(|v| v as f32 / 255.0);
-                let (a, over) = (a as f32 / 255.0, [r, g, b].map(|v| v as f32 / 255.0));
+                let (a, over) = (a / 255.0, [r, g, b].map(|v| v / 255.0));
                 let over = [0, 1, 2].map(|k| over[k] * texture[k]);
                 c = [0, 1, 2].map(|k| over[k] * a + c[k] * (1.0 - a));
             }

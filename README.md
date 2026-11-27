@@ -2226,7 +2226,15 @@ step), this list updated.
      editor's minimap's), as the game draws it: the tileset's water
      texture's colour tinted by its `Water.slk` colour, not the tint
      alone (Icecrown's near white tint over a blue texture: blue, as
-     World Editor's).
+     World Editor's). Its colour by its depth as the game's (HiveWE's
+     water shader: shallow from `Smin` to `Smax` 10 to 64 of 128 deep,
+     deep from `Dmin` to `Dmax` to 72): shallow water nearly clear, as
+     on World Editor's. Measured against World Editor's pictures of
+     Blizzard's 108 melee maps (`minimap_pictures_near_world_editors_
+     in_blizzards_maps`, ignored): a pixel off by 20 of 255 on average
+     (21.4 before the water by depth). Tried and left: the tileset's
+     day light at any hour (no colour bias left, but further off: 21.4),
+     a texture's first cell for its colour (20.1).
    - **The shadow map** (`war3map.shd`) isn't made: HiveWE keeps the
      file as it is, and how World Editor bakes it (which doodads, which
      direction) isn't known here; a guess would be wrong on every save.

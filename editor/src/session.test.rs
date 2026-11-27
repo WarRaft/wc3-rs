@@ -1357,3 +1357,34 @@ fn minimap_icons_as_world_editors_in_blizzards_maps() {
     println!("{same} the same; differ: {differ:?}");
     assert!(same >= 96, "{same}: {differ:?}");
 }
+
+/// The minimap's picture beside World Editor's in Blizzard's melee maps
+/// (`MAPS`, `WC3_GAME`): each pixel's colour off by 20 of 255 on
+/// average (the ground's colours World Editor's own, its water by depth
+/// as ours). A measure, kept from getting worse.
+#[test]
+#[ignore]
+fn minimap_pictures_near_world_editors_in_blizzards_maps() {
+    let (Ok(dir), Ok(game)) = (std::env::var("MAPS"), std::env::var("WC3_GAME")) else { return };
+    let mut maps: Vec<_> = std::fs::read_dir(dir).unwrap().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "w3x" || e == "w3m")).collect();
+    maps.sort();
+    let (mut sum, mut n) = (0.0, 0);
+    for map in maps {
+        let t = TestDir::new("pictures-all");
+        t.write("wc3.bni", format!("[project]\ngame=\"{game}\"\n\n[map]\nroot=\"{}\"\n", map.display()).as_bytes());
+        let Ok(mut s) = Session::open(t.path()) else { continue };
+        let Some((theirs, _)) = s.game.read("war3mapMap.blp") else { continue };
+        s.draw();
+        let (ours, theirs) = (wc3_server::texture::decode(&s.minimap_blp().unwrap()), wc3_server::texture::decode(&theirs));
+        let (a, b) = (&ours.mips[0].rgba, &theirs.mips[0].rgba);
+        if a.len() != b.len() {
+            continue;
+        }
+        let off: f64 = a.chunks_exact(4).zip(b.chunks_exact(4)).map(|(p, q)| (0..3).map(|k| (p[k] as f64 - q[k] as f64).abs()).sum::<f64>() / 3.0).sum::<f64>() / (a.len() / 4) as f64;
+        sum += off;
+        n += 1;
+    }
+    let mean = sum / n.max(1) as f64;
+    println!("{n} maps: off by {mean:.1} of 255 on average");
+    assert!(n > 100 && mean <= 20.5, "{mean}");
+}

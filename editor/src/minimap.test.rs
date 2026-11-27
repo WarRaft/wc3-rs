@@ -45,13 +45,14 @@ fn icons_where_world_editor_puts_them() {
         let (cx, cy) = cell(x, y);
         assert_eq!(icon_at(area, cx, cy), want, "{x}, {y}");
     }
-    // The Diablo beta's: 180 by 116 playable, 256 across it, centred up and down.
-    let area = [6.0, 4.0, 186.0, 120.0];
-    let cell = |x: f32, y: f32| ((x + 12288.0) / 128.0, (y + 12288.0) / 128.0);
-    for ((x, y), want) in [((5248.0, 1472.0), (186, 64)), ((-576.0, -6080.0), (121, 148))] {
+    // (4)DevilsCauldron: 192 by 96 cells, 180 by 84 playable: 256 across, the
+    // other side its pixels rounded up, centred.
+    let area = [6.0, 4.0, 186.0, 88.0];
+    let cell = |x: f32, y: f32| ((x + 12288.0) / 128.0, (y + 6144.0) / 128.0);
+    for ((x, y), want) in [((-9856.0, -4160.0), (18, 172)), ((-10048.0, 3584.0), (16, 86)), ((9664.0, -3968.0), (235, 170)), ((9792.0, 3456.0), (236, 87))] {
         let (cx, cy) = cell(x, y);
         assert_eq!(icon_at(area, cx, cy), want, "{x}, {y}");
     }
-    let file = icons(area, &[(START_LOCATION, 137.0, 107.5, PLAYER_COLORS[1])]);
-    assert_eq!((file.icons[0].x, file.icons[0].y, file.icons[0].blue), (186, 64, 255));
+    let file = icons(area, &[(START_LOCATION, 19.0, 15.5, PLAYER_COLORS[1])]);
+    assert_eq!((file.icons[0].x, file.icons[0].y, file.icons[0].blue), (18, 172, 255));
 }
