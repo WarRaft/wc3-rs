@@ -62,6 +62,8 @@ const EditorProtocol = (() => {
         INFO: 155,
         SOUND_FILES_ASK: 47,
         SOUND_FILES: 156,
+        MAP_NAME_ASK: 48,
+        MAP_NAME: 157,
         IMPORT_PREVIEW_ANSWER: 154,
         THING: 147,
         SOUND_NEW: 30,
@@ -337,6 +339,14 @@ const EditorProtocol = (() => {
         },
         infoAsk: () => new Writer().frame(KIND.INFO_ASK),
         soundFiles: () => new Writer().frame(KIND.SOUND_FILES_ASK),
+        /** The script's name of what a ray meets (or camera `index`), for a trigger's parameter of `type`. */
+        mapName(type, index, origin, dir) {
+            const w = new Writer()
+            w.string(type)
+            w.u32(index >>> 0)
+            for (const v of [...origin, ...dir]) w.f32(v)
+            return w.frame(KIND.MAP_NAME_ASK)
+        },
         /** A field of the map's info (`name`, `player.0.race` ...) set from its text. */
         infoSet(field, value) {
             const w = new Writer()
@@ -571,6 +581,8 @@ const EditorProtocol = (() => {
             }
             case KIND.OBJECT_ENUMS:
                 return {kind: 'objectEnums', enums: r.list(r => ({ty: r.string(), multi: r.u8() !== 0, values: r.list(r => [r.string(), r.string()])}))}
+            case KIND.MAP_NAME:
+                return {kind: 'mapName', type: r.string(), name: r.string(), said: r.string()}
             case KIND.SOUND_FILES:
                 return {kind: 'soundFiles', files: r.list(r => r.string())}
             case KIND.INFO:

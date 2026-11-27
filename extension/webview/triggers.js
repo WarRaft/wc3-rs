@@ -562,6 +562,9 @@ return receive
 function mount(/** @type {HTMLElement} */ root, /** @type {any} */ host) {
 const vscode = host
 
+/** The types a parameter is picked on the map for, where the host can (`host.pickOnMap`). */
+const MAP_TYPES = ['unit', 'item', 'destructable', 'rect', 'camerasetup']
+
 const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (root.querySelector(`#${CSS.escape(id)}`))
 
 /** @typedef {string | {r: string, p: string, s: Span[]}} Span */
@@ -1365,6 +1368,19 @@ function paramDialog(line, path, c) {
         body.push(section)
     }
     const submit = () => box.requestSubmit()
+    // What's on the map (a unit, an item, a destructable, a region, a
+    // camera), picked there: where the host has the map (the World
+    // Editor's Triggers panel), its name in the map's script.
+    if (vscode.pickOnMap && MAP_TYPES.includes(c.type)) {
+        const pick = h('button', {type: 'button', class: 'text-button'}, ['Pick…'])
+        pick.addEventListener('click', () => {
+            closeDialog()
+            vscode.pickOnMap(c.type).then((/** @type {string | null} */ name) => {
+                if (name) vscode.postMessage({type: 'set', line, path, kind: 'variable', value: name})
+            })
+        })
+        body.push(h('div', {class: 'choice'}, [h('label', {class: 'choice-label'}, ['On the map']), pick]))
+    }
     if (c.presets.length) {
         const select = /** @type {HTMLSelectElement} */ (h('select', {class: 'wide'}, c.presets.map(([k, d]) => h('option', {value: k}, [d]))))
         if (c.current.kind === 'preset') select.value = c.current.value

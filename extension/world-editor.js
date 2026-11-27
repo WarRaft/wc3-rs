@@ -85,6 +85,7 @@ const VIEW = 'wc3.editors'
  * @property {Map<string, string> | undefined} follow  the paths of the pieces with a text form, by their lower case
  * @property {string | undefined} picked  what the last click picked, said ('' nothing)
  * @property {{kind: number, count: number, custom: string[], changed: string[], picked: {id: string, base: string, name: string, levels: number, fields: [string, number, string, boolean][]} | null} | undefined} objects  the object editor's kind, its objects, the one picked and its fields
+ * @property {{type: string, waiting?: boolean, name?: string | null} | undefined} mapPick  a pick on the map for a trigger's parameter: waiting, or what it gave
  * @property {Object<string, string> | undefined} info  the map's info as its panel last showed it (`Session::info_fields`)
  * @property {{files: [string, boolean, boolean][], picked: number | null, preview: {path: string, what: number, size: number, width: number, error: string} | null} | undefined} imports  the import manager's list (path, found, to be written), the one picked and what it is
  * @property {{count: number, names: string[], picked: object | null} | undefined} sounds  the map's sounds and the one picked (the Sounds tool)
@@ -367,7 +368,7 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
                 }
                 const wtg = Uri.file(path.join(path.dirname(terrain), 'war3map.wtg')).with({scheme: OBJECTS_SCHEME})
                 // What the page says before the logic listens (its `ready`) waits.
-                const t = {listeners: new Set(), waiting: [], disposed: new EventEmitter()}
+                const t = {listeners: new Set(), waiting: [], disposed: new EventEmitter(), uri: wtg}
                 editor.triggers = t
                 const stand = {
                     webview: {
@@ -391,6 +392,17 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
                     dispose: () => t.disposed.fire(),
                 }
                 workspace.openTextDocument(wtg).then(doc => triggers.host(doc, stand), e => window.showErrorMessage(`WC3: can't open the map's triggers: ${e.message ?? e}`))
+            } else if (msg.type === 'saveTriggers') {
+                // The World Editor's Save: the triggers' documents too
+                // (war3map.wtg and the custom script beside it), VS Code's.
+                const wtg = editor.triggers?.uri
+                if (!wtg) return
+                const wct = wtg.with({path: wtg.path.replace(/war3map\.wtg$/i, 'war3map.wct')})
+                for (const d of workspace.textDocuments) {
+                    if (d.isDirty && [wtg, wct].some(u => u.toString().toLowerCase() === d.uri.toString().toLowerCase())) d.save()
+                }
+            } else if (msg.type === 'mapPick') {
+                editor.mapPick = msg.mapPick
             } else if (msg.type === 'trg') {
                 // The Triggers panel's page, for the trigger editor's logic.
                 const t = editor.triggers

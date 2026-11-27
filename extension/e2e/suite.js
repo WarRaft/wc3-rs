@@ -623,6 +623,27 @@ async function steps(only) {
             const picked = await until(() => ed.state().picked === 2 && ed.state().tree?.picked === 2 && ed.state(), 'a trigger picked')
             check(true, `trigger 2 picked: ${tree.triggers[1].name}`)
             await shot('world-editor-triggers')
+            // A parameter picked on the map: a region, by a click inside it.
+            const ov = we.overlays
+            await we.panel.webview.postMessage({type: 'look', world: true, x: ov.region.x, y: ov.region.y, distance: 6, horizontal: 0, vertical: -1.55})
+            await sleep(300)
+            we.mapPick = undefined
+            await we.panel.webview.postMessage({type: 'pickOnMap', kind: 'rect'})
+            await until(() => we.mapPick?.waiting, 'picking a region')
+            await we.panel.webview.postMessage({type: 'mapPickAt', x: 0, y: 0})
+            const rect = await until(() => we.mapPick?.name && we.mapPick, 'a region picked')
+            check(rect.name.startsWith('gg_rct_'), `${ov.region.name}: ${rect.name}`)
+            // A unit asked for, the arched door (a doodad) clicked: said, still picking; Esc: none.
+            await we.panel.webview.postMessage({type: 'look', world: true, x: -2708, y: 2670, z: 691, distance: 12, horizontal: 0, vertical: -1.5})
+            await sleep(300)
+            we.mapPick = undefined
+            await we.panel.webview.postMessage({type: 'pickOnMap', kind: 'unit'})
+            await until(() => we.mapPick?.waiting, 'picking a unit')
+            await we.panel.webview.postMessage({type: 'mapPickAt', x: 0, y: 0})
+            await sleep(800)
+            check(we.mapPick.waiting, 'a doodad is no unit: still picking')
+            await we.panel.webview.postMessage({type: 'mapPickEsc'})
+            await until(() => we.mapPick && !we.mapPick.waiting && we.mapPick.name === null, 'given up')
             await we.panel.webview.postMessage({type: 'button', id: 'triggers-open'})
         }},
         {name: 'map', editor: true, run: async () => {

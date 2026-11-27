@@ -996,6 +996,7 @@ dependencies = [
  "w3s-rs",
  "wc3-server",
  "wpm-rs",
+ "wtg-rs",
  "wts-rs",
 ]
 

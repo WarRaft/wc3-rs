@@ -67,6 +67,7 @@
 //! | 45 | `InfoAsk` | nothing; answered by `Info` |
 //! | 46 | `InfoSet` | a field of the map's info set: its name (`Session::info_fields`'), its value as text; answered by `Info`, `Map`, `State` |
 //! | 47 | `SoundFiles` | nothing; answered by `SoundFiles`: the game's and the map's sound files |
+//! | 48 | `MapName` | the script's name of what's on the map, for a trigger's parameter: its kind (`unit`, `item`, `destructable`, `rect`, `camerasetup`), `i32` a camera's index (-1: by the ray), the ray; answered by `MapName` |
 //! | 22 | `TilePathing` | the tile pather's: `u8` a tile's index in the terrain's list, `u8` what it forbids (`wpm` flags: 2 walking, 4 flying, 8 building); answered by `Overlays` and `State` |
 //! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id; kind 255: id a texture's path); answered by `Icons` |
 //!
@@ -102,6 +103,7 @@
 //! | 154 | `ImportPreview` | an imported file: its path, `u8` what it is (0 other, 1 a texture, 2 a sound, 3 a model), `u32` its size, a picture (`u32` width, height, RGBA; 0 by 0 for none), why not (empty: fine) |
 //! | 155 | `Info` | the map's info: a list of (field, its value as text): `Session::info_fields` |
 //! | 156 | `SoundFiles` | the sound files of the game's and the map's layers (`.wav`, `.mp3`, `.flac`, `.ogg`): a list of names, sorted |
+//! | 157 | `MapName` | its kind, the name (`gg_unit_hfoo_0012`, `gg_rct_Spawn` ...; empty: none), what was picked or why none |
 //! | 141 | `Icons` | a list of (`u8` kind, id, `u32` width, height, RGBA; 0 by 0 for none) |
 //!
 //! After an edit the terrain's messages come again: `Cliffs` with no
@@ -175,6 +177,8 @@ mod kind {
     pub const INFO: u8 = 155;
     pub const SOUND_FILES_ASK: u8 = 47;
     pub const SOUND_FILES: u8 = 156;
+    pub const MAP_NAME_ASK: u8 = 48;
+    pub const MAP_NAME: u8 = 157;
     pub const IMPORT_PREVIEW_ANSWER: u8 = 154;
     pub const OBJECT_LIST_ANSWER: u8 = 150;
     pub const OBJECT_FIELDS: u8 = 151;
@@ -268,6 +272,8 @@ pub enum ClientMsg {
     SoundPlay { file: String },
     /// Kind 47.
     SoundFiles,
+    /// Kind 48.
+    MapName { kind: String, index: i32, origin: [f32; 3], dir: [f32; 3] },
     /// Kind 45.
     InfoAsk,
     /// Kind 46.
@@ -580,6 +586,8 @@ pub enum ServerMsg {
     Sounds(Vec<w3s_rs::Sound>),
     /// Kind 156.
     SoundFiles(Vec<String>),
+    /// Kind 157.
+    MapName { kind: String, name: String, said: String },
     /// Kind 155: each field and its value as text.
     Info(Vec<(String, String)>),
     /// Kind 153: (path in the map, as kept, flags, found, to be written).
@@ -715,6 +723,7 @@ impl ClientMsg {
             kind::CAMERA_DELETE => Some(ClientMsg::CameraDelete { index: r.u32()? }),
             kind::CAMERA_SET => Some(ClientMsg::CameraSet { index: r.u32()?, field: r.string()?, value: r.f32()? }),
             kind::SOUND_FILES_ASK => Some(ClientMsg::SoundFiles),
+            kind::MAP_NAME_ASK => Some(ClientMsg::MapName { kind: r.string()?, index: r.u32()? as i32, origin: [r.f32()?, r.f32()?, r.f32()?], dir: [r.f32()?, r.f32()?, r.f32()?] }),
             kind::INFO_ASK => Some(ClientMsg::InfoAsk),
             kind::INFO_SET => Some(ClientMsg::InfoSet { field: r.string()?, value: r.string()? }),
             kind::IMPORT_LIST => Some(ClientMsg::ImportList),
@@ -860,6 +869,12 @@ impl ClientMsg {
                 kind::CAMERA_SET
             }
             ClientMsg::SoundFiles => kind::SOUND_FILES_ASK,
+            ClientMsg::MapName { kind, index, origin, dir } => {
+                w.string(kind);
+                w.u32(*index as u32);
+                origin.iter().chain(dir).for_each(|v| w.f32(*v));
+                kind::MAP_NAME_ASK
+            }
             ClientMsg::InfoAsk => kind::INFO_ASK,
             ClientMsg::InfoSet { field, value } => {
                 w.string(field);
@@ -1151,6 +1166,12 @@ impl ServerMsg {
                     });
                 });
                 kind::OBJECT_ENUMS
+            }
+            ServerMsg::MapName { kind, name, said } => {
+                w.string(kind);
+                w.string(name);
+                w.string(said);
+                kind::MAP_NAME
             }
             ServerMsg::SoundFiles(list) => {
                 w.list(list, |w, n| w.string(n));
@@ -1502,6 +1523,7 @@ impl ServerMsg {
                 ServerMsg::ObjectFields(ObjectFieldsMsg { kind, id, base, name, levels, fields })
             }
             kind::OBJECT_ENUMS => ServerMsg::ObjectEnums(r.list(|r| Ok((r.string()?, r.u8()? != 0, r.list(|r| Ok((r.string()?, r.string()?)))?)))?),
+            kind::MAP_NAME => ServerMsg::MapName { kind: r.string()?, name: r.string()?, said: r.string()? },
             kind::SOUND_FILES => ServerMsg::SoundFiles(r.list(|r| r.string())?),
             kind::INFO => ServerMsg::Info(r.list(|r| Ok((r.string()?, r.string()?)))?),
             kind::IMPORTS => ServerMsg::Imports(r.list(|r| Ok((r.string()?, r.string()?, r.u8()?, r.u8()? != 0, r.u8()? != 0)))?),

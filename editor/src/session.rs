@@ -2998,6 +2998,55 @@ impl Session {
         regions.iter().rposition(|r| x >= r.left && x <= r.right && y >= r.bottom && y <= r.top).map(|i| i as u32)
     }
 
+    /// The name the map's script gives what's on the map, for a trigger's
+    /// parameter of type `kind`: a unit, item or destructable a ray meets
+    /// (`gg_unit_hfoo_0012`: its type and number, as World Editor's script
+    /// names it), the region over the point it meets (`gg_rct_` and its
+    /// name as an identifier), camera `index` (`gg_cam_`). None, said, for
+    /// something of another kind or nothing.
+    pub fn map_name(&self, kind: &str, index: i32, origin: [f32; 3], dir: [f32; 3]) -> ServerMsg {
+        let answer = |name: String, said: String| ServerMsg::MapName { kind: kind.to_string(), name, said };
+        let ident = wtg_rs::jass::ident;
+        match kind {
+            "camerasetup" => match self.placed.cameras.as_ref().and_then(|c| c.cameras.get(usize::try_from(index).ok()?)) {
+                Some(c) => answer(format!("gg_cam_{}", ident(&c.name)), c.name.clone()),
+                None => answer(String::new(), "No camera there: click one.".into()),
+            },
+            "rect" => {
+                let point = self.ground_point(origin, dir);
+                let region = point.and_then(|[x, y, _]| self.region_at(x, y)).and_then(|i| self.placed.regions.as_ref()?.regions.get(i as usize));
+                match region {
+                    Some(r) => answer(format!("gg_rct_{}", ident(&r.name)), r.name.clone()),
+                    None => answer(String::new(), "No region there: click inside one.".into()),
+                }
+            }
+            "unit" | "item" | "destructable" => {
+                let Some(t) = self.objects.as_ref().and_then(|o| o.pick(origin, dir)) else { return answer(String::new(), format!("No {kind} there: click one.")) };
+                let is = match t.kind {
+                    w3abdhqtu_rs::Kind::Unit => "unit",
+                    w3abdhqtu_rs::Kind::Item => "item",
+                    w3abdhqtu_rs::Kind::Destructable => "destructable",
+                    _ => "doodad",
+                };
+                if is != kind || t.id.to_string() == crate::placed::START_LOCATION {
+                    return answer(String::new(), format!("That's {} {is}, not {} {kind}.", if is == "item" { "an" } else { "a" }, if kind == "item" { "an" } else { "a" }));
+                }
+                let number = if is == "destructable" {
+                    self.placed.doodads.as_ref().and_then(|d| d.doodads.get(t.index)).map(|d| d.number)
+                } else {
+                    self.placed.units.as_ref().and_then(|u| u.units.get(t.index)).map(|u| u.number)
+                };
+                let short = if is == "destructable" { "dest" } else { is };
+                let name = self.names.objects.get(t.kind, &t.id.to_string()).map(|n| wc3_server::names::plain(&n.shown())).unwrap_or_else(|| t.id.to_string());
+                match number {
+                    Some(n) => answer(format!("gg_{short}_{}_{n:04}", t.id), name),
+                    None => answer(String::new(), format!("No {kind} there: click one.")),
+                }
+            }
+            _ => answer(String::new(), format!("Nothing of type {kind} is picked on the map.")),
+        }
+    }
+
     /// What a ray from the camera meets first, said.
     pub fn pick(&self, origin: [f32; 3], dir: [f32; 3]) -> PickedMsg {
         let ground = self.drawn.as_ref().and_then(|d| crate::overlays::ground_hit(d, origin, dir));

@@ -1045,3 +1045,29 @@ fn the_maps_info_shown_set_its_strings_in_war3map_wts_undone_and_saved() {
     let msgs = s.text_changed(&path, &typed);
     assert!(matches!(&msgs[1], ServerMsg::Map(m) if m.author == "Typed In Text"), "{msgs:?}");
 }
+
+#[test]
+fn the_scripts_names_of_what_a_click_on_the_map_picks_for_a_triggers_parameter() {
+    let dir = TestDir::new("session-map-names");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    let mut regions = w3r_rs::Regions::new();
+    regions.regions.push(w3r_rs::Region::new("My Spawn 1", -64.0, -64.0, 64.0, 64.0, 0));
+    dir.write("map/war3map.w3r", &regions.to_bytes().unwrap());
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    s.camera_view(-1, [1.0, 0.5, 0.0, 10.0, 0.0, -1.0, 70.0, 0.0]);
+    s.camera_rename(0, "Intro Cam!");
+    let down = [0.0, 0.0, -1.0];
+    let name = |m: ServerMsg| match m {
+        ServerMsg::MapName { name, said, .. } => (name, said),
+        m => panic!("{m:?}"),
+    };
+    // (1, 0.5) cells: (0, 0), inside the region.
+    assert_eq!(name(s.map_name("rect", -1, [1.0, 0.5, 10.0], down)), ("gg_rct_My_Spawn_1".into(), "My Spawn 1".into()));
+    assert!(name(s.map_name("rect", -1, [2.0, 0.5, 10.0], down)).1.contains("No region there"));
+    assert_eq!(name(s.map_name("camerasetup", 0, [0.0; 3], down)).0, "gg_cam_Intro_Cam_u", "World Editor's: a name ending in _ gets a u");
+    assert!(name(s.map_name("camerasetup", 3, [0.0; 3], down)).1.contains("No camera"));
+    assert!(name(s.map_name("unit", -1, [1.0, 0.5, 10.0], down)).1.contains("No unit there"));
+    assert!(name(s.map_name("integer", -1, [1.0, 0.5, 10.0], down)).1.contains("Nothing of type integer"));
+}

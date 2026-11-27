@@ -158,6 +158,21 @@
         camera.zoom(-e.deltaY)
     }, {passive: false})
     window.addEventListener('keydown', e => {
+        // A pick on the map for a trigger's parameter: Esc gives it up.
+        if (mapPick && e.code === 'Escape') {
+            e.preventDefault()
+            endMapPick(null)
+            return
+        }
+        // The trigger editor's keys are its own (Delete, Ctrl+Z ... there
+        // are a trigger's); Ctrl+S saves both.
+        if ($('trg-root').contains(/** @type {Node} */ (e.target))) {
+            if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') {
+                e.preventDefault()
+                save()
+            }
+            return
+        }
         const mod = e.ctrlKey || e.metaKey
         if (mod && e.code === 'KeyZ') {
             e.preventDefault()
@@ -166,7 +181,8 @@
         }
         if (mod && (e.code === 'KeyY' || e.code === 'KeyS')) {
             e.preventDefault()
-            send(e.code === 'KeyS' ? encode.save() : encode.redo())
+            if (e.code === 'KeyS') save()
+            else send(encode.redo())
             return
         }
         if (mod || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
@@ -346,7 +362,12 @@
     }
     $('undo').onclick = () => send(encode.undo())
     $('redo').onclick = () => send(encode.redo())
-    $('save').onclick = () => send(encode.save())
+    /** The map's files saved, and the triggers' documents (war3map.wtg, war3map.wct: VS Code's) with them. */
+    function save() {
+        send(encode.save())
+        if (triggerEditor) vscode.postMessage({type: 'saveTriggers'})
+    }
+    $('save').onclick = save
     const mapPanel = new EditorMapSettings.Panel($('map-panel'), send, encode)
     $('map-open').onclick = () => (mapPanel.isOpen ? mapPanel.close() : mapPanel.open())
     const importsPanel = new EditorImports.Panel($('imports-panel'), send, encode, msg => vscode.postMessage(msg))
@@ -377,6 +398,7 @@
             if (triggerEditor) return
             vscode.postMessage({type: 'openTriggers'})
             triggerEditor = TriggerEditor.mount($('trg-root'), {
+                pickOnMap: type => new Promise(resolve => startMapPick(type, resolve)),
                 postMessage: m => vscode.postMessage({type: 'trg', msg: m}),
                 getState: () => vscode.getState()?.triggers,
                 setState: s => vscode.setState({...(vscode.getState() ?? {}), triggers: s}),
@@ -386,6 +408,45 @@
             $('triggers-panel').hidden = true
         },
     }
+    // A trigger's parameter picked on the map (`pickOnMap`): the panel
+    // hidden, the layer of what's picked shown, a click asks the editor
+    // the script's name of what it meets (`MapName`); Esc gives it up.
+    let mapPick = null
+    const PICKED = {unit: 'a unit', item: 'an item', destructable: 'a destructable', rect: 'a region', camerasetup: 'a camera'}
+    function startMapPick(type, resolve) {
+        mapPick = {type, resolve}
+        triggersPanel.close()
+        if (type === 'rect' && !show.regions) {
+            show.regions = true
+            applyShow()
+        }
+        if (type === 'camerasetup' && !show.cameras) {
+            show.cameras = true
+            applyShow()
+        }
+        $('status').textContent = `Click ${PICKED[type] ?? type} on the map for the trigger (Esc: none)`
+        vscode.postMessage({type: 'mapPick', mapPick: {type, waiting: true}})
+    }
+    function endMapPick(name) {
+        const p = mapPick
+        mapPick = null
+        $('status').textContent = ''
+        toggle(triggersPanel)
+        p?.resolve(name)
+        vscode.postMessage({type: 'mapPick', mapPick: {type: p?.type, name}})
+    }
+    /** A click on the map while picking: what it meets asked for, by its point or its camera. */
+    function mapPickAt(x, y) {
+        const r = canvas.getBoundingClientRect()
+        const index = mapPick.type === 'camerasetup' ? cameraAt(x - r.left, y - r.top) ?? -1 : -1
+        const {origin, dir} = rayAt(x, y)
+        send(encode.mapName(mapPick.type, index, origin, dir))
+    }
+    canvas.addEventListener('click', e => {
+        if (!mapPick) return
+        e.stopImmediatePropagation()
+        mapPickAt(e.clientX, e.clientY)
+    }, true)
     // One of these panels at a time.
     const panels = () => [importsPanel, objectsPanel, infoPanel, triggersPanel]
     const toggle = panel => {
@@ -1289,6 +1350,10 @@
             }
             if (selectedSound !== null && selectedSound >= sounds.length) selectedSound = null
             showSounds()
+        } else if (msg.kind === 'mapName') {
+            if (!mapPick || msg.type !== mapPick.type) return
+            if (msg.name) endMapPick(msg.name)
+            else $('status').textContent = `${msg.said} (Esc: none)`
         } else if (msg.kind === 'soundFiles') {
             soundFiles = msg.files
             showSoundFiles()
@@ -1382,6 +1447,16 @@
         } else if (msg.type === 'trg') {
             // The trigger editor's logic, for its panel.
             triggerEditor?.receive(msg.msg)
+        } else if (msg.type === 'pickOnMap') {
+            // A pick on the map begun, as a trigger's parameter dialog begins it: for the tests.
+            toggle(triggersPanel)
+            startMapPick(msg.kind, () => {})
+        } else if (msg.type === 'mapPickEsc') {
+            if (mapPick) endMapPick(null)
+        } else if (msg.type === 'mapPickAt') {
+            // A click while picking on the map, at a point of the view (-1 to 1, y up): for the tests.
+            const r = canvas.getBoundingClientRect()
+            if (mapPick) mapPickAt(r.left + (msg.x + 1) / 2 * r.width, r.top + (1 - msg.y) / 2 * r.height)
         } else if (msg.type === 'button') {
             // A button of the page's pressed (`id`): for the tests.
             $(msg.id)?.onclick()
@@ -1473,7 +1548,9 @@
         } else if (msg.type === 'delete' && selected) {
             send(encode.delete(selected.file, selected.index))
             selected = null
-        } else if (msg.type === 'undo' || msg.type === 'redo' || msg.type === 'save') {
+        } else if (msg.type === 'save') {
+            save()
+        } else if (msg.type === 'undo' || msg.type === 'redo') {
             send(encode[msg.type]())
         } else if (msg.type === 'unfocus' && focusedFrom) {
             Object.assign(camera, focusedFrom)
