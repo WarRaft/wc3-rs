@@ -350,7 +350,19 @@
     const mapPanel = new EditorMapSettings.Panel($('map-panel'), send, encode)
     $('map-open').onclick = () => (mapPanel.isOpen ? mapPanel.close() : mapPanel.open())
     const importsPanel = new EditorImports.Panel($('imports-panel'), send, encode, msg => vscode.postMessage(msg))
-    const infoPanel = new EditorMapInfo.Panel($('info-panel'), send, encode, info => vscode.postMessage({type: 'info', info}))
+    // Its tech tree's and upgrades' objects named by the object editor's lists: units, items, abilities, upgrades.
+    const INFO_KINDS = [0, 1, 4, 6]
+    const infoPanel = new EditorMapInfo.Panel($('info-panel'), send, encode, info => vscode.postMessage({type: 'info', info}), id => {
+        for (const k of INFO_KINDS) {
+            const o = objectsPanel.lists.get(k)?.find(o => o.id === id)
+            if (o) return o.name
+        }
+    })
+    const openInfo = infoPanel.open.bind(infoPanel)
+    infoPanel.open = () => {
+        openInfo()
+        for (const k of INFO_KINDS) if (!objectsPanel.lists.has(k)) send(encode.objectList(k))
+    }
     // One of these panels at a time.
     const panels = () => [importsPanel, objectsPanel, infoPanel]
     const toggle = panel => {
@@ -1214,6 +1226,7 @@
         } else if (msg.kind === 'objectList') {
             objectsPanel.setList(msg)
             if (EditorThingLists.KINDS.includes(msg.objectKind)) showThingLists(thing)
+            if (infoPanel.isOpen && !$('info-panel').contains(document.activeElement)) infoPanel.render()
         } else if (msg.kind === 'objectFields') {
             objectsPanel.setFields(msg)
         } else if (msg.kind === 'sounds') {

@@ -1008,6 +1008,13 @@ fn the_maps_info_shown_set_its_strings_in_war3map_wts_undone_and_saved() {
     assert_eq!((get(&s, "player.1.name"), get(&s, "force.1.players").as_deref()), (None, Some("1")));
     assert_eq!(said(&s.info_set("force.0.remove", "")), "");
     assert_eq!(get(&s, "force.0.name").as_deref(), Some("Force 2"));
+    // The tech tree and the upgrades.
+    assert_eq!(said(&s.info_set("techs", "AHbz:3;hfoo:1")), "");
+    assert_eq!(said(&s.info_set("upgrades", "Rhme:0:2:1;Rhar:1:0:3")), "");
+    assert!(said(&s.info_set("upgrades", "Rhme:0:5:1")).contains("availability 0 to 2"));
+    assert!(said(&s.info_set("techs", "toolong:1")).contains("four characters"));
+    assert_eq!((get(&s, "techs").as_deref(), get(&s, "upgrades").as_deref()), (Some("AHbz:3;hfoo:1"), Some("Rhme:0:2:1;Rhar:1:0:3")));
+    assert_eq!(s.info.as_ref().unwrap().upgrades[1], w3i_rs::Upgrade { players: 3, id: parser_rs::bin::Rawcode(*b"Rhar"), level: 1, availability: 0 });
     // Random groups and item tables.
     assert_eq!(said(&s.info_set("unit_table.add", "")), "");
     assert_eq!(said(&s.info_set("unit_table.0.columns", "0,2")), "");

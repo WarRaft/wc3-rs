@@ -1848,8 +1848,15 @@ step), this list updated.
      `.rows`: `60:hfoo,ratc;40:hkni,`, an empty id none; a column taken
      out cuts its rows) and The Frozen Throne's item tables (each its
      name and sets, as a thing's drops: `item_table.<i>.sets`), added
-     (the next number) and taken out. Not yet: the tech tree and
-     upgrades. MCP: `w3i_text`, `w3i_write`.
+     (the next number) and taken out. The tech tree: what's unavailable
+     and to whom (`techs`: `hfoo:3`, the players a bit each by their
+     numbers, the map's players' checkboxes), and the upgrades: a level
+     each unavailable, available or researched, to whom (`upgrades`:
+     `Rhme:0:2:1`, the level from 0, shown from 1); each named by the
+     object editor's lists (units, items, abilities, upgrades: asked for
+     when the panel opens). The flags that use them (custom tech tree,
+     upgrades) stay the options' checkboxes. MCP: `w3i_text`,
+     `w3i_write`.
    - **6i, the import manager** (done after 6h): `war3map.imp` a piece
      of the session (read, taken in when changed on disk, its text form
      in step), with the files to write into the map on save or take out

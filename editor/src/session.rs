@@ -1977,6 +1977,11 @@ impl Session {
                 out.push((format!("unit_table.{n}.{k}"), v));
             }
         }
+        // The tech tree's objects made unavailable (an id, its players a bit
+        // each) and the upgrades' levels made unavailable, available or
+        // researched (an id, its level from 0, 0 1 2, its players).
+        out.push(("techs".into(), i.techs.iter().map(|t| format!("{}:{}", t.id, t.players)).collect::<Vec<_>>().join(";")));
+        out.push(("upgrades".into(), i.upgrades.iter().map(|u| format!("{}:{}:{}:{}", u.id, u.level, u.availability, u.players)).collect::<Vec<_>>().join(";")));
         // The item tables: their sets as a thing's drops are written.
         for (n, t) in i.item_tables.iter().enumerate() {
             let sets = t.sets.iter().map(|set| set.iter().map(|(c, id)| format!("{id}:{c}")).collect::<Vec<_>>().join(",")).collect::<Vec<_>>().join(";");
@@ -2093,6 +2098,32 @@ impl Session {
                     let (start_x, start_y) = start.unwrap_or_default();
                     let at = info.players.iter().position(|p| p.number > number).unwrap_or(info.players.len());
                     info.players.insert(at, w3i_rs::Player { number, kind: 1, race: 0, fixed_start: 0, name: format!("Player {}", number + 1), start_x, start_y, ..Default::default() });
+                }
+                "techs" => {
+                    let mut techs = Vec::new();
+                    for t in value.split(';').filter(|t| !t.trim().is_empty()) {
+                        let (id, players) = t.split_once(':').unwrap_or((t, "0"));
+                        let id = parser_rs::bin::Rawcode::parse(id.trim()).ok_or(format!("{t:?}: an id is four characters"))?;
+                        let players: u32 = players.trim().parse().map_err(|_| format!("{t:?}: players are a number"))?;
+                        techs.push(w3i_rs::Tech { players, id });
+                    }
+                    info.techs = techs;
+                }
+                "upgrades" => {
+                    let mut ups = Vec::new();
+                    for u in value.split(';').filter(|u| !u.trim().is_empty()) {
+                        let p: Vec<&str> = u.split(':').collect();
+                        let [id, level, availability, players] = p[..] else { return Err(format!("{u:?}: id:level:availability:players")) };
+                        let id = parser_rs::bin::Rawcode::parse(id.trim()).ok_or(format!("{u:?}: an id is four characters"))?;
+                        let level = int(level)?;
+                        let availability = int(availability)?;
+                        if level < 0 || !(0..=2).contains(&availability) {
+                            return Err(format!("{u:?}: a level from 0, availability 0 to 2"));
+                        }
+                        let players: u32 = players.trim().parse().map_err(|_| format!("{u:?}: players are a number"))?;
+                        ups.push(w3i_rs::Upgrade { players, id, level, availability });
+                    }
+                    info.upgrades = ups;
                 }
                 "unit_table.add" => {
                     let number = info.unit_tables.iter().map(|t| t.number).max().map_or(0, |n| n + 1);

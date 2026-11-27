@@ -34,8 +34,11 @@ const EditorMapInfo = (() => {
     const hex = rgba => '#' + rgba.split(',').slice(0, 3).map(v => Number(v).toString(16).padStart(2, '0')).join('')
 
     class Panel {
-        constructor(root, send, encode, said) {
-            Object.assign(this, {root, send, encode, said})
+        /**
+         * @param nameOf `(id)`: an object's name (the object editor's lists), or undefined
+         */
+        constructor(root, send, encode, said, nameOf = () => undefined) {
+            Object.assign(this, {root, send, encode, said, nameOf})
             this.fields = new Map()
             this.body = el('div', {className: 'info-body'})
             const close = el('button', {textContent: 'Close', onclick: () => this.close()})
@@ -174,6 +177,7 @@ const EditorMapInfo = (() => {
                     const number = Number(this.get(`player.${p}.number`))
                     return [2 ** number, this.get(`player.${p}.name`) || `Player ${number + 1}`]
                 }), 'Players')))))
+            parts.push(this.techTree(players))
             parts.push(this.randomGroups(remove))
             if (tft) parts.push(this.itemTables(remove))
             this.body.replaceChildren(...parts)
@@ -195,6 +199,90 @@ const EditorMapInfo = (() => {
             const input = el('input', {type: 'number', min: 0, max: 100, value, className: 'thing-number', title})
             input.onchange = () => done(input.value)
             return input
+        }
+
+        /** The map's players' checkboxes over `mask`, a bit each by their numbers; `done(mask)`. */
+        playerBits(players, mask, done) {
+            const box = el('div', {className: 'info-players'})
+            for (const p of players) {
+                const number = Number(this.get(`player.${p}.number`))
+                const c = el('input', {type: 'checkbox', checked: (mask & 2 ** number) !== 0, title: this.get(`player.${p}.name`) || `Player ${number + 1}`})
+                c.onchange = () => done(c.checked ? (mask | 2 ** number) >>> 0 : (mask & ~(2 ** number)) >>> 0)
+                box.append(el('label', {}, c, String(number + 1)))
+            }
+            return box
+        }
+
+        /** The tech tree (what's unavailable, to whom) and the upgrades (a level each: unavailable, available, researched; to whom). */
+        techTree(players) {
+            const all = players.reduce((m, p) => (m | 2 ** Number(this.get(`player.${p}.number`))) >>> 0, 0)
+            const named = id => el('span', {className: 'thing-name', textContent: id ? this.nameOf(id) ?? '?' : ''})
+            const techs = this.get('techs').split(';').filter(Boolean).map(t => {
+                const [id, mask = '0'] = t.split(':')
+                return {id, mask: Number(mask)}
+            })
+            const sendTechs = () => this.setField('techs', techs.filter(t => t.id).map(t => `${t.id}:${t.mask}`).join(';'))
+            const addTech = tag(this.idInput('', v => {
+                if (!v) return
+                techs.push({id: v, mask: all})
+                sendTechs()
+            }), 'techs.add')
+            addTech.placeholder = '+ id'
+            const techRows = techs.map(t => el('div', {className: 'thing-row'},
+                this.idInput(t.id, v => {
+                    t.id = v
+                    sendTechs()
+                }), named(t.id),
+                this.playerBits(players, t.mask, m => {
+                    t.mask = m
+                    sendTechs()
+                }),
+                el('button', {textContent: '×', onclick: () => {
+                    techs.splice(techs.indexOf(t), 1)
+                    sendTechs()
+                }})))
+            const ups = this.get('upgrades').split(';').filter(Boolean).map(u => {
+                const [id, level = '0', availability = '0', mask = '0'] = u.split(':')
+                return {id, level, availability, mask: Number(mask)}
+            })
+            const sendUps = () => this.setField('upgrades', ups.filter(u => u.id).map(u => `${u.id}:${u.level}:${u.availability}:${u.mask}`).join(';'))
+            const addUp = tag(this.idInput('', v => {
+                if (!v) return
+                ups.push({id: v, level: '0', availability: '0', mask: all})
+                sendUps()
+            }), 'upgrades.add')
+            addUp.placeholder = '+ id'
+            const upRows = ups.map((u, i) => {
+                const level = el('input', {type: 'number', min: 1, value: Number(u.level) + 1, className: 'thing-number', title: 'Level'})
+                level.onchange = () => {
+                    u.level = String(Math.max(0, Number(level.value) - 1))
+                    sendUps()
+                }
+                const availability = el('select')
+                availability.append(...[['0', 'Unavailable'], ['1', 'Available'], ['2', 'Researched']].map(([v, t]) => el('option', {value: v, textContent: t})))
+                availability.value = u.availability
+                availability.dataset.field = `upgrades.${i}.availability`
+                availability.onchange = () => {
+                    u.availability = availability.value
+                    sendUps()
+                }
+                return el('div', {className: 'thing-row info-wrap'},
+                    this.idInput(u.id, v => {
+                        u.id = v
+                        sendUps()
+                    }), named(u.id), level, availability,
+                    this.playerBits(players, u.mask, m => {
+                        u.mask = m
+                        sendUps()
+                    }),
+                    el('button', {textContent: '×', onclick: () => {
+                        ups.splice(ups.indexOf(u), 1)
+                        sendUps()
+                    }}))
+            })
+            return this.section('Tech tree',
+                el('div', {className: 'thing-sub', textContent: 'Unavailable to the players checked'}), ...techRows, el('div', {className: 'thing-row'}, addTech),
+                el('div', {className: 'obj-category', textContent: 'Upgrades'}), ...upRows, el('div', {className: 'thing-row'}, addUp))
         }
 
         /** The random groups: each its name, its columns' kinds, its rows (a chance, an id a column). */

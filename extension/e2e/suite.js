@@ -567,6 +567,15 @@ async function steps(only) {
             await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: `force.${fs}.remove`})
             await until(() => count('player') === ps && count('force') === fs, 'both taken out')
             check(true, `Player ${free + 1} and a force added and taken out: ${ps} players, ${fs} forces again`)
+            // The tech tree: a unit made unavailable; an upgrade researched.
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: 'techs.add', value: 'hfoo'})
+            await until(() => /(^|;)hfoo:\d+$/.test(we.info?.techs ?? ''), 'the footman unavailable')
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: 'upgrades.add', value: 'Rhme'})
+            await until(() => /(^|;)Rhme:0:0:\d+$/.test(we.info?.upgrades ?? ''), 'an upgrade')
+            const ups = we.info.upgrades.split(';').length
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: `upgrades.${ups - 1}.availability`, value: 2})
+            await until(() => /(^|;)Rhme:0:2:\d+$/.test(we.info?.upgrades ?? ''), 'researched')
+            check(true, `techs ${we.info.techs}; upgrades ${we.info.upgrades}`)
             // A random group: a row added, its unit typed; an item table: a set of one item.
             const groups = count('unit_table')
             await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: 'unit_table.add'})

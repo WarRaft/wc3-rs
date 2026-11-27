@@ -874,3 +874,19 @@ button:hover {
     font: inherit;
     align-self: flex-start;
 }
+
+.info-players {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 4px;
+}
+
+.info-players label {
+    display: flex;
+    align-items: center;
+    font-size: .85em;
+}
+
+.info-wrap {
+    flex-wrap: wrap;
+}
