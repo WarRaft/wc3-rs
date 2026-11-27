@@ -1352,7 +1352,8 @@ impl Session {
             let (b, t) = (ys.iter().copied().fold(f32::MAX, f32::min), ys.iter().copied().fold(f32::MIN, f32::max));
             [(l - ox) / 128.0, (b - oy) / 128.0, (r - ox) / 128.0, (t - oy) / 128.0]
         });
-        let img = crate::minimap::image((w, h, &picture), self.playable_cells(), &dots, bounds);
+        let filter = self.game.read_patched("UI\\WorldEditData.txt").map(|t| crate::minimap::Filter::from_text(&t)).unwrap_or_default();
+        let img = crate::minimap::image((w, h, &picture), self.playable_cells(), &dots, bounds, filter);
         crate::minimap::blp(&img, crate::minimap::SIZE, crate::minimap::SIZE)
     }
 

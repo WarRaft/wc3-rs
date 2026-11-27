@@ -2231,10 +2231,16 @@ step), this list updated.
      deep from `Dmin` to `Dmax` to 72): shallow water nearly clear, as
      on World Editor's. Measured against World Editor's pictures of
      Blizzard's 108 melee maps (`minimap_pictures_near_world_editors_
-     in_blizzards_maps`, ignored): a pixel off by 20 of 255 on average
-     (21.4 before the water by depth). Tried and left: the tileset's
-     day light at any hour (no colour bias left, but further off: 21.4),
-     a texture's first cell for its colour (20.1).
+     in_blizzards_maps`, ignored): a pixel off by 19 of 255 on average
+     (21.4 before the water by depth, 20.0 before the filters). Filtered
+     as World Editor filters it, its own settings
+     (`UI\WorldEditData.txt` `[MinimapGeneration]`: `MedianRadius=2`,
+     `BlurRadius=.5`; `minimap::Filter`), its `NoisePercent` left out (a
+     random noise moves a picture further from World Editor's own). No
+     colours a table gives the ground: World Editor renders it. Tried
+     and left: the tileset's day light at any hour (no colour bias left,
+     but further off: 21.4), a texture's first cell for its colour
+     (20.1), its median colour (19.1).
    - **The shadow map** (`war3map.shd`) isn't made: HiveWE keeps the
      file as it is, and how World Editor bakes it (which doodads, which
      direction) isn't known here; a guess would be wrong on every save.

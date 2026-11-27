@@ -1386,5 +1386,6 @@ fn minimap_pictures_near_world_editors_in_blizzards_maps() {
     }
     let mean = sum / n.max(1) as f64;
     println!("{n} maps: off by {mean:.1} of 255 on average");
-    assert!(n > 100 && mean <= 20.5, "{mean}");
+    assert!(n > 100 && mean <= 19.5, "{mean}");
 }
+

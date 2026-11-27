@@ -4,7 +4,7 @@ use super::*;
 fn a_wide_map_fitted_its_shape_kept_outside_the_bounds_darker_a_tree_a_dot() {
     // 5 by 3 points (4 by 2 cells): grey; a band across the middle.
     let picture = vec![200u8; 5 * 3 * 4];
-    let img = image((5, 3, &picture), [0.0, 0.0, 4.0, 2.0], &[(1.0, 1.0, [0, 54, 0])], Some([1.0, 0.0, 4.0, 2.0]));
+    let img = image((5, 3, &picture), [0.0, 0.0, 4.0, 2.0], &[(1.0, 1.0, [0, 54, 0])], Some([1.0, 0.0, 4.0, 2.0]), Filter { median: 0, blur: 0.0 });
     let at = |x: u32, y: u32| {
         let i = ((y * SIZE + x) * 4) as usize;
         [img[i], img[i + 1], img[i + 2], img[i + 3]]
@@ -55,4 +55,10 @@ fn icons_where_world_editor_puts_them() {
     }
     let file = icons(area, &[(START_LOCATION, 19.0, 15.5, PLAYER_COLORS[1])]);
     assert_eq!((file.icons[0].x, file.icons[0].y, file.icons[0].blue), (18, 172, 255));
+}
+
+#[test]
+fn world_editors_filters_from_its_data() {
+    assert_eq!(Filter::from_text("[MinimapGeneration]\nMedianRadius=3\nBlurRadius=.25\nNoisePercent=10\n"), Filter { median: 3, blur: 0.25 });
+    assert_eq!(Filter::from_text(""), Filter { median: 2, blur: 0.5 });
 }

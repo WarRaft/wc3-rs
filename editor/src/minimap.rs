@@ -8,7 +8,9 @@
 //! 116 a band across the middle), outside the camera bounds darker, and
 //! on it each doodad and destructable the game's tables show on the
 //! minimap in its colour (`showInMM`, `useMMColor`, `MMRed` ...: a tree
-//! a dark green dot); not the units (the game draws them). Written as
+//! a dark green dot); not the units (the game draws them); filtered as
+//! World Editor filters it (`[MinimapGeneration]`: a median, a blur;
+//! [`Filter`]). Written as
 //! World Editor writes it ([`blp`]): a JPEG BLP1, one mip.
 //!
 //! The icons ([`icons`]): a gold mine (its type's abilities have
@@ -59,7 +61,7 @@ pub const START_LOCATION: i32 = 2;
 /// playable area), `dots` the things on it (cells from the bottom left,
 /// a colour each), `bounds` the camera bounds (cells). RGBA, rows from
 /// the top.
-pub fn image(picture: (u32, u32, &[u8]), area: [f32; 4], dots: &[(f32, f32, [u8; 3])], bounds: Option<[f32; 4]>) -> Vec<u8> {
+pub fn image(picture: (u32, u32, &[u8]), area: [f32; 4], dots: &[(f32, f32, [u8; 3])], bounds: Option<[f32; 4]>, filter: Filter) -> Vec<u8> {
     let (pw, ph, px) = picture;
     let [al, ab, ar, at_] = area;
     let (cw, ch) = ((ar - al).max(1.0), (at_ - ab).max(1.0));
@@ -85,6 +87,13 @@ pub fn image(picture: (u32, u32, &[u8]), area: [f32; 4], dots: &[(f32, f32, [u8;
             }
             out[at..at + 3].copy_from_slice(&c);
         }
+    }
+    // World Editor's filters, its `[MinimapGeneration]`'s.
+    if filter.median > 0 {
+        out = median(&out, filter.median);
+    }
+    if filter.blur > 0.0 {
+        out = blur(&out, filter.blur);
     }
     // A dot a thing, a cell across (a pixel at least).
     let half = (sx.min(sy) / 2.0).max(0.5);
@@ -144,6 +153,85 @@ pub fn icons(area: [f32; 4], things: &[(i32, f32, f32, [u8; 3])]) -> mmp_rs::Min
         })
         .collect();
     mmp_rs::MinimapIcons { version: mmp_rs::VERSION, icons }
+}
+
+/// World Editor's `[MinimapGeneration]` (`UI\\WorldEditData.txt`):
+/// a median filter's radius, a blur's, noise (a percent: left out, as
+/// it's random and only moves a picture further from World Editor's).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Filter {
+    pub median: i64,
+    pub blur: f32,
+}
+
+impl Default for Filter {
+    /// The game's: a median of 2, a blur of 0.5.
+    fn default() -> Filter {
+        Filter { median: 2, blur: 0.5 }
+    }
+}
+
+impl Filter {
+    /// From `UI\\WorldEditData.txt`'s text, the game's for what it hasn't.
+    pub fn from_text(text: &str) -> Filter {
+        let doc = bni_rs::parse(text);
+        let mut f = Filter::default();
+        if let Some(section) = doc.section("MinimapGeneration") {
+            for item in &section.items {
+                let (Some(k), Some(v)) = (&item.key, item.fields.first()) else { continue };
+                let v = v.text().trim().to_string();
+                match k.text.trim() {
+                    "MedianRadius" => f.median = v.parse().unwrap_or(f.median),
+                    "BlurRadius" => f.blur = v.parse().unwrap_or(f.blur),
+                    _ => {}
+                }
+            }
+        }
+        f
+    }
+}
+
+/// Each pixel the median of its channel over the square `radius`
+/// around it.
+fn median(rgba: &[u8], radius: i64) -> Vec<u8> {
+    let n = SIZE as i64;
+    let mut out = rgba.to_vec();
+    let mut window = Vec::with_capacity(((2 * radius + 1) * (2 * radius + 1)) as usize);
+    for y in 0..n {
+        for x in 0..n {
+            for k in 0..3 {
+                window.clear();
+                for dy in -radius..=radius {
+                    for dx in -radius..=radius {
+                        let (qx, qy) = ((x + dx).clamp(0, n - 1), (y + dy).clamp(0, n - 1));
+                        window.push(rgba[((qy * n + qx) * 4 + k) as usize]);
+                    }
+                }
+                window.sort_unstable();
+                out[((y * n + x) * 4 + k) as usize] = window[window.len() / 2];
+            }
+        }
+    }
+    out
+}
+
+/// A blur of `radius` pixels (World Editor's 0.5: each pixel half
+/// itself, half its four neighbours'; more, more of them).
+fn blur(rgba: &[u8], radius: f32) -> Vec<u8> {
+    // Its neighbours' share: the radius (0.5: half), at most all of it.
+    let side = radius.clamp(0.0, 1.0);
+    let n = SIZE as i64;
+    let mut out = rgba.to_vec();
+    for y in 0..n {
+        for x in 0..n {
+            for k in 0..3 {
+                let at = |qx: i64, qy: i64| rgba[((qy.clamp(0, n - 1) * n + qx.clamp(0, n - 1)) * 4 + k) as usize] as f32;
+                let v = at(x, y) * (1.0 - side) + (at(x - 1, y) + at(x + 1, y) + at(x, y - 1) + at(x, y + 1)) * side / 4.0;
+                out[((y * n + x) * 4 + k) as usize] = v.round() as u8;
+            }
+        }
+    }
+    out
 }
 
 /// `rgba` (`width` by `height`, rows from the top) as World Editor
