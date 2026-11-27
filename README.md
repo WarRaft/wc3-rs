@@ -1837,9 +1837,14 @@ step), this list updated.
      now); a text that's a string of the map's (the Diablo III beta map's
      name: `TRIGSTR_`) sets it in `war3map.wts`; the map's name and author
      follow on the bar and the tab. Messages `InfoAsk`, `InfoSet`,
-     `Info`. Not yet: players and forces added or taken out; the tech
-     tree, upgrades, random groups and item tables; `war3map.w3i`'s text
-     form in step. MCP: `w3i_text`, `w3i_write`.
+     `Info`. Players added (`player.add`: a slot of its own, 12, 24
+     since 1.32; World Editor's defaults, its start at its start
+     location's) and taken out (`player.<i>.remove`: out of the forces
+     too), forces too (`force.add`, `force.<i>.remove`). `war3map.w3i` a
+     piece of the session now: its text form (`server/src/mapinfo.rs`) in
+     step, taken in when changed on disk. Not yet: the tech tree,
+     upgrades, random groups and item tables. MCP: `w3i_text`,
+     `w3i_write`.
    - **6i, the import manager** (done after 6h): `war3map.imp` a piece
      of the session (read, taken in when changed on disk, its text form
      in step), with the files to write into the map on save or take out

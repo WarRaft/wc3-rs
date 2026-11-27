@@ -554,6 +554,19 @@ async function steps(only) {
             await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: 'weather', value: 'RAhr'})
             await until(() => we.info?.weather === 'RAhr', 'the weather chosen')
             check(true, `author ${we.info.author}, terrain fog ${!fog}, player 1 an orc, weather ${we.info.weather}`)
+            // A player and a force added, then taken out.
+            const count = k => Object.keys(we.info ?? {}).filter(f => new RegExp(`^${k}\\.\\d+\\.name$`).test(f)).length
+            const [ps, fs] = [count('player'), count('force')]
+            const free = [...Array(12).keys()].find(n => !Object.entries(we.info).some(([k, v]) => /^player\.\d+\.number$/.test(k) && Number(v) === n))
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: 'player.add', value: free})
+            await until(() => count('player') === ps + 1, 'a player added')
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: 'force.add'})
+            await until(() => count('force') === fs + 1, 'a force added')
+            const added = Object.keys(we.info).find(k => /^player\.\d+\.number$/.test(k) && Number(we.info[k]) === free).split('.')[1]
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: `player.${added}.remove`})
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: `force.${fs}.remove`})
+            await until(() => count('player') === ps && count('force') === fs, 'both taken out')
+            check(true, `Player ${free + 1} and a force added and taken out: ${ps} players, ${fs} forces again`)
             await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: 'name', value: 'E2E Map'})
             await until(() => we.map?.name === 'E2E Map' && we.panel.title.includes('E2E Map'), 'its name typed: the tab follows')
             await shot('world-editor-info')

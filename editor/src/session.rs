@@ -849,7 +849,7 @@ impl Session {
     }
 
     /// The map's pieces the editor changes, by name.
-    pub const PIECES: [&'static str; 16] = [
+    pub const PIECES: [&'static str; 17] = [
         "war3map.w3e",
         "war3map.doo",
         "war3mapUnits.doo",
@@ -866,6 +866,7 @@ impl Session {
         "war3map.w3q",
         "war3map.wts",
         "war3map.imp",
+        "war3map.w3i",
     ];
 
     /// Each piece's bytes as the layers have it now, hashed (`None`: no
@@ -905,6 +906,7 @@ impl Session {
             "war3map.w3s" => d.sounds,
             "war3map.wts" => d.strings,
             "war3map.imp" => d.imports,
+            "war3map.w3i" => d.info,
             n if crate::objdata::kind_of(n).is_some() => d.objects & crate::objdata::bit(crate::objdata::kind_of(n).unwrap()) != 0,
             _ => d.pathing,
         };
@@ -934,6 +936,11 @@ impl Session {
                     self.strings_changed();
                 }
                 "war3map.imp" => self.placed.imports = files.imports.clone(),
+                "war3map.w3i" => {
+                    if let Some(Ok(i)) = self.game.read(name).map(|(b, _)| w3i_rs::parse(&b)) {
+                        self.info = Some(i);
+                    }
+                }
                 n if crate::objdata::kind_of(n).is_some() => {
                     let kind = crate::objdata::kind_of(n).unwrap();
                     match files.objects.get(&kind) {
@@ -959,6 +966,10 @@ impl Session {
             out.push(ServerMsg::Overlays(self.overlays()));
             out.push(self.sounds_msg());
             out.push(self.imports_msg());
+            if taken.contains(&"war3map.w3i") {
+                out.push(self.info_msg());
+                out.push(self.map_msg());
+            }
             for name in &taken {
                 if let Some(kind) = crate::objdata::kind_of(name) {
                     let k = crate::objdata::KINDS.iter().position(|x| *x == kind).unwrap_or(0) as u8;
@@ -1004,6 +1015,7 @@ impl Session {
             "war3map.w3c" => self.placed.cameras.as_ref()?.to_bytes().ok(),
             "war3map.w3s" => self.placed.sounds.as_ref()?.to_bytes().ok(),
             "war3map.imp" => self.placed.imports.as_ref()?.to_bytes().ok(),
+            "war3map.w3i" => self.info.as_ref()?.to_bytes().ok(),
             "war3map.wts" => self.placed.strings.as_ref().map(|(text, bom)| format!("{}{text}", if *bom { "\u{FEFF}" } else { "" }).into_bytes()),
             n if crate::objdata::kind_of(n).is_some() => self.placed.objects.get(&crate::objdata::kind_of(n)?)?.to_bytes().ok(),
             "war3map.w3e" => self.terrain.to_bytes().ok(),
@@ -1029,6 +1041,8 @@ impl Session {
             wc3_server::sounds::convert(wc3_server::objects::TO_TEXT, path, &bytes)
         } else if name == "war3map.imp" {
             wc3_server::imports::convert(wc3_server::objects::TO_TEXT, path, &bytes)
+        } else if name == "war3map.w3i" {
+            wc3_server::mapinfo::convert(wc3_server::objects::TO_TEXT, path, &bytes)
         } else if name == "war3map.w3e" {
             wc3_server::terrain::convert(wc3_server::objects::TO_TEXT, path, &bytes)
         } else {
@@ -1072,6 +1086,8 @@ impl Session {
             wc3_server::sounds::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
         } else if name == "war3map.imp" {
             wc3_server::imports::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
+        } else if name == "war3map.w3i" {
+            wc3_server::mapinfo::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
         } else {
             wc3_server::placement::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
         };
@@ -1093,6 +1109,10 @@ impl Session {
                 let before = self.placed.cameras.replace(c);
                 crate::edit::Snapshot::Cameras(before.map(|c| c.cameras).unwrap_or_default())
             }),
+            "war3map.w3i" => w3i_rs::parse(&bytes).map(|i| {
+                let before = self.info.replace(i);
+                crate::edit::Snapshot::Info(Box::new(before))
+            }),
             "war3map.imp" => imp_rs::parse(&bytes).map(|i| {
                 let before = self.placed.imports.replace(i);
                 crate::edit::Snapshot::Imports(before, self.placed.import_files.clone())
@@ -1112,6 +1132,7 @@ impl Session {
             "war3map.w3r" | "war3map.w3c" => vec![ServerMsg::Overlays(self.overlays())],
             "war3map.w3s" => vec![self.sounds_msg()],
             "war3map.imp" => vec![self.imports_msg()],
+            "war3map.w3i" => vec![self.info_msg(), self.map_msg()],
             _ => self.place_objects(),
         };
         out.extend(self.sync_docs());
@@ -1188,6 +1209,7 @@ impl Session {
                 "war3map.w3c" => d.cameras = false,
                 "war3map.w3s" => d.sounds = false,
                 "war3map.wts" => d.strings = false,
+                "war3map.w3i" => d.info = false,
                 // Its files the editor writes on save, all the same.
                 "war3map.imp" if self.placed.import_files.is_empty() => d.imports = false,
                 n if crate::objdata::kind_of(n).is_some() => d.objects &= !crate::objdata::bit(crate::objdata::kind_of(n).unwrap()),
@@ -2037,6 +2059,26 @@ impl Session {
                         _ => return Err(format!("{value:?} isn't a tileset's letter")),
                     };
                 }
+                "player.add" => {
+                    // A player slot of its own: World Editor's defaults,
+                    // its start where a start location of its is.
+                    let number = int(value)?;
+                    let most = if w3i_rs::Has::of(info.version).v31 { 24 } else { 12 };
+                    if !(0..most).contains(&number) {
+                        return Err(format!("a player is 1 to {most}"));
+                    }
+                    if info.players.iter().any(|p| p.number == number) {
+                        return Err(format!("Player {} is there already", number + 1));
+                    }
+                    let start = self.placed.units.as_ref().and_then(|u| u.units.iter().find(|u| u.placement.id.to_string() == crate::placed::START_LOCATION && u.player == number as u32)).map(|u| (u.placement.x, u.placement.y));
+                    let (start_x, start_y) = start.unwrap_or_default();
+                    let at = info.players.iter().position(|p| p.number > number).unwrap_or(info.players.len());
+                    info.players.insert(at, w3i_rs::Player { number, kind: 1, race: 0, fixed_start: 0, name: format!("Player {}", number + 1), start_x, start_y, ..Default::default() });
+                }
+                "force.add" => {
+                    let name = if value.trim().is_empty() { format!("Force {}", info.forces.len() + 1) } else { value.to_string() };
+                    info.forces.push(w3i_rs::Force { flags: 0, players: 0, name });
+                }
                 f => {
                     let parts: Vec<&str> = f.split('.').collect();
                     let [list, n, key] = parts[..] else { return Err(format!("no field {f}")) };
@@ -2049,6 +2091,14 @@ impl Session {
                                 "kind" => p.kind = int(value)?.clamp(1, 4),
                                 "race" => p.race = int(value)?.clamp(0, 4),
                                 "fixed_start" => p.fixed_start = int(value)?.clamp(0, 1),
+                                "remove" => {
+                                    // Out of the forces too.
+                                    let bit = 1u32.checked_shl(p.number as u32).unwrap_or(0);
+                                    info.players.remove(n);
+                                    for force in &mut info.forces {
+                                        force.players &= !bit;
+                                    }
+                                }
                                 _ => return Err(format!("no field {f}")),
                             }
                         }
@@ -2058,6 +2108,9 @@ impl Session {
                                 "name" => force.name = value.into(),
                                 "flags" => force.flags = value.trim().parse().map_err(|_| format!("{value:?} isn't flags"))?,
                                 "players" => force.players = value.trim().parse().map_err(|_| format!("{value:?} isn't players"))?,
+                                "remove" => {
+                                    info.forces.remove(n);
+                                }
                                 _ => return Err(format!("no field {f}")),
                             }
                         }

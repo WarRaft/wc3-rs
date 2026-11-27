@@ -60,7 +60,7 @@ fn the_terrain_drawn_with_the_tables_of_the_roots() {
     assert!(l.terrain.is_empty() && l.notes.iter().any(|n| n.contains("TerrainLights")), "{:?}", l.notes);
     // The pieces with a text form, where they are (the terrain) or would
     // be, at the top root (the map has none of the others).
-    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c", "war3map.w3s", "war3map.w3u", "war3map.w3t", "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3h", "war3map.w3q", "war3map.wts", "war3map.imp"]);
+    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c", "war3map.w3s", "war3map.w3u", "war3map.w3t", "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3h", "war3map.w3q", "war3map.wts", "war3map.imp", "war3map.w3i"]);
     assert!(f[1].1.ends_with("map/war3map.doo"), "{f:?}");
     // Nothing placed; the minimap a pixel a corner.
     assert!(o.models.is_empty() && o.notes.is_empty());
@@ -997,4 +997,25 @@ fn the_maps_info_shown_set_its_strings_in_war3map_wts_undone_and_saved() {
     assert!(said(&saved).contains("war3map.w3i") && said(&saved).contains("war3map.wts"), "{saved:?}");
     let back = w3i_rs::parse(&std::fs::read(dir.path().join("map/war3map.w3i")).unwrap()).unwrap();
     assert_eq!((back.author.as_str(), back.players[0].race), ("Someone", 2));
+    // Players and forces added and taken out (a player out of its forces too).
+    assert_eq!(said(&s.info_set("player.add", "3")), "");
+    assert!(said(&s.info_set("player.add", "3")).contains("there already"));
+    assert!(said(&s.info_set("player.add", "30")).contains("1 to 12"));
+    assert_eq!(get(&s, "player.1.name").as_deref(), Some("Player 4"));
+    assert_eq!(said(&s.info_set("force.add", "")), "");
+    assert_eq!(said(&s.info_set("force.1.players", "9")), "");
+    assert_eq!(said(&s.info_set("player.1.remove", "")), "");
+    assert_eq!((get(&s, "player.1.name"), get(&s, "force.1.players").as_deref()), (None, Some("1")));
+    assert_eq!(said(&s.info_set("force.0.remove", "")), "");
+    assert_eq!(get(&s, "force.0.name").as_deref(), Some("Force 2"));
+    // Its text form: the editor's change goes to it, typed in it the editor follows.
+    let path = dir.path().join("map/war3map.w3i").display().to_string();
+    let text = s.piece_text("war3map.w3i", &path).unwrap();
+    s.text_changed(&path, &text);
+    s.info_set("author", "Another");
+    let out = s.sync_docs();
+    assert!(matches!(&out[..], [ServerMsg::TextOut { text, .. }] if text.contains("Another")), "{out:?}");
+    let typed = s.piece_text("war3map.w3i", &path).unwrap().replace("Another", "Typed In Text");
+    let msgs = s.text_changed(&path, &typed);
+    assert!(matches!(&msgs[1], ServerMsg::Map(m) if m.author == "Typed In Text"), "{msgs:?}");
 }

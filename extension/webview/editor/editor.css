@@ -865,3 +865,12 @@ button:hover {
 .info-number {
     font-weight: bold;
 }
+
+.info-panel button {
+    background: transparent;
+    color: var(--vscode-foreground);
+    border: 1px solid var(--vscode-panel-border, #555);
+    padding: 1px 6px;
+    font: inherit;
+    align-self: flex-start;
+}

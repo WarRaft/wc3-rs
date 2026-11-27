@@ -139,13 +139,30 @@ const EditorMapInfo = (() => {
                     this.text('sound_environment', 'Sound environment'),
                     this.color('water_color', 'Water tint')))
             }
-            parts.push(this.section('Players', ...players.map(n => el('div', {className: 'info-player'},
-                el('span', {className: 'info-number', textContent: `Player ${Number(this.get(`player.${n}.number`)) + 1}`}),
+            // A player added by its number (12 slots, 24 since 1.32), one taken out.
+            const most = Number(this.get('version')) >= 31 ? 24 : 12
+            const taken = new Set(players.map(p => Number(this.get(`player.${p}.number`))))
+            const add = el('select')
+            add.append(el('option', {value: '', textContent: 'Add a player…'}), ...[...Array(most).keys()].filter(n => !taken.has(n)).map(n => el('option', {value: String(n), textContent: `Player ${n + 1}`})))
+            add.dataset.field = 'player.add'
+            add.onchange = () => add.value !== '' && this.setField('player.add', add.value)
+            const remove = field => {
+                const b = el('button', {textContent: 'Remove', className: 'info-remove'})
+                b.dataset.field = field
+                b.onclick = () => this.setField(field, '')
+                return b
+            }
+            const addForce = el('button', {textContent: 'Add force'})
+            addForce.dataset.field = 'force.add'
+            addForce.onclick = () => this.setField('force.add', '')
+            parts.push(this.section('Players', add, ...players.map(n => el('div', {className: 'info-player'},
+                el('div', {className: 'info-head'}, el('span', {className: 'info-number', textContent: `Player ${Number(this.get(`player.${n}.number`)) + 1}`}), remove(`player.${n}.remove`)),
                 this.text(`player.${n}.name`, 'Name'),
                 this.choice(`player.${n}.kind`, 'Controller', KINDS),
                 this.choice(`player.${n}.race`, 'Race', RACES),
                 this.bits(`player.${n}.fixed_start`, [[1, 'Fixed start location']])))))
-            parts.push(this.section('Forces', ...forces.map(n => el('div', {className: 'info-player'},
+            parts.push(this.section('Forces', addForce, ...forces.map(n => el('div', {className: 'info-player'},
+                el('div', {className: 'info-head'}, el('span', {className: 'info-number', textContent: `Force ${n + 1}`}), remove(`force.${n}.remove`)),
                 this.text(`force.${n}.name`, 'Name'),
                 this.bits(`force.${n}.flags`, FORCE_FLAGS, 'Flags'),
                 this.bits(`force.${n}.players`, players.map(p => {
@@ -160,7 +177,9 @@ const EditorMapInfo = (() => {
         type(field, value, bit) {
             const c = this.body.querySelector(`[data-field="${CSS.escape(field)}"]`)
             if (!c) return
-            if (c.classList.contains('info-bits')) {
+            if (c.tagName === 'BUTTON') {
+                c.onclick()
+            } else if (c.classList.contains('info-bits')) {
                 const box = c.querySelector(`input[data-bit="${bit}"]`)
                 box.checked = !!value
                 box.onchange()
