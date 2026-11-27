@@ -1663,9 +1663,23 @@ water colours, the camera); none of its code is taken as is.
   picked) and Map open on the right, 12 px in, over the view; the others
   over all of it, 12 px in. A panel closing itself (Triggers' "show on
   the map") turns its button off too.
-- The view of each map (the layers shown, the time of day, the
-  minimap's place) is kept by
-  the extension (`globalState`, by the project's folder) between runs.
+- The camera, moved (a right drag, WASD, the arrows): the map follows
+  the mouse both ways (the vertical was the wrong way round, and W went
+  back). Two cameras, the Game camera button (V) between them, kept with
+  the map's view: the game's follows the ground under where it looks at
+  once (into hollows, up hills); the developer's (the default) goes to it
+  at most 3 cells (384 units) a second, up or down (`Camera.update`, each
+  frame), so a cliff or a hollow passed over is no jump; only the ground
+  coming above the camera itself lifts it at once.
+- A button let go outside the page (outside VS Code even) is let go on
+  the next move over the page without it, or when the page loses the
+  focus: a drag (the view's, a brush's, a thing's, a box, the minimap's)
+  doesn't go on by itself.
+- The view of each map (the layers shown, the camera, the time of day,
+  the minimap's place) is kept by
+  the extension (`globalState`, by the project's folder; in this run
+  its own copy too, globalState's update being late for an editor
+  opened again at once) between runs.
 - One editor per project (its process holds a lock on it). Opened
   again just after it's closed, the editor waits for the last process to
   end; a project still held after that (a window closing or reloading)

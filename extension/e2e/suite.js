@@ -98,7 +98,7 @@ async function steps(only) {
             check(line < 30, `the name and the map's size, tileset, author on one line: ${line} px high`)
             check(l.toggles.top >= l.name.bottom && l.view.top >= l.toggles.bottom, `the name above the buttons, the view below both (${l.name.bottom} ≤ ${l.toggles.top}, ${l.toggles.bottom} ≤ ${l.view.top})`)
             const order = l.bar.map(b => b.id || b.tip).join(' ')
-            check(/^undo redo save reload test-map tools-open map-open triggers-open info-open constants-open skin-open imports-open objects-open Pathing .* Day cycle help-open donate$/.test(order), `the second line, in order: ${order}`)
+            check(/^undo redo save reload test-map tools-open map-open triggers-open info-open constants-open skin-open imports-open objects-open Pathing .* Day cycle Game camera help-open donate$/.test(order), `the second line, in order: ${order}`)
             check(l.bar.every(b => b.icon && !b.text && b.tip), `its buttons icons, a tooltip each (${l.bar.filter(b => !b.icon || b.text || !b.tip).map(b => b.id || b.tip).join(', ') || 'all'})`)
             check(l.status.top >= l.view.bottom && l.status.bottom <= l.window.height, `the bottom line under the view (${l.view.bottom} ≤ ${l.status.top}, ${l.status.bottom} ≤ ${l.window.height})`)
             check(/^X -?[\d\u2009]+ {2}Y -?[\d\u2009]+ {2}Z -?[\d\u2009]+ {2}· {2}Cell \d+, \d+$/.test(l.cursor), `the ground under the mouse: ${l.cursor}`)
@@ -137,6 +137,38 @@ async function steps(only) {
             check(opened(l).join() === 'tools-open', `the tools instead: ${opened(l).join(', ')}`)
             await shot('world-editor-tools')
             await layout({closeWindow: true})
+            // Moved with the right button: the map follows the mouse both ways
+            // (looking north: the mouse down, the camera north); the editor's
+            // camera doesn't dive into hollows, the game's does.
+            await we.panel.webview.postMessage({type: 'look', x: 96, y: 40, distance: 20, horizontal: 0, vertical: -0.9})
+            l = await layout({pan: {steps: 1, dx: 0, dy: 40}})
+            const [down] = l.panned
+            check(down[1] > 40, `the mouse down: the camera north, the map following it (y ${down[1].toFixed(2)})`)
+            l = await layout({pan: {steps: 1, dx: 40, dy: 0}})
+            check(l.panned[0][0] < 96, `the mouse right: the camera west (x ${l.panned[0][0].toFixed(2)})`)
+            // Across the map (a step a 1/60 s): the developer's camera's height
+            // goes to the ground's at most 3 cells a second; the game's is on it.
+            await we.panel.webview.postMessage({type: 'look', x: 30, y: 10, distance: 20, horizontal: 0, vertical: -0.9})
+            l = await layout({pan: {steps: 110, dx: 0, dy: 60, dt: 1 / 60}})
+            const p = l.panned
+            const fast = p.filter((s, i) => i && Math.abs(s[2] - p[i - 1][2]) > 3 / 60 + 1e-6).length
+            const off = p.filter(s => Math.abs(s[2] - s[3]) > 0.05).length
+            check(!fast && off > 0, `the developer's camera across ${p.length} steps (${p[0][1].toFixed(0)} to ${p[p.length - 1][1].toFixed(0)} north): its height never faster than 3 cells a second (${fast} steps faster), off the ground where it jumps (${off})`)
+            await we.panel.webview.postMessage({type: 'look', x: 30, y: 10, distance: 20, horizontal: 0, vertical: -0.9})
+            l = await layout({button: undefined, pan: {steps: 110, dx: 0, dy: 60, dt: 1 / 60, game: true}})
+            check(l.panned.every(s => Math.abs(s[2] - s[3]) < 1e-6) && l.panned.some((s, i) => i && Math.abs(s[2] - l.panned[i - 1][2]) > 3 / 60), 'the game\'s camera on the ground, at once (dives)')
+            // The Game camera button: on, the camera the game's; kept with the map's view.
+            l = await layout({button: undefined})
+            const gameButton = l.bar.find(b => b.tip === 'Game camera')
+            check(gameButton && !gameButton.on && gameButton.icon, 'a Game camera button, off at first')
+            await we.panel.webview.postMessage({type: 'show', show: {gameCamera: true}})
+            l = await layout({})
+            check(l.bar.find(b => b.tip === 'Game camera').on && l.game, 'on: the game\'s camera')
+            await we.panel.webview.postMessage({type: 'show', show: {gameCamera: false}})
+            // Let go outside the page: the next move over it without the button ends the drag.
+            await we.panel.webview.postMessage({type: 'look', x: 96, y: 64, distance: 20, horizontal: 0, vertical: -0.9})
+            l = await layout({pan: {steps: 3, dx: 0, dy: 30, outside: true}})
+            check(l.panned[l.panned.length - 1][3] === 1, "let go outside the page: the next move without the button doesn't drag on")
             // The minimap: at the view's top left; the left button held and
             // moved steers the camera all the way; the right one drags it,
             // kept for the map between runs (checked below).
@@ -169,6 +201,8 @@ async function steps(only) {
             await we.panel.webview.postMessage({type: 'show', show: {fog}})
             await we.panel.webview.postMessage({type: 'hours', hours: 18.5})
             await sleep(300)
+            // (The page has them before it's closed.)
+            await layout({})
             // Opened again at once: it waits for the last process to let the project go.
             await close()
             await open()

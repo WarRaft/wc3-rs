@@ -9,8 +9,16 @@
  * 2 atan(tan(fov / 2) / 1.66), 45.8° for 70; as Waric reads the game). Distances are in cells
  * (128 units), as everything the editor draws, z up.
  *
- * Right drag moves it, Ctrl + right drag (or middle drag) turns it, the
- * wheel brings it nearer or further, the arrow keys and WASD move it.
+ * Right drag moves it (the map follows the mouse, both ways), Ctrl +
+ * right drag (or middle drag) turns it, the wheel brings it nearer or
+ * further, the arrow keys and WASD move it (W and Up: forward).
+ *
+ * The height it looks at: the game's camera (`game`) on the ground under
+ * where it looks, at once (it dives into a hollow, up a hill); the
+ * developer's goes to the ground there at most `CLIMB` cells a second
+ * (`update`, every frame), up or down, so a cliff or a hollow passed over
+ * is no jump; only the ground coming above the camera itself lifts it at
+ * once.
  */
 const EditorCamera = (() => {
     const mat4 = {
@@ -50,6 +58,9 @@ const EditorCamera = (() => {
         return [a[0] / l, a[1] / l, a[2] / l]
     }
 
+    /** How fast the developer's camera's height goes to the ground's: cells (128 units) a second. */
+    const CLIMB = 3
+
     class Camera {
         constructor() {
             this.position = [0, 0, 0]
@@ -61,6 +72,8 @@ const EditorCamera = (() => {
             this.roll = 0
             /** The ground's height under a point, to keep the camera on it. */
             this.heightAt = () => 0
+            /** Moved, whether it follows the ground as the game's camera does (dives); else the editor's. */
+            this.game = false
         }
 
         /** Looks at the middle of a map `w` by `h` cells, all of it in view, at 70°. */
@@ -106,12 +119,31 @@ const EditorCamera = (() => {
             }
         }
 
+        /**
+         * Moves where it looks: `dx` to the right, `dy` toward the bottom of
+         * the picture (back; `forward` is the picture's down on the ground).
+         */
         move(dx, dy) {
             const {x, forward} = this.axes()
             const k = this.distance / 30
-            this.position[0] += (x[0] * dx - forward[0] * dy) * k
-            this.position[1] += (x[1] * dx - forward[1] * dy) * k
-            this.position[2] = this.heightAt(this.position[0], this.position[1])
+            this.position[0] += (x[0] * dx + forward[0] * dy) * k
+            this.position[1] += (x[1] * dx + forward[1] * dy) * k
+            if (this.game) this.position[2] = this.heightAt(this.position[0], this.position[1])
+        }
+
+        /** `dt` seconds on: the developer's camera's height toward the ground's (see `CLIMB`). */
+        update(dt) {
+            const ground = this.heightAt(this.position[0], this.position[1])
+            if (this.game) {
+                this.position[2] = ground
+                return
+            }
+            const step = CLIMB * dt
+            this.position[2] += Math.max(-step, Math.min(step, ground - this.position[2]))
+            // Never under the ground itself.
+            const eye = this.eye()
+            const under = this.heightAt(eye[0], eye[1]) + 0.5 - eye[2]
+            if (under > 0) this.position[2] += under
         }
 
         turn(dx, dy) {

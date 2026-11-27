@@ -140,12 +140,35 @@
         const dx = (k('ArrowRight') || k('KeyD') ? 1 : 0) - (k('ArrowLeft') || k('KeyA') ? 1 : 0)
         const dy = (k('ArrowDown') || k('KeyS') ? 1 : 0) - (k('ArrowUp') || k('KeyW') ? 1 : 0)
         if (dx || dy) camera.move(dx * speed, dy * speed)
+        camera.update(dt)
         draw(now)
         if (flicker) flickerFrame()
         drawMinimap()
         requestAnimationFrame(frame)
     }
     requestAnimationFrame(frame)
+
+    // A button let go outside the page (outside VS Code even) never says
+    // so: the next move over the page without it, or the page losing the
+    // focus, lets it go as a mouseup would (each drag's own ends then).
+    const pressed = new Set()
+    const BUTTON_BITS = [1, 4, 2]
+    let lastMouse = {x: 0, y: 0}
+    function letGo(buttons) {
+        for (const b of [...pressed]) {
+            if (buttons & (BUTTON_BITS[b] ?? 0)) continue
+            pressed.delete(b)
+            window.dispatchEvent(new MouseEvent('mouseup', {button: b, clientX: lastMouse.x, clientY: lastMouse.y}))
+            window.dispatchEvent(new PointerEvent('pointerup', {button: b, clientX: lastMouse.x, clientY: lastMouse.y}))
+        }
+    }
+    window.addEventListener('mousedown', e => { pressed.add(e.button) }, true)
+    window.addEventListener('mouseup', e => { pressed.delete(e.button) }, true)
+    window.addEventListener('mousemove', e => {
+        lastMouse = {x: e.clientX, y: e.clientY}
+        letGo(e.buttons)
+    }, true)
+    window.addEventListener('blur', () => letGo(0))
 
     let drag = null
     canvas.addEventListener('contextmenu', e => e.preventDefault())
@@ -267,6 +290,7 @@
         {key: 'shadows', label: 'Shadows', icon: 'circle-half-stroke', code: 'KeyH'},
         {key: 'fog', label: 'Fog', icon: 'smog', code: 'KeyF'},
         {key: 'cycle', label: 'Day cycle', icon: 'sun', code: 'KeyT', title: 'The time of day going round'},
+        {key: 'gameCamera', label: 'Game camera', icon: 'mountain', code: 'KeyV', title: 'Moved, the camera follows the ground as the game\'s does (into hollows, up hills); off, the developer\'s goes to it slowly, no jump at a cliff'},
     ]
     // A map's view (the layers, the time of day), kept by the extension
     // between runs: what it was when the map was last open.
@@ -276,7 +300,7 @@
     } catch {
         saved = {}
     }
-    const show = {pathing: false, destructables: true, regions: false, cameras: false, bounds: true, minimap: true, animate: true, shadows: true, fog: false, cycle: false, ...(vscode.getState()?.show ?? saved.show ?? {})}
+    const show = {pathing: false, destructables: true, regions: false, cameras: false, bounds: true, minimap: true, animate: true, shadows: true, fog: false, cycle: false, gameCamera: false, ...(vscode.getState()?.show ?? saved.show ?? {})}
     if (typeof saved.hours === 'number') light.hours = saved.hours
     /** Where the minimap was dragged to (its top left in the view, px), or null: the view's top left corner. */
     let minimapAt = saved.minimapAt && Number.isFinite(saved.minimapAt.x) && Number.isFinite(saved.minimapAt.y) ? saved.minimapAt : null
@@ -285,6 +309,7 @@
     function applyShow() {
         if (terrain) terrain.show = {pathing: show.pathing, regions: show.regions, destructables: show.destructables}
         if (objects) objects.animate = show.animate
+        camera.game = !!show.gameCamera
         $('minimap').hidden = !show.minimap
         placeMinimap()
         for (const b of toggles.children) b.classList.toggle('on', !!show[b.dataset.show])
@@ -405,6 +430,8 @@
     })
     minimap.addEventListener('pointermove', e => {
         if (!minimapHeld) return
+        // Let go where it wasn't seen.
+        if (!(e.buttons & (minimapHeld.steer ? 1 : 2))) return letMinimapGo()
         if (minimapHeld.steer) steerFromMinimap(e)
         else {
             minimapAt = {x: e.clientX - minimapHeld.dx, y: e.clientY - minimapHeld.dy}
@@ -421,6 +448,8 @@
     }
     minimap.addEventListener('pointerup', letMinimapGo)
     minimap.addEventListener('pointercancel', letMinimapGo)
+    minimap.addEventListener('lostpointercapture', letMinimapGo)
+    window.addEventListener('pointerup', letMinimapGo)
 
     /** The minimap where it was dragged to (the view's top left at first), kept inside the view. */
     function placeMinimap() {
@@ -2119,11 +2148,39 @@
             // `click`: a button of the bar clicked (an id); `closeWindow`: the corner's close.
             if (msg.button) $(msg.button).click()
             if (msg.closeWindow) $('window-close').click()
+            // `pan`: {steps, dx, dy, dt, game, outside}: a right drag of the view,
+            // `steps` of (dx, dy) px each, `dt` seconds apart, as the mouse
+            // does; where it looks after each (its height, the ground's
+            // there). `outside`: let go where the page doesn't see it (the
+            // next move without the button).
+            let panned = null
+            if (msg.pan) {
+                const {steps, dx, dy, dt = 0, game = false, outside = false} = msg.pan
+                camera.game = game
+                const r = canvas.getBoundingClientRect()
+                let x = r.left + r.width / 2, y = r.top + r.height / 2
+                canvas.dispatchEvent(new MouseEvent('mousedown', {button: 2, clientX: x, clientY: y, bubbles: true}))
+                panned = []
+                for (let i = 0; i < steps; i++) {
+                    x += dx
+                    y += dy
+                    window.dispatchEvent(new MouseEvent('mousemove', {clientX: x, clientY: y, buttons: 2}))
+                    camera.update(dt)
+                    panned.push([camera.position[0], camera.position[1], camera.position[2], camera.heightAt(camera.position[0], camera.position[1])])
+                }
+                if (outside) {
+                    window.dispatchEvent(new MouseEvent('mousemove', {clientX: x + 50, clientY: y, buttons: 0}))
+                    const at = [...camera.position]
+                    window.dispatchEvent(new MouseEvent('mousemove', {clientX: x + 300, clientY: y + 300, buttons: 0}))
+                    panned.push([...at, camera.position[0] === at[0] && camera.position[1] === at[1] ? 1 : 0])
+                } else window.dispatchEvent(new MouseEvent('mouseup', {button: 2}))
+                camera.game = !!show.gameCamera
+            }
             // `minimapDrag`: [button, from, to], each a point of the minimap (0 to 1, from its top left), pressed, moved, let go.
             if (msg.minimapDrag) {
                 const [button, from, to] = msg.minimapDrag
                 const b = minimap.getBoundingClientRect()
-                const at = ([u, v]) => ({clientX: b.left + u * b.width, clientY: b.top + v * b.height, button, pointerId: 1, bubbles: true})
+                const at = ([u, v]) => ({clientX: b.left + u * b.width, clientY: b.top + v * b.height, button, buttons: button === 0 ? 1 : 2, pointerId: 1, bubbles: true})
                 minimap.dispatchEvent(new PointerEvent('pointerdown', at(from)))
                 minimap.dispatchEvent(new PointerEvent('pointermove', at([(from[0] + to[0]) / 2, (from[1] + to[1]) / 2])))
                 minimap.dispatchEvent(new PointerEvent('pointermove', at(to)))
@@ -2156,7 +2213,7 @@
                     now: light.now(performance.now() / 1000, show.cycle), slider: Number($('hours').value),
                     panels: ['tools', 'map-panel'].map(id => getComputedStyle($(id)).boxSizing),
                     windows: WINDOWS.map(([p, button, root]) => ({button, open: p.isOpen, on: $(button).classList.contains('on'), ...box(root)})),
-                    minimap: box('minimap'), camera: [...camera.position], minimapAt,
+                    minimap: box('minimap'), camera: [...camera.position], minimapAt, panned, game: camera.game,
                     trg: box('trg-root'), stage: box('view'), close: $('window-close').hidden ? null : box('window-close'),
                     hoursAfter: [...document.querySelectorAll('.tool-bar > *')].findIndex(e => e.classList.contains('hours')) > [...document.querySelectorAll('.tool-bar > *')].findIndex(e => e.id === 'toggles'),
                 }})

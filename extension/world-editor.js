@@ -132,6 +132,12 @@ function registerWorldEditor(context, binary, pickManifest, triggers) {
 
     /** Where a map's view (the layers shown, the time of day) is kept between runs. */
     const viewKey = root => `wc3.worldEditor.view:${root}`
+    /**
+     * The views kept in this run, by project folder: what's read on opening
+     * (globalState's own may still be the one before, its update not done:
+     * an editor opened again at once).
+     */
+    const views = new Map()
     const html = (webview, view) => {
         const nonce = [...Array(32)].map(() => Math.floor(Math.random() * 36).toString(36)).join('')
         const asset = name => webview.asWebviewUri(Uri.joinPath(media, name))
@@ -229,6 +235,7 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
     <dt>G</dt><dd>The grid</dd>
     <dt>Home</dt><dd>All of the map</dd>
     <dt>P O R C B M N H F T</dt><dd>The layers over the map (the buttons above)</dd>
+    <dt>V</dt><dd>The game's camera (follows the ground) or the developer's</dd>
   </dl>
 </div></div>
 <div id="tip" class="tip" hidden></div>
@@ -389,7 +396,7 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
         /** @type {Editor} */
         const editor = {root, panel, child: null, map: null, error: null, drawn: null}
         editors.set(root, editor)
-        panel.webview.html = html(panel.webview, context.globalState.get(viewKey(root)))
+        panel.webview.html = html(panel.webview, views.get(root) ?? context.globalState.get(viewKey(root)))
         panel.webview.onDidReceiveMessage(msg => {
             if (msg.type === 'frame') {
                 editor.child?.stdin.write(bytesOf(msg.data))
@@ -516,6 +523,7 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
             } else if (msg.type === 'thing') {
                 editor.thing = msg.thing
             } else if (msg.type === 'view') {
+                views.set(root, msg.view)
                 context.globalState.update(viewKey(root), msg.view)
             } else if (msg.type === 'donate') {
                 env.openExternal(Uri.parse(DONATE))
