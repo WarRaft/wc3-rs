@@ -99,6 +99,11 @@ pub enum QueryKind {
     /// [`QueryKind::TriggerJass`]'s JASS in UjAPI's AngelScript
     /// (`triggers::converted`).
     TriggerAngelScript,
+    /// In a frame file (FDF), in a string: the names it can be, each a
+    /// location with its `name`, `kind` (a frame, a key), `container`
+    /// (where it's declared: the file's name), and the `range` it
+    /// replaces (the string's text); `id` the declaring file.
+    Completion,
 }
 
 /// The variables the trigger file `id` sees: every global its project's
@@ -117,6 +122,75 @@ fn project_variables(ws: &Workspace, id: &str) -> Vec<wtg_rs::text::Declared> {
         out.extend(trigger_from_text(&doc.text, None).variables);
     }
     out
+}
+
+/// In a frame file (FDF): each string that's the path of a file the
+/// file sees (`IncludeFile "UI\\FrameDef\\UI\\EscMenuTemplates.fdf"`), a
+/// location whose `range` is the path and `id` the file: the game's
+/// path names it relative to the game's top, so the file whose path
+/// ends with it, the project's over the game's.
+fn frame_links(ws: &Workspace, id: &str) -> Answer {
+    let Some((doc, _)) = ws.file(id) else { return Answer::default() };
+    let text = doc.text.as_str();
+    let lines = LineIndex::new(text);
+    let norm = |p: &str| p.replace('\\', "/").to_lowercase();
+    let files: Vec<(String, &str)> = ws.scope(id).map(|(fid, _, _)| (norm(fid), fid)).collect();
+    let locations = fdf_rs::paths(&fdf_rs::parse(text))
+        .into_iter()
+        .filter_map(|p| {
+            let tail = format!("/{}", norm(&p.text).trim_start_matches('/'));
+            let target = files.iter().filter(|(n, _)| n.ends_with(&tail)).min_by_key(|(_, f)| ws.is_game(f))?.1;
+            Some(Location {
+                id: target.to_string(),
+                range: lines.range(text, p.span.start_line, p.span.start_col, p.span.end_col),
+                name: p.text,
+                kind: SymbolKind::Namespace,
+                container: "file".into(),
+            })
+        })
+        .collect();
+    Answer { locations, text: String::new() }
+}
+
+/// In a frame file, in a string (typed or not: an open `"` before the
+/// cursor on its line; strings have no escapes): every frame and key the
+/// file sees, once each, the project's over the game's. Nothing elsewhere.
+fn frame_completion(ws: &Workspace, id: &str, pos: Position) -> Answer {
+    let Some((doc, _)) = ws.file(id).filter(|(d, _)| d.language == crate::document::Language::Fdf) else {
+        return Answer::default();
+    };
+    let text = doc.text.as_str();
+    let lines = LineIndex::new(text);
+    let line_text = lines.line(text, pos.line as usize);
+    let col = lines.column(text, pos);
+    let chars: Vec<char> = line_text.chars().collect();
+    let before = &chars[..(col - 1).min(chars.len())];
+    // In a comment, or not in a string: nothing.
+    let code_end = line_text.find("//").map_or(chars.len(), |b| line_text[..b].chars().count());
+    if before.len() > code_end || before.iter().filter(|c| **c == '"').count() % 2 == 0 {
+        return Answer::default();
+    }
+    let start = before.iter().rposition(|c| *c == '"').expect("an odd count") + 2;
+    let end = chars[before.len()..].iter().position(|c| *c == '"').map_or(chars.len(), |i| before.len() + i) + 1;
+    let range = lines.range(text, pos.line as usize + 1, start, end);
+    let mut found: Vec<(&str, &Occurrence)> = ws
+        .scope(id)
+        .flat_map(|(fid, _, symbols)| symbols.iter().map(move |o| (fid, o)))
+        .filter(|(_, o)| o.declaration && o.scope == Scope::Data)
+        .collect();
+    found.sort_by_key(|(fid, o)| (o.name.as_str(), ws.is_game(fid), *fid, o.line));
+    found.dedup_by(|a, b| a.1.name == b.1.name);
+    let locations = found
+        .into_iter()
+        .map(|(fid, o)| Location {
+            id: fid.to_string(),
+            range,
+            name: o.name.clone(),
+            kind: o.kind,
+            container: std::path::Path::new(fid).file_name().map_or(String::new(), |n| n.to_string_lossy().into_owned()),
+        })
+        .collect();
+    Answer { locations, text: String::new() }
 }
 
 /// Path completion and links in a manifest; nothing for any other file.
@@ -202,6 +276,8 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             };
             return Answer { locations: Vec::new(), text };
         }
+        QueryKind::Completion => return frame_completion(ws, id, pos),
+        QueryKind::PathLinks if ws.file(id).is_some_and(|(d, _)| d.language == crate::document::Language::Fdf) => return frame_links(ws, id),
         QueryKind::PathCompletion | QueryKind::PathLinks => return manifest_paths(ws, kind, id, pos),
         QueryKind::SlkTable | QueryKind::SlkSetCell => {
             let Some((doc, _)) = ws.file(id).filter(|(d, _)| d.language == crate::document::Language::Slk) else {
@@ -407,7 +483,9 @@ pub(crate) fn matches<'a>(ws: &'a Workspace, id: &'a str, target: &Occurrence) -
             .flat_map(|(doc, symbols)| symbols.iter().map(move |o| (id, doc, o)))
             .filter(|(_, _, o)| o.same_symbol(target))
             .collect(),
-        Scope::Member => ws
+        // Members, and a data format's names (FDF's frames): by name across
+        // the files `id` sees.
+        Scope::Member | Scope::Data => ws
             .scope(id)
             .flat_map(|(id, doc, symbols)| symbols.iter().map(move |o| (id, doc, o)))
             .filter(|(_, _, o)| o.same_symbol(target))
@@ -437,6 +515,10 @@ pub(crate) fn matches<'a>(ws: &'a Workspace, id: &'a str, target: &Occurrence) -
 /// file and line it's from. A name with no declaration in the project
 /// (a native from a `common.j` that isn't part of it, say) says so.
 fn hover(target: &Occurrence, decls: &[(&str, &Document, &Occurrence)]) -> String {
+    // A data format's string that names nothing is just a string.
+    if decls.is_empty() && target.scope == Scope::Data {
+        return String::new();
+    }
     if decls.is_empty() {
         return format!(
             "{} `{}`\n\n*not declared in the project*",

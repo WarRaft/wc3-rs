@@ -85,11 +85,13 @@ impl Script {
     }
 }
 
-/// The game's scripts ([`SCRIPTS`]) looked up through `lookup` like any
-/// other file (the game folders, then the map's roots; the last that has
-/// one wins), each at the path it's found at: on disk, or inside an
-/// archive (`War3Patch.mpq/Scripts/Blizzard.j`, see `map`). Text is read
-/// as UTF-8, invalid bytes replaced.
+/// The game's files the project model holds ([`Workspace`]'s game files):
+/// its scripts ([`SCRIPTS`]) and its frame definitions ([`FRAME_FILES`]),
+/// looked up through `lookup` like any other file (the game folders, then
+/// the map's roots; the last that has one wins), each at the path it's
+/// found at: on disk, or inside an archive
+/// (`War3Patch.mpq/Scripts/Blizzard.j`, see `map`). Text is read as
+/// UTF-8, invalid bytes replaced.
 ///
 /// The game loads `common.j` and `Blizzard.j` under every map script,
 /// `common.j` and `common.ai` under every AI script. Nothing about them
@@ -97,35 +99,58 @@ impl Script {
 /// function declares it as a `native` in its own code, and a root that
 /// replaces one of them replaces it as it would any file. What such a
 /// replacement breaks is for the build to find.
+///
+/// [`Workspace`]: crate::workspace::Workspace
 pub fn scripts(lookup: &Lookup) -> Vec<(PathBuf, crate::document::Document)> {
+    use crate::document::{Document, Language};
     let (game, errors) = lookup.open();
     for e in errors {
         eprintln!("wc3-server: {e}");
     }
-    SCRIPTS
-        .iter()
-        .filter_map(|name| {
-            let (bytes, source) = game.read(name)?;
-            let path = match source {
-                Source::Archive(archive) => crate::map::inner_path(&archive, name),
-                Source::File(path) => path,
-                Source::Storage(folder, inner) => folder.join(inner),
-            };
-            let text = crate::document::decode(bytes);
-            let doc = crate::document::Document {
-                language: crate::document::Language::Jass,
-                version: 0,
-                text,
-                path: Some(path.clone()),
-            };
-            Some((path, doc))
-        })
-        .collect()
+    let read = |name: &str, language: Language| {
+        let (bytes, source) = game.read(name)?;
+        let path = match source {
+            Source::Archive(archive) => crate::map::inner_path(&archive, name),
+            Source::File(path) => path,
+            Source::Storage(folder, inner) => folder.join(inner),
+        };
+        let text = crate::document::decode(bytes);
+        Some((path.clone(), Document { language, version: 0, text, path: Some(path) }))
+    };
+    let mut out: Vec<(PathBuf, Document)> = SCRIPTS.iter().filter_map(|name| read(name, Language::Jass)).collect();
+    out.extend(frame_names(|name| read(name, Language::Fdf).map(|(p, d)| (d.text.clone(), (p, d)))));
+    out
+}
+
+/// The list of the game's frame definitions: each line a file.
+pub const FRAME_FILES: &str = "UI\\FrameDef\\FrameDef.toc";
+
+/// The game's frame definitions, as the game loads them: the files
+/// [`FRAME_FILES`] lists, and every `.fdf` path their strings name
+/// (`IncludeFile "UI\\FrameDef\\UI\\EscMenuTemplates.fdf"`), once each, in
+/// the order they're found. `read` gives a file's text and what's kept
+/// of it.
+pub fn frame_names<T>(read: impl Fn(&str) -> Option<(String, T)>) -> Vec<T> {
+    let Some((toc, _)) = read(FRAME_FILES) else { return Vec::new() };
+    let mut queue: std::collections::VecDeque<String> = toc.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect();
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    while let Some(name) = queue.pop_front() {
+        if !seen.insert(name.to_ascii_lowercase().replace('/', "\\")) {
+            continue;
+        }
+        let Some((text, kept)) = read(&name) else { continue };
+        let doc = fdf_rs::parse(&text);
+        queue.extend(fdf_rs::paths(&doc).into_iter().map(|p| p.text).filter(|p| p.to_ascii_lowercase().ends_with(".fdf")));
+        out.push(kept);
+    }
+    out
 }
 
 /// Does a change to `path` change what the game folder `folder` gives:
-/// is it one of its archives ([`ARCHIVES`], directly in it) or one of the
-/// game's scripts ([`SCRIPTS`]) in it, in any case?
+/// is it one of its archives ([`ARCHIVES`], directly in it), one of the
+/// game's scripts ([`SCRIPTS`]) in it or a frame file (`UI\\FrameDef\\`'s
+/// `.fdf` and `.toc`), in any case?
 pub fn affects(folder: &Path, path: &Path) -> bool {
     let lower = |p: &Path| p.to_string_lossy().replace('\\', "/").to_lowercase();
     let (folder, path) = (lower(folder), lower(path));
@@ -134,6 +159,7 @@ pub fn affects(folder: &Path, path: &Path) -> bool {
     };
     ARCHIVES.iter().any(|a| rel == a.to_lowercase())
         || SCRIPTS.iter().any(|s| rel == s.replace('\\', "/").to_lowercase())
+        || (rel.starts_with("ui/framedef/") && (rel.ends_with(".fdf") || rel.ends_with(".toc")))
 }
 
 /// Is `path` named like one of the game's archives?

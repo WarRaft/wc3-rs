@@ -13,7 +13,9 @@
 //!   and the scripts inside every map (`.w3x`, `.w3m`) found the same
 //!   way, each at a path inside the map's (see `map`).
 //! - **Game files.** The game's scripts (`game::SCRIPTS`: `common.j`,
-//!   `Blizzard.j`, `common.ai`) from each project's `game=` folders, at the path they're
+//!   `Blizzard.j`, `common.ai`) and its frame definitions (the `.fdf`
+//!   files `UI\FrameDef\FrameDef.toc` lists and those include, seen by
+//!   every file: `game::scripts`) from each project's `game=` folders, at the path they're
 //!   found at: on disk, or inside an archive
 //!   (`War3Patch.mpq/Scripts/Blizzard.j`). Their declarations are visible
 //!   to the project's files the game runs with them: `Blizzard.j` to map
@@ -423,7 +425,15 @@ impl Workspace {
         } else {
             analyzed.iter().filter(|id| self.files.get(*id).is_some_and(|e| e.program.is_some())).cloned().collect()
         };
-        let named = self.check_names(&recheck);
+        let mut named = self.check_names(&recheck);
+        // A frame file analyzed (what it declares may have changed), or
+        // files left: every frame file's inherited frames are checked again.
+        let frames: Vec<String> = if changed || analyzed.iter().any(|id| self.files.get(id).is_some_and(|e| e.doc.language == Language::Fdf)) {
+            self.files.iter().filter(|(_, e)| e.doc.language == Language::Fdf).map(|(id, _)| id.clone()).collect()
+        } else {
+            Vec::new()
+        };
+        named.extend(self.check_frames(&frames));
         let analyzed: HashSet<String> = analyzed.into_iter().collect();
         let mut ids: Vec<String> = analyzed.iter().cloned().collect();
         for (id, diags) in named {
@@ -476,6 +486,36 @@ impl Workspace {
                 env.push(d);
             }
             ((*id).clone(), analysis::names(&e.doc, e.settings.as_deref(), program, &env))
+        })
+    }
+
+    /// The frame files `ids` (FDF), each frame their blocks inherit
+    /// (`INHERITS "Template"`) checked against what the frame files each
+    /// one sees declare (its project's and the game's: `fdf_rs::names`).
+    /// Only where the game's frame files are seen (without them every
+    /// template of the game would be unknown); never in the game's own.
+    fn check_frames(&self, ids: &[String]) -> Vec<(String, Vec<analysis::Diagnostic>)> {
+        let jobs: Vec<(&String, &Entry)> = ids.iter().filter_map(|id| self.files.get(id).map(|e| (id, e))).filter(|(_, e)| !e.game).collect();
+        parallel_map(&jobs, |(id, e)| {
+            let mut declared: HashSet<&str> = HashSet::new();
+            let mut game = false;
+            for (fid, doc, symbols) in self.scope(id) {
+                game |= doc.language == Language::Fdf && self.files[fid].game;
+                declared.extend(symbols.iter().filter(|o| o.declaration && o.scope == parser_rs::Scope::Data).map(|o| o.name.as_str()));
+            }
+            if !game {
+                return ((*id).clone(), Vec::new());
+            }
+            let parsed = fdf_rs::parse(&e.doc.text);
+            let found: Vec<parser_rs::Diagnostic> = fdf_rs::required(&parsed)
+                .into_iter()
+                .filter(|n| !declared.contains(n.text.as_str()))
+                .map(|n| {
+                    let message = format!("frame '{}' is declared nowhere: in the file, the project or the game's frame files", n.text);
+                    parser_rs::Diagnostic::error(parser_rs::rule::UNKNOWN_NAME, message, n.span.start_line).at(n.span)
+                })
+                .collect();
+            ((*id).clone(), analysis::lint_found(&e.doc, e.settings.as_deref(), found))
         })
     }
 

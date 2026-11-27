@@ -946,3 +946,70 @@ fn names_are_not_checked_without_the_games_common_j() {
         assert!(!diagnostics.iter().any(|d| d.rule == parser_rs::rule::UNKNOWN_NAME), "{diagnostics:?}");
     }
 }
+
+#[test]
+fn frame_files_link_to_each_other_and_the_games() {
+    use crate::document::Position;
+    use crate::index::{answer, QueryKind};
+    const TOC: &str = "UI\\FrameDef\\GlobalStrings.fdf\r\nUI\\FrameDef\\UI\\Dialog.fdf\r\n";
+    const STRINGS: &str = "StringList {\n    OK \"Okay\",\n}\n";
+    const DIALOG: &str = "IncludeFile \"UI\\FrameDef\\UI\\Templates.fdf\",\nFrame \"BACKDROP\" \"Dialog\" {\n}\n";
+    const TEMPLATES: &str = "Frame \"GLUETEXTBUTTON\" \"ButtonTemplate\" {\n    Width 0.1,\n}\n";
+    const MINE: &str = concat!(
+        "IncludeFile \"UI\\FrameDef\\UI\\Templates.fdf\",\n",
+        "Frame \"GLUETEXTBUTTON\" \"MyButton\" INHERITS \"ButtonTemplate\" {\n",
+        "    Text \"OK\",\n",
+        "    ControlBackdrop \"MyBack\",\n",
+        "    Frame \"BACKDROP\" \"MyBack\" INHERITS \"Nope\" {\n",
+        "    }\n",
+        "}\n",
+    );
+    let tmp = project("ws-fdf", &[("game/README", ""), ("p/wc3.bni", "[project]\ngame=../game\n[code]\nsources=.\n"), ("p/UI/FrameDef/My.fdf", MINE)]);
+    let patch = tmp.0.join("game/War3Patch.mpq");
+    crate::map::tests::make_map(&patch, &[
+        ("UI\\FrameDef\\FrameDef.toc", TOC),
+        ("UI\\FrameDef\\GlobalStrings.fdf", STRINGS),
+        ("UI\\FrameDef\\UI\\Dialog.fdf", DIALOG),
+        ("UI\\FrameDef\\UI\\Templates.fdf", TEMPLATES),
+        ("UI\\FrameDef\\UI\\Unlisted.fdf", TEMPLATES),
+    ]);
+    let mut ws = init(&tmp.0);
+    let reported = reports(&mut ws);
+    let in_game = |name: &str| path_id(&patch.join(name));
+    let mine = path_id(&tmp.0.join("p/UI/FrameDef/My.fdf"));
+    // The game's: the listed ones and what they include, not the others.
+    for name in ["UI/FrameDef/GlobalStrings.fdf", "UI/FrameDef/UI/Dialog.fdf", "UI/FrameDef/UI/Templates.fdf"] {
+        assert!(ws.is_game(&in_game(name)), "{name}");
+    }
+    assert!(ws.file(&in_game("UI/FrameDef/UI/Unlisted.fdf")).is_none());
+    // One problem: the frame inherited that's declared nowhere.
+    assert_eq!(reported.iter().find(|r| r.0 == mine).map(|r| r.2), Some(1), "{reported:?}");
+    let ask = |kind: QueryKind, line: u32, character: u32| answer(&ws, kind, &mine, Position::new(line, character), "");
+    let ids = |a: crate::index::Answer| a.locations.into_iter().map(|l| (l.id, l.range.start.line, l.range.start.character)).collect::<Vec<_>>();
+    // INHERITS "ButtonTemplate" → the game's template; Text "OK" → its key.
+    assert_eq!(ids(ask(QueryKind::Definition, 1, 50)), [(in_game("UI/FrameDef/UI/Templates.fdf"), 0, 24)]);
+    assert_eq!(ids(ask(QueryKind::Definition, 2, 11)), [(in_game("UI/FrameDef/GlobalStrings.fdf"), 1, 4)]);
+    // A frame of the file: its declaration, its references.
+    assert_eq!(ids(ask(QueryKind::References, 3, 22)), [(mine.clone(), 3, 21), (mine.clone(), 4, 22)]);
+    assert!(ask(QueryKind::Hover, 3, 22).text.contains("Frame \"BACKDROP\" \"MyBack\""));
+    // A string that names nothing: no hover.
+    assert_eq!(ask(QueryKind::Hover, 4, 41).text, "");
+    // The outline: the frames, a child in its parent.
+    let outline: Vec<(String, String)> = ask(QueryKind::DocumentSymbols, 0, 0).locations.into_iter().map(|l| (l.name, l.container)).collect();
+    assert_eq!(outline, [("MyButton".to_string(), String::new()), ("MyBack".to_string(), "MyButton".to_string())]);
+    // IncludeFile's path → the game's file.
+    assert_eq!(ids(ask(QueryKind::PathLinks, 0, 0)), [(in_game("UI/FrameDef/UI/Templates.fdf"), 0, 13)]);
+    // Renaming the file's own frame renames its uses; the game's can't be.
+    let renamed = answer(&ws, QueryKind::Rename, &mine, Position::new(3, 22), "MyBackdrop");
+    assert_eq!(renamed.text, "");
+    assert_eq!(renamed.locations.len(), 2);
+    assert!(!answer(&ws, QueryKind::Rename, &mine, Position::new(1, 50), "Other").text.is_empty());
+    // In a string: every frame and key, once, replacing the string's text.
+    let completion = ask(QueryKind::Completion, 1, 46);
+    let names: Vec<&str> = completion.locations.iter().map(|l| l.name.as_str()).collect();
+    assert_eq!(names, ["ButtonTemplate", "Dialog", "MyBack", "MyButton", "OK"]);
+    let r = completion.locations[0].range;
+    assert_eq!((r.start.line, r.start.character, r.end.character), (1, 44, 58));
+    // Not in a string, or in a comment: nothing.
+    assert!(ask(QueryKind::Completion, 1, 2).locations.is_empty());
+}

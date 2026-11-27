@@ -217,7 +217,8 @@ pub struct Analysis {
     /// Empty unless asked for: highlighting is for open documents only.
     pub tokens: Vec<u32>,
     /// Every name declared or referenced, for the symbol index. Every
-    /// language but BNI (a data format) produces them.
+    /// language of code produces them, and FDF (its frames and string
+    /// keys: `fdf_rs::names`).
     pub symbols: Vec<Occurrence>,
     /// A JASS file that parses: its program, to check its names against
     /// its project's (`names`).
@@ -253,6 +254,15 @@ pub fn names(doc: &Document, project: Option<&Project>, program: &jass_rs::Progr
     project::apply_lint(found, project).into_iter().map(|d| out.lint(d)).collect()
 }
 
+/// `found` (lint of `doc` its project's other files tell: an FDF file's
+/// unknown frames), with `project`'s `[lint]` settings.
+pub fn lint_found(doc: &Document, project: Option<&Project>, found: Vec<parser_rs::Diagnostic>) -> Vec<Diagnostic> {
+    let text = doc.text.as_str();
+    let lines = LineIndex::new(text);
+    let out = Out { text, lines: &lines };
+    project::apply_lint(found, project).into_iter().map(|d| out.lint(d)).collect()
+}
+
 /// Analyzes `doc` with the settings of its `project`. Pure, so documents
 /// can be analyzed in parallel. Tokens and symbols come from one
 /// classification pass where the language supports it.
@@ -285,6 +295,11 @@ pub fn analyze(doc: &Document, project: Option<&Project>, highlight: bool, objec
             let (tokens, symbols) = as_rs::semantic_tokens_and_symbols(text);
             let tokens = if highlight { parser_rs::semantic::encode(tokens, text) } else { Vec::new() };
             (tokens, symbols)
+        }
+        Language::Fdf => {
+            let parsed = fdf_rs::parse(text);
+            let tokens = if highlight { parser_rs::semantic::encode(fdf_rs::semantic::document_tokens(&parsed, text), text) } else { Vec::new() };
+            (tokens, fdf_rs::symbols(&parsed))
         }
         _ if highlight => (semantic_tokens(doc, project), Vec::new()),
         _ => (Vec::new(), Vec::new()),

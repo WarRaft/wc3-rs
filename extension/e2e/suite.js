@@ -12,7 +12,7 @@ const path = require('path')
  * The steps of the work in hand (`node e2e/run.js current`); `all` runs
  * every step.
  */
-const CURRENT = ['fdf']
+const CURRENT = ['fdf', 'fdf-links']
 
 const out = process.env.E2E_OUT
 const map = process.env.E2E_MAP
@@ -135,6 +135,59 @@ async function steps(only) {
             check(true, 'the comma typed back: no problems')
             await shot('fdf')
             await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
+        }},
+        {name: 'fdf-links', run: async () => {
+            log('a frame file\'s names: INHERITS to the game\'s template (inside the game\'s archive), its references, hover, the outline a tree, IncludeFile a link, completion in a string, a frame inherited that\'s declared nowhere an error')
+            const file = path.join(root, 'UI', 'FrameDef', 'Links.fdf')
+            fs.mkdirSync(path.dirname(file), {recursive: true})
+            fs.writeFileSync(file, [
+                'IncludeFile "UI\\FrameDef\\UI\\EscMenuTemplates.fdf",',
+                'Frame "GLUETEXTBUTTON" "LinksButton" INHERITS WITHCHILDREN "EscMenuButtonTemplate" {',
+                '    ControlBackdrop "LinksBack",',
+                '    Frame "BACKDROP" "LinksBack" INHERITS "NoSuchTemplate" {',
+                '    }',
+                '    Frame "TEXT" "LinksText" {',
+                '        Text "ACCEPT",',
+                '        SetPoint CENTER, "LinksButton", CENTER, 0, 0,',
+                '    }',
+                '}',
+                '',
+            ].join('\n'))
+            const uri = vscode.Uri.file(file)
+            const doc = await vscode.workspace.openTextDocument(uri)
+            await vscode.window.showTextDocument(doc)
+            const at = (line, text) => new vscode.Position(line, doc.lineAt(line).text.indexOf(text) + 1)
+            const where = l => `${path.basename(l.uri.fsPath)}:${l.range.start.line + 1} (${l.uri.scheme})`
+            const defs = await until(async () => {
+                const d = await vscode.commands.executeCommand('vscode.executeDefinitionProvider', uri, at(1, 'EscMenuButtonTemplate'))
+                return d && d.length ? d : null
+            }, 'the template\'s definition', 60000)
+            check(defs.length === 1 && defs[0].uri.fsPath.replace(/\\/g, '/').endsWith('UI/FrameDef/UI/EscMenuTemplates.fdf') && /\.mpq\//i.test(defs[0].uri.fsPath), `INHERITS "EscMenuButtonTemplate" → ${defs.map(d => d.uri.fsPath + ':' + (d.range.start.line + 1)).join(', ')}`)
+            const target = await vscode.workspace.openTextDocument(defs[0].uri)
+            check(target.lineAt(defs[0].range.start.line).text.includes('"EscMenuButtonTemplate"'), `on its line: ${target.lineAt(defs[0].range.start.line).text.trim()}`)
+            const key = await vscode.commands.executeCommand('vscode.executeDefinitionProvider', uri, at(6, 'ACCEPT'))
+            check(key.length === 1 && path.basename(key[0].uri.fsPath) === 'GlobalStrings.fdf', `Text "ACCEPT" → ${key.map(where).join(', ')}`)
+            const refs = await vscode.commands.executeCommand('vscode.executeReferenceProvider', uri, at(3, 'LinksBack'))
+            check(refs.length === 2 && refs.every(r => r.uri.fsPath === file), `LinksBack: ${refs.map(r => r.range.start.line + 1).join(', ')}`)
+            const hovers = await vscode.commands.executeCommand('vscode.executeHoverProvider', uri, at(7, 'LinksButton'))
+            const hover = hovers.flatMap(h => h.contents.map(c => c.value ?? String(c))).join('\n')
+            check(hover.includes('Frame "GLUETEXTBUTTON" "LinksButton"'), `hover on "LinksButton": ${hover.split('\n')[1]}`)
+            const outline = await vscode.commands.executeCommand('vscode.executeDocumentSymbolProvider', uri)
+            const tree = s => s.children?.length ? `${s.name}(${s.children.map(tree).join(' ')})` : s.name
+            check(outline.map(tree).join(' ') === 'LinksButton(LinksBack LinksText)', `the outline: ${outline.map(tree).join(' ')}`)
+            const links = await vscode.commands.executeCommand('vscode.executeLinkProvider', uri)
+            check(links.length === 1 && links[0].target && links[0].target.path.endsWith('UI/FrameDef/UI/EscMenuTemplates.fdf') && links[0].range.start.line === 0, `IncludeFile → ${links.map(l => l.target?.toString()).join(', ')}`)
+            const list = await vscode.commands.executeCommand('vscode.executeCompletionItemProvider', uri, new vscode.Position(1, doc.lineAt(1).text.indexOf('EscMenuButtonTemplate') + 3), '"')
+            const labels = list.items.map(i => typeof i.label === 'string' ? i.label : i.label.label)
+            check(['EscMenuButtonTemplate', 'LinksBack', 'ACCEPT'].every(n => labels.includes(n)), `completion in the string: ${labels.length} names, ${['EscMenuButtonTemplate', 'LinksBack', 'ACCEPT'].filter(n => labels.includes(n)).join(', ')} among them`)
+            const problems = await until(() => vscode.languages.getDiagnostics(uri).length ? vscode.languages.getDiagnostics(uri) : null, 'the unknown template reported')
+            check(problems.length === 1 && problems[0].range.start.line === 3 && problems[0].message.includes("'NoSuchTemplate'") && doc.getText(problems[0].range) === 'NoSuchTemplate', `one problem: ${problems.map(d => `${d.range.start.line + 1}: ${d.message} [${doc.getText(d.range)}]`).join('; ')}`)
+            await vscode.commands.executeCommand('outline.focus')
+            await vscode.window.showTextDocument(doc)
+            await vscode.commands.executeCommand('outline.expand')
+            await sleep(1500)
+            await shot('fdf-links')
+            await vscode.commands.executeCommand('workbench.action.closeAllEditors')
         }},
     ]
     // What's run: `only`'s names (all without it), with what they need.

@@ -1565,6 +1565,27 @@ comments. Problems: a statement without its `,`, a `{` not closed, a
 `}` without `{`. The game's 84 files have none. The editor's game
 interface reads the `StringList`s with the same parser.
 
+**Names.** A block declares a frame, the last string of its header
+before a bare word (`Frame "BACKDROP" "Name" INHERITS "Template" {`
+declares `Name`); a table at the top of a file (`StringList {`) its
+keys; every other string refers to what's declared by its text
+(`INHERITS "Template"`, `ControlBackdrop "Name"`, `SetPoint TOPLEFT,
+"Parent", ...`, `Text "ACCEPT"`); see
+[`fdf-rs`](../fdf-rs/README.md#names). So, across the frame files the
+file sees (its project's, and the game's: the files
+`UI\FrameDef\FrameDef.toc` lists and the `.fdf` paths their strings
+name, read with the project's `game=` like its scripts):
+
+- go to definition (to the game's template inside its archive), find
+  references, hover (the declaration's line, where it is, the frame it's
+  in), rename (a frame or key of the project's, not the game's);
+- the outline a tree, each frame in its parent; workspace symbols;
+- in a string, completion of every frame and key (`"` starts it);
+- a string that's a file's path a link to it (`IncludeFile
+  "UI\FrameDef\UI\EscMenuTemplates.fdf"`);
+- a frame a block inherits that's declared nowhere an error
+  (`unknown-name`), checked once the game's frame files are seen.
+
 ## SLK tables
 
 A `.slk` (the game's data tables: `Units\UnitBalance.slk`, the
@@ -2682,7 +2703,7 @@ aren't lint: they can't be turned off. The rules are defined in
 | `duplicate-section`              | BNI                          | on      | a section header repeated in the file |
 | `unclosed-section-header`        | BNI                          | on      | a section header missing its `]` |
 | `unterminated-string`            | BNI                          | on      | a quoted string with no closing `"` |
-| `unknown-name`                   | JASS                         | on      | a function, variable or type declared nowhere: in the file, the files of its project, the game's scripts it runs with (see below) |
+| `unknown-name`                   | JASS, FDF                    | on      | a function, variable or type declared nowhere: in the file, the files of its project, the game's scripts it runs with (see below); a frame an FDF block inherits that no frame file declares (its project's, the game's) |
 | `argument-count`                 | JASS                         | on      | a call with more or fewer arguments than its function takes, or `function F` (a code value) of one that takes some |
 | `type-mismatch`                  | JASS                         | on      | a value of the wrong type: an argument, a value set or returned, a condition, an operator's side |
 | `array-access`                   | JASS                         | on      | an array used without its index, or an index of what isn't an array |
@@ -2715,7 +2736,10 @@ declares or references, with its kind and scope (`parser_rs::Occurrence`).
 The language crate records them in the same pass that produces the
 highlighting, so they agree, and half-typed code is indexed too. Every
 language produces them: JASS, Zinc (also inside vJASS `//! zinc` blocks),
-Lua and AngelScript. BNI is data and has none.
+Lua and AngelScript; and FDF, its frames and string keys (in a scope of
+their own, `Scope::Data`: matched by name across the frame files, apart
+from code's names; see [Frame definitions](#frame-definitions-fdf)).
+BNI is data and has none.
 
 **Resolution.** By exact (case-sensitive) name, within the name's scope:
 
@@ -2811,7 +2835,10 @@ says whether it works in the World Editor (opened before the first such
 step, closed after the last) and the steps it needs, run with it. Now:
 `fdf`, a frame definition file (its language, the server's colors by a
 statement's shape, a missing comma an error at once, unsaved, and gone
-when it's typed back). `run.js`
+when it's typed back); `fdf-links`, its names (`INHERITS` to the game's
+template in its archive, a key, references, hover, the outline a tree,
+`IncludeFile` a link, completion in a string, an unknown template an
+error). `run.js`
 extension in a VS Code of its own: the one installed (`VSCODE`, else
 `/Applications/Visual Studio Code.app`), with a profile and extensions
 folder of its own in a temporary folder (no other extension; it opens

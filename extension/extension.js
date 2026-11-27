@@ -104,6 +104,7 @@ const {
     CompletionItem,
     CompletionItemKind,
     DocumentLink,
+    DocumentSymbol,
     Uri,
     Range,
     Location,
@@ -236,6 +237,8 @@ const SYMBOL_KIND = {
     class: SymbolKind.Class,
     enum: SymbolKind.Enum,
     'enum member': SymbolKind.EnumMember,
+    frame: SymbolKind.Object,
+    key: SymbolKind.Key,
 }
 
 /**
@@ -521,6 +524,38 @@ function toLocation(l) {
 /** @param {import('./protocol.js').WireLocation} l */
 function toSymbol(l) {
     return new SymbolInformation(l.name, SYMBOL_KIND[l.kind] ?? SymbolKind.Variable, l.container, toLocation(l))
+}
+
+/**
+ * A frame file's outline as a tree: each declaration under the nearest
+ * one before it that its container names (a frame in its parent, a key
+ * in its table, which has no declaration of its own: a node for it).
+ *
+ * @param {import('./protocol.js').WireLocation[]} list  in source order
+ */
+function frameTree(list) {
+    const roots = []
+    /** @type {{name: string, node: DocumentSymbol}[]} */
+    const seen = []
+    for (const l of list) {
+        const range = new Range(...l.range)
+        const node = new DocumentSymbol(l.name, '', SYMBOL_KIND[l.kind] ?? SymbolKind.Variable, range, range)
+        let parent = l.container ? [...seen].reverse().find(s => s.name === l.container)?.node : undefined
+        if (l.container && !parent) {
+            parent = new DocumentSymbol(l.container, '', SymbolKind.Namespace, range, range)
+            seen.push({name: l.container, node: parent})
+            roots.push(parent)
+        }
+        if (parent) {
+            parent.children.push(node)
+            // The parent covers its children, so the outline follows the cursor.
+            parent.range = parent.range.union(range)
+        } else {
+            roots.push(node)
+        }
+        seen.push({name: l.name, node})
+    }
+    return roots
 }
 
 /**
@@ -827,6 +862,7 @@ function registerQueries(context) {
         }),
         languages.registerDocumentSymbolProvider(selector, {
             provideDocumentSymbols: async doc => {
+                if (doc.languageId === 'fdf') return frameTree(await ask(QUERY.DOCUMENT_SYMBOLS, doc, {line: 0, character: 0}))
                 const all = (await ask(QUERY.DOCUMENT_SYMBOLS, doc, {line: 0, character: 0})).map(toSymbol)
                 if (doc.uri.scheme !== PIECE_SCHEME) return all
                 // A piece's own, in its lines.
@@ -865,6 +901,30 @@ function registerQueries(context) {
                 const edit = new WorkspaceEdit()
                 for (const loc of locations) edit.replace(loc.uri, loc.range, newName)
                 return edit
+            },
+        }),
+        // A frame file: in a string, the frames and keys it sees.
+        languages.registerCompletionItemProvider({language: 'fdf'}, {
+            provideCompletionItems: async (doc, pos) => {
+                const answer = await query(QUERY.COMPLETION, idOf(doc), pos)
+                return (answer?.locations ?? []).map(l => {
+                    const item = new CompletionItem(l.name, l.kind === 'key' ? CompletionItemKind.Constant : CompletionItemKind.Class)
+                    item.range = new Range(...l.range)
+                    item.detail = `${l.kind} · ${l.container}`
+                    return item
+                })
+            },
+        }, '"'),
+        // A frame file: each string that's a file's path opens it
+        // (`IncludeFile "UI\\FrameDef\\UI\\EscMenuTemplates.fdf"`).
+        languages.registerDocumentLinkProvider({language: 'fdf'}, {
+            provideDocumentLinks: async doc => {
+                const answer = await query(QUERY.PATH_LINKS, idOf(doc), {line: 0, character: 0})
+                return (answer?.locations ?? []).map(l => {
+                    const link = new DocumentLink(new Range(...l.range), uriOf(l.id))
+                    link.tooltip = `Open ${l.id}`
+                    return link
+                })
             },
         }),
         languages.registerWorkspaceSymbolProvider({

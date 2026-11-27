@@ -88,13 +88,14 @@ const QUERY = {
     TRIGGER_JASS: 21,
     TRIGGER_LUA: 22,
     TRIGGER_ANGELSCRIPT: 23,
+    COMPLETION: 24,
 }
 
 /** Symbol kinds, in wire order (`parser_rs::SymbolKind`). */
 const SYMBOL_KINDS = [
     'function', 'native', 'global', 'constant', 'local', 'parameter', 'type',
     'library', 'struct', 'interface', 'module', 'method', 'field',
-    'namespace', 'class', 'enum', 'enum member',
+    'namespace', 'class', 'enum', 'enum member', 'frame', 'key',
 ]
 
 class Writer {

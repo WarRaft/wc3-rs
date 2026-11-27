@@ -214,7 +214,7 @@ fn kind_code(kind: Kind) -> u8 {
     }
 }
 
-const QUERY_KINDS: [QueryKind; 24] = [
+const QUERY_KINDS: [QueryKind; 25] = [
     QueryKind::Definition,
     QueryKind::References,
     QueryKind::Hover,
@@ -239,9 +239,10 @@ const QUERY_KINDS: [QueryKind; 24] = [
     QueryKind::TriggerJass,
     QueryKind::TriggerLua,
     QueryKind::TriggerAngelScript,
+    QueryKind::Completion,
 ];
 
-const SYMBOL_KINDS: [SymbolKind; 17] = [
+const SYMBOL_KINDS: [SymbolKind; 19] = [
     SymbolKind::Function,
     SymbolKind::Native,
     SymbolKind::Global,
@@ -259,6 +260,8 @@ const SYMBOL_KINDS: [SymbolKind; 17] = [
     SymbolKind::Class,
     SymbolKind::Enum,
     SymbolKind::EnumMember,
+    SymbolKind::Frame,
+    SymbolKind::Key,
 ];
 
 fn symbol_kind_code(kind: SymbolKind) -> u8 {
