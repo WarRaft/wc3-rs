@@ -13,7 +13,7 @@ const path = require('path')
  * The steps of the work in hand (`node e2e/run.js current`): moved on as
  * the work does; `all` runs every step.
  */
-const CURRENT = ['sounds']
+const CURRENT = ['trigger-editor']
 
 const out = process.env.E2E_OUT
 const map = process.env.E2E_MAP
@@ -610,6 +610,17 @@ async function steps(only) {
             const saved = await until(() => we.state?.message && we.state, 'saved')
             check(!saved.dirty && saved.message.includes('war3map.w3i'), saved.message)
             await we.panel.webview.postMessage({type: 'mapInfo', action: 'close'})
+        }},
+        {name: 'trigger-editor', editor: true, run: async () => {
+            log("the map's triggers opened from the World Editor: the trigger editor beside, its tree read")
+            const before = new Set(api.triggerEditors.keys())
+            await we.panel.webview.postMessage({type: 'button', id: 'triggers-open'})
+            const key = await until(() => [...api.triggerEditors.keys()].find(k => !before.has(k) && /war3map\.wtg/i.test(k)), 'a trigger editor of war3map.wtg')
+            const tree = await until(() => api.triggerEditors.get(key).state().tree, 'its tree', 60000)
+            check(tree.triggers.length > 0, `${tree.triggers.length} triggers in ${tree.categories?.length ?? '?'} categories`)
+            await shot('world-editor-triggers')
+            const tab = vscode.window.tabGroups.all.flatMap(g => g.tabs).find(t => t.input?.viewType?.endsWith('wc3.wtgTriggers'))
+            if (tab) await vscode.window.tabGroups.close(tab)
         }},
         {name: 'map', editor: true, run: async () => {
             log("the map's settings: its tiles reordered and undone, a tile's pathing and undone, four cells added on the right, saved")

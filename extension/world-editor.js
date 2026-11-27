@@ -179,6 +179,7 @@ function registerWorldEditor(context, binary, pickManifest) {
   </div>
   <div class="edits"><button id="undo" title="Undo (Ctrl+Z)" disabled>Undo</button><button id="redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button><button id="save" title="Save the files changed (Ctrl+S)" disabled>Save</button><button id="reload" title="Read the map again, the changes not saved dropped">Reload</button></div>
   <button id="map-open" title="The map's size, its tiles and their pathing">Map…</button>
+  <button id="triggers-open" title="The map's triggers, in the trigger editor beside">Triggers…</button>
   <button id="info-open" title="The map's info: its description, loading screen, options, environment, players and forces">Info…</button>
   <button id="imports-open" title="The import manager: the map's imported files">Imports…</button>
   <button id="objects-open" title="The object editor: units, items, destructables, doodads, abilities, buffs, upgrades">Objects…</button>
@@ -347,6 +348,16 @@ function registerWorldEditor(context, binary, pickManifest) {
                 editor.region = msg.region
             } else if (msg.type === 'camera') {
                 editor.camera = msg.camera
+            } else if (msg.type === 'openTriggers') {
+                // The map's triggers (war3map.wtg, where its terrain is: in
+                // the map or its folder), in the trigger editor beside.
+                const terrain = [...(editor.follow?.values() ?? [])].find(p => /war3map\.w3e$/i.test(p))
+                if (!terrain) {
+                    window.showWarningMessage('WC3: the map isn\'t read yet.')
+                    return
+                }
+                const wtg = Uri.file(path.join(path.dirname(terrain), 'war3map.wtg')).with({scheme: OBJECTS_SCHEME})
+                commands.executeCommand('vscode.openWith', wtg, 'wc3.wtgTriggers', {viewColumn: ViewColumn.Beside, preview: false})
             } else if (msg.type === 'importPick') {
                 // Files to import, from VS Code's dialog: each at war3mapImported\ and its name.
                 window.showOpenDialog({canSelectMany: true, openLabel: 'Import', title: 'Files to import into the map'}).then(uris => {

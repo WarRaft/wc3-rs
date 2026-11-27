@@ -372,6 +372,7 @@
     }
     $('imports-open').onclick = () => toggle(importsPanel)
     $('info-open').onclick = () => toggle(infoPanel)
+    $('triggers-open').onclick = () => vscode.postMessage({type: 'openTriggers'})
     const objectsPanel = new EditorObjectEditor.Panel($('objects-panel'), send, encode, objects => vscode.postMessage({type: 'objects', objects}))
     $('objects-open').onclick = () => toggle(objectsPanel)
     $('reload').onclick = () => send(encode.reload())
@@ -1355,6 +1356,9 @@
                 send(encode.camera(true, c, camera.ray(msg.x, msg.y, aspect())))
                 send(encode.strokeEnd())
             }
+        } else if (msg.type === 'button') {
+            // A button of the page's pressed (`id`): for the tests.
+            $(msg.id)?.onclick()
         } else if (msg.type === 'mapInfo') {
             // The map info panel's, for the tests: `open`, a field `set` (`field`, `value`, a flag's `bit`), `close`.
             if (msg.action === 'open') toggle(infoPanel)
