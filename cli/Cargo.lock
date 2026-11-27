@@ -1115,6 +1115,7 @@ dependencies = [
  "doo-rs",
  "imp-rs",
  "mdx-rs",
+ "mmp-rs",
  "notify",
  "parser-rs",
  "shd-rs",

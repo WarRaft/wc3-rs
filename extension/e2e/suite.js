@@ -379,7 +379,7 @@ async function steps(only) {
             we.state = undefined
             await we.panel.webview.postMessage({type: 'save'})
             const saved = await until(() => we.state?.message && we.state, 'saved')
-            check(!saved.dirty && /^Saved .*map\.w3x.war3map\.w3e, .*map\.w3x.war3map\.wpm, .*map\.w3x.war3mapMap\.blp$/.test(saved.message), saved.message)
+            check(!saved.dirty && /^Saved .*map\.w3x.war3map\.w3e, .*map\.w3x.war3map\.wpm, .*map\.w3x.war3mapMap\.blp, .*map\.w3x.war3map\.mmp$/.test(saved.message), saved.message)
             check(fs.statSync(map).mtimeMs > stamp0 && !we.panel.title.startsWith('● '), 'the map on disk written, the tab clean')
         }},
         {name: 'phoenix', editor: true, run: async () => {
@@ -551,7 +551,7 @@ async function steps(only) {
             we.state = undefined
             await we.panel.webview.postMessage({type: 'save'})
             const savedUnits = await until(() => we.state?.message && we.state, 'saved')
-            check(!savedUnits.dirty && /^Saved .*map\.w3x.war3mapUnits\.doo$/.test(savedUnits.message), savedUnits.message)
+            check(!savedUnits.dirty && /^Saved .*map\.w3x.war3mapUnits\.doo, .*map\.w3x.war3mapMap\.blp, .*map\.w3x.war3map\.mmp$/.test(savedUnits.message), savedUnits.message)
             check(fs.statSync(map).mtimeMs > stamp1, 'the map on disk written')
         }},
         {name: 'palette', editor: true, run: async () => {

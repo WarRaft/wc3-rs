@@ -1331,3 +1331,29 @@ fn a_kinds_object_data_exported_its_strings_as_text_and_imported_in_place_of_the
     std::fs::write(&from, b"nonsense").unwrap();
     assert!(said(&s.objects_import(0, from.to_str().unwrap())).starts_with("Not imported"));
 }
+
+/// The minimap's icons made as World Editor made Blizzard's melee maps'
+/// (`MAPS`: a folder of them, `WC3_GAME`: the game's folder): exact in
+/// 96 of 108 (the rest a pixel off here and there on a shorter side).
+#[test]
+#[ignore]
+fn minimap_icons_as_world_editors_in_blizzards_maps() {
+    let (Ok(dir), Ok(game)) = (std::env::var("MAPS"), std::env::var("WC3_GAME")) else { return };
+    let mut maps: Vec<_> = std::fs::read_dir(dir).unwrap().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "w3x" || e == "w3m")).collect();
+    maps.sort();
+    let (mut same, mut differ) = (0, Vec::new());
+    for map in maps {
+        let t = TestDir::new("icons-all");
+        t.write("wc3.bni", format!("[project]\ngame=\"{game}\"\n\n[map]\nroot=\"{}\"\n", map.display()).as_bytes());
+        let Ok(mut s) = Session::open(t.path()) else { continue };
+        let Some((theirs, _)) = s.game.read("war3map.mmp") else { continue };
+        s.draw();
+        if mmp_rs::parse(&s.minimap_icons().unwrap()).unwrap() == mmp_rs::parse(&theirs).unwrap() {
+            same += 1;
+        } else {
+            differ.push(map.file_name().unwrap().to_string_lossy().into_owned());
+        }
+    }
+    println!("{same} the same; differ: {differ:?}");
+    assert!(same >= 96, "{same}: {differ:?}");
+}

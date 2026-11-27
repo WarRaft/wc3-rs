@@ -2197,13 +2197,25 @@ step), this list updated.
      over the pathing shown, a bridge's deck walked on over the water
      under it. On the Diablo III beta map 12572 cells, 2320 of them
      bridges' decks.
-   - **The minimap's picture** (`war3mapMap.blp`, after the Noise
-     brush) is made again on save when the terrain, the doodads or the
-     map's info changed, as World Editor makes it (`editor/src/
-     minimap.rs`): 256 by 256, the terrain from above
-     (`picture::paint`, the editor's own minimap) fitted in it, its
-     shape kept (World Editor's: a map 192 by 128 a band across the
-     middle, black above and below), outside the camera bounds darker,
+   - **The minimap's picture and icons** (`war3mapMap.blp`,
+     `war3map.mmp`; after the Noise brush) are made again on save when
+     the terrain, the doodads, the units or the map's info changed, as
+     World Editor makes them (`editor/src/minimap.rs`), over the
+     playable area (the map less its `camera_complements`), fitted in
+     256 by 256 as World Editor fits it, worked out from Blizzard's
+     maps' files (`minimap::fit`: its larger side 256 pixels, the other
+     its size rounded up, centred, each side's own scale). The icons:
+     a gold mine (its type's abilities have `Agld`), a Neutral Passive
+     building its type marks (`nbmmIcon`), then each start location in
+     its player's colour (World Editor's: red 255,3,3 ...), in their
+     file's order; an icon's x rounded down, its y up, from the top.
+     The same as World Editor's in 96 of Blizzard's 108 melee maps
+     (`minimap_icons_as_world_editors_in_blizzards_maps`, ignored: its
+     maps and game by `MAPS`, `WC3_GAME`), the rest a pixel off here and
+     there on a shorter side. The picture: the terrain from above
+     (`picture::paint`, the editor's own minimap), its shape kept
+     (a playable area 180 by 116 a band across the middle, black above
+     and below), outside the camera bounds darker,
      each doodad and destructable the game's tables show on the minimap
      a dot in its colour (`showInMM`, `useMMColor`, `MMRed` ...: a tree
      dark green), no units (the game draws them). Written as World

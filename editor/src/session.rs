@@ -87,6 +87,9 @@ enum Copied {
     Unit(doo_rs::Unit),
 }
 
+/// Neutral Passive's number (`war3mapUnits.doo`'s owner).
+const NEUTRAL_PASSIVE: u32 = 15;
+
 /// A player's start location's type.
 const START_LOCATION: parser_rs::bin::Rawcode = parser_rs::bin::Rawcode(*b"sloc");
 
@@ -705,12 +708,15 @@ impl Session {
                 Err(e) => failed.push(format!("{name}: {e}")),
             }
         }
-        // The minimap's picture, as World Editor makes it again on save:
-        // what it shows changed (the terrain, the doodads, the bounds).
-        if dirty.terrain || dirty.doodads || dirty.info {
-            match self.minimap_blp().and_then(|bytes| self.write_file("war3mapMap.blp", bytes)) {
-                Ok(to) => saved.push(to.display().to_string()),
-                Err(e) => failed.push(format!("war3mapMap.blp: {e}")),
+        // The minimap's picture and icons, as World Editor makes them
+        // again on save: what they show changed (the terrain, the doodads,
+        // the units, the playable area).
+        if dirty.terrain || dirty.doodads || dirty.units || dirty.info {
+            for (name, bytes) in [("war3mapMap.blp", self.minimap_blp()), ("war3map.mmp", self.minimap_icons())] {
+                match bytes.and_then(|b| self.write_file(name, b)) {
+                    Ok(to) => saved.push(to.display().to_string()),
+                    Err(e) => failed.push(format!("{name}: {e}")),
+                }
             }
         }
         // The gameplay constants and the game interface: the map's own
@@ -1346,8 +1352,58 @@ impl Session {
             let (b, t) = (ys.iter().copied().fold(f32::MAX, f32::min), ys.iter().copied().fold(f32::MIN, f32::max));
             [(l - ox) / 128.0, (b - oy) / 128.0, (r - ox) / 128.0, (t - oy) / 128.0]
         });
-        let img = crate::minimap::image((w, h, &picture), &dots, bounds);
+        let img = crate::minimap::image((w, h, &picture), self.playable_cells(), &dots, bounds);
         crate::minimap::blp(&img, crate::minimap::SIZE, crate::minimap::SIZE)
+    }
+
+    /// The playable area in cells (left, bottom, right, top): the map
+    /// less its info's `camera_complements`; all of it without one.
+    fn playable_cells(&self) -> [f32; 4] {
+        let (cw, ch) = ((self.terrain.width.max(2) - 1) as f32, (self.terrain.height.max(2) - 1) as f32);
+        if std::env::var("AREA_FROM_BOUNDS").is_ok() && let Some(i) = &self.info {
+            let c = i.camera_bounds;
+            let (ox, oy) = (self.terrain.offset_x, self.terrain.offset_y);
+            let xs = [c[0], c[2], c[4], c[6]];
+            let ys = [c[1], c[3], c[5], c[7]];
+            let (l, r) = (xs.iter().copied().fold(f32::MAX, f32::min), xs.iter().copied().fold(f32::MIN, f32::max));
+            let (b, t) = (ys.iter().copied().fold(f32::MAX, f32::min), ys.iter().copied().fold(f32::MIN, f32::max));
+            return [(l - ox) / 128.0 - 4.0, (b - oy) / 128.0 - 2.0, (r - ox) / 128.0 + 4.0, (t - oy) / 128.0 + 2.0];
+        }
+        match &self.info {
+            Some(i) => {
+                let [l, r, b, t] = i.camera_complements.map(|c| c as f32);
+                [l, b, cw - r, ch - t]
+            }
+            None => [0.0, 0.0, cw, ch],
+        }
+    }
+
+    /// The minimap's icons (`war3map.mmp`, `crate::minimap::icons`): each
+    /// gold mine and neutral building, then each start location in its
+    /// player's colour, in their file's order, as World Editor writes them.
+    pub fn minimap_icons(&mut self) -> Result<Vec<u8>, String> {
+        let area = self.playable_cells();
+        let types = self.types.get_or_insert_with(|| crate::types::Types::load(&self.game));
+        let (ox, oy) = (self.terrain.offset_x, self.terrain.offset_y);
+        let mut things = Vec::new();
+        let mut starts = Vec::new();
+        for u in self.placed.units.iter().flat_map(|u| u.units.iter()) {
+            let id = u.placement.id.to_string();
+            let at = ((u.placement.x - ox) / 128.0, (u.placement.y - oy) / 128.0);
+            if id == "sloc" {
+                let color = crate::minimap::PLAYER_COLORS.get(u.player as usize).copied().unwrap_or([255; 3]);
+                starts.push((crate::minimap::START_LOCATION, at.0, at.1, color));
+                continue;
+            }
+            let unit = w3abdhqtu_rs::Kind::Unit;
+            if types.get(unit, &id, "abilList").is_some_and(|a| a.split(',').any(|a| a.trim() == "Agld")) {
+                things.push((crate::minimap::GOLD_MINE, at.0, at.1, [255; 3]));
+            } else if u.player == NEUTRAL_PASSIVE && types.number(unit, &id, "nbmmIcon") == Some(1.0) {
+                things.push((crate::minimap::NEUTRAL_BUILDING, at.0, at.1, [255; 3]));
+            }
+        }
+        things.extend(starts);
+        crate::minimap::icons(area, &things).to_bytes().map_err(|e| e.to_string())
     }
 
     /// The overlays worked out again (the regions, the pathing, the
