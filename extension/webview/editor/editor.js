@@ -363,8 +363,31 @@
         openInfo()
         for (const k of INFO_KINDS) if (!objectsPanel.lists.has(k)) send(encode.objectList(k))
     }
+    // The map's triggers: the trigger editor itself (`webview/triggers.js`,
+    // the code of its own tab) mounted in this panel the first time it's
+    // opened, its logic the extension's (`openTriggers`, then `trg`
+    // messages both ways); its state kept apart from this page's.
+    let triggerEditor = null
+    const triggersPanel = {
+        get isOpen() {
+            return !$('triggers-panel').hidden
+        },
+        open() {
+            $('triggers-panel').hidden = false
+            if (triggerEditor) return
+            vscode.postMessage({type: 'openTriggers'})
+            triggerEditor = TriggerEditor.mount($('trg-root'), {
+                postMessage: m => vscode.postMessage({type: 'trg', msg: m}),
+                getState: () => vscode.getState()?.triggers,
+                setState: s => vscode.setState({...(vscode.getState() ?? {}), triggers: s}),
+            })
+        },
+        close() {
+            $('triggers-panel').hidden = true
+        },
+    }
     // One of these panels at a time.
-    const panels = () => [importsPanel, objectsPanel, infoPanel]
+    const panels = () => [importsPanel, objectsPanel, infoPanel, triggersPanel]
     const toggle = panel => {
         if (panel.isOpen) return panel.close()
         for (const p of panels()) if (p !== panel) p.close()
@@ -372,7 +395,7 @@
     }
     $('imports-open').onclick = () => toggle(importsPanel)
     $('info-open').onclick = () => toggle(infoPanel)
-    $('triggers-open').onclick = () => vscode.postMessage({type: 'openTriggers'})
+    $('triggers-open').onclick = () => toggle(triggersPanel)
     const objectsPanel = new EditorObjectEditor.Panel($('objects-panel'), send, encode, objects => vscode.postMessage({type: 'objects', objects}))
     $('objects-open').onclick = () => toggle(objectsPanel)
     $('reload').onclick = () => send(encode.reload())
@@ -1356,6 +1379,9 @@
                 send(encode.camera(true, c, camera.ray(msg.x, msg.y, aspect())))
                 send(encode.strokeEnd())
             }
+        } else if (msg.type === 'trg') {
+            // The trigger editor's logic, for its panel.
+            triggerEditor?.receive(msg.msg)
         } else if (msg.type === 'button') {
             // A button of the page's pressed (`id`): for the tests.
             $(msg.id)?.onclick()

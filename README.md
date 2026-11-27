@@ -1863,12 +1863,20 @@ step), this list updated.
      when the panel opens). The flags that use them (custom tech tree,
      upgrades) stay the options' checkboxes. MCP: `w3i_text`,
      `w3i_write`.
-   - **The triggers** (done after the sounds' Browse…): the page's
-     Triggers… opens the map's `war3map.wtg` (where its terrain is: in
-     the map or its folder) in the trigger editor beside
-     (`wc3.wtgTriggers`, the one the Explorer opens), as World Editor's
-     Trigger Editor opens beside its terrain; it isn't made again in
-     the World Editor's page.
+   - **The triggers** (done after the sounds' Browse…): the trigger
+     editor is one code, `webview/triggers.js` (with `triggers.css`): a
+     map's triggers and a `.trg` alike, the tree of a map's beside its
+     trigger by a flag (the root's class `wtg`), mounted on a root
+     (`TriggerEditor.mount(root, host)`: its markup `trigger-markup.js`,
+     everything it looks up in that root, its CSS `@scope (.trg-root)`;
+     `host` how it talks to the extension; what the extension posts to
+     the `receive` it gives back). Its own tab mounts it on its page; the
+     World Editor's Triggers panel mounts the same code (the first time
+     it's opened), the extension serving it with the same logic
+     (`registerTrigger`'s `host`) through a stand-in of its tab
+     (`openTriggers`, then `trg` messages both ways); the page's own
+     styles `@scope (:root) to (.trg-root)`, so the class names they
+     share don't meet.
    - **6i, the import manager** (done after 6h): `war3map.imp` a piece
      of the session (read, taken in when changed on disk, its text form
      in step), with the files to write into the map on save or take out

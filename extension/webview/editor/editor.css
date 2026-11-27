@@ -1,3 +1,8 @@
+/* The World Editor's page; not the trigger editor in its Triggers panel
+   (`.trg-root`, `webview/triggers.css`), which shares some of its class
+   names. */
+@scope (:root) to (.trg-root) {
+
 html, body {
     margin: 0;
     padding: 0;
@@ -914,4 +919,16 @@ button:hover {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+}
+
+/* The Triggers panel: the trigger editor filling it. */
+.trg-panel {
+    padding: 0;
+}
+
+.trg-panel > .trg-root {
+    flex: 1;
+    min-width: 0;
 }

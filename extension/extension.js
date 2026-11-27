@@ -82,8 +82,8 @@
  * events, conditions and actions as lines of calls; the server reads them
  * with the project's `UI\TriggerData.txt`. A trigger of its own (`.trg`,
  * one `[trigger]` of that text, its folder its category) opens as World
- * Editor shows it (`registerTrigger`, `webview/trg.js`), and so does the
- * `.wtg`'s text, with the map's tree beside (`webview/wtg.js`); Show JASS
+ * Editor shows it (`registerTrigger`, `webview/triggers.js`), and so does the
+ * `.wtg`'s text, with the map's tree beside (`webview/triggers.js` with `wtg`); Show JASS
  * shows what it's built into (`registerTriggerJass`). A collection of object data
  * (`.w3o`, World Editor's export) too: `[w3o]`, then each kind's text form.
  *
@@ -144,6 +144,7 @@ const {
 } = require('vscode')
 const {encode, decode, FrameReader, QUERY, FS_OP, FS_FLAG, OBJECTS_OP} = require('./protocol.js')
 const {registerWorldEditor} = require('./world-editor.js')
+const {triggerMarkup, triggerHead} = require('./trigger-markup.js')
 
 /** The scheme of files inside maps. */
 const MAP_SCHEME = 'wc3map'
@@ -1698,7 +1699,7 @@ function registerSlk(context) {
  *
  * A map's triggers (`.wtg`) open the same way (`wc3.wtgTriggers`, over
  * their text under the `wc3obj:` scheme): a tree of the categories,
- * triggers and variables beside it (`webview/wtg.js`), and the trigger
+ * triggers and variables beside it (`webview/triggers.js` with `wtg`), and the trigger
  * picked there as a `.trg` shows. The server cuts that trigger out of the
  * text (`triggers::wtg_view`): the page speaks in the lines of its
  * section, which trigger it is (from 1, its place among them) goes before
@@ -1751,60 +1752,19 @@ function registerTrigger(context) {
     const html = (webview, wtg) => {
         const nonce = [...Array(32)].map(() => Math.floor(Math.random() * 36).toString(36)).join('')
         const asset = name => webview.asWebviewUri(Uri.joinPath(media, name))
-        const fa = name => asset(`fontawesome/${name}`)
         return `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; img-src data:; script-src 'nonce-${nonce}'">
-<link rel="stylesheet" href="${fa('fontawesome.min.css')}">
-<link rel="stylesheet" href="${asset('trg.css')}">
-${wtg ? `<link rel="stylesheet" href="${asset('wtg.css')}">` : ''}
-<style>
-@font-face { font-family: "Font Awesome 6 Free"; font-style: normal; font-weight: 900; font-display: block; src: url("${fa('fa-solid-900.woff2')}") format("woff2"); }
-.fa-solid { font-family: "Font Awesome 6 Free"; font-weight: 900; }
-</style>
-</head><body${wtg ? ' class="wtg"' : ''}>
-${wtg ? `<div class="map-side">
-<div class="map-tools">
-  <button id="map-new-category" title="New category"><i class="fa-solid fa-folder-plus"></i></button>
-  <button id="map-new-trigger" title="New trigger, in the category selected"><i class="fa-solid fa-file-circle-plus"></i></button>
-  <button id="map-new-variable" title="New variable"><i class="fa-solid fa-cube"></i></button>
-  <button id="map-rename" title="Rename (F2)"><i class="fa-solid fa-pen"></i></button>
-  <button id="map-delete" title="Delete (Delete)"><i class="fa-solid fa-trash"></i></button>
+${triggerHead(name => String(asset(name)))}
+</head><body>
+<div id="trg-root" class="trg-root${wtg ? ' wtg' : ''}">
+${triggerMarkup(wtg, triggerLangs())}
 </div>
-<nav id="map-tree" class="map-tree" tabindex="0" role="tree"></nav>
-</div>
-<div id="map-splitter" class="map-splitter" title="Drag to size the tree"></div>
-<div class="main">` : ''}
-<div class="bar">
-  <span id="title-icon" class="title-icon"><i class="fa-solid fa-bolt"></i></span>
-  <input id="name" class="name" spellcheck="false" title="The trigger's name">
-  <label class="check" title="Is the trigger on at all?"><input id="enabled" type="checkbox">Enabled</label>
-  <label class="check" title="Does the trigger start on? Off, something must turn it on"><input id="initially-on" type="checkbox">Initially On</label>
-  <div class="tools">
-    <button id="new" title="New event, condition or action (Ctrl+Shift+N)"><i class="fa-solid fa-plus"></i></button>
-    <button id="new-variable" title="New variable"><i class="fa-solid fa-cube"></i></button>
-    <button id="toggle" title="Enable or disable (Ctrl+E)"><i class="fa-solid fa-power-off"></i></button>
-    <button id="up" title="Move up (Alt+Up)"><i class="fa-solid fa-arrow-up"></i></button>
-    <button id="down" title="Move down (Alt+Down)"><i class="fa-solid fa-arrow-down"></i></button>
-    <button id="copy" title="Copy (Ctrl+C)"><i class="fa-solid fa-copy"></i></button>
-    <button id="cut" title="Cut (Ctrl+X)"><i class="fa-solid fa-scissors"></i></button>
-    <button id="paste" title="Paste (Ctrl+V)"><i class="fa-solid fa-paste"></i></button>
-    <button id="delete" title="Delete (Delete)"><i class="fa-solid fa-trash"></i></button>
-    <button id="convert" title="Convert to Custom Text: the trigger's events, conditions and actions become its JASS"><i class="fa-solid fa-code"></i></button>
-  </div>
-  <div class="spacer"></div>
-  <span id="problems" class="problems" hidden></span>
-  ${wtg ? `<button id="extract" class="text-button" title="Every trigger as a file of its own (.trg), in a folder you pick">Extract Triggers…</button>` : ''}
-  <div class="langs">${SHOWN.map(s => `<button id="show-${s.id}" class="lang-button" data-tip="Show ${s.name}: what this trigger is built into, beside it" aria-label="Show ${s.name}">${languageIcon(s.icon)}</button>`).join('')}</div>
-  <button id="open-text" class="text-button" title="Open the text of this file">Open as Text</button>
-</div>
-<textarea id="description" class="description" rows="2" spellcheck="false" placeholder="Comment"></textarea>
-<div id="notice" class="notice" hidden></div>
-<div id="tree" class="tree" tabindex="0" role="tree"></div>
-<div id="loading" class="message">Reading the trigger…</div>
-${wtg ? '</div>' : ''}
-<div id="dialog" class="overlay" hidden><form id="dialog-box" class="dialog"></form></div>
-<script nonce="${nonce}" src="${asset('trg.js')}"></script>
-${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
+<script nonce="${nonce}" src="${asset('triggers.js')}"></script>
+<script nonce="${nonce}">
+// This tab's: the editor on its root, the page's API its host.
+const page = TriggerEditor.mount(document.getElementById('trg-root'), acquireVsCodeApi())
+window.addEventListener('message', e => page.receive(e.data))
+</script>
 </body></html>`
     }
 
@@ -2158,6 +2118,10 @@ ${wtg ? `<script nonce="${nonce}" src="${asset('wtg.js')}"></script>` : ''}
             commands.executeCommand('vscode.openWith', file, 'default')
         }),
     )
+    // Another page's place for the same trigger editor (the World
+    // Editor's Triggers panel): `panel` its webview's stand-in
+    // (`postMessage`, `onDidReceiveMessage` ...), the page has the markup.
+    return {host: (document, panel) => editor.resolveCustomTextEditor(document, panel), langs: triggerLangs}
 }
 
 /**
@@ -2216,6 +2180,11 @@ function registerTriggerExtract(context) {
  */
 const languageIcons = new Map()
 /** @param {string} name */
+/** The trigger editor's Show JASS / Lua / AngelScript buttons (`trigger-markup.js`). */
+function triggerLangs() {
+    return SHOWN.map(s => `<button id="show-${s.id}" class="lang-button" data-tip="Show ${s.name}: what this trigger is built into, beside it" aria-label="Show ${s.name}">${languageIcon(s.icon)}</button>`).join('')
+}
+
 function languageIcon(name) {
     if (!languageIcons.has(name)) {
         let svg = ''
@@ -2583,13 +2552,13 @@ module.exports = {
         registerTextures(context)
         registerObjects(context)
         registerSlk(context)
-        registerTrigger(context)
+        const triggers = registerTrigger(context)
         registerPieces(context)
         registerTriggerExtract(context)
         registerTriggerJass(context)
         registerBuild(context, command)
         registerTxt2Preview(context)
-        const worldEditors = registerWorldEditor(context, command, pickManifest)
+        const worldEditors = registerWorldEditor(context, command, pickManifest, triggers)
 
         sendRoots()
         context.subscriptions.push(

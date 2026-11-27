@@ -612,15 +612,18 @@ async function steps(only) {
             await we.panel.webview.postMessage({type: 'mapInfo', action: 'close'})
         }},
         {name: 'trigger-editor', editor: true, run: async () => {
-            log("the map's triggers opened from the World Editor: the trigger editor beside, its tree read")
+            log("the map's triggers in the World Editor's Triggers panel: the trigger editor's own code there, its tree read, a trigger picked")
             const before = new Set(api.triggerEditors.keys())
             await we.panel.webview.postMessage({type: 'button', id: 'triggers-open'})
-            const key = await until(() => [...api.triggerEditors.keys()].find(k => !before.has(k) && /war3map\.wtg/i.test(k)), 'a trigger editor of war3map.wtg')
-            const tree = await until(() => api.triggerEditors.get(key).state().tree, 'its tree', 60000)
-            check(tree.triggers.length > 0, `${tree.triggers.length} triggers in ${tree.categories?.length ?? '?'} categories`)
+            const key = await until(() => [...api.triggerEditors.keys()].find(k => !before.has(k) && /war3map\.wtg/i.test(k)), 'the trigger editor in the panel')
+            const ed = api.triggerEditors.get(key)
+            const tree = await until(() => ed.state().tree, 'its tree', 60000)
+            check(tree.triggers.length > 0, `${tree.triggers.length} triggers in ${tree.categories.length} categories`)
+            await ed.receive({type: 'pick', nth: 2})
+            const picked = await until(() => ed.state().picked === 2 && ed.state().tree?.picked === 2 && ed.state(), 'a trigger picked')
+            check(true, `trigger 2 picked: ${tree.triggers[1].name}`)
             await shot('world-editor-triggers')
-            const tab = vscode.window.tabGroups.all.flatMap(g => g.tabs).find(t => t.input?.viewType?.endsWith('wc3.wtgTriggers'))
-            if (tab) await vscode.window.tabGroups.close(tab)
+            await we.panel.webview.postMessage({type: 'button', id: 'triggers-open'})
         }},
         {name: 'map', editor: true, run: async () => {
             log("the map's settings: its tiles reordered and undone, a tile's pathing and undone, four cells added on the right, saved")

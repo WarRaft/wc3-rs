@@ -18,6 +18,7 @@
 
 const path = require('path')
 const {spawn} = require('child_process')
+const {triggerMarkup, triggerHead} = require('./trigger-markup.js')
 const {window, workspace, commands, Uri, ViewColumn, EventEmitter, TreeItem, TreeItemCollapsibleState, ThemeIcon, ThemeColor, WorkspaceEdit, Range} = require('vscode')
 const {FrameReader} = require('./protocol.js')
 
@@ -110,7 +111,7 @@ function bytesOf(data) {
  * @param {(arg: unknown, title: string) => Promise<string | null>} pickManifest  the `wc3.bni` a command is about
  * @returns {Map<string, Editor>} the editors open, by project folder (for the tests)
  */
-function registerWorldEditor(context, binary, pickManifest) {
+function registerWorldEditor(context, binary, pickManifest, triggers) {
     const media = Uri.joinPath(context.extensionUri, 'webview', 'editor')
     /** @type {Map<string, Editor>} */
     const editors = new Map()
@@ -121,7 +122,8 @@ function registerWorldEditor(context, binary, pickManifest) {
         const nonce = [...Array(32)].map(() => Math.floor(Math.random() * 36).toString(36)).join('')
         const asset = name => webview.asWebviewUri(Uri.joinPath(media, name))
         return `<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; img-src data:; script-src 'nonce-${nonce}'">
+${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extensionUri, 'webview', name))))}
 <link rel="stylesheet" href="${asset('editor.css')}">
 </head><body>
 <div class="bar"><span id="name" class="name">Opening…</span><span id="meta" class="meta"></span><span class="spacer"></span><label class="hours" title="The time of day">Time <input id="hours" type="range" min="0" max="24" step="0.25"> <span id="hours-value"></span></label><span id="toggles" class="toggles"></span><span class="hint">Click: pick (drag it to move, Q/E turn, Delete) · Right drag: move · Ctrl + right drag: turn · Wheel: zoom · WASD · G: grid · Home: all of it</span></div>
@@ -188,6 +190,7 @@ function registerWorldEditor(context, binary, pickManifest) {
 <div id="objects-panel" class="obj-panel" hidden></div>
 <div id="imports-panel" class="obj-panel" hidden></div>
 <div id="info-panel" class="obj-panel info-panel" hidden></div>
+<div id="triggers-panel" class="obj-panel trg-panel" hidden><div id="trg-root" class="trg-root wtg">${triggerMarkup(true, triggers.langs())}</div></div>
 <div id="message" class="message" hidden><h2 id="message-title"></h2><p id="message-text"></p><button id="reopen" hidden>Reopen</button></div>
 </div>
 <ul id="notes" class="notes" hidden></ul>
@@ -200,6 +203,7 @@ function registerWorldEditor(context, binary, pickManifest) {
 <script nonce="${nonce}" src="${asset('thinglists.js')}"></script>
 <script nonce="${nonce}" src="${asset('imports.js')}"></script>
 <script nonce="${nonce}" src="${asset('mapinfo.js')}"></script>
+<script nonce="${nonce}" src="${webview.asWebviewUri(Uri.joinPath(context.extensionUri, 'webview', 'triggers.js'))}"></script>
 <script nonce="${nonce}" src="${asset('terrain.js')}"></script>
 <script nonce="${nonce}" src="${asset('particles.js')}"></script>
 <script nonce="${nonce}" src="${asset('objects.js')}"></script>
@@ -311,7 +315,9 @@ function registerWorldEditor(context, binary, pickManifest) {
         const panel = window.createWebviewPanel('wc3.worldEditor', path.basename(root), ViewColumn.Active, {
             enableScripts: true,
             retainContextWhenHidden: true,
-            localResourceRoots: [media],
+            // The trigger editor's page too (`webview/triggers.js` ...): it's
+            // in this one's Triggers panel.
+            localResourceRoots: [media, Uri.joinPath(context.extensionUri, 'webview')],
         })
         panel.iconPath = new ThemeIcon('globe')
         /** @type {Editor} */
@@ -350,14 +356,47 @@ function registerWorldEditor(context, binary, pickManifest) {
                 editor.camera = msg.camera
             } else if (msg.type === 'openTriggers') {
                 // The map's triggers (war3map.wtg, where its terrain is: in
-                // the map or its folder), in the trigger editor beside.
+                // the map or its folder), in the Triggers panel: the
+                // trigger editor's own code on this page, served by its own
+                // logic (`triggers.host`) through a stand-in of its tab.
+                if (editor.triggers) return
                 const terrain = [...(editor.follow?.values() ?? [])].find(p => /war3map\.w3e$/i.test(p))
                 if (!terrain) {
                     window.showWarningMessage('WC3: the map isn\'t read yet.')
                     return
                 }
                 const wtg = Uri.file(path.join(path.dirname(terrain), 'war3map.wtg')).with({scheme: OBJECTS_SCHEME})
-                commands.executeCommand('vscode.openWith', wtg, 'wc3.wtgTriggers', {viewColumn: ViewColumn.Beside, preview: false})
+                // What the page says before the logic listens (its `ready`) waits.
+                const t = {listeners: new Set(), waiting: [], disposed: new EventEmitter()}
+                editor.triggers = t
+                const stand = {
+                    webview: {
+                        set html(_) {},
+                        set options(_) {},
+                        get cspSource() {
+                            return panel.webview.cspSource
+                        },
+                        asWebviewUri: uri => panel.webview.asWebviewUri(uri),
+                        postMessage: m => panel.webview.postMessage({type: 'trg', msg: m}),
+                        onDidReceiveMessage: f => {
+                            t.listeners.add(f)
+                            for (const m of t.waiting.splice(0)) f(m)
+                            return {dispose: () => t.listeners.delete(f)}
+                        },
+                    },
+                    get viewColumn() {
+                        return panel.viewColumn
+                    },
+                    onDidDispose: t.disposed.event,
+                    dispose: () => t.disposed.fire(),
+                }
+                workspace.openTextDocument(wtg).then(doc => triggers.host(doc, stand), e => window.showErrorMessage(`WC3: can't open the map's triggers: ${e.message ?? e}`))
+            } else if (msg.type === 'trg') {
+                // The Triggers panel's page, for the trigger editor's logic.
+                const t = editor.triggers
+                if (!t) return
+                if (t.listeners.size) for (const f of t.listeners) f(msg.msg)
+                else t.waiting.push(msg.msg)
             } else if (msg.type === 'importPick') {
                 // Files to import, from VS Code's dialog: each at war3mapImported\ and its name.
                 window.showOpenDialog({canSelectMany: true, openLabel: 'Import', title: 'Files to import into the map'}).then(uris => {
@@ -388,6 +427,8 @@ function registerWorldEditor(context, binary, pickManifest) {
             }
         })
         panel.onDidDispose(() => {
+            editor.triggers?.disposed.fire()
+            editor.triggers = null
             if (editor.state?.dirty) window.showWarningMessage(`WC3: the World Editor of ${path.basename(root)} was closed with changes not saved; they're lost.`)
             editors.delete(root)
             stop(editor)
