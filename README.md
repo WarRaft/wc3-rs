@@ -1758,7 +1758,14 @@ step), this list updated.
      brush leaves it. Messages `Place`, `Move`, `Rotate`, `Delete`,
      `Instances`, `ObjectPalette`; `Picked` says the thing's file and
      index. MCP: the `doo_*` tools already place, change and delete in
-     the files.
+     the files. Copy and paste (after the variations): Ctrl+C copies
+     the thing picked (`Copy`: the editor keeps it as it is then, so
+     Ctrl+X, a copy and a delete, doesn't lose it), Ctrl+V lays it
+     anew where the mouse meets the ground (`Paste`: on the ground
+     there; all else as it was, a unit's owner, items, abilities and
+     drops, a doodad's variation and scale; a number no other has; an
+     undo), picked (`Pasted` says its file and index). A start
+     location isn't copied: a player has one.
    - **6c, regions and pathing** (done): the Regions tool (a click
      picks the region drawn last over the point; a drag on the ground
      draws one, `Region 000` ... in a colour of its own; inside the one

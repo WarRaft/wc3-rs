@@ -1117,3 +1117,40 @@ fn the_camera_bounds_set_by_their_sides_within_the_map_and_from_the_playable_are
     s.undo(false);
     assert_eq!(get(&s, "camera.left"), format!("{}", x0 + 6.0 * 128.0));
 }
+
+#[test]
+fn a_thing_copied_pasted_anew_where_the_ray_meets_the_ground_and_cut() {
+    let dir = TestDir::new("session-paste");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    dir.write("map/Doodads/Doodads.slk", &testdir::slk(&[&["doodID", "file", "numVar"], &["LTrc", "Doodads\\Rock", "3"]]));
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let down = [0.0, 0.0, -1.0];
+    let said = |msgs: &[ServerMsg]| msgs.iter().rev().find_map(|m| if let ServerMsg::State(st) = m { Some(st.message.clone()) } else { None }).unwrap();
+    assert_eq!(said(&s.paste([1.0, 0.5, 10.0], down)), "Nothing copied to paste.");
+    s.place(0, "LTrc", 0, [1.0, 0.5, 10.0], down);
+    s.thing_set(0, 0, "variation", 2.0);
+    s.thing_set(0, 0, "scale_z", 2.5);
+    s.place(2, "hfoo", 3, [1.0, 0.5, 10.0], down);
+    s.thing_set_text(1, 0, "abilities", "AHhb:2:0");
+    // A doodad: its variation, scale kept; where the ray meets, a number of its own.
+    assert_eq!(said(&s.copy(0, 0)), "");
+    let msgs = s.paste([2.0, 0.5, 10.0], down);
+    assert!(matches!(msgs.last(), Some(ServerMsg::Pasted { file: 0, index: 1 })), "{msgs:?}");
+    let d = &s.placed.doodads.as_ref().unwrap().doodads;
+    assert_eq!((d.len(), d[1].placement.x, d[1].placement.variation, d[1].placement.scale[2], d[1].number), (2, 128.0, 2, 2.5, 1));
+    // A unit cut (copied, deleted): pasted after, its owner and abilities kept.
+    s.copy(1, 0);
+    s.delete(1, 0);
+    assert!(s.placed.units.as_ref().unwrap().units.is_empty());
+    s.paste([2.0, 0.5, 10.0], down);
+    let u = &s.placed.units.as_ref().unwrap().units;
+    assert_eq!((u.len(), u[0].player, u[0].placement.x, u[0].abilities.len()), (1, 3, 128.0, 1));
+    // An undo each; a start location not copied.
+    s.undo(false);
+    assert!(s.placed.units.as_ref().unwrap().units.is_empty());
+    s.place(2, "sloc", 0, [1.0, 0.5, 10.0], down);
+    assert!(said(&s.copy(1, 0)).contains("start location"));
+    assert!(said(&s.copy(0, 9)).contains("no thing 9"));
+}

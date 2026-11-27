@@ -65,6 +65,9 @@ const EditorProtocol = (() => {
         MAP_NAME_ASK: 48,
         MAP_NAME: 157,
         MAP_FIND: 49,
+        COPY: 50,
+        PASTE: 51,
+        PASTED: 159,
         MAP_FOUND: 158,
         IMPORT_PREVIEW_ANSWER: 154,
         THING: 147,
@@ -348,6 +351,19 @@ const EditorProtocol = (() => {
             w.string(name)
             return w.frame(KIND.MAP_FIND)
         },
+        /** Thing `index` of `file` copied (the editor keeps it). */
+        copy(file, index) {
+            const w = new Writer()
+            w.u8(file)
+            w.u32(index)
+            return w.frame(KIND.COPY)
+        },
+        /** The thing copied placed anew where the ray meets the ground. */
+        paste(origin, dir) {
+            const w = new Writer()
+            for (const v of [...origin, ...dir]) w.f32(v)
+            return w.frame(KIND.PASTE)
+        },
         /** The script's name of what a ray meets (or camera `index`), for a trigger's parameter of `type`. */
         mapName(type, index, origin, dir) {
             const w = new Writer()
@@ -590,6 +606,8 @@ const EditorProtocol = (() => {
             }
             case KIND.OBJECT_ENUMS:
                 return {kind: 'objectEnums', enums: r.list(r => ({ty: r.string(), multi: r.u8() !== 0, values: r.list(r => [r.string(), r.string()])}))}
+            case KIND.PASTED:
+                return {kind: 'pasted', file: r.u8(), index: r.u32()}
             case KIND.MAP_FOUND:
                 return {kind: 'mapFound', name: r.string(), what: r.u8(), file: r.u8(), index: r.u32(), at: [r.f32(), r.f32(), r.f32()], said: r.string()}
             case KIND.MAP_NAME:

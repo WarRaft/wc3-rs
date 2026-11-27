@@ -24,7 +24,7 @@
 //! |------|---------|------|
 //! | 1 | `Hello` | nothing: the page (re)loaded; answered by `Map` or `Error` |
 //! | 2 | `Pick` | a ray from the camera: `f32` origin x, y, z, direction x, y, z (cells, layers); answered by `Picked` |
-//! | 3 | `Brush` | a step of a stroke: `u8` its first, `u8` tool (`edit::TOOLS`), the ray (six `f32`), `f32` size, strength, the texture's tile id (empty for none), `i32` cliff, `u8` pathing flags; answered by what changed (`Ground`, `Cliffs`, `Terrain`) and `State` |
+//! | 3 | `Brush` | a step of a stroke: `u8` its first, `u8` tool (`edit::TOOLS`), the ray (six `f32`), `f32` size, strength, the texture's tile id (empty for none), `i32` cliff, `u8` pathing flags, `i32` variation (-1 at random); answered by what changed (`Ground`, `Cliffs`, `Terrain`) and `State` |
 //! | 4 | `StrokeEnd` | the mouse let go; answered by `State` |
 //! | 5 | `Undo` | answered by what changed and `State` |
 //! | 6 | `Redo` | the same |
@@ -69,6 +69,8 @@
 //! | 47 | `SoundFiles` | nothing; answered by `SoundFiles`: the game's and the map's sound files |
 //! | 48 | `MapName` | the script's name of what's on the map, for a trigger's parameter: its kind (`unit`, `item`, `destructable`, `rect`, `camerasetup`), `i32` a camera's index (-1: by the ray), the ray; answered by `MapName` |
 //! | 49 | `MapFind` | what a name of the map's script is (`gg_unit_hfoo_0012`, `gg_rct_Spawn` ...): the name; answered by `MapFound` |
+//! | 50 | `Copy` | a thing copied (the editor keeps it, so a cut's delete after it doesn't lose it): `u8` file, `u32` index; answered by `State` |
+//! | 51 | `Paste` | the thing copied placed anew where a ray meets the ground: the ray; answered as `Place` is, then `Pasted` |
 //! | 22 | `TilePathing` | the tile pather's: `u8` a tile's index in the terrain's list, `u8` what it forbids (`wpm` flags: 2 walking, 4 flying, 8 building); answered by `Overlays` and `State` |
 //! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id; kind 255: id a texture's path); answered by `Icons` |
 //!
@@ -106,6 +108,7 @@
 //! | 156 | `SoundFiles` | the sound files of the game's and the map's layers (`.wav`, `.mp3`, `.flac`, `.ogg`): a list of names, sorted |
 //! | 157 | `MapName` | its kind, the name (`gg_unit_hfoo_0012`, `gg_rct_Spawn` ...; empty: none), what was picked or why none |
 //! | 158 | `MapFound` | the name, `u8` what it is (0 nothing, 1 a thing placed, 2 a region, 3 a camera), `u8` a thing's file, `u32` its index (or the region's, the camera's), `f32` where (the game's units, x, y, z), what it is in words or why nothing |
+//! | 159 | `Pasted` | the thing a `Paste` made: `u8` file, `u32` index |
 //! | 141 | `Icons` | a list of (`u8` kind, id, `u32` width, height, RGBA; 0 by 0 for none) |
 //!
 //! After an edit the terrain's messages come again: `Cliffs` with no
@@ -182,6 +185,9 @@ mod kind {
     pub const MAP_NAME_ASK: u8 = 48;
     pub const MAP_NAME: u8 = 157;
     pub const MAP_FIND: u8 = 49;
+    pub const COPY: u8 = 50;
+    pub const PASTE: u8 = 51;
+    pub const PASTED: u8 = 159;
     pub const MAP_FOUND: u8 = 158;
     pub const IMPORT_PREVIEW_ANSWER: u8 = 154;
     pub const OBJECT_LIST_ANSWER: u8 = 150;
@@ -278,6 +284,10 @@ pub enum ClientMsg {
     SoundFiles,
     /// Kind 49.
     MapFind { name: String },
+    /// Kind 50.
+    Copy { file: u8, index: u32 },
+    /// Kind 51.
+    Paste { origin: [f32; 3], dir: [f32; 3] },
     /// Kind 48.
     MapName { kind: String, index: i32, origin: [f32; 3], dir: [f32; 3] },
     /// Kind 45.
@@ -595,6 +605,8 @@ pub enum ServerMsg {
     /// Kind 158: the name, what it is (0 nothing, 1 a thing, 2 a region,
     /// 3 a camera), a thing's file, its index, where, said.
     MapFound { name: String, what: u8, file: u8, index: u32, at: [f32; 3], said: String },
+    /// Kind 159: the thing a paste made, its file and index.
+    Pasted { file: u8, index: u32 },
     /// Kind 157.
     MapName { kind: String, name: String, said: String },
     /// Kind 155: each field and its value as text.
@@ -734,6 +746,8 @@ impl ClientMsg {
             kind::CAMERA_SET => Some(ClientMsg::CameraSet { index: r.u32()?, field: r.string()?, value: r.f32()? }),
             kind::SOUND_FILES_ASK => Some(ClientMsg::SoundFiles),
             kind::MAP_FIND => Some(ClientMsg::MapFind { name: r.string()? }),
+            kind::COPY => Some(ClientMsg::Copy { file: r.u8()?, index: r.u32()? }),
+            kind::PASTE => Some(ClientMsg::Paste { origin: [r.f32()?, r.f32()?, r.f32()?], dir: [r.f32()?, r.f32()?, r.f32()?] }),
             kind::MAP_NAME_ASK => Some(ClientMsg::MapName { kind: r.string()?, index: r.u32()? as i32, origin: [r.f32()?, r.f32()?, r.f32()?], dir: [r.f32()?, r.f32()?, r.f32()?] }),
             kind::INFO_ASK => Some(ClientMsg::InfoAsk),
             kind::INFO_SET => Some(ClientMsg::InfoSet { field: r.string()?, value: r.string()? }),
@@ -827,6 +841,15 @@ impl ClientMsg {
                 kind::REGION_DELETE
             }
             ClientMsg::Reload => kind::RELOAD,
+            ClientMsg::Copy { file, index } => {
+                w.u8(*file);
+                w.u32(*index);
+                kind::COPY
+            }
+            ClientMsg::Paste { origin, dir } => {
+                origin.iter().chain(dir).for_each(|v| w.f32(*v));
+                kind::PASTE
+            }
             ClientMsg::Text { path, text } => {
                 w.string(path);
                 w.string(text);
@@ -1182,6 +1205,11 @@ impl ServerMsg {
                     });
                 });
                 kind::OBJECT_ENUMS
+            }
+            ServerMsg::Pasted { file, index } => {
+                w.u8(*file);
+                w.u32(*index);
+                kind::PASTED
             }
             ServerMsg::MapFound { name, what, file, index, at, said } => {
                 w.string(name);
@@ -1548,6 +1576,7 @@ impl ServerMsg {
                 ServerMsg::ObjectFields(ObjectFieldsMsg { kind, id, base, name, levels, fields })
             }
             kind::OBJECT_ENUMS => ServerMsg::ObjectEnums(r.list(|r| Ok((r.string()?, r.u8()? != 0, r.list(|r| Ok((r.string()?, r.string()?)))?)))?),
+            kind::PASTED => ServerMsg::Pasted { file: r.u8()?, index: r.u32()? },
             kind::MAP_FOUND => ServerMsg::MapFound { name: r.string()?, what: r.u8()?, file: r.u8()?, index: r.u32()?, at: [r.f32()?, r.f32()?, r.f32()?], said: r.string()? },
             kind::MAP_NAME => ServerMsg::MapName { kind: r.string()?, name: r.string()?, said: r.string()? },
             kind::SOUND_FILES => ServerMsg::SoundFiles(r.list(|r| r.string())?),

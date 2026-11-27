@@ -206,7 +206,15 @@
             else send(encode.redo())
             return
         }
-        if (mod || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
+        const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement
+        // The thing picked copied or cut, the one copied pasted under the mouse.
+        if (mod && !typing && brush.tool === 'select' && ['KeyC', 'KeyX', 'KeyV'].includes(e.code)) {
+            e.preventDefault()
+            if (e.code === 'KeyV') paste(mouse.x, mouse.y)
+            else if (selected) copy(e.code === 'KeyX')
+            return
+        }
+        if (mod || typing) return
         if (brush.tool === 'regions' && selectedRegion !== null && (e.code === 'Delete' || e.code === 'Backspace')) {
             $('region-delete').onclick()
             return
@@ -616,6 +624,21 @@
         return camera.ray(((x - r.left) / r.width) * 2 - 1, 1 - ((y - r.top) / r.height) * 2, r.width / r.height)
     }
     const mouse = {x: 0, y: 0}
+    /** The thing picked copied (the editor keeps it); `cut`: taken away too. */
+    function copy(cut) {
+        send(encode.copy(selected.file, selected.index))
+        if (!cut) return
+        send(encode.delete(selected.file, selected.index))
+        selected = null
+        objects?.select(-1, -1)
+        $('status').textContent = ''
+    }
+    /** The thing copied pasted where the ray at a point of the page meets the ground (`Pasted` picks it). */
+    function paste(x, y) {
+        if (!terrain?.ready) return
+        const {origin, dir} = rayAt(x, y)
+        send(encode.paste(origin, dir))
+    }
     /** A step of the stroke at the mouse, unless one is still unanswered. */
     function step() {
         if (!stroke || stroke.pending) return
@@ -1490,6 +1513,13 @@
             }
             if (selectedSound !== null && selectedSound >= sounds.length) selectedSound = null
             showSounds()
+        } else if (msg.kind === 'pasted') {
+            // The thing pasted picked.
+            selected = {file: msg.file, index: msg.index}
+            const found = objects?.find(msg.file, msg.index)
+            objects?.select(found ? found.model : -1, found ? found.instance : -1)
+            askThing()
+            vscode.postMessage({type: 'pasted', pasted: {file: msg.file, index: msg.index}})
         } else if (msg.kind === 'mapFound') {
             showFound(msg)
         } else if (msg.kind === 'mapName') {
@@ -1551,6 +1581,14 @@
             const r = canvas.getBoundingClientRect()
             const {origin, dir} = camera.ray(msg.x, msg.y, r.width / r.height)
             send(encode.place(msg.kind, msg.id, msg.player ?? 0, origin, dir))
+        } else if (msg.type === 'copy' && selected) {
+            // The thing picked copied or cut (`cut`): for the tests.
+            copy(!!msg.cut)
+        } else if (msg.type === 'paste') {
+            // The thing copied pasted at a point of the view: for the tests.
+            const r = canvas.getBoundingClientRect()
+            const {origin, dir} = camera.ray(msg.x, msg.y, r.width / r.height)
+            send(encode.paste(origin, dir))
         } else if (msg.type === 'drag') {
             // The thing picked dragged to a point of the view: for the tests.
             if (!selected) return

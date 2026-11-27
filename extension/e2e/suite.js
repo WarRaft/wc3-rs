@@ -373,7 +373,7 @@ async function steps(only) {
             await until(() => we.state, 'undone')
         }},
         {name: 'things', editor: true, run: async () => {
-            log('things placed: a footman placed, picked, turned, dragged, deleted and back, saved into the map')
+            log('things placed: a footman placed, picked, turned, dragged, deleted and back, copied, pasted, cut, saved into the map')
             await we.panel.webview.postMessage({type: 'look', x: 40, y: 40, distance: 12, horizontal: 0, vertical: -1.5})
             await sleep(300)
             we.state = undefined
@@ -449,6 +449,34 @@ async function steps(only) {
             we.state = undefined
             await we.panel.webview.postMessage({type: 'undo'})
             await until(() => we.state?.redo, 'the delete undone')
+            // Copied (Ctrl+C) and pasted (Ctrl+V) beside it: a footman of its own, its
+            // owner, scale, ability and drops as they were, picked; then cut (Ctrl+X) and
+            // pasted again; both undone.
+            await we.panel.webview.postMessage({type: 'select', file: 1, index: at - 1})
+            await until(() => we.thing?.index === at - 1, 'the footman picked again')
+            await we.panel.webview.postMessage({type: 'copy'})
+            we.pasted = undefined
+            we.thing = undefined
+            await we.panel.webview.postMessage({type: 'paste', x: -0.2, y: 0})
+            const pasted = await until(() => we.pasted, 'pasted')
+            const copy = await until(() => we.thing?.index === pasted.index && we.thing, 'the copy picked')
+            const f = new Map(copy.fields)
+            check(pasted.file === 1 && pasted.index === at && f.get('player') === 3 && f.get('scale_x') === 2 && texts().get('abilities') === 'AHhb:1:0' && texts().get('drops') === 'ratc:100',
+                `a copy pasted: #${pasted.index}, ${[...f].filter(([k]) => ['player', 'scale_x', 'x'].includes(k)).map(p => p.join(' ')).join(', ')}`)
+            check(f.get('x') < owned.get('x'), `pasted where the mouse was: x ${owned.get('x').toFixed(0)} → ${f.get('x').toFixed(0)}`)
+            await shot('world-editor-pasted')
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'copy', cut: true})
+            await until(() => we.state?.undo && !we.thing, 'cut')
+            we.pasted = undefined
+            await we.panel.webview.postMessage({type: 'paste', x: 0.3, y: 0})
+            const again = await until(() => we.pasted, 'pasted after the cut')
+            check(again.index === at, `cut and pasted again: #${again.index}`)
+            for (let i = 0; i < 3; i++) {
+                we.state = undefined
+                await we.panel.webview.postMessage({type: 'undo'})
+                await until(() => we.state, 'undone')
+            }
 
             const stamp1 = fs.statSync(map).mtimeMs
             we.state = undefined

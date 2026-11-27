@@ -237,6 +237,8 @@ impl Editor {
                     ClientMsg::SoundDelete { index } => s.sound_delete(index),
                     ClientMsg::SoundPlay { file } => vec![s.sound_data(&file)],
                     ClientMsg::MapFind { name } => vec![s.map_find(&name)],
+                    ClientMsg::Copy { file, index } => s.copy(file, index),
+                    ClientMsg::Paste { origin, dir } => s.paste(origin, dir),
                     ClientMsg::MapName { kind, index, origin, dir } => vec![s.map_name(&kind, index, origin, dir)],
                     ClientMsg::SoundFiles => vec![ServerMsg::SoundFiles(s.sound_files())],
                     ClientMsg::InfoAsk => vec![s.info_msg()],

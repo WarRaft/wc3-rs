@@ -68,9 +68,22 @@ pub struct Session {
     /// Whether the page has the object editor's field types' values
     /// (`ObjectEnums`), since it (re)loaded.
     enums_sent: bool,
+    /// The thing copied (`Copy`), as it was then, for `Paste`.
+    clipboard: Option<Copied>,
     /// The game's tables the object editor reads, once asked.
     object_tables: crate::objdata::Tables,
 }
+
+/// A thing copied: a doodad or destructable (`war3map.doo`), a unit or
+/// item (`war3mapUnits.doo`).
+#[derive(Debug, Clone)]
+enum Copied {
+    Doodad(doo_rs::Doodad),
+    Unit(doo_rs::Unit),
+}
+
+/// A player's start location's type.
+const START_LOCATION: parser_rs::bin::Rawcode = parser_rs::bin::Rawcode(*b"sloc");
 
 impl Session {
     /// Opens the map of the project at `root`. The error says why it
@@ -150,6 +163,7 @@ impl Session {
             notes,
             object_tables: Default::default(),
             enums_sent: false,
+            clipboard: None,
         })
     }
 
@@ -2662,6 +2676,56 @@ impl Session {
             }
             Ok(())
         })
+    }
+
+    /// Thing `index` of `file` copied, as it is now (a cut deletes it
+    /// after), for [`paste`](Self::paste). Not a start location: a
+    /// player has one.
+    pub fn copy(&mut self, file: u8, index: u32) -> Vec<ServerMsg> {
+        let copied = match file {
+            0 => self.placed.doodads.as_ref().and_then(|d| d.doodads.get(index as usize)).cloned().map(Copied::Doodad),
+            _ => self.placed.units.as_ref().and_then(|u| u.units.get(index as usize)).cloned().map(Copied::Unit),
+        };
+        let message = match copied {
+            None => format!("no thing {index} to copy"),
+            Some(Copied::Unit(u)) if u.placement.id == START_LOCATION => "A start location isn't copied: a player has one.".to_string(),
+            Some(c) => {
+                self.clipboard = Some(c);
+                String::new()
+            }
+        };
+        vec![ServerMsg::State(self.state(message))]
+    }
+
+    /// The thing copied placed anew where the ray meets the ground (on it:
+    /// its height there), all else as it was (a unit's items, abilities,
+    /// drops ...), a number no other has; then `Pasted`, which it is.
+    pub fn paste(&mut self, origin: [f32; 3], dir: [f32; 3]) -> Vec<ServerMsg> {
+        let Some(copied) = self.clipboard.clone() else { return vec![ServerMsg::State(self.state("Nothing copied to paste.".into()))] };
+        let Some([x, y, z]) = self.ground_point(origin, dir) else { return vec![ServerMsg::State(self.state(String::new()))] };
+        let file = if matches!(copied, Copied::Doodad(_)) { 0 } else { 1 };
+        let mut index = 0;
+        let mut out = self.things_edit(file, |files| {
+            match copied {
+                Copied::Doodad(mut d) => {
+                    let list = &mut files.doodads.as_mut().unwrap().doodads;
+                    (d.placement.x, d.placement.y, d.placement.z) = (x, y, z);
+                    d.number = list.iter().map(|d| d.number).max().unwrap_or(-1) + 1;
+                    list.push(d);
+                    index = list.len() - 1;
+                }
+                Copied::Unit(mut u) => {
+                    let list = &mut files.units.as_mut().unwrap().units;
+                    (u.placement.x, u.placement.y, u.placement.z) = (x, y, z);
+                    u.number = list.iter().map(|u| u.number).max().unwrap_or(-1) + 1;
+                    list.push(u);
+                    index = list.len() - 1;
+                }
+            }
+            Ok(())
+        });
+        out.push(ServerMsg::Pasted { file, index: index as u32 });
+        out
     }
 
     /// Thing `index` of `file` moved to where the ray meets the ground;
