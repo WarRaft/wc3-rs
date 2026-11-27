@@ -126,7 +126,7 @@ fn a_real_map_draws_with_its_textures() {
 
 /// A brush where a ray from above meets the ground, at (1, 0.5).
 fn raise(s: &mut Session, start: bool) -> Vec<ServerMsg> {
-    let brush = crate::edit::Brush { tool: crate::edit::Tool::Raise, size: 4.0, strength: 1.0, texture: None, cliff: -1, flags: 0, variation: -1 };
+    let brush = crate::edit::Brush { tool: crate::edit::Tool::Raise, size: 4.0, strength: 1.0, texture: None, cliff: -1, flags: 0, variation: -1, square: false };
     s.brush([1.0, 0.5, 10.0], [0.0, 0.0, -1.0], &brush, start)
 }
 
@@ -245,7 +245,7 @@ fn regions_drawn_moved_resized_renamed_deleted_and_pathing_painted() {
     assert_eq!(picked.region, Some(0));
     assert!(picked.text.contains("in Spawn"), "{}", picked.text);
     // Pathing: no building painted where the brush is.
-    let brush = crate::edit::Brush { tool: crate::edit::Tool::PathingOn, size: 1.0, strength: 0.0, texture: None, cliff: -1, flags: 8, variation: -1 };
+    let brush = crate::edit::Brush { tool: crate::edit::Tool::PathingOn, size: 1.0, strength: 0.0, texture: None, cliff: -1, flags: 8, variation: -1, square: false };
     let msgs = s.brush([1.0, 0.5, 9.0], down, &brush, true);
     assert!(matches!(&msgs[..], [ServerMsg::Overlays(o), ServerMsg::State(st)] if o.pathing.data.contains(&8) && st.dirty));
     s.stroke_end();
@@ -269,11 +269,11 @@ fn the_pathing_made_again_on_save_with_the_paint_over_it() {
     s.draw();
     let down = [0.0, 0.0, -1.0];
     // Painted: no walking around (1, 0.5) cells.
-    let paint = crate::edit::Brush { tool: crate::edit::Tool::PathingOn, size: 0.5, strength: 0.0, texture: None, cliff: -1, flags: wpm_rs::NO_WALK, variation: -1 };
+    let paint = crate::edit::Brush { tool: crate::edit::Tool::PathingOn, size: 0.5, strength: 0.0, texture: None, cliff: -1, flags: wpm_rs::NO_WALK, variation: -1, square: false };
     // The map had no war3map.wpm: a brush has nothing to paint until a
     // save made one.
     assert!(matches!(s.brush([1.0, 0.5, 9.0], down, &paint, true).last(), Some(ServerMsg::State(st)) if st.message.contains("no war3map.wpm")));
-    let raise = crate::edit::Brush { tool: crate::edit::Tool::Raise, size: 2.0, strength: 0.1, texture: None, cliff: -1, flags: 0, variation: -1 };
+    let raise = crate::edit::Brush { tool: crate::edit::Tool::Raise, size: 2.0, strength: 0.1, texture: None, cliff: -1, flags: 0, variation: -1, square: false };
     s.brush([1.0, 0.5, 9.0], down, &raise, true);
     s.stroke_end();
     s.save();

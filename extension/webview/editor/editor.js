@@ -310,6 +310,7 @@
         {tool: 'lower', label: 'Lower'},
         {tool: 'plateau', label: 'Plateau'},
         {tool: 'smooth', label: 'Smooth'},
+        {tool: 'noise', label: 'Noise'},
         {tool: 'texture', label: 'Texture'},
         {tool: 'cliffUp', label: 'Cliff +'},
         {tool: 'cliffDown', label: 'Cliff −'},
@@ -361,6 +362,8 @@
         // (Not before the page's state is all declared: its first showing.)
         if (usedByReady) refreshUsedBy()
         $('size-label').hidden = NO_BRUSH.includes(brush.tool)
+        $('shape-label').hidden = NO_BRUSH.includes(brush.tool)
+        $('shape').value = brush.square ? 'square' : 'circle'
         $('strength-label').hidden = NO_BRUSH.includes(brush.tool) || pathing || ['ramp', 'cliffUp', 'cliffDown', 'shallowWater', 'deepWater', 'blight', 'boundaryOn', 'boundaryOff'].includes(brush.tool)
         for (const c of $('pathing-flags').querySelectorAll('input')) c.checked = (brush.flags & Number(c.value)) !== 0
         // A tool of a layer shows the layer.
@@ -388,6 +391,12 @@
         $('tool-buttons').append(b)
     }
     $('size').value = brush.size
+    // World Editor's brush shape: a circle or a square.
+    $('shape').onchange = () => {
+        brush.square = $('shape').value === 'square'
+        keep()
+        showTools()
+    }
     $('size').oninput = () => {
         brush.size = Number($('size').value)
         keep()
@@ -676,7 +685,8 @@
         if (!NO_BRUSH.includes(brush.tool) && terrain?.ready) {
             const {origin, dir} = rayAt(e.clientX, e.clientY)
             const p = terrain.groundHit(origin, dir)
-            terrain.brush = p ? [p[0], p[1], brush.size / 2] : [0, 0, 0]
+            // A square's: its half size, negative.
+            terrain.brush = p ? [p[0], p[1], (brush.square ? -1 : 1) * brush.size / 2] : [0, 0, 0]
         }
     })
     setInterval(step, 50)

@@ -139,6 +139,7 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
 <div class="stage"><canvas id="view"></canvas><canvas id="minimap" class="minimap" hidden></canvas><div id="pick-box" class="pick-box" hidden></div>
 <div id="tools" class="tools">
   <div id="tool-buttons" class="tool-buttons"></div>
+  <label id="shape-label">Shape <select id="shape"><option value="circle">Circle</option><option value="square">Square</option></select></label>
   <label id="size-label">Size <span id="size-value"></span><input id="size" type="range" min="1" max="32" step="1"></label>
   <label id="strength-label">Strength <span id="strength-value"></span><input id="strength" type="range" min="0.05" max="1" step="0.05"></label>
   <div id="textures" class="textures" hidden></div>

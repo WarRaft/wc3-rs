@@ -97,7 +97,7 @@ const EditorProtocol = (() => {
     }
 
     /** The tools by their code (`edit::TOOLS`). */
-    const TOOLS = ['raise', 'lower', 'plateau', 'smooth', 'texture', 'cliffUp', 'cliffDown', 'water', 'dry', 'pathingOn', 'pathingOff', 'ramp', 'shallowWater', 'deepWater', 'blight', 'boundaryOn', 'boundaryOff']
+    const TOOLS = ['raise', 'lower', 'plateau', 'smooth', 'texture', 'cliffUp', 'cliffDown', 'water', 'dry', 'pathingOn', 'pathingOff', 'ramp', 'shallowWater', 'deepWater', 'blight', 'boundaryOn', 'boundaryOff', 'noise']
 
     const utf8 = new TextDecoder()
     const utf8Out = new TextEncoder()
@@ -229,7 +229,7 @@ const EditorProtocol = (() => {
             for (const v of [...origin, ...dir]) w.f32(v)
             return w.frame(KIND.PICK)
         },
-        /** A step of a stroke: `brush` {tool, size, strength, texture, cliff, flags, variation (-1 at random)}. */
+        /** A step of a stroke: `brush` {tool, size, strength, texture, cliff, flags, variation (-1 at random), square}. */
         brush(start, origin, dir, brush) {
             const w = new Writer()
             w.u8(start ? 1 : 0)
@@ -239,6 +239,7 @@ const EditorProtocol = (() => {
             w.u32(brush.cliff ?? -1)
             w.u8(brush.flags ?? 0)
             w.u32(brush.variation ?? -1)
+            w.u8(brush.square ? 1 : 0)
             return w.frame(KIND.BRUSH)
         },
         strokeEnd: () => new Writer().frame(KIND.STROKE_END),

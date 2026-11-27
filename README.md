@@ -1764,7 +1764,12 @@ step), this list updated.
      them again; or a number: the ground's 0-17, the cliff's 0-7 on
      the corners under the brush and around (a cliff's piece has its
      cell's bottom left corner's; the game's highest below it when a
-     shape has fewer). The tests' `brush`
+     shape has fewer). Noise (World Editor's Apply Height Noise, after
+     the object data's export): each corner up or down at random, as
+     far as the strength's step at most (the falloff's). The brush's
+     shape (World Editor's Circle and Square): a square `size` across
+     (`Brush::distance`: the larger of the two), for every tool, the
+     ring drawn square (its half size negative). The tests' `brush`
      message takes `cells` (from above) for exact places, `corner` asks
      a corner of the terrain (its height, water, wet, blight, boundary);
      the `cliffs` report counts the pieces by variation.

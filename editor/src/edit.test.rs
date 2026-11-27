@@ -10,7 +10,7 @@ fn flat(n: u32) -> Terrain {
 }
 
 fn brush(tool: Tool) -> Brush {
-    Brush { tool, size: 4.0, strength: 1.0, texture: None, cliff: -1, flags: 0, variation: -1 }
+    Brush { tool, size: 4.0, strength: 1.0, texture: None, cliff: -1, flags: 0, variation: -1, square: false }
 }
 
 #[test]
@@ -259,4 +259,23 @@ fn variations_at_random_as_world_editors_or_the_brushs_own() {
     e.apply(&mut t, 10.0, 10.0, &Brush { size: 12.0, variation: 5, ..brush(Tool::CliffUp) }, true).unwrap();
     assert!(all(&t, 7..14, Point::cliff_variation).iter().all(|&n| n == 5));
     assert_eq!((t.point(17, 10).unwrap().cliff_variation(), t.point(19, 10).unwrap().cliff_variation()), (5, 0));
+}
+
+#[test]
+fn noise_up_and_down_at_random_and_a_square_brush_to_its_corners() {
+    let mut t = flat(21);
+    let mut e = Edits::default();
+    e.apply(&mut t, 10.0, 10.0, &Brush { size: 10.0, ..brush(Tool::Noise) }, true).unwrap();
+    let h: Vec<i32> = (5..16).flat_map(|y| (5..16).map(move |x| (x, y))).map(|(x, y)| t.point(x, y).unwrap().height as i32 - 0x2000).collect();
+    assert!(h.iter().any(|&d| d > 0) && h.iter().any(|&d| d < 0) && h.iter().all(|&d| d.abs() <= 512), "{h:?}");
+    assert_eq!(t.point(0, 0).unwrap().height, 0x2000, "out of the brush");
+    e.end();
+    // A square of 6: its corner (3, 3) from the middle in, a circle's out.
+    let mut t = flat(21);
+    e.apply(&mut t, 10.0, 10.0, &Brush { size: 6.0, square: true, ..brush(Tool::Raise) }, true).unwrap();
+    assert!(t.point(12, 12).unwrap().height > 0x2000);
+    let mut t = flat(21);
+    e.apply(&mut t, 10.0, 10.0, &Brush { size: 6.0, ..brush(Tool::Raise) }, true).unwrap();
+    assert_eq!(t.point(13, 13).unwrap().height, 0x2000);
+    assert_eq!(Brush { square: true, ..brush(Tool::Raise) }.distance(3.0, -2.0), 3.0);
 }

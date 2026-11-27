@@ -134,9 +134,11 @@ void main() {
     color.rgb *= shadowed(v_pos);
     color.rgb *= 1.0 - 0.55 * v_boundary;
     color.rgb = overlays(color.rgb, v_pos);
-    // The brush: a ring where it would be laid.
-    if (u_brush.z > 0.0) {
-        float d = abs(length(v_pos - u_brush.xy) - u_brush.z) / fwidth(length(v_pos - u_brush.xy));
+    // The brush: a ring where it would be laid (a square's, its half size negative).
+    if (u_brush.z != 0.0) {
+        vec2 off = v_pos - u_brush.xy;
+        float dist = u_brush.z > 0.0 ? length(off) : max(abs(off.x), abs(off.y));
+        float d = abs(dist - abs(u_brush.z)) / fwidth(dist);
         color.rgb = mix(color.rgb, vec3(0.2, 1.0, 0.4), (1.0 - clamp(d - 0.5, 0.0, 1.0)) * 0.9);
     }
     if (u_grid) {
@@ -364,7 +366,7 @@ void main() {
             this.light = null
             this.hours = 12
             this.eye = [0, 0, 0]
-            /** The brush's ring: x, y, radius (cells); radius 0 none. */
+            /** The brush's ring: x, y, radius (cells; a square's half size, negative); 0 none. */
             this.brush = [0, 0, 0]
             this.vao = gl.createVertexArray()
             this.terrain = null

@@ -326,6 +326,33 @@ async function steps(only) {
                 bounded.push([await cornerAt(44, 69), await cornerAt(45, 70), await cornerAt(46, 70)].map(c => c.boundary))
             }
             check(bounded[0].join() === 'true,true,false' && bounded[1].join() === 'false,false,false', `a boundary on the cells under the brush, then off: ${JSON.stringify(bounded)}`)
+            // Noise: the corners under it up and down at random. A square brush reaches its
+            // corners (3, 3 from the middle of one 8 across), a circle's doesn't.
+            // (One at a time: the answer comes back in one place.)
+            const heights = async (xs, y) => {
+                const out = []
+                for (const x of xs) out.push((await cornerAt(x, y)).height)
+                return out
+            }
+            const quiet = await heights([38, 39, 40, 41, 42], 85)
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'brush', brush: {tool: 'noise', size: 8, strength: 1}, cells: [[40, 85]]})
+            await until(() => we.state?.undo, 'noise')
+            await sleep(300)
+            const noisy = await heights([38, 39, 40, 41, 42], 85)
+            const moved = noisy.map((h, i) => h - quiet[i])
+            check(moved.some(d => d > 0.001) && moved.some(d => d < -0.001), `noise: ${moved.map(d => d.toFixed(2)).join(" ")} layers`)
+            const reach = []
+            for (const [square, y] of [[true, 95], [false, 105]]) {
+                const [was] = await heights([33], y + 3)
+                we.state = undefined
+                await we.panel.webview.postMessage({type: 'brush', brush: {tool: 'raise', size: 8, strength: 1, square}, cells: [[30, y]]})
+                await until(() => we.state?.undo, square ? 'a square' : 'a circle')
+                await sleep(300)
+                reach.push((await heights([33], y + 3))[0] - was)
+            }
+            check(reach[0] > 0.05 && Math.abs(reach[1]) < 0.001, `a square brush to its corner: ${reach[0].toFixed(2)} layers; a circle's: ${reach[1].toFixed(2)}`)
+            await we.panel.webview.postMessage({type: 'brush', brush: {square: false, strength: 0.25}, cells: []})
             // A cliff raised with the brush's own variation on the flat ground south of
             // the cut: 2 (more pieces of 2; a shape without a model of 2 the game's
             // highest below it), then, undone, 0 (more of 0 alone; those it took the place of fewer).

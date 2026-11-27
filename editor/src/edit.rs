@@ -54,10 +54,13 @@ pub enum Tool {
     /// `add_boundary`, `remove_boundary`, a cell brush).
     BoundaryOn,
     BoundaryOff,
+    /// World Editor's Apply Height Noise: each point up or down at random,
+    /// `strength` layers at most in the middle (the falloff's).
+    Noise,
 }
 
 /// The tools by their code on the wire.
-pub const TOOLS: [Tool; 17] = [
+pub const TOOLS: [Tool; 18] = [
     Tool::Raise,
     Tool::Lower,
     Tool::Plateau,
@@ -75,6 +78,7 @@ pub const TOOLS: [Tool; 17] = [
     Tool::Blight,
     Tool::BoundaryOn,
     Tool::BoundaryOff,
+    Tool::Noise,
 ];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -94,6 +98,16 @@ pub struct Brush {
     /// Texture: the ground variation (0-17); Cliff, water: the cliff
     /// variation (0-7); -1 at random, as World Editor's.
     pub variation: i32,
+    /// World Editor's brush shape: a square (`size` across), else a circle.
+    pub square: bool,
+}
+
+impl Brush {
+    /// How far `(dx, dy)` is from the brush's middle, by its shape: a
+    /// circle's distance, a square's larger of the two.
+    pub fn distance(&self, dx: f32, dy: f32) -> f32 {
+        if self.square { dx.abs().max(dy.abs()) } else { (dx * dx + dy * dy).sqrt() }
+    }
 }
 
 /// A stroke going on.
@@ -262,7 +276,7 @@ impl Edits {
             // The cells whose middle is under the brush.
             for py in y0..h - 1 {
                 for px in x0..w - 1 {
-                    if py > y1 || px > x1 || ((px as f32 + 0.5 - x).powi(2) + (py as f32 + 0.5 - y).powi(2)).sqrt() > r {
+                    if py > y1 || px > x1 || brush.distance(px as f32 + 0.5 - x, py as f32 + 0.5 - y) > r {
                         continue;
                     }
                     t.points[at(px, py)].set_boundary(v, brush.tool == Tool::BoundaryOn);
@@ -276,7 +290,7 @@ impl Edits {
             // brush's middle.
             for py in y0..=y1 {
                 for px in x0..=x1 {
-                    if ((px as f32 - x).powi(2) + (py as f32 - y).powi(2)).sqrt() > r {
+                    if brush.distance(px as f32 - x, py as f32 - y) > r {
                         continue;
                     }
                     let sign = |d: f32| if d > 0.0 { 1 } else if d < 0.0 { -1 } else { 0 };
@@ -288,7 +302,7 @@ impl Edits {
         }
         for py in y0..=y1 {
             for px in x0..=x1 {
-                let d = ((px as f32 - x).powi(2) + (py as f32 - y).powi(2)).sqrt();
+                let d = brush.distance(px as f32 - x, py as f32 - y);
                 if d > r {
                     continue;
                 }
@@ -299,6 +313,11 @@ impl Edits {
                 match brush.tool {
                     Tool::Raise => p.height = (p.height as i32 + step).clamp(0, 0xFFFF) as u16,
                     Tool::Lower => p.height = (p.height as i32 - step).clamp(0, 0xFFFF) as u16,
+                    Tool::Noise => {
+                        // Up or down at random, as far as the step at most.
+                        let n = self.roll(2 * step.max(0) as u32 + 1) as i32 - step.max(0);
+                        p.height = (p.height as i32 + n).clamp(0, 0xFFFF) as u16;
+                    }
                     Tool::Plateau => p.height = start_value.clamp(0, 0xFFFF) as u16,
                     Tool::Smooth => {
                         let mut sum = 0i64;
@@ -438,7 +457,7 @@ impl Edits {
         let (w, h) = (p.width as i64, p.height as i64);
         for py in ((cy - r).floor() as i64).max(0)..=((cy + r).ceil() as i64).min(h - 1) {
             for px in ((cx - r).floor() as i64).max(0)..=((cx + r).ceil() as i64).min(w - 1) {
-                if ((px as f32 + 0.5 - cx).powi(2) + (py as f32 + 0.5 - cy).powi(2)).sqrt() > r {
+                if brush.distance(px as f32 + 0.5 - cx, py as f32 + 0.5 - cy) > r {
                     continue;
                 }
                 let c = &mut p.cells[(py * w + px) as usize];

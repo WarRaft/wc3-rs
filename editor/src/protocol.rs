@@ -24,7 +24,7 @@
 //! |------|---------|------|
 //! | 1 | `Hello` | nothing: the page (re)loaded; answered by `Map` or `Error` |
 //! | 2 | `Pick` | a ray from the camera: `f32` origin x, y, z, direction x, y, z (cells, layers); answered by `Picked` |
-//! | 3 | `Brush` | a step of a stroke: `u8` its first, `u8` tool (`edit::TOOLS`), the ray (six `f32`), `f32` size, strength, the texture's tile id (empty for none), `i32` cliff, `u8` pathing flags, `i32` variation (-1 at random); answered by what changed (`Ground`, `Cliffs`, `Terrain`) and `State` |
+//! | 3 | `Brush` | a step of a stroke: `u8` its first, `u8` tool (`edit::TOOLS`), the ray (six `f32`), `f32` size, strength, the texture's tile id (empty for none), `i32` cliff, `u8` pathing flags, `i32` variation (-1 at random), `u8` a square (else a circle); answered by what changed (`Ground`, `Cliffs`, `Terrain`) and `State` |
 //! | 4 | `StrokeEnd` | the mouse let go; answered by `State` |
 //! | 5 | `Undo` | answered by what changed and `State` |
 //! | 6 | `Redo` | the same |
@@ -729,8 +729,9 @@ impl ClientMsg {
                 let cliff = r.u32()? as i32;
                 let flags = r.u8()?;
                 let variation = r.u32()? as i32;
+                let square = r.u8()? != 0;
                 let texture = parser_rs::bin::Rawcode::parse(&texture);
-                Some(ClientMsg::Brush { start, origin, dir, brush: crate::edit::Brush { tool, size, strength, texture, cliff, flags, variation } })
+                Some(ClientMsg::Brush { start, origin, dir, brush: crate::edit::Brush { tool, size, strength, texture, cliff, flags, variation, square } })
             }
             kind::STROKE_END => Some(ClientMsg::StrokeEnd),
             kind::UNDO => Some(ClientMsg::Undo),
@@ -845,6 +846,7 @@ impl ClientMsg {
                 w.u32(brush.cliff as u32);
                 w.u8(brush.flags);
                 w.u32(brush.variation as u32);
+                w.u8(brush.square as u8);
                 kind::BRUSH
             }
             ClientMsg::StrokeEnd => kind::STROKE_END,
