@@ -270,6 +270,11 @@ pub struct Files {
     /// The map's strings (`war3map.wts`): its text (without a byte order
     /// mark) and whether it had one.
     pub strings: Option<(String, bool)>,
+    /// The imported files' list (`war3map.imp`).
+    pub imports: Option<imp_rs::Imports>,
+    /// Imported files to write into the map on save (by their path in
+    /// it), or to take out of it (`None`).
+    pub import_files: std::collections::BTreeMap<String, Option<Vec<u8>>>,
     /// The layout the map's `war3map.w3i` says (1.32's skins), for new
     /// files.
     pub layout: doo_rs::Layout,
@@ -346,7 +351,14 @@ impl Files {
             let (src, bom) = wts_rs::split_bom(&text);
             (src.to_string(), bom)
         });
-        let files = Files { doodads, units, regions, pathing, cameras, sounds, objects, strings, layout: layout.unwrap_or_default() };
+        let imports = game.read("war3map.imp").and_then(|(b, _)| match imp_rs::parse(&b) {
+            Ok(i) => Some(i),
+            Err(e) => {
+                notes.push(format!("Can't read war3map.imp: {e}"));
+                None
+            }
+        });
+        let files = Files { doodads, units, regions, pathing, cameras, sounds, objects, strings, imports, import_files: Default::default(), layout: layout.unwrap_or_default() };
         (files, notes)
     }
 }

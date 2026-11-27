@@ -982,6 +982,7 @@ version = "0.1.0"
 dependencies = [
  "bni-rs",
  "doo-rs",
+ "imp-rs",
  "mdx-rs",
  "notify",
  "parser-rs",

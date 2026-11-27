@@ -89,6 +89,8 @@ pub enum Snapshot {
     Objects(w3abdhqtu_rs::Kind, Option<w3abdhqtu_rs::ObjectData>),
     /// The map's strings' text, whole (`placed::Files::strings`).
     Strings(Option<(String, bool)>),
+    /// The imported files' list and the files to write or take out.
+    Imports(Option<imp_rs::Imports>, std::collections::BTreeMap<String, Option<Vec<u8>>>),
     /// Several, undone as one (an object pasted and the strings it
     /// copied).
     Many(Vec<Snapshot>),
@@ -113,6 +115,8 @@ pub struct Dirty {
     pub objects: u8,
     /// `war3map.wts`.
     pub strings: bool,
+    /// `war3map.imp` and the imported files.
+    pub imports: bool,
     /// `war3map.w3i` (its playable area, its tileset) and `war3map.shd`.
     pub info: bool,
     pub shadows: bool,
@@ -120,7 +124,7 @@ pub struct Dirty {
 
 impl Dirty {
     pub fn any(self) -> bool {
-        self.terrain || self.doodads || self.units || self.regions || self.pathing || self.cameras || self.sounds || self.objects != 0 || self.strings || self.info || self.shadows
+        self.terrain || self.doodads || self.units || self.regions || self.pathing || self.cameras || self.sounds || self.objects != 0 || self.strings || self.imports || self.info || self.shadows
     }
 }
 
@@ -264,6 +268,7 @@ impl Edits {
             Snapshot::Sounds(_) => self.dirty.sounds = true,
             Snapshot::Objects(kind, _) => self.dirty.objects |= crate::objdata::bit(*kind),
             Snapshot::Strings(_) => self.dirty.strings = true,
+            Snapshot::Imports(..) => self.dirty.imports = true,
             Snapshot::Pathing(_) => self.dirty.pathing = true,
             Snapshot::Many(all) => all.iter().for_each(|s| self.mark(s)),
         }
@@ -381,6 +386,10 @@ impl Edits {
                 let mut back: Vec<Snapshot> = all.into_iter().rev().map(|s| self.swap(s, Target { terrain: &mut *t.terrain, files: &mut *t.files })).collect();
                 back.reverse();
                 Snapshot::Many(back)
+            }
+            Snapshot::Imports(list, files) => {
+                self.dirty.imports = true;
+                Snapshot::Imports(std::mem::replace(&mut t.files.imports, list), std::mem::replace(&mut t.files.import_files, files))
             }
             Snapshot::Strings(text) => {
                 self.dirty.strings = true;

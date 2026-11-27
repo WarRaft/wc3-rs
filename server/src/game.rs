@@ -278,8 +278,8 @@ impl Game {
         self.1
     }
 
-    /// Where `name` comes from: the topmost layer that has it.
-    #[cfg(test)]
+    /// Where `name` comes from: the topmost layer that has it (without
+    /// reading it).
     pub fn find(&self, name: &str) -> Option<Source> {
         self.0.find(name)
     }

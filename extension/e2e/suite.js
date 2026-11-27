@@ -13,7 +13,7 @@ const path = require('path')
  * The steps of the work in hand (`node e2e/run.js current`): moved on as
  * the work does; `all` runs every step.
  */
-const CURRENT = ['things']
+const CURRENT = ['imports']
 
 const out = process.env.E2E_OUT
 const map = process.env.E2E_MAP
@@ -506,6 +506,36 @@ async function steps(only) {
             const saved = await until(() => we.state?.message && we.state, 'saved')
             check(!saved.dirty && ['war3map.w3u', 'war3map.w3a', 'war3map.wts'].every(f => saved.message.includes(f)), saved.message)
             await we.panel.webview.postMessage({type: 'object', action: 'close'})
+        }},
+        {name: 'imports', editor: true, run: async () => {
+            log("the import manager: the map's imported files, a texture looked at; a file from disk imported, moved, another deleted and back; saved")
+            await we.panel.webview.postMessage({type: 'import', action: 'open'})
+            const listed = await until(() => we.imports?.files.length && we.imports, 'the imports listed')
+            const at = listed.files.findIndex(f => /\.blp$/i.test(f[0]) && f[1])
+            check(at >= 0, `${listed.files.length} imported files, ${listed.files.filter(f => !f[1]).length} the map hasn't`)
+            await we.panel.webview.postMessage({type: 'import', action: 'pick', index: at})
+            const seen = await until(() => we.imports?.preview?.path === listed.files[at][0] && we.imports.preview, 'a texture looked at')
+            check(seen.what === 1 && seen.width > 0 && !seen.error, `${seen.path}: ${seen.size} bytes, ${seen.width} wide`)
+            await shot('world-editor-imports')
+            const count = listed.files.length
+            const source = path.join(root, 'triggers', 'Setup.j')
+            await we.panel.webview.postMessage({type: 'import', action: 'add', source})
+            await until(() => we.imports?.files.length === count + 1, 'imported')
+            check(we.imports.files[count][0] === 'war3mapImported\\Setup.j' && we.imports.files[count][2], `imported: ${we.imports.files[count][0]}, to be written`)
+            await we.panel.webview.postMessage({type: 'import', action: 'pick', index: count})
+            await until(() => we.imports?.picked === count, 'picked')
+            await we.panel.webview.postMessage({type: 'import', action: 'move', path: 'Scripts\\Setup.j'})
+            await until(() => we.imports?.files[count]?.[0] === 'Scripts\\Setup.j', 'moved')
+            await we.panel.webview.postMessage({type: 'import', action: 'pick', index: 0})
+            await we.panel.webview.postMessage({type: 'import', action: 'delete'})
+            await until(() => we.imports?.files.length === count, 'deleted')
+            await we.panel.webview.postMessage({type: 'undo'})
+            await until(() => we.imports?.files.length === count + 1, 'undone: back')
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'save'})
+            const saved = await until(() => we.state?.message && we.state, 'saved')
+            check(!saved.dirty && saved.message.includes('war3map.imp') && saved.message.includes('Scripts\\Setup.j'), saved.message)
+            await we.panel.webview.postMessage({type: 'import', action: 'close'})
         }},
         {name: 'map', editor: true, run: async () => {
             log("the map's settings: its tiles reordered and undone, a tile's pathing and undone, four cells added on the right, saved")

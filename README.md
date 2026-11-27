@@ -1824,6 +1824,24 @@ step), this list updated.
      `AudioContext`); Delete. An undo each. Messages `SoundNew`,
      `SoundSet`, `SoundDelete`, `SoundPlay`, `Sounds`, `SoundData`. MCP:
      the `w3s_*` tools already change the file.
+   - **6i, the import manager** (done after 6h): `war3map.imp` a piece
+     of the session (read, taken in when changed on disk, its text form
+     in step), with the files to write into the map on save or take out
+     of it (`placed::Files::import_files`), undone with the list
+     (`Snapshot::Imports`). The page's Imports… panel (`imports.js`): the
+     imported files, each its path in the map (`imp_rs::Import::
+     path_in_map`), whether the map has it (! when not), whether it's to
+     be written on save (•); typed: the file moved there on save (the flags
+     a custom path's unless it's `war3mapImported\` and a name); Add…
+     (VS Code's dialog, files from disk at `war3mapImported\` and their
+     names), Delete; the one picked looked at (`ImportPreview`: a
+     texture's picture, 256 pixels at most; a sound played, through
+     `SoundPlay`, which reads a file to be written too; what else it is,
+     its size). Save writes the files, takes out the ones gone, then the
+     list; into a root folder with its folders made (`Sound\Custom\`:
+     `write_file` now makes them). Messages `ImportList`, `ImportAdd`,
+     `ImportSet`, `ImportDelete`, `ImportPreview`, `Imports`. MCP:
+     `imp_*` already change the list.
    - **6g, the object editor** (done after 6f; a first part): the
      map's object data (`war3map.w3u`, `.w3t`, `.w3b`, `.w3d`, `.w3a`,
      `.w3h`, `.w3q`) pieces of the session (read with the rest, taken in

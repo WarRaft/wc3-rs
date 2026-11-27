@@ -60,7 +60,7 @@ fn the_terrain_drawn_with_the_tables_of_the_roots() {
     assert!(l.terrain.is_empty() && l.notes.iter().any(|n| n.contains("TerrainLights")), "{:?}", l.notes);
     // The pieces with a text form, where they are (the terrain) or would
     // be, at the top root (the map has none of the others).
-    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c", "war3map.w3s", "war3map.w3u", "war3map.w3t", "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3h", "war3map.w3q", "war3map.wts"]);
+    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c", "war3map.w3s", "war3map.w3u", "war3map.w3t", "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3h", "war3map.w3q", "war3map.wts", "war3map.imp"]);
     assert!(f[1].1.ends_with("map/war3map.doo"), "{f:?}");
     // Nothing placed; the minimap a pixel a corner.
     assert!(o.models.is_empty() && o.notes.is_empty());
@@ -906,4 +906,47 @@ fn an_objects_string_of_the_map_shown_as_its_text_and_set_in_war3map_wts() {
     let saved = s.save();
     assert!(matches!(saved.last(), Some(ServerMsg::State(st)) if st.message.contains("war3map.wts")), "{saved:?}");
     assert_eq!(std::fs::read_to_string(dir.path().join("map/war3map.wts")).unwrap(), "\u{FEFF}STRING 7\n{\nKnight Renamed\n}\n");
+}
+
+#[test]
+fn files_imported_moved_deleted_undone_and_saved_with_their_list() {
+    let dir = TestDir::new("session-imports");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    dir.write("map/war3mapImported/old.txt", b"old");
+    dir.write("map/war3map.imp", &imp_rs::Imports { version: 1, files: vec![imp_rs::Import { flags: 0, path: "old.txt".into() }] }.to_bytes().unwrap());
+    dir.write("disk/Rain.wav", b"RIFF....WAVE");
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let list = |s: &Session| match s.imports_msg() {
+        ServerMsg::Imports(l) => l.into_iter().map(|(p, _, f, found, pending)| format!("{p} {f} {found} {pending}")).collect::<Vec<_>>(),
+        m => panic!("{m:?}"),
+    };
+    let said = |msgs: &[ServerMsg]| match msgs.last() {
+        Some(ServerMsg::State(st)) => st.message.clone(),
+        m => panic!("{m:?}"),
+    };
+    assert_eq!(list(&s), ["war3mapImported\\old.txt 0 true false"]);
+    let source = dir.path().join("disk/Rain.wav").display().to_string();
+    assert_eq!(said(&s.import_add(&source, "")), "");
+    assert!(said(&s.import_add(&source, "war3mapImported/Rain.wav")).contains("imported already"));
+    assert_eq!(said(&s.import_add(&source, "Sound\\Custom\\Rain.wav")), "");
+    assert_eq!(list(&s)[1..], ["war3mapImported\\Rain.wav 0 true true".to_string(), "Sound\\Custom\\Rain.wav 1 true true".into()]);
+    assert!(matches!(s.import_preview(2), ServerMsg::ImportPreview { what: 2, size: 12, .. }));
+    // Moved: its file with it; deleted: out on save.
+    assert_eq!(said(&s.import_set(0, "Docs\\old.txt")), "");
+    assert_eq!(said(&s.import_delete(1)), "");
+    assert_eq!(list(&s), ["Docs\\old.txt 1 true true", "Sound\\Custom\\Rain.wav 1 true true"]);
+    s.undo(false);
+    assert_eq!(list(&s).len(), 3, "the delete undone");
+    s.undo(true);
+    let saved = s.save();
+    assert!(said(&saved).contains("war3map.imp"), "{saved:?}");
+    assert_eq!(std::fs::read(dir.path().join("map/Docs/old.txt")).unwrap(), b"old");
+    assert!(!dir.path().join("map/war3mapImported/old.txt").exists(), "moved");
+    assert!(!dir.path().join("map/war3mapImported/Rain.wav").exists(), "deleted before it was written");
+    assert_eq!(std::fs::read(dir.path().join("map/Sound/Custom/Rain.wav")).unwrap(), b"RIFF....WAVE");
+    let back = imp_rs::parse(&std::fs::read(dir.path().join("map/war3map.imp")).unwrap()).unwrap();
+    assert_eq!(back.files.iter().map(|f| f.path_in_map()).collect::<Vec<_>>(), ["Docs\\old.txt", "Sound\\Custom\\Rain.wav"]);
+    assert_eq!(list(&s), ["Docs\\old.txt 1 true false", "Sound\\Custom\\Rain.wav 1 true false"]);
 }

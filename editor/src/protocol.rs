@@ -59,6 +59,11 @@
 //! | 37 | `ObjectNew` | a custom object: `u8` kind, the id of the one it's based on; answered the same, `ObjectFields` of it |
 //! | 38 | `ObjectDelete` | `u8` kind, an id: a custom object taken away, a standard one's changes; answered the same |
 //! | 39 | `ThingSetText` | a thing's list set: `u8` file, `u32` index, its name (`items`, `abilities`, `drops`), its text (`Session::thing_set_text`); answered as `Move` |
+//! | 40 | `ImportList` | nothing; answered by `Imports` |
+//! | 41 | `ImportAdd` | a file from disk imported: its path on disk, its path in the map (empty: `war3mapImported\\` and its name); answered by `Imports`, `State` |
+//! | 42 | `ImportSet` | `u32` index, its new path in the map; answered the same |
+//! | 43 | `ImportDelete` | `u32` index; answered the same |
+//! | 44 | `ImportPreview` | `u32` index; answered by `ImportPreview` |
 //! | 22 | `TilePathing` | the tile pather's: `u8` a tile's index in the terrain's list, `u8` what it forbids (`wpm` flags: 2 walking, 4 flying, 8 building); answered by `Overlays` and `State` |
 //! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id; kind 255: id a texture's path); answered by `Icons` |
 //!
@@ -90,6 +95,8 @@
 //! | 150 | `ObjectList` | a kind's objects: see [`ObjectListMsg`] |
 //! | 151 | `ObjectFields` | an object's fields: see [`ObjectFieldsMsg`] |
 //! | 152 | `ObjectEnums` | the field types World Editor offers values of: a list of (type, `u8` a list of them, a list of (the stored text, its name)); before the first `ObjectList` |
+//! | 153 | `Imports` | the imported files: a list of (its path in the map, as `war3map.imp` keeps it, `u8` flags, `u8` found: the map has it or will, `u8` to be written on save) |
+//! | 154 | `ImportPreview` | an imported file: its path, `u8` what it is (0 other, 1 a texture, 2 a sound, 3 a model), `u32` its size, a picture (`u32` width, height, RGBA; 0 by 0 for none), why not (empty: fine) |
 //! | 141 | `Icons` | a list of (`u8` kind, id, `u32` width, height, RGBA; 0 by 0 for none) |
 //!
 //! After an edit the terrain's messages come again: `Cliffs` with no
@@ -152,6 +159,13 @@ mod kind {
     pub const OBJECT_NEW: u8 = 37;
     pub const OBJECT_DELETE: u8 = 38;
     pub const THING_SET_TEXT: u8 = 39;
+    pub const IMPORT_LIST: u8 = 40;
+    pub const IMPORT_ADD: u8 = 41;
+    pub const IMPORT_SET: u8 = 42;
+    pub const IMPORT_DELETE: u8 = 43;
+    pub const IMPORT_PREVIEW: u8 = 44;
+    pub const IMPORTS: u8 = 153;
+    pub const IMPORT_PREVIEW_ANSWER: u8 = 154;
     pub const OBJECT_LIST_ANSWER: u8 = 150;
     pub const OBJECT_FIELDS: u8 = 151;
     pub const OBJECT_ENUMS: u8 = 152;
@@ -242,6 +256,16 @@ pub enum ClientMsg {
     SoundDelete { index: u32 },
     /// Kind 33.
     SoundPlay { file: String },
+    /// Kind 40.
+    ImportList,
+    /// Kind 41.
+    ImportAdd { source: String, path: String },
+    /// Kind 42.
+    ImportSet { index: u32, path: String },
+    /// Kind 43.
+    ImportDelete { index: u32 },
+    /// Kind 44.
+    ImportPreview { index: u32 },
     /// Kind 39.
     ThingSetText { file: u8, index: u32, field: String, value: String },
     /// Kind 34.
@@ -538,6 +562,10 @@ pub enum ServerMsg {
     Thing(ThingMsg),
     /// Kind 148.
     Sounds(Vec<w3s_rs::Sound>),
+    /// Kind 153: (path in the map, as kept, flags, found, to be written).
+    Imports(Vec<(String, String, u8, bool, bool)>),
+    /// Kind 154.
+    ImportPreview { path: String, what: u8, size: u32, picture: crate::textures::Icon, error: String },
     /// Kind 150.
     ObjectList(ObjectListMsg),
     /// Kind 151.
@@ -666,6 +694,11 @@ impl ClientMsg {
             kind::CAMERA_RENAME => Some(ClientMsg::CameraRename { index: r.u32()?, name: r.string()? }),
             kind::CAMERA_DELETE => Some(ClientMsg::CameraDelete { index: r.u32()? }),
             kind::CAMERA_SET => Some(ClientMsg::CameraSet { index: r.u32()?, field: r.string()?, value: r.f32()? }),
+            kind::IMPORT_LIST => Some(ClientMsg::ImportList),
+            kind::IMPORT_ADD => Some(ClientMsg::ImportAdd { source: r.string()?, path: r.string()? }),
+            kind::IMPORT_SET => Some(ClientMsg::ImportSet { index: r.u32()?, path: r.string()? }),
+            kind::IMPORT_DELETE => Some(ClientMsg::ImportDelete { index: r.u32()? }),
+            kind::IMPORT_PREVIEW => Some(ClientMsg::ImportPreview { index: r.u32()? }),
             kind::THING_SET_TEXT => Some(ClientMsg::ThingSetText { file: r.u8()?, index: r.u32()?, field: r.string()?, value: r.string()? }),
             kind::OBJECT_LIST => Some(ClientMsg::ObjectList { kind: r.u8()? }),
             kind::OBJECT_ASK => Some(ClientMsg::ObjectAsk { kind: r.u8()?, id: r.string()? }),
@@ -802,6 +835,25 @@ impl ClientMsg {
                 w.string(field);
                 w.f32(*value);
                 kind::CAMERA_SET
+            }
+            ClientMsg::ImportList => kind::IMPORT_LIST,
+            ClientMsg::ImportAdd { source, path } => {
+                w.string(source);
+                w.string(path);
+                kind::IMPORT_ADD
+            }
+            ClientMsg::ImportSet { index, path } => {
+                w.u32(*index);
+                w.string(path);
+                kind::IMPORT_SET
+            }
+            ClientMsg::ImportDelete { index } => {
+                w.u32(*index);
+                kind::IMPORT_DELETE
+            }
+            ClientMsg::ImportPreview { index } => {
+                w.u32(*index);
+                kind::IMPORT_PREVIEW
             }
             ClientMsg::ThingSetText { file, index, field, value } => {
                 w.u8(*file);
@@ -1069,6 +1121,26 @@ impl ServerMsg {
                     });
                 });
                 kind::OBJECT_ENUMS
+            }
+            ServerMsg::Imports(list) => {
+                w.list(list, |w, (path, kept, flags, found, pending)| {
+                    w.string(path);
+                    w.string(kept);
+                    w.u8(*flags);
+                    w.u8(*found as u8);
+                    w.u8(*pending as u8);
+                });
+                kind::IMPORTS
+            }
+            ServerMsg::ImportPreview { path, what, size, picture, error } => {
+                w.string(path);
+                w.u8(*what);
+                w.u32(*size);
+                w.u32(picture.width);
+                w.u32(picture.height);
+                w.bytes(&picture.rgba);
+                w.string(error);
+                kind::IMPORT_PREVIEW_ANSWER
             }
             ServerMsg::Sounds(list) => {
                 w.list(list, |w, s| {
@@ -1389,6 +1461,12 @@ impl ServerMsg {
                 ServerMsg::ObjectFields(ObjectFieldsMsg { kind, id, base, name, levels, fields })
             }
             kind::OBJECT_ENUMS => ServerMsg::ObjectEnums(r.list(|r| Ok((r.string()?, r.u8()? != 0, r.list(|r| Ok((r.string()?, r.string()?)))?)))?),
+            kind::IMPORTS => ServerMsg::Imports(r.list(|r| Ok((r.string()?, r.string()?, r.u8()?, r.u8()? != 0, r.u8()? != 0)))?),
+            kind::IMPORT_PREVIEW_ANSWER => {
+                let (path, what, size) = (r.string()?, r.u8()?, r.u32()?);
+                let picture = crate::textures::Icon { width: r.u32()?, height: r.u32()?, rgba: r.bytes()? };
+                ServerMsg::ImportPreview { path, what, size, picture, error: r.string()? }
+            }
             kind::SOUNDS => ServerMsg::Sounds(r.list(|r| {
                 let mut s = w3s_rs::Sound::new(r.string()?, r.string()?);
                 s.eax = r.string()?;

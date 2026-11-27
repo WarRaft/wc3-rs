@@ -349,8 +349,18 @@
     $('save').onclick = () => send(encode.save())
     const mapPanel = new EditorMapSettings.Panel($('map-panel'), send, encode)
     $('map-open').onclick = () => (mapPanel.isOpen ? mapPanel.close() : mapPanel.open())
+    const importsPanel = new EditorImports.Panel($('imports-panel'), send, encode, msg => vscode.postMessage(msg))
+    $('imports-open').onclick = () => {
+        if (importsPanel.isOpen) return importsPanel.close()
+        objectsPanel.close()
+        importsPanel.open()
+    }
     const objectsPanel = new EditorObjectEditor.Panel($('objects-panel'), send, encode, objects => vscode.postMessage({type: 'objects', objects}))
-    $('objects-open').onclick = () => (objectsPanel.isOpen ? objectsPanel.close() : objectsPanel.open())
+    $('objects-open').onclick = () => {
+        if (objectsPanel.isOpen) return objectsPanel.close()
+        importsPanel.close()
+        objectsPanel.open()
+    }
     $('reload').onclick = () => send(encode.reload())
     showTools()
 
@@ -1192,6 +1202,10 @@
             askThing()
             $('status').textContent = msg.found ? msg.text : ''
             vscode.postMessage({type: 'picked', text: msg.found ? msg.text : ''})
+        } else if (msg.kind === 'imports') {
+            importsPanel.set(msg.files)
+        } else if (msg.kind === 'importPreview') {
+            importsPanel.setPreview(msg)
         } else if (msg.kind === 'objectEnums') {
             objectsPanel.setEnums(msg.enums)
         } else if (msg.kind === 'objectList') {
@@ -1294,6 +1308,15 @@
                 send(encode.camera(true, c, camera.ray(msg.x, msg.y, aspect())))
                 send(encode.strokeEnd())
             }
+        } else if (msg.type === 'import') {
+            // The import manager's, for the tests: `open`, `add` (a file on
+            // disk, at `path`), `pick` (`index`), `move` (to `path`), `delete`, `close`.
+            if (msg.action === 'open') importsPanel.open()
+            else if (msg.action === 'add') send(encode.importAdd(msg.source, msg.path ?? ''))
+            else if (msg.action === 'pick') importsPanel.pick(msg.index)
+            else if (msg.action === 'move') send(encode.importSet(importsPanel.picked, msg.path))
+            else if (msg.action === 'delete') importsPanel.deleteButton.onclick()
+            else if (msg.action === 'close') importsPanel.close()
         } else if (msg.type === 'object') {
             // The object editor's, for the tests: `open`, `kind` (`k`),
             // `pick` (`id`), a `field` typed (`field`, `level`, `value`),

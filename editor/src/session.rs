@@ -579,6 +579,7 @@ impl Session {
             crate::edit::Snapshot::Regions(_) | crate::edit::Snapshot::Cameras(_) | crate::edit::Snapshot::Pathing(_) => out.push(ServerMsg::Overlays(self.overlays())),
             crate::edit::Snapshot::Sounds(_) => out.push(self.sounds_msg()),
             crate::edit::Snapshot::Strings(_) => self.strings_changed(),
+            crate::edit::Snapshot::Imports(..) => out.push(self.imports_msg()),
             crate::edit::Snapshot::Many(all) => {
                 for s in all {
                     if let Some(whole) = self.undone(s, out) {
@@ -670,6 +671,42 @@ impl Session {
                 Err(e) => failed.push(format!("{name}: {e}")),
             }
         }
+        if self.edits.dirty.imports {
+            let mut done = true;
+            // The files first: then the list that names them.
+            for (path, bytes) in std::mem::take(&mut self.placed.import_files) {
+                let result = match bytes {
+                    Some(b) => self.write_file(&path, b).map(|to| to.display().to_string()),
+                    None => self.delete_file(&path),
+                };
+                match result {
+                    Ok(said) if !said.is_empty() => saved.push(said),
+                    Ok(_) => {}
+                    Err(e) => {
+                        failed.push(format!("{path}: {e}"));
+                        done = false;
+                    }
+                }
+            }
+            let list_open = self.docs.contains_key("war3map.imp");
+            if let Some(list) = self.placed.imports.as_ref().filter(|_| !list_open) {
+                match list.to_bytes().map_err(|e| e.to_string()).and_then(|b| {
+                    let h = hash(&b);
+                    let to = self.write_file("war3map.imp", b)?;
+                    self.disk.insert("war3map.imp", Some(h));
+                    Ok(to)
+                }) {
+                    Ok(to) => saved.push(to.display().to_string()),
+                    Err(e) => {
+                        failed.push(format!("war3map.imp: {e}"));
+                        done = false;
+                    }
+                }
+            }
+            if done {
+                self.edits.dirty.imports = false;
+            }
+        }
         for kind in crate::objdata::KINDS {
             let bit = crate::objdata::bit(kind);
             if self.edits.dirty.objects & bit == 0 {
@@ -729,7 +766,11 @@ impl Session {
             if wc3_server::map::is_map_name(root) {
                 into_map(root)
             } else {
-                let path = root.join(name);
+                // `Sound\\Custom\\Rain.wav`: its folders made.
+                let path = name.split(['\\', '/']).fold(root.to_path_buf(), |p, part| p.join(part));
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+                }
                 std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
                 Ok(path)
             }
@@ -800,7 +841,7 @@ impl Session {
     }
 
     /// The map's pieces the editor changes, by name.
-    pub const PIECES: [&'static str; 15] = [
+    pub const PIECES: [&'static str; 16] = [
         "war3map.w3e",
         "war3map.doo",
         "war3mapUnits.doo",
@@ -816,6 +857,7 @@ impl Session {
         "war3map.w3h",
         "war3map.w3q",
         "war3map.wts",
+        "war3map.imp",
     ];
 
     /// Each piece's bytes as the layers have it now, hashed (`None`: no
@@ -854,6 +896,7 @@ impl Session {
             "war3map.w3c" => d.cameras,
             "war3map.w3s" => d.sounds,
             "war3map.wts" => d.strings,
+            "war3map.imp" => d.imports,
             n if crate::objdata::kind_of(n).is_some() => d.objects & crate::objdata::bit(crate::objdata::kind_of(n).unwrap()) != 0,
             _ => d.pathing,
         };
@@ -882,6 +925,7 @@ impl Session {
                     self.placed.strings = files.strings.clone();
                     self.strings_changed();
                 }
+                "war3map.imp" => self.placed.imports = files.imports.clone(),
                 n if crate::objdata::kind_of(n).is_some() => {
                     let kind = crate::objdata::kind_of(n).unwrap();
                     match files.objects.get(&kind) {
@@ -906,6 +950,7 @@ impl Session {
             }
             out.push(ServerMsg::Overlays(self.overlays()));
             out.push(self.sounds_msg());
+            out.push(self.imports_msg());
             for name in &taken {
                 if let Some(kind) = crate::objdata::kind_of(name) {
                     let k = crate::objdata::KINDS.iter().position(|x| *x == kind).unwrap_or(0) as u8;
@@ -950,6 +995,7 @@ impl Session {
             "war3map.w3r" => self.placed.regions.as_ref()?.to_bytes().ok(),
             "war3map.w3c" => self.placed.cameras.as_ref()?.to_bytes().ok(),
             "war3map.w3s" => self.placed.sounds.as_ref()?.to_bytes().ok(),
+            "war3map.imp" => self.placed.imports.as_ref()?.to_bytes().ok(),
             "war3map.wts" => self.placed.strings.as_ref().map(|(text, bom)| format!("{}{text}", if *bom { "\u{FEFF}" } else { "" }).into_bytes()),
             n if crate::objdata::kind_of(n).is_some() => self.placed.objects.get(&crate::objdata::kind_of(n)?)?.to_bytes().ok(),
             "war3map.w3e" => self.terrain.to_bytes().ok(),
@@ -973,6 +1019,8 @@ impl Session {
             wc3_server::cameras::convert(wc3_server::objects::TO_TEXT, path, &bytes)
         } else if name == "war3map.w3s" {
             wc3_server::sounds::convert(wc3_server::objects::TO_TEXT, path, &bytes)
+        } else if name == "war3map.imp" {
+            wc3_server::imports::convert(wc3_server::objects::TO_TEXT, path, &bytes)
         } else if name == "war3map.w3e" {
             wc3_server::terrain::convert(wc3_server::objects::TO_TEXT, path, &bytes)
         } else {
@@ -1014,6 +1062,8 @@ impl Session {
             wc3_server::cameras::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
         } else if name == "war3map.w3s" {
             wc3_server::sounds::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
+        } else if name == "war3map.imp" {
+            wc3_server::imports::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
         } else {
             wc3_server::placement::convert(wc3_server::objects::TO_BYTES, path, text.as_bytes())
         };
@@ -1035,6 +1085,10 @@ impl Session {
                 let before = self.placed.cameras.replace(c);
                 crate::edit::Snapshot::Cameras(before.map(|c| c.cameras).unwrap_or_default())
             }),
+            "war3map.imp" => imp_rs::parse(&bytes).map(|i| {
+                let before = self.placed.imports.replace(i);
+                crate::edit::Snapshot::Imports(before, self.placed.import_files.clone())
+            }),
             "war3map.w3s" => w3s_rs::parse(&bytes).map(|n| {
                 let before = self.placed.sounds.replace(n);
                 crate::edit::Snapshot::Sounds(before.map(|n| n.sounds).unwrap_or_default())
@@ -1049,6 +1103,7 @@ impl Session {
         let mut out = match name {
             "war3map.w3r" | "war3map.w3c" => vec![ServerMsg::Overlays(self.overlays())],
             "war3map.w3s" => vec![self.sounds_msg()],
+            "war3map.imp" => vec![self.imports_msg()],
             _ => self.place_objects(),
         };
         out.extend(self.sync_docs());
@@ -1125,6 +1180,8 @@ impl Session {
                 "war3map.w3c" => d.cameras = false,
                 "war3map.w3s" => d.sounds = false,
                 "war3map.wts" => d.strings = false,
+                // Its files the editor writes on save, all the same.
+                "war3map.imp" if self.placed.import_files.is_empty() => d.imports = false,
                 n if crate::objdata::kind_of(n).is_some() => d.objects &= !crate::objdata::bit(crate::objdata::kind_of(n).unwrap()),
                 _ => {}
             }
@@ -1812,6 +1869,178 @@ impl Session {
         })
     }
 
+    /// The map's imported files (`war3map.imp`), as the page lists them:
+    /// each one's path in the map, as the list keeps it, its flags,
+    /// whether the map has it (or will on save), whether it's to be
+    /// written on save.
+    pub fn imports_msg(&self) -> ServerMsg {
+        let files = self.placed.imports.as_ref().map_or(&[][..], |i| &i.files[..]);
+        ServerMsg::Imports(
+            files
+                .iter()
+                .map(|f| {
+                    let path = f.path_in_map();
+                    let pending = self.import_pending(&path);
+                    let found = match pending {
+                        Some(Some(_)) => true,
+                        Some(None) => false,
+                        None => self.game.find(&path).is_some(),
+                    };
+                    (path, f.path.clone(), f.flags, found, matches!(pending, Some(Some(_))))
+                })
+                .collect(),
+        )
+    }
+
+    /// What's to be done with the imported file `path` on save: written
+    /// (its bytes), taken out (`None`); `None` for nothing.
+    fn import_pending(&self, path: &str) -> Option<Option<&Vec<u8>>> {
+        self.placed.import_files.iter().find(|(p, _)| p.eq_ignore_ascii_case(path)).map(|(_, b)| b.as_ref())
+    }
+
+    /// The bytes of the imported file `path`: to be written, or the map's.
+    fn import_bytes(&self, path: &str) -> Option<Vec<u8>> {
+        match self.import_pending(path) {
+            Some(b) => b.cloned(),
+            None => self.game.read(path).map(|(b, _)| b),
+        }
+    }
+
+    /// An edit of the imported files: the list and the files to write
+    /// recorded for undo, `change` made (refused, said, when it errs).
+    fn imports_edit(&mut self, change: impl FnOnce(&mut imp_rs::Imports, &mut std::collections::BTreeMap<String, Option<Vec<u8>>>) -> Result<String, String>) -> Vec<ServerMsg> {
+        let before = (self.placed.imports.clone(), self.placed.import_files.clone());
+        let mut list = before.0.clone().unwrap_or(imp_rs::Imports { version: 1, files: Vec::new() });
+        let mut files = before.1.clone();
+        let message = match change(&mut list, &mut files) {
+            Ok(said) => {
+                self.edits.record(crate::edit::Snapshot::Imports(before.0, before.1));
+                self.placed.imports = Some(list);
+                self.placed.import_files = files;
+                said
+            }
+            Err(e) => e,
+        };
+        vec![self.imports_msg(), ServerMsg::State(self.state(message))]
+    }
+
+    /// The flags a path in the map takes: a custom one's, unless it's
+    /// `war3mapImported\\` and a name.
+    fn import_flags(path: &str) -> u8 {
+        if path.starts_with(imp_rs::IMPORTED) && !path[imp_rs::IMPORTED.len()..].contains(['\\', '/']) { 0 } else { imp_rs::CUSTOM_PATH }
+    }
+
+    /// The file `source` on disk imported at `path` in the map (empty:
+    /// `war3mapImported\\` and its name), written into it on save.
+    pub fn import_add(&mut self, source: &str, path: &str) -> Vec<ServerMsg> {
+        let bytes = match std::fs::read(source) {
+            Ok(b) => b,
+            Err(e) => return vec![ServerMsg::State(self.state(format!("Can't read {source}: {e}")))],
+        };
+        let name = Path::new(source).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let path = if path.trim().is_empty() { format!("{}{name}", imp_rs::IMPORTED) } else { path.trim().replace('/', "\\") };
+        self.imports_edit(|list, files| {
+            if list.files.iter().any(|f| f.path_in_map().eq_ignore_ascii_case(&path)) {
+                return Err(format!("{path} is imported already."));
+            }
+            files.retain(|p, _| !p.eq_ignore_ascii_case(&path));
+            files.insert(path.clone(), Some(bytes));
+            list.files.push(imp_rs::Import { flags: Self::import_flags(&path), path: path.clone() });
+            Ok(String::new())
+        })
+    }
+
+    /// Imported file `index` moved to `path` in the map (its file with
+    /// it, on save).
+    pub fn import_set(&mut self, index: u32, path: &str) -> Vec<ServerMsg> {
+        let path = path.trim().replace('/', "\\");
+        let Some(old) = self.placed.imports.as_ref().and_then(|i| i.files.get(index as usize)).map(|f| f.path_in_map()) else {
+            return vec![ServerMsg::State(self.state(format!("no import {index}")))];
+        };
+        let bytes = self.import_bytes(&old);
+        self.imports_edit(|list, files| {
+            if path.is_empty() || path.ends_with('\\') {
+                return Err("An import's path names a file.".into());
+            }
+            if list.files.iter().enumerate().any(|(i, f)| i != index as usize && f.path_in_map().eq_ignore_ascii_case(&path)) {
+                return Err(format!("{path} is imported already."));
+            }
+            if old.eq_ignore_ascii_case(&path) {
+                return Ok(String::new());
+            }
+            let Some(bytes) = bytes else { return Err(format!("The map has no {old} to move.")) };
+            files.retain(|p, _| !p.eq_ignore_ascii_case(&old) && !p.eq_ignore_ascii_case(&path));
+            files.insert(old.clone(), None);
+            files.insert(path.clone(), Some(bytes));
+            list.files[index as usize] = imp_rs::Import { flags: Self::import_flags(&path), path: path.clone() };
+            Ok(String::new())
+        })
+    }
+
+    /// Imported file `index` taken out of the list, and its file out of
+    /// the map on save.
+    pub fn import_delete(&mut self, index: u32) -> Vec<ServerMsg> {
+        self.imports_edit(|list, files| {
+            if index as usize >= list.files.len() {
+                return Err(format!("no import {index}"));
+            }
+            let old = list.files.remove(index as usize).path_in_map();
+            files.retain(|p, _| !p.eq_ignore_ascii_case(&old));
+            files.insert(old, None);
+            Ok(String::new())
+        })
+    }
+
+    /// Imported file `index` to look at: a texture's picture (256 pixels
+    /// at most), what it is (a sound the page plays, a model).
+    pub fn import_preview(&self, index: u32) -> ServerMsg {
+        let Some(path) = self.placed.imports.as_ref().and_then(|i| i.files.get(index as usize)).map(|f| f.path_in_map()) else {
+            return ServerMsg::ImportPreview { path: String::new(), what: 0, size: 0, picture: Default::default(), error: format!("no import {index}") };
+        };
+        let lower = path.to_ascii_lowercase();
+        let what = if [".blp", ".dds", ".tga"].iter().any(|e| lower.ends_with(e)) {
+            1
+        } else if [".wav", ".mp3", ".flac", ".ogg"].iter().any(|e| lower.ends_with(e)) {
+            2
+        } else if [".mdx", ".mdl"].iter().any(|e| lower.ends_with(e)) {
+            3
+        } else {
+            0
+        };
+        let Some(bytes) = self.import_bytes(&path) else {
+            return ServerMsg::ImportPreview { error: format!("The map has no {path}."), path, what, size: 0, picture: Default::default() };
+        };
+        let mut picture = crate::textures::Icon::default();
+        let mut error = String::new();
+        if what == 1 {
+            let t = wc3_server::texture::decode_file(&path, &bytes);
+            let good: Vec<_> = t.mips.into_iter().filter(|m| m.error.is_empty() && !m.rgba.is_empty()).collect();
+            match good.iter().find(|m| m.width.max(m.height) <= 256).or(good.last()) {
+                Some(m) => picture = crate::textures::Icon { width: m.width, height: m.height, rgba: m.rgba.clone() },
+                None => error = if t.error.is_empty() { "no picture in it".into() } else { t.error },
+            }
+        }
+        ServerMsg::ImportPreview { path, what, size: bytes.len() as u32, picture, error }
+    }
+
+    /// Takes the map's file `name` out of where it is: a root folder's
+    /// file, or the root map's; what was done (empty: nothing had it).
+    fn delete_file(&self, name: &str) -> Result<String, String> {
+        let roots: Vec<PathBuf> = self.project.roots.iter().map(|r| project::normalize(r)).collect();
+        match self.game.read(name).map(|(_, s)| s) {
+            Some(wc3_server::game::Source::File(file)) if roots.iter().any(|r| project::normalize(&file).starts_with(r)) => {
+                std::fs::remove_file(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+                Ok(format!("{} removed", file.display()))
+            }
+            Some(wc3_server::game::Source::Archive(map)) if roots.contains(&project::normalize(&map)) => {
+                let path = map.join(name);
+                wc3_server::mapfs::MapFs::default().delete(&path, false).map_err(|e| format!("{}: {e:?}", path.display()))?;
+                Ok(format!("{} removed", path.display()))
+            }
+            _ => Ok(String::new()),
+        }
+    }
+
     /// The map's sounds (`war3map.w3s`), as the page lists them.
     pub fn sounds_msg(&self) -> ServerMsg {
         ServerMsg::Sounds(self.placed.sounds.as_ref().map(|s| s.sounds.clone()).unwrap_or_default())
@@ -1941,7 +2170,7 @@ impl Session {
     pub fn sound_data(&self, file: &str) -> ServerMsg {
         let file = file.replace('/', "\\");
         let stem = file.rsplit_once('.').map_or(file.as_str(), |(s, _)| s);
-        let found = std::iter::once(file.clone()).chain(["flac", "mp3", "wav"].iter().map(|e| format!("{stem}.{e}"))).find_map(|n| self.game.read(&n).map(|(b, _)| b));
+        let found = std::iter::once(file.clone()).chain(["flac", "mp3", "wav"].iter().map(|e| format!("{stem}.{e}"))).find_map(|n| self.import_bytes(&n));
         match found {
             Some(bytes) => ServerMsg::SoundData { file, bytes, error: String::new() },
             None => ServerMsg::SoundData { error: format!("{file} isn't in the game's files or the map's."), file, bytes: Vec::new() },

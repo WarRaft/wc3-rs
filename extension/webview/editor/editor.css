@@ -494,7 +494,7 @@ button:hover {
 
 .obj-panel {
     position: absolute;
-    left: 240px;
+    left: 260px;
     right: 12px;
     top: 12px;
     bottom: 12px;
@@ -759,4 +759,41 @@ button:hover {
     border: 1px solid var(--vscode-input-border, #555);
     font: inherit;
     min-width: 0;
+}
+
+.imp-side {
+    width: 420px;
+}
+
+.imp-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.imp-row input {
+    flex: 1;
+}
+
+.imp-row.missing input {
+    color: var(--vscode-errorForeground);
+}
+
+.imp-mark {
+    width: 1em;
+    text-align: center;
+}
+
+.imp-view {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+}
+
+.imp-picture {
+    image-rendering: pixelated;
+    min-width: 128px;
+    border: 1px solid var(--vscode-panel-border, #444);
+    max-width: 100%;
 }

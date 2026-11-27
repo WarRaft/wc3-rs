@@ -51,6 +51,13 @@ const EditorProtocol = (() => {
         THING_ASK: 28,
         THING_SET: 29,
         THING_SET_TEXT: 39,
+        IMPORT_LIST: 40,
+        IMPORT_ADD: 41,
+        IMPORT_SET: 42,
+        IMPORT_DELETE: 43,
+        IMPORT_PREVIEW: 44,
+        IMPORTS: 153,
+        IMPORT_PREVIEW_ANSWER: 154,
         THING: 147,
         SOUND_NEW: 30,
         SOUND_SET: 31,
@@ -323,6 +330,30 @@ const EditorProtocol = (() => {
             w.string(value)
             return w.frame(KIND.THING_SET_TEXT)
         },
+        importList: () => new Writer().frame(KIND.IMPORT_LIST),
+        /** A file on disk imported at `path` ('' war3mapImported\ and its name). */
+        importAdd(source, path) {
+            const w = new Writer()
+            w.string(source)
+            w.string(path)
+            return w.frame(KIND.IMPORT_ADD)
+        },
+        importSet(index, path) {
+            const w = new Writer()
+            w.u32(index)
+            w.string(path)
+            return w.frame(KIND.IMPORT_SET)
+        },
+        importDelete(index) {
+            const w = new Writer()
+            w.u32(index)
+            return w.frame(KIND.IMPORT_DELETE)
+        },
+        importPreview(index) {
+            const w = new Writer()
+            w.u32(index)
+            return w.frame(KIND.IMPORT_PREVIEW)
+        },
         /** A sound of `file` made. */
         soundNew(file) {
             const w = new Writer()
@@ -526,6 +557,14 @@ const EditorProtocol = (() => {
             }
             case KIND.OBJECT_ENUMS:
                 return {kind: 'objectEnums', enums: r.list(r => ({ty: r.string(), multi: r.u8() !== 0, values: r.list(r => [r.string(), r.string()])}))}
+            case KIND.IMPORTS:
+                return {kind: 'imports', files: r.list(r => ({path: r.string(), kept: r.string(), flags: r.u8(), found: r.u8() !== 0, pending: r.u8() !== 0}))}
+            case KIND.IMPORT_PREVIEW_ANSWER: {
+                const m = {kind: 'importPreview', path: r.string(), what: r.u8(), size: r.u32()}
+                m.picture = {width: r.u32(), height: r.u32(), rgba: r.bytes()}
+                m.error = r.string()
+                return m
+            }
             case KIND.SOUNDS:
                 // `numbers` as `w3s_rs::Sound::numbers` has them.
                 return {kind: 'sounds', sounds: r.list(r => ({name: r.string(), file: r.string(), eax: r.string(), flags: r.u32(), numbers: Array.from(r.f32s())}))}

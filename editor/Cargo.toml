@@ -24,6 +24,7 @@ notify = "8.2.0"
 w3r-rs = { path = "../../w3r-rs" }
 w3c-rs = { path = "../../w3c-rs" }
 w3s-rs = { path = "../../w3s-rs" }
+imp-rs = { path = "../../imp-rs" }
 shd-rs = { path = "../../shd-rs" }
 bni-rs = { path = "../../bni-rs" }
 
