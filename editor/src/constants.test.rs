@@ -33,3 +33,9 @@ fn values_checked_by_their_types_and_limits() {
     assert!(check(&f("unitList", "", ""), "htown").is_err());
     assert!(same("1", "1.0") && same("80, 70", "80,70.0") && !same("1,2", "1"));
 }
+
+#[test]
+fn a_frame_files_string_list() {
+    let fdf = "/* x */\nStringList {\n    ACCEPT   \"Accept\",\n    LOADING_WAITING_FOR_PLAYERS \"WAITING FOR OTHER PLAYERS\",\n    LAST \"a, b\"\n}\nOther { X \"no\", }\n";
+    assert_eq!(string_list(fdf), [("ACCEPT".into(), "Accept".into()), ("LOADING_WAITING_FOR_PLAYERS".into(), "WAITING FOR OTHER PLAYERS".into()), ("LAST".into(), "a, b".into())]);
+}

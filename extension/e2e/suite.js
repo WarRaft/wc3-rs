@@ -788,6 +788,25 @@ async function steps(only) {
             const saved = await until(() => we.state?.message && we.state, 'saved')
             check(!saved.dirty && saved.message.includes('war3mapMisc.txt'), saved.message)
             await we.panel.webview.postMessage({type: 'constants', action: 'close'})
+            log("the game interface: the map's own (war3mapSkin.txt), its strings the map's; one typed into its string, an icon set; undone")
+            await we.panel.webview.postMessage({type: 'constants', book: 1, action: 'open'})
+            const skin = await until(() => we.skin?.count && we.skin, 'the interface shown')
+            const agility = new Map(skin.changed).get('f001')
+            const lumber = new Map(skin.changed).get('c003')
+            check(skin.custom && skin.count > 800 && agility && !/TRIGSTR/.test(agility), `${skin.count} fields, ${skin.changed.length} the map's; Agility: ${agility}`)
+            await we.panel.webview.postMessage({type: 'constants', book: 1, action: 'set', id: 'f001', value: 'E2E Agility'})
+            await until(() => new Map(we.skin?.changed).get('f001') === 'E2E Agility', "typed into the map's string")
+            await we.panel.webview.postMessage({type: 'constants', book: 1, action: 'set', id: 'c003', value: 'ReplaceableTextures\\CommandButtons\\BTNAnkh.blp'})
+            await until(() => /BTNAnkh/.test(new Map(we.skin?.changed).get('c003') ?? ''), 'the lumber icon set')
+            await shot('world-editor-interface')
+            for (let i = 0; i < 2; i++) {
+                we.state = undefined
+                await we.panel.webview.postMessage({type: 'undo'})
+                await until(() => we.state, 'undone')
+            }
+            await until(() => new Map(we.skin?.changed).get('f001') === agility && new Map(we.skin.changed).get('c003') === lumber, 'both undone')
+            check(true, `Agility E2E Agility, then ${agility} again; the lumber icon ${lumber ?? "the game's"} again`)
+            await we.panel.webview.postMessage({type: 'constants', book: 1, action: 'close'})
         }},
         {name: 'info', editor: true, run: async () => {
             log("the map's info: shown, its author and a flag, a player's race, the weather set; its name (a string of the map's) set and undone; saved")

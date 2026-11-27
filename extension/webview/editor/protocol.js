@@ -359,10 +359,16 @@ const EditorProtocol = (() => {
             return w.frame(KIND.THING_SET_TEXT)
         },
         infoAsk: () => new Writer().frame(KIND.INFO_ASK),
-        constantsAsk: () => new Writer().frame(KIND.CONSTANTS_ASK),
-        /** A gameplay constant set (`custom`: 1 the map's own, 0 the game's). */
-        constantSet(id, value) {
+        /** The gameplay constants (`book` 0) or the game interface (1). */
+        constantsAsk(book) {
             const w = new Writer()
+            w.u8(book)
+            return w.frame(KIND.CONSTANTS_ASK)
+        },
+        /** A field of `book` set (`custom`: 1 the map's own, 0 the game's). */
+        constantSet(book, id, value) {
+            const w = new Writer()
+            w.u8(book)
             w.string(id)
             w.string(value)
             return w.frame(KIND.CONSTANT_SET)
@@ -660,6 +666,7 @@ const EditorProtocol = (() => {
             case KIND.CONSTANTS:
                 return {
                     kind: 'constants',
+                    book: r.u8(),
                     custom: r.u8() !== 0,
                     fields: r.list(r => ({id: r.string(), name: r.string(), key: r.string(), ty: r.string(), value: r.string(), game: r.string(), min: r.string(), max: r.string()})),
                 }

@@ -1,13 +1,12 @@
-//! The map's gameplay constants (`war3mapMisc.txt`), as World Editor's
-//! Advanced > Gameplay Constants has them: the fields of
-//! `Units\MiscMetaData.slk` (an id, its key and section, its type and
-//! limits, its name a `WESTRING_`), each the game's value (the sections
-//! of `Units\MiscData.txt`, `Units\MiscGame.txt`, `Units\ItemFunc.txt`,
-//! each over the one before) unless the map's file changes it. The file
-//! is a BNI of the keys changed alone (`[Misc]` `MaxHeroLevel=100`); a
-//! map without it uses the game's (Use Custom Gameplay Constants off).
-//! Its text is kept as it is: a key set or taken out on its line, the
-//! rest as it was ([`set`]).
+//! The map's gameplay constants (`war3mapMisc.txt`) and game interface
+//! (`war3mapSkin.txt`), as World Editor's Advanced > Gameplay Constants
+//! and Game Interface have them ([`Book`]): the fields of their metadata
+//! (`Units\MiscMetaData.slk`, `UI\SkinMetaData.slk`: an id, its key and
+//! section, its type and limits, its name a `WESTRING_`), each the game's
+//! value unless the map's file changes it. The file is a BNI of the keys
+//! changed alone (`[Misc]` `MaxHeroLevel=100`); a map without it uses the
+//! game's (Use Custom ... off). Its text is kept as it is: a key set or
+//! taken out on its line, the rest as it was ([`set`]).
 
 use std::collections::HashMap;
 
@@ -28,8 +27,57 @@ pub struct Field {
     pub max: String,
 }
 
-/// The files the game's values come from, each over the one before.
+/// Which of the two: the gameplay constants or the game interface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Book {
+    Misc,
+    Skin,
+}
+
+pub const BOOKS: [Book; 2] = [Book::Misc, Book::Skin];
+
+impl Book {
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    pub fn of(n: u8) -> Option<Book> {
+        BOOKS.get(n as usize).copied()
+    }
+
+    /// The map's file.
+    pub fn file(self) -> &'static str {
+        match self {
+            Book::Misc => "war3mapMisc.txt",
+            Book::Skin => "war3mapSkin.txt",
+        }
+    }
+
+    /// The map's file's first section, when it's made.
+    pub fn first(self) -> &'static str {
+        match self {
+            Book::Misc => "[Misc]\r\n",
+            Book::Skin => "[FrameDef]\r\n",
+        }
+    }
+
+    fn metadata(self) -> &'static str {
+        match self {
+            Book::Misc => "Units\\MiscMetaData.slk",
+            Book::Skin => "UI\\SkinMetaData.slk",
+        }
+    }
+}
+
+/// The files the gameplay constants' game values come from, each over the
+/// one before.
 pub const GAME_FILES: [&str; 3] = ["Units\\MiscData.txt", "Units\\MiscGame.txt", "Units\\ItemFunc.txt"];
+
+/// The game interface's: a section of a file (`CustomSkin` the race
+/// skins' `[Default]`, then `[Human]` over it), or the frames' strings
+/// (`FrameDef`: `UI\FrameDef\GlobalStrings.fdf`'s `StringList`).
+const SKIN_FILES: [(&str, &str, &str); 4] =
+    [("Units\\CommandStrings.txt", "Errors", "Errors"), ("Units\\UnitGlobalStrings.txt", "Categories", "Categories"), ("UI\\war3skins.txt", "Default", "CustomSkin"), ("UI\\war3skins.txt", "Human", "CustomSkin")];
 
 /// The constants and the game's values, once read.
 #[derive(Debug, Clone, Default)]
@@ -40,11 +88,11 @@ pub struct Constants {
 }
 
 impl Constants {
-    /// The fields in the metadata's order, named by `name` (a
+    /// `book`'s fields in the metadata's order, named by `name` (a
     /// `WESTRING_`'s text), and the game's values through `game`.
-    pub fn load(game: &Game, name: &dyn Fn(&str) -> String) -> Constants {
+    pub fn load(game: &Game, book: Book, name: &dyn Fn(&str) -> String) -> Constants {
         let mut fields = Vec::new();
-        if let Some((bytes, _)) = game.read("Units\\MiscMetaData.slk") {
+        if let Some((bytes, _)) = game.read(book.metadata()) {
             let table = slk_rs::Table::new(&slk_rs::parse(&String::from_utf8_lossy(&bytes)));
             let cols: HashMap<String, u32> = (1..=table.cols()).map(|c| (table.text(1, c).trim().to_ascii_lowercase(), c)).collect();
             let cell = |row: u32, col: &str| cols.get(col).map(|&c| table.text(row, c).trim().trim_matches('"').to_string()).unwrap_or_default();
@@ -66,10 +114,26 @@ impl Constants {
             }
         }
         let mut values = HashMap::new();
-        for file in GAME_FILES {
-            let Some((bytes, _)) = game.read(file) else { continue };
-            for (section, key, value) in entries(&String::from_utf8_lossy(&bytes)) {
-                values.insert((section.to_ascii_lowercase(), key.to_ascii_lowercase()), value);
+        let text = |file: &str| game.read(file).map(|(b, _)| String::from_utf8_lossy(&b).into_owned());
+        match book {
+            Book::Misc => {
+                for file in GAME_FILES {
+                    for (section, key, value) in entries(&text(file).unwrap_or_default()) {
+                        values.insert((section.to_ascii_lowercase(), key.to_ascii_lowercase()), value);
+                    }
+                }
+            }
+            Book::Skin => {
+                for (key, value) in string_list(&text("UI\\FrameDef\\GlobalStrings.fdf").unwrap_or_default()) {
+                    values.insert(("framedef".to_string(), key.to_ascii_lowercase()), value);
+                }
+                for (file, from, to) in SKIN_FILES {
+                    for (section, key, value) in entries(&text(file).unwrap_or_default()) {
+                        if section.eq_ignore_ascii_case(from) {
+                            values.insert((to.to_ascii_lowercase(), key.to_ascii_lowercase()), value);
+                        }
+                    }
+                }
             }
         }
         Constants { fields, game: values }
@@ -83,6 +147,32 @@ impl Constants {
     pub fn game_value(&self, f: &Field) -> String {
         self.game.get(&(f.section.to_ascii_lowercase(), f.key.to_ascii_lowercase())).cloned().unwrap_or_default()
     }
+}
+
+/// The strings of a frame definition file's `StringList` (`KEY "text",`).
+pub fn string_list(text: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut inside = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with("StringList") {
+            inside = true;
+            continue;
+        }
+        if !inside {
+            continue;
+        }
+        if line.starts_with('}') {
+            inside = false;
+            continue;
+        }
+        let Some((key, rest)) = line.split_once(char::is_whitespace) else { continue };
+        let rest = rest.trim().trim_end_matches(',').trim();
+        if let Some(v) = rest.strip_prefix('"').and_then(|r| r.strip_suffix('"')) {
+            out.push((key.to_string(), v.to_string()));
+        }
+    }
+    out
 }
 
 /// Each `key=value` of a BNI text: its section, key and value (trimmed;

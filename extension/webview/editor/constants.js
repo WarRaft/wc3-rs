@@ -1,12 +1,13 @@
 'use strict'
 
 /**
- * The map's gameplay constants (`war3mapMisc.txt`), a panel over the view,
- * as World Editor's Advanced > Gameplay Constants has them: Use Custom
- * Gameplay Constants (the map's own file, or the game's), then each
- * constant by its name, sorted, searched; its value set as it's typed
- * (`ConstantSet`: the editor checks it by its type and limits), the ones
- * the map changes marked, ↺ the game's again.
+ * The map's gameplay constants (`war3mapMisc.txt`) or game interface
+ * (`war3mapSkin.txt`), a panel over the view each, as World Editor's
+ * Advanced > Gameplay Constants and Game Interface have them: Use Custom
+ * ... (the map's own file, or the game's), then each field by its name,
+ * sorted, searched; its value set as it's typed (`ConstantSet`: the
+ * editor checks it by its type and limits; a string of the map's set
+ * in `war3map.wts`), the ones the map changes marked, ↺ the game's again.
  */
 const EditorConstants = (() => {
     const el = (tag, props = {}, ...children) => {
@@ -22,9 +23,12 @@ const EditorConstants = (() => {
     }
 
     class Panel {
-        /** @param said `(report)`: what it shows, for the tests */
-        constructor(root, send, encode, said) {
-            Object.assign(this, {root, send, encode, said})
+        /**
+         * @param book 0 the gameplay constants, 1 the game interface (`constants::BOOKS`)
+         * @param said `(report)`: what it shows, for the tests
+         */
+        constructor(root, book, title, send, encode, said) {
+            Object.assign(this, {root, book, send, encode, said})
             this.custom = false
             this.fields = []
             this.filter = ''
@@ -39,15 +43,15 @@ const EditorConstants = (() => {
             }
             this.body = el('div', {className: 'info-body constants-body'})
             this.root.append(
-                el('div', {className: 'info-head'}, el('span', {className: 'obj-title', textContent: 'Gameplay constants'}), close),
-                el('div', {className: 'constants-bar'}, el('label', {}, this.useCustom, 'Use custom gameplay constants'), this.search),
+                el('div', {className: 'info-head'}, el('span', {className: 'obj-title', textContent: title}), close),
+                el('div', {className: 'constants-bar'}, el('label', {}, this.useCustom, `Use custom ${title.toLowerCase()}`), this.search),
                 this.body,
             )
         }
 
         open() {
             this.root.hidden = false
-            this.send(this.encode.constantsAsk())
+            this.send(this.encode.constantsAsk(this.book))
         }
 
         close() {
@@ -59,7 +63,7 @@ const EditorConstants = (() => {
         }
 
         set(id, value) {
-            this.send(this.encode.constantSet(id, String(value)))
+            this.send(this.encode.constantSet(this.book, id, String(value)))
         }
 
         /** The constants (`Constants`): shown; what's being typed kept. */

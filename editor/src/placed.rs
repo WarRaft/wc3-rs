@@ -272,9 +272,10 @@ pub struct Files {
     pub strings: Option<(String, bool)>,
     /// The imported files' list (`war3map.imp`).
     pub imports: Option<imp_rs::Imports>,
-    /// The gameplay constants the map changes (`war3mapMisc.txt`), its
-    /// text; `None`: the game's (no file).
-    pub misc: Option<String>,
+    /// The gameplay constants and the game interface the map changes
+    /// (`war3mapMisc.txt`, `war3mapSkin.txt`: `constants::BOOKS`), each
+    /// its text; `None`: the game's (no file).
+    pub books: [Option<String>; 2],
     /// Imported files to write into the map on save (by their path in
     /// it), or to take out of it (`None`).
     pub import_files: std::collections::BTreeMap<String, Option<Vec<u8>>>,
@@ -361,8 +362,8 @@ impl Files {
                 None
             }
         });
-        let misc = game.read("war3mapMisc.txt").map(|(b, _)| String::from_utf8_lossy(&b).into_owned());
-        let files = Files { doodads, units, regions, pathing, cameras, sounds, objects, strings, imports, misc, import_files: Default::default(), layout: layout.unwrap_or_default() };
+        let books = crate::constants::BOOKS.map(|b| game.read(b.file()).map(|(b, _)| String::from_utf8_lossy(&b).into_owned()));
+        let files = Files { doodads, units, regions, pathing, cameras, sounds, objects, strings, imports, books, import_files: Default::default(), layout: layout.unwrap_or_default() };
         (files, notes)
     }
 }

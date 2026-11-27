@@ -1944,7 +1944,22 @@ step), this list updated.
      was (`constants::set`; World Editor's `\r\n`), its line taken out
      when it's the game's again (`1` and `1.0` alike); the ones the map
      changes marked, ↺ the game's. An undo each. Messages
-     `ConstantsAsk`, `ConstantSet`, `Constants`.
+     `ConstantsAsk`, `ConstantSet`, `Constants`. The game interface
+     (after the constants): World Editor's Advanced > Game Interface,
+     the Interface… panel, the same code (`constants::Book`: which,
+     its file, its metadata): `war3mapSkin.txt` over
+     `UI\SkinMetaData.slk`'s 854 fields, the game's values its
+     sections' own: `[FrameDef]` the frames' strings
+     (`UI\FrameDef\GlobalStrings.fdf`'s `StringList`,
+     `constants::string_list`), `[CustomSkin]` the race skins
+     (`UI\war3skins.txt`'s `[Default]`, `[Human]` over it), `[Errors]`
+     (`Units\CommandStrings.txt`), `[Categories]`
+     (`Units\UnitGlobalStrings.txt`). A value that's a string of the
+     map's (`TRIGSTR_1409`, as World Editor writes them) shows its
+     text, and what's typed sets that string in `war3map.wts`; its
+     panel follows the strings (an undo, a change on disk). Keys
+     the metadata hasn't (`LOADING_LOADING`) stay in the file as they
+     are.
    - **The triggers** (done after the sounds' Browse…): the trigger
      editor is one code, `webview/triggers.js` (with `triggers.css`): a
      map's triggers and a `.trg` alike, the tree of a map's beside its

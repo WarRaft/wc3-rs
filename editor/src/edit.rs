@@ -128,8 +128,9 @@ pub enum Snapshot {
     Pathing(Vec<u8>),
     /// The whole terrain (the tile setter's: its list, cliffs, tileset).
     Whole(Box<Terrain>),
-    /// The gameplay constants' text, whole (`placed::Files::misc`).
-    Misc(Option<String>),
+    /// The gameplay constants' or the game interface's text, whole
+    /// (`placed::Files::books`).
+    Book(crate::constants::Book, Option<String>),
 }
 
 /// Which files have changes not saved.
@@ -153,13 +154,13 @@ pub struct Dirty {
     /// `war3map.w3i` (its playable area, its tileset) and `war3map.shd`.
     pub info: bool,
     pub shadows: bool,
-    /// `war3mapMisc.txt`.
-    pub misc: bool,
+    /// `war3mapMisc.txt`, `war3mapSkin.txt` (`constants::BOOKS`).
+    pub books: [bool; 2],
 }
 
 impl Dirty {
     pub fn any(self) -> bool {
-        self.terrain || self.doodads || self.units || self.regions || self.pathing || self.cameras || self.sounds || self.objects != 0 || self.strings || self.imports || self.info || self.shadows || self.misc
+        self.terrain || self.doodads || self.units || self.regions || self.pathing || self.cameras || self.sounds || self.objects != 0 || self.strings || self.imports || self.info || self.shadows || self.books.iter().any(|b| *b)
     }
 }
 
@@ -417,7 +418,7 @@ impl Edits {
             Snapshot::Sounds(_) => self.dirty.sounds = true,
             Snapshot::Objects(kind, _) => self.dirty.objects |= crate::objdata::bit(*kind),
             Snapshot::Strings(_) => self.dirty.strings = true,
-            Snapshot::Misc(_) => self.dirty.misc = true,
+            Snapshot::Book(b, _) => self.dirty.books[b.index()] = true,
             Snapshot::Imports(..) => self.dirty.imports = true,
             Snapshot::Info(_) => self.dirty.info = true,
             Snapshot::Pathing(_) => self.dirty.pathing = true,
@@ -550,9 +551,9 @@ impl Edits {
                 self.dirty.strings = true;
                 Snapshot::Strings(std::mem::replace(&mut t.files.strings, text))
             }
-            Snapshot::Misc(text) => {
-                self.dirty.misc = true;
-                Snapshot::Misc(std::mem::replace(&mut t.files.misc, text))
+            Snapshot::Book(b, text) => {
+                self.dirty.books[b.index()] = true;
+                Snapshot::Book(b, std::mem::replace(&mut t.files.books[b.index()], text))
             }
             Snapshot::Pathing(cells) => {
                 self.dirty.pathing = true;

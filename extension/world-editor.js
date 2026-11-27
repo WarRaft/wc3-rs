@@ -90,6 +90,7 @@ const VIEW = 'wc3.editors'
  * @property {{height: number, water: number, wet: boolean, blight: boolean, boundary: boolean} | undefined} corner  a corner the page was asked of
  * @property {{file: number, index: number}[] | undefined} pasted  the things a paste made last
  * @property {{custom: boolean, count: number, changed: [string, string][]} | undefined} constants  the gameplay constants the panel last showed: the map's own or not, how many, those changed
+ * @property {{custom: boolean, count: number, changed: [string, string][]} | undefined} skin  the game interface the panel last showed, the same
  * @property {{name: string, what: number, index: number, said: string} | undefined} mapFound  what a name of the map's script was found to be (0 nothing, 1 a thing, 2 a region, 3 a camera)
  * @property {{type: string, waiting?: boolean, name?: string | null} | undefined} mapPick  a pick on the map for a trigger's parameter: waiting, or what it gave
  * @property {Object<string, string> | undefined} info  the map's info as its panel last showed it (`Session::info_fields`)
@@ -193,6 +194,7 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
   <button id="triggers-open" title="The map's triggers, in the trigger editor beside">Triggers…</button>
   <button id="info-open" title="The map's info: its description, loading screen, options, environment, players and forces">Info…</button>
   <button id="constants-open" title="The gameplay constants: the game's, or the map's own (war3mapMisc.txt)">Constants…</button>
+  <button id="skin-open" title="The game interface: the game's, or the map's own (war3mapSkin.txt)">Interface…</button>
   <button id="imports-open" title="The import manager: the map's imported files">Imports…</button>
   <button id="objects-open" title="The object editor: units, items, destructables, doodads, abilities, buffs, upgrades">Objects…</button>
 </div>
@@ -201,6 +203,7 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
 <div id="imports-panel" class="obj-panel" hidden></div>
 <div id="info-panel" class="obj-panel info-panel" hidden></div>
 <div id="constants-panel" class="obj-panel info-panel" hidden></div>
+<div id="skin-panel" class="obj-panel info-panel" hidden></div>
 <div id="triggers-panel" class="obj-panel trg-panel" hidden><div id="trg-root" class="trg-root wtg">${triggerMarkup(true, triggers.langs())}</div></div>
 <div id="message" class="message" hidden><h2 id="message-title"></h2><p id="message-text"></p><button id="reopen" hidden>Reopen</button></div>
 </div>
@@ -428,7 +431,8 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
             } else if (msg.type === 'cliffs') {
                 editor.cliffs = msg.cliffs
             } else if (msg.type === 'constants') {
-                editor.constants = msg.constants
+                if (msg.book === 1) editor.skin = msg.constants
+                else editor.constants = msg.constants
             } else if (msg.type === 'pasted') {
                 editor.pasted = msg.pasted
             } else if (msg.type === 'mapFound') {

@@ -60,7 +60,7 @@ fn the_terrain_drawn_with_the_tables_of_the_roots() {
     assert!(l.terrain.is_empty() && l.notes.iter().any(|n| n.contains("TerrainLights")), "{:?}", l.notes);
     // The pieces with a text form, where they are (the terrain) or would
     // be, at the top root (the map has none of the others).
-    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c", "war3map.w3s", "war3map.w3u", "war3map.w3t", "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3h", "war3map.w3q", "war3map.wts", "war3map.imp", "war3map.w3i", "war3mapMisc.txt"]);
+    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c", "war3map.w3s", "war3map.w3u", "war3map.w3t", "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3h", "war3map.w3q", "war3map.wts", "war3map.imp", "war3map.w3i", "war3mapMisc.txt", "war3mapSkin.txt"]);
     assert!(f[1].1.ends_with("map/war3map.doo"), "{f:?}");
     // Nothing placed; the minimap a pixel a corner.
     assert!(o.models.is_empty() && o.notes.is_empty());
@@ -1216,8 +1216,8 @@ fn gameplay_constants_the_games_or_the_maps_own_set_checked_undone_saved_and_off
     dir.write("map/UI/WorldEditStrings.txt", b"[WorldEditStrings]\nWESTRING_MHEL=Hero Maximum Level\n");
     let mut s = Session::open(dir.path()).unwrap();
     s.draw();
-    let fields = |s: &mut Session| match s.constants_msg() {
-        ServerMsg::Constants { custom, fields } => (custom, fields),
+    let fields = |s: &mut Session| match s.constants_msg(crate::constants::Book::Misc) {
+        ServerMsg::Constants { custom, fields, .. } => (custom, fields),
         m => panic!("{m:?}"),
     };
     let said = |msgs: &[ServerMsg]| msgs.iter().rev().find_map(|m| if let ServerMsg::State(st) = m { Some(st.message.clone()) } else { None }).unwrap();
@@ -1226,24 +1226,68 @@ fn gameplay_constants_the_games_or_the_maps_own_set_checked_undone_saved_and_off
     assert!(!custom);
     assert_eq!((f[0].name.as_str(), f[0].value.as_str(), f[0].game.as_str(), f[1].value.as_str(), f[2].value.as_str()), ("Hero Maximum Level", "10", "10", "1", "htow,ogre"));
     // Set: the map's own, the key changed alone; out of its limits said.
-    assert_eq!(said(&s.constant_set("mhel", "25")), "");
-    assert!(said(&s.constant_set("mhel", "0")).contains("1 at least"));
-    assert_eq!(said(&s.constant_set("twn1", "htow, ogre, etol")), "");
-    assert_eq!(s.placed.misc.as_deref(), Some("[Misc]\r\nMaxHeroLevel=25\r\n\r\n[TWN1]\r\nDependencyOr=htow,ogre,etol\r\n"));
+    assert_eq!(said(&s.constant_set(crate::constants::Book::Misc, "mhel", "25")), "");
+    assert!(said(&s.constant_set(crate::constants::Book::Misc, "mhel", "0")).contains("1 at least"));
+    assert_eq!(said(&s.constant_set(crate::constants::Book::Misc, "twn1", "htow, ogre, etol")), "");
+    assert_eq!(s.placed.books[0].as_deref(), Some("[Misc]\r\nMaxHeroLevel=25\r\n\r\n[TWN1]\r\nDependencyOr=htow,ogre,etol\r\n"));
     let (custom, f) = fields(&mut s);
     assert!(custom && f[0].value == "25" && f[0].game == "10");
     // The game's value again: its line out.
-    s.constant_set("twn1", "htow,ogre");
-    assert_eq!(s.placed.misc.as_deref(), Some("[Misc]\r\nMaxHeroLevel=25\r\n\r\n[TWN1]\r\n"));
+    s.constant_set(crate::constants::Book::Misc, "twn1", "htow,ogre");
+    assert_eq!(s.placed.books[0].as_deref(), Some("[Misc]\r\nMaxHeroLevel=25\r\n\r\n[TWN1]\r\n"));
     s.undo(false);
-    assert!(s.placed.misc.as_deref().unwrap().contains("etol"));
+    assert!(s.placed.books[0].as_deref().unwrap().contains("etol"));
     // Saved into the map's root; off again: the file gone on the next save.
     let saved = s.save();
     assert!(said(&saved).contains("war3mapMisc.txt"), "{saved:?}");
     assert!(std::fs::read_to_string(dir.path().join("map/war3mapMisc.txt")).unwrap().contains("MaxHeroLevel=25"));
-    s.constant_set("custom", "0");
+    s.constant_set(crate::constants::Book::Misc, "custom", "0");
     assert!(!fields(&mut s).0 && fields(&mut s).1[0].value == "10");
     let saved = s.save();
     assert!(said(&saved).contains("removed"), "{saved:?}");
     assert!(!dir.path().join("map/war3mapMisc.txt").exists());
+}
+
+#[test]
+fn the_game_interface_its_strings_sections_and_the_maps_strings() {
+    let dir = TestDir::new("session-skin");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    dir.write(
+        "map/UI/SkinMetaData.slk",
+        &testdir::slk(&[
+            &["ID", "field", "section", "displayName", "type"],
+            &["c003", "LumberIcon", "CustomSkin", "WESTRING_C003", "icon"],
+            &["f001", "GOLD", "FrameDef", "WESTRING_F001", "string"],
+            &["e001", "Emptycontrolgroup", "Errors", "WESTRING_E001", "string"],
+        ]),
+    );
+    dir.write("map/UI/war3skins.txt", b"[Human]\nLumberIcon=Human.blp\n[Default]\nLumberIcon=Default.blp\n");
+    dir.write("map/UI/FrameDef/GlobalStrings.fdf", b"StringList {\n    GOLD \"Gold\",\n}\n");
+    dir.write("map/Units/CommandStrings.txt", b"[Errors]\nEmptycontrolgroup=Unable to form an empty control group.\n");
+    // The map's: its gold a string of its own.
+    dir.write("map/war3mapSkin.txt", b"[FrameDef]\r\nGOLD=TRIGSTR_001\r\n");
+    dir.write("map/war3map.wts", b"STRING 1\r\n{\r\nTreasure\r\n}\r\n");
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let skin = crate::constants::Book::Skin;
+    let fields = |s: &mut Session| match s.constants_msg(skin) {
+        ServerMsg::Constants { book: 1, custom, fields } => (custom, fields.into_iter().map(|f| (f.value, f.game)).collect::<Vec<_>>()),
+        m => panic!("{m:?}"),
+    };
+    // The race skins' Human over Default; the frames' strings; the errors.
+    assert_eq!(
+        fields(&mut s),
+        (true, vec![("Human.blp".into(), "Human.blp".into()), ("Treasure".into(), "Gold".into()), ("Unable to form an empty control group.".into(), "Unable to form an empty control group.".into())])
+    );
+    // A string of the map's: the string set, the file as it was.
+    s.constant_set(skin, "f001", "Riches");
+    assert!(s.placed.strings.as_ref().unwrap().0.contains("Riches"));
+    assert_eq!(s.placed.books[1].as_deref(), Some("[FrameDef]\r\nGOLD=TRIGSTR_001\r\n"));
+    assert_eq!(fields(&mut s).1[1].0, "Riches");
+    // Another: on its line, in its section.
+    s.constant_set(skin, "c003", "ReplaceableTextures\\CommandButtons\\BTNAnkh.blp");
+    assert_eq!(s.placed.books[1].as_deref(), Some("[FrameDef]\r\nGOLD=TRIGSTR_001\r\n\r\n[CustomSkin]\r\nLumberIcon=ReplaceableTextures\\CommandButtons\\BTNAnkh.blp\r\n"));
+    let saved = s.save();
+    assert!(saved.iter().any(|m| matches!(m, ServerMsg::State(st) if st.message.contains("war3mapSkin.txt") && st.message.contains("war3map.wts"))), "{saved:?}");
 }
