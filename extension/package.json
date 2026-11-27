@@ -2,7 +2,7 @@
   "name": "wc3",
   "displayName": "WC3",
   "description": "A Warcraft III map editor in VS Code, on its way to replacing World Editor (not everything is there yet): JASS/vJASS, Zinc, Lua, AngelScript and BNI with semantic highlighting, live diagnostics and wc3.bni projects; maps as folders; GUI triggers (.trg) as World Editor shows them; SLK tables as a grid; BLP textures and pathing maps (.wpm) as pictures; object data (.w3a .w3u ...), cameras, regions, sounds, the terrain's header, map info, the custom script, imports and placed units and doodads as editable text.",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "publisher": "WarRaft",
   "icon": "images/logo.png",
   "license": "CC0-1.0",
