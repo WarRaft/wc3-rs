@@ -37,10 +37,15 @@ pub enum Tool {
     /// A ramp down a cliff, toward the brush's middle (HiveWE's
     /// `CliffOperator::update_ramp`).
     Ramp,
+    /// World Editor's shallow and deep water: the cliff a layer or two
+    /// down, water over it a layer or two above the ground (HiveWE's
+    /// `cliff_operation::shallow_water`, `deep_water`).
+    ShallowWater,
+    DeepWater,
 }
 
 /// The tools by their code on the wire.
-pub const TOOLS: [Tool; 12] = [
+pub const TOOLS: [Tool; 14] = [
     Tool::Raise,
     Tool::Lower,
     Tool::Plateau,
@@ -53,6 +58,8 @@ pub const TOOLS: [Tool; 12] = [
     Tool::PathingOn,
     Tool::PathingOff,
     Tool::Ramp,
+    Tool::ShallowWater,
+    Tool::DeepWater,
 ];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -183,6 +190,22 @@ impl Edits {
                 Tool::Plateau => p.height as i32,
                 Tool::CliffUp => (p.layer_height() as i32 + 1).min(15),
                 Tool::CliffDown => (p.layer_height() as i32 - 1).max(0),
+                // Into water: a layer or two down; from the other water:
+                // the cliff a layer the other way, its surface kept.
+                Tool::ShallowWater | Tool::DeepWater => {
+                    // (By its cliff's layer, as the brush sets it: the
+                    // ground's height under it may be anything.)
+                    let deep = p.has_water(v) && water_layers(p) - (p.layer_height() as f32 - 2.0) > 1.5;
+                    let l = p.layer_height() as i32;
+                    match (brush.tool, p.has_water(v)) {
+                        (Tool::ShallowWater, false) => l - 1,
+                        (Tool::DeepWater, false) => l - 2,
+                        (Tool::ShallowWater, true) if deep => l + 1,
+                        (Tool::DeepWater, true) if !deep => l - 1,
+                        _ => l,
+                    }
+                    .clamp(0, 15)
+                }
                 _ => 0,
             }
         });
@@ -256,12 +279,24 @@ impl Edits {
                         let roll = (self.seed >> 16) % 100;
                         p.set_ground_variation(if roll < 85 { 0 } else { (roll % 16) as u8 });
                     }
-                    Tool::CliffUp | Tool::CliffDown => {
+                    Tool::CliffUp | Tool::CliffDown | Tool::ShallowWater | Tool::DeepWater => {
                         // A corner of another layer: no ramp's any more.
                         if p.layer_height() as i32 != start_value {
                             p.set_ramp(v, false);
                         }
                         p.set_layer_height(start_value as u8);
+                        match brush.tool {
+                            // Its surface a layer (shallow) or two (deep)
+                            // above the ground's layer.
+                            Tool::ShallowWater | Tool::DeepWater => {
+                                let surface = start_value - if brush.tool == Tool::ShallowWater { 1 } else { 0 };
+                                p.set_has_water(v, true);
+                                p.set_water_height((surface * 512 + 0x2000).clamp(0, 0x3FFF) as u16);
+                            }
+                            // Water under the ground now: none.
+                            _ if p.has_water(v) && water_layers(p) < ground_layers(p) => p.set_has_water(v, false),
+                            _ => {}
+                        }
                         if brush.cliff >= 0 && (brush.cliff as usize) < t.cliffs.len() {
                             p.set_cliff_texture(brush.cliff as u8);
                         }
@@ -443,6 +478,17 @@ impl Edits {
             }
         }
     }
+}
+
+/// A corner's water surface and ground, in layers (HiveWE's
+/// `corner_water_height`, `corner_final_ground_height`; the tileset's
+/// water offset left out).
+fn water_layers(p: &Point) -> f32 {
+    crate::terrain::water_level(p)
+}
+
+fn ground_layers(p: &Point) -> f32 {
+    crate::terrain::ground_height(p) + p.layer_height() as f32 - 2.0
 }
 
 /// The corners around those a cliff brush set (`seeds`), pulled to within

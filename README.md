@@ -1712,8 +1712,15 @@ step), this list updated.
      The cliff brush pulls the corners around it to within two layers,
      and theirs in turn (HiveWE's `check_nearby`, `edit::pull_nearby`:
      a step of three layers has no model), those pulled no ramp's,
-     its cliff type on them and its corners' neighbours. The tests' `brush`
-     message takes `cells` (from above) for exact places.
+     its cliff type on them and its corners' neighbours. Shallow and
+     deep water (HiveWE's `shallow_water`, `deep_water`): the cliff a
+     layer or two down, its water's surface a layer (shallow) or two
+     (deep) over the ground's layer; on the other water the cliff a
+     layer the other way, the surface kept (which water it is told by
+     the cliff's layer, the ground's height under it left out); a cliff
+     brush raising a corner over its water dries it. The tests' `brush`
+     message takes `cells` (from above) for exact places, `corner` asks
+     a corner of the terrain (its height, water, wet).
    - **6b, things placed** (done): the object palette (every type of
      doodad, destructable, unit and item, the game's and the map's
      object data's, named as World Editor names them, with its group:

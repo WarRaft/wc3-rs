@@ -276,6 +276,26 @@ async function steps(only) {
             const ramped = await until(() => we.cliffs, 'its cliffs')
             check(ramped.ramps > lowered.ramps, `ramps down the lowered cliff: ${lowered.ramps} → ${ramped.ramps} of ${ramped.instances} cliff pieces`)
             await shot('world-editor-ramps')
+            // Shallow water on the high ground east of the cut, then deep over it: the
+            // ground a layer lower each time, the surface where it was.
+            const corner = async () => {
+                we.corner = undefined
+                await we.panel.webview.postMessage({type: 'corner', x: 80, y: 60})
+                return until(() => we.corner, 'a corner')
+            }
+            const dry = await corner()
+            const water = []
+            for (const tool of ['shallowWater', 'deepWater']) {
+                we.state = undefined
+                await we.panel.webview.postMessage({type: 'brush', brush: {tool, size: 5}, cells: [[80, 60]]})
+                await until(() => we.state?.undo, tool)
+                await sleep(300)
+                water.push(await corner())
+            }
+            const [shallow, deep] = water
+            check(!dry.wet && shallow.wet && deep.wet && Math.abs(dry.height - shallow.height - 1) < 0.01 && Math.abs(shallow.height - deep.height - 1) < 0.01 && Math.abs(shallow.water - deep.water) < 0.01,
+                `shallow, then deep water: the ground ${dry.height.toFixed(2)} → ${shallow.height.toFixed(2)} → ${deep.height.toFixed(2)}, its surface ${shallow.water.toFixed(2)}, ${deep.water.toFixed(2)}`)
+            await shot('world-editor-water')
             we.state = undefined
             await we.panel.webview.postMessage({type: 'save'})
             const saved = await until(() => we.state?.message && we.state, 'saved')

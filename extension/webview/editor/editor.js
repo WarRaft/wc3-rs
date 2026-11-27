@@ -19,6 +19,8 @@
     const canvas = $('view')
     const gl = canvas.getContext('webgl2', {antialias: true})
     let terrain = null
+    // The terrain message last sent (the tests ask its corners).
+    let lastTerrain = null
     let objects = null
     let lines = null
     let shaderError = ''
@@ -306,6 +308,8 @@
         {tool: 'cliffUp', label: 'Cliff +'},
         {tool: 'cliffDown', label: 'Cliff −'},
         {tool: 'ramp', label: 'Ramp'},
+        {tool: 'shallowWater', label: 'Shallow water'},
+        {tool: 'deepWater', label: 'Deep water'},
         {tool: 'water', label: 'Water'},
         {tool: 'dry', label: 'Dry'},
         {tool: 'place', label: 'Place'},
@@ -334,7 +338,7 @@
         // (Not before the page's state is all declared: its first showing.)
         if (usedByReady) refreshUsedBy()
         $('size-label').hidden = NO_BRUSH.includes(brush.tool)
-        $('strength-label').hidden = NO_BRUSH.includes(brush.tool) || pathing || brush.tool === 'ramp'
+        $('strength-label').hidden = NO_BRUSH.includes(brush.tool) || pathing || ['ramp', 'cliffUp', 'cliffDown', 'shallowWater', 'deepWater'].includes(brush.tool)
         for (const c of $('pathing-flags').querySelectorAll('input')) c.checked = (brush.flags & Number(c.value)) !== 0
         // A tool of a layer shows the layer.
         if ((pathing && !show.pathing) || (brush.tool === 'regions' && !show.regions) || (brush.tool === 'cameras' && !show.cameras)) {
@@ -1299,6 +1303,7 @@
                 missing: msg.meshes.filter(m => m.error).length + (msg.notes?.length ?? 0),
             }})
         } else if (msg.kind === 'terrain' && terrain) {
+            lastTerrain = msg
             terrain.setTerrain(msg)
             // Resized: the view stays over the same ground.
             if (mapPanel.shift) {
@@ -1496,6 +1501,11 @@
             if (msg.distance) camera.distance = msg.distance
             if (msg.horizontal !== undefined) camera.horizontal = msg.horizontal
             if (msg.vertical !== undefined) camera.vertical = msg.vertical
+        } else if (msg.type === 'corner') {
+            // A corner of the terrain last sent (cells): for the tests.
+            const t = lastTerrain
+            const i = msg.y * t.width + msg.x
+            vscode.postMessage({type: 'corner', corner: {height: t.heights[i], water: t.water[i], wet: (t.corners[i] & 1) !== 0}})
         } else if (msg.type === 'brush') {
             // A stroke at points of the view (-1 to 1, y up), as the mouse
             // would lay it, or at points of the map (`cells`, from above): for the tests.

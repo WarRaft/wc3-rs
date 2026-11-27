@@ -146,3 +146,34 @@ fn a_cliff_brush_pulls_the_corners_around_to_within_two_layers() {
     }
     assert_eq!((layer(&t, 7, 7), layer(&t, 8, 7), layer(&t, 9, 7)), (0, 2, 2));
 }
+
+#[test]
+fn shallow_and_deep_water_and_one_into_the_other_its_surface_kept() {
+    let mut t = flat(9);
+    let v = t.flags_version();
+    let mut e = Edits::default();
+    let at = |t: &Terrain| *t.point(4, 4).unwrap();
+    let small = |tool| Brush { size: 1.0, ..brush(tool) };
+    // Shallow: the cliff a layer down (2 → 1), the surface at layer 0 (0x2000).
+    e.apply(&mut t, 4.0, 4.0, &small(Tool::ShallowWater), true).unwrap();
+    e.end();
+    assert_eq!((at(&t).layer_height(), at(&t).has_water(v), at(&t).water_height()), (1, true, 0x2000));
+    // Deep from it: a layer further down, the same surface.
+    e.apply(&mut t, 4.0, 4.0, &small(Tool::DeepWater), true).unwrap();
+    e.end();
+    assert_eq!((at(&t).layer_height(), at(&t).water_height()), (0, 0x2000));
+    // Again: stays.
+    e.apply(&mut t, 4.0, 4.0, &small(Tool::DeepWater), true).unwrap();
+    e.end();
+    assert_eq!(at(&t).layer_height(), 0);
+    // Shallow from deep: back up a layer.
+    e.apply(&mut t, 4.0, 4.0, &small(Tool::ShallowWater), true).unwrap();
+    e.end();
+    assert_eq!((at(&t).layer_height(), at(&t).water_height()), (1, 0x2000));
+    // Raised above its water by cliffs: dry.
+    e.apply(&mut t, 4.0, 4.0, &small(Tool::CliffUp), true).unwrap();
+    e.end();
+    assert!(at(&t).has_water(v), "level with it: still");
+    e.apply(&mut t, 4.0, 4.0, &small(Tool::CliffUp), true).unwrap();
+    assert!(!at(&t).has_water(v));
+}

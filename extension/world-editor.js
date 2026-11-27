@@ -86,7 +86,8 @@ const VIEW = 'wc3.editors'
  * @property {string | undefined} picked  what the last click picked, said ('' nothing)
  * @property {{kind: number, count: number, custom: string[], changed: string[], picked: {id: string, base: string, name: string, levels: number, fields: [string, number, string, boolean][]} | null} | undefined} objects  the object editor's kind, its objects, the one picked and its fields
  * @property {{name: string, uses: {nth: number, trigger: string, line: number, text: string}[]} | undefined} usedBy  the triggers that use a name of the map's script, as last found
- * @property {{instances: number, ramps: number, missing: number} | undefined} cliffs  the cliffs and ramps the page was last sent
+ * @property {{instances: number, ramps: number, missing: number} | undefined} cliffs
+ * @property {{height: number, water: number, wet: boolean} | undefined} corner  a corner the page was asked of  the cliffs and ramps the page was last sent
  * @property {{name: string, what: number, index: number, said: string} | undefined} mapFound  what a name of the map's script was found to be (0 nothing, 1 a thing, 2 a region, 3 a camera)
  * @property {{type: string, waiting?: boolean, name?: string | null} | undefined} mapPick  a pick on the map for a trigger's parameter: waiting, or what it gave
  * @property {Object<string, string> | undefined} info  the map's info as its panel last showed it (`Session::info_fields`)
@@ -416,6 +417,8 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
                 for (const d of workspace.textDocuments) {
                     if (d.isDirty && [wtg, wct].some(u => u.toString().toLowerCase() === d.uri.toString().toLowerCase())) d.save()
                 }
+            } else if (msg.type === 'corner') {
+                editor.corner = msg.corner
             } else if (msg.type === 'cliffs') {
                 editor.cliffs = msg.cliffs
             } else if (msg.type === 'mapFound') {
