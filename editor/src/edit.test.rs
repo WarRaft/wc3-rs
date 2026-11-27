@@ -203,3 +203,22 @@ fn blight_not_by_a_cliff_taken_off_by_a_texture_and_a_cliff() {
     e.apply(&mut t, 5.0, 7.0, &Brush { size: 1.0, ..brush(Tool::CliffUp) }, true).unwrap();
     assert!(!blight(&t, 5, 7) && !blight(&t, 6, 7) && !blight(&t, 5, 8));
 }
+
+#[test]
+fn boundary_on_the_cells_under_the_brush_and_off_again() {
+    let mut t = flat(9);
+    let v = t.flags_version();
+    let mut e = Edits::default();
+    let on = |t: &Terrain, x: u32, y: u32| t.point(x, y).unwrap().boundary(v);
+    // A brush 2 across at (4, 4): the four cells around it (their middles 0.7 off).
+    e.apply(&mut t, 4.0, 4.0, &Brush { size: 2.0, ..brush(Tool::BoundaryOn) }, true).unwrap();
+    e.end();
+    let cells: Vec<(u32, u32)> = (0..9).flat_map(|y| (0..9).map(move |x| (x, y))).filter(|&(x, y)| on(&t, x, y)).collect();
+    assert_eq!(cells, [(3, 3), (4, 3), (3, 4), (4, 4)]);
+    // The top row and right column: no cells of their own.
+    e.apply(&mut t, 8.0, 8.0, &Brush { size: 2.0, ..brush(Tool::BoundaryOn) }, true).unwrap();
+    e.end();
+    assert!(on(&t, 7, 7) && !on(&t, 8, 8) && !on(&t, 8, 7));
+    e.apply(&mut t, 4.0, 4.0, &Brush { size: 1.6, ..brush(Tool::BoundaryOff) }, true).unwrap();
+    assert!(!on(&t, 3, 3) && !on(&t, 4, 4));
+}

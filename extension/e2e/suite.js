@@ -315,6 +315,16 @@ async function steps(only) {
             await sleep(300)
             const [mid, side] = [await cornerAt(50, 75), await cornerAt(51, 75)]
             check(!mid.blight && side.blight, 'a texture over its middle: blight off there alone')
+            // A boundary laid on four cells, then taken off.
+            const bounded = []
+            for (const tool of ['boundaryOn', 'boundaryOff']) {
+                we.state = undefined
+                await we.panel.webview.postMessage({type: 'brush', brush: {tool, size: 3}, cells: [[45, 70]]})
+                await until(() => we.state?.undo, tool)
+                await sleep(300)
+                bounded.push([await cornerAt(44, 69), await cornerAt(45, 70), await cornerAt(46, 70)].map(c => c.boundary))
+            }
+            check(bounded[0].join() === 'true,true,false' && bounded[1].join() === 'false,false,false', `a boundary on the cells under the brush, then off: ${JSON.stringify(bounded)}`)
             we.state = undefined
             await we.panel.webview.postMessage({type: 'save'})
             const saved = await until(() => we.state?.message && we.state, 'saved')

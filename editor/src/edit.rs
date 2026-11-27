@@ -45,10 +45,15 @@ pub enum Tool {
     /// Blight, not by a cliff (HiveWE's blight texture); a texture laid
     /// takes it off.
     Blight,
+    /// World Editor's boundary: cells (their bottom left corners'
+    /// flag) nothing passes, and taken off again (HiveWE's
+    /// `add_boundary`, `remove_boundary`, a cell brush).
+    BoundaryOn,
+    BoundaryOff,
 }
 
 /// The tools by their code on the wire.
-pub const TOOLS: [Tool; 15] = [
+pub const TOOLS: [Tool; 17] = [
     Tool::Raise,
     Tool::Lower,
     Tool::Plateau,
@@ -64,6 +69,8 @@ pub const TOOLS: [Tool; 15] = [
     Tool::ShallowWater,
     Tool::DeepWater,
     Tool::Blight,
+    Tool::BoundaryOn,
+    Tool::BoundaryOff,
 ];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -233,6 +240,19 @@ impl Edits {
         let mut seeds = Vec::new();
         let (x0, x1) = (((x - r).floor() as i64).max(0), ((x + r).ceil() as i64).min(w - 1));
         let (y0, y1) = (((y - r).floor() as i64).max(0), ((y + r).ceil() as i64).min(h - 1));
+        if matches!(brush.tool, Tool::BoundaryOn | Tool::BoundaryOff) {
+            // The cells whose middle is under the brush.
+            for py in y0..h - 1 {
+                for px in x0..w - 1 {
+                    if py > y1 || px > x1 || ((px as f32 + 0.5 - x).powi(2) + (py as f32 + 0.5 - y).powi(2)).sqrt() > r {
+                        continue;
+                    }
+                    t.points[at(px, py)].set_boundary(v, brush.tool == Tool::BoundaryOn);
+                }
+            }
+            self.dirty.terrain = true;
+            return Ok(());
+        }
         if brush.tool == Tool::Ramp {
             // Each corner under the brush: a ramp down from it, toward the
             // brush's middle.
@@ -318,7 +338,7 @@ impl Edits {
                     Tool::Water => p.set_has_water(v, true),
                     Tool::Dry => p.set_has_water(v, false),
                     // Not the terrain's: `pathing`; the ramps above.
-                    Tool::PathingOn | Tool::PathingOff | Tool::Ramp => {}
+                    Tool::PathingOn | Tool::PathingOff | Tool::Ramp | Tool::BoundaryOn | Tool::BoundaryOff => {}
                 }
             }
         }

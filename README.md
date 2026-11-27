@@ -1721,9 +1721,13 @@ step), this list updated.
      brush raising a corner over its water dries it. Blight (HiveWE's
      blight texture): set where no cliff is near (a corner of the 3 by 3
      around it a cliff's, `edit::cliff_corner`); a texture laid takes it
-     off, and a cliff brush off its cliffs' corners. The tests' `brush`
+     off, and a cliff brush off its cliffs' corners. Boundary + and
+     Boundary − (HiveWE's `add_boundary`, `remove_boundary`): a cell
+     brush, the cells whose middle is under it (their bottom left
+     corner's flag); drawn darker, nothing passes it in the pathing
+     made on save. The tests' `brush`
      message takes `cells` (from above) for exact places, `corner` asks
-     a corner of the terrain (its height, water, wet, blight).
+     a corner of the terrain (its height, water, wet, blight, boundary).
    - **6b, things placed** (done): the object palette (every type of
      doodad, destructable, unit and item, the game's and the map's
      object data's, named as World Editor names them, with its group:
