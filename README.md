@@ -26,6 +26,31 @@ item's details are in its section below):
   8c (light), 8d (the map's size and tiles), the leftovers; Reforged HD
   a (the storage), b (the game's layers), c (`.dds`), d (its
   models), e (the HD shaders), f (2.0's mods and HD terrain).
+  What's left of it, beyond the steps:
+  - the Ripple height tool (World Editor's last one not here: how it
+    works there to be found out first);
+  - the doodad palette's random rotation and scale (World Editor's
+    `DP_RandomRotation`, `DP_RandomScale...` buttons);
+  - Test Map on macOS run for real: its Porting Kit setup is tested on
+    stand-ins alone (`test-setup` in the e2e); on Linux no way yet;
+  - the AI editor (not started).
+- **Low priority, needing research.** What World Editor makes on save
+  by a way of its own that isn't known; each needs that way found out
+  (from Blizzard's maps in the game's folder, not maps edited by hand)
+  before more work is worth it:
+  - **the shadow map** (`war3map.shd`): not made, left as it is. No one
+    has its algorithm (the best fitted model known agrees on 67% of the
+    cells); see "The shadow map" in [World Editor](#world-editor);
+  - **the minimap's picture** (`war3mapMap.blp`): 19 of 255 off World
+    Editor's on average (Blizzard's 108 melee maps), most on Northrend's
+    snow, bluer there: how World Editor lights the ground it renders;
+  - **the minimap's icons** (`war3map.mmp`): World Editor's exactly in
+    96 of the 108 maps, the rest a pixel off here and there on a
+    shorter side: its rounding there.
+- **The campaign editor: the lowest priority.** The work is aimed at
+  multiplayer; today's maps make campaigns for several players, and
+  tools to carry data between maps exist already. Not before everything
+  else.
 - **Tests in the editor** ([below](#tests-in-the-editor)): every new
   piece of the editor gets a step in `extension/e2e/suite.js`.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
