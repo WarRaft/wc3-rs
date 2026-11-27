@@ -24,6 +24,12 @@ fn the_games_command_line_or_the_projects_command_filled_in() {
     assert_eq!(project.test.build.as_deref(), Some("release"));
     let l = launch(&project, &game, false).unwrap();
     assert_eq!((l.program.as_str(), l.args), ("wine", vec![exe, "-loadfile".into(), TEST_MAP.into(), "-window".into()]));
+    // A game folder of its own (a wrapper's): that one.
+    let wrapped = dir.join("wrapper/drive_c/Warcraft III");
+    std::fs::create_dir_all(&wrapped).unwrap();
+    std::fs::write(wrapped.join("War3.exe"), b"").unwrap();
+    let (project, _) = crate::project::load(&dir, &format!("{src}[test]\ngame=wrapper/drive_c/Warcraft III\n"));
+    assert_eq!(game_folder(&project), Some(wrapped));
     // A wrong setting said.
     let (_, issues) = crate::project::load(&dir, "[test]\nwindow=yes\nspeed=2\n");
     assert_eq!(issues.len(), 2, "{issues:?}");

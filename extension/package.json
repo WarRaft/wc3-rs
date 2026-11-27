@@ -132,6 +132,11 @@
         "icon": "$(debug-start)"
       },
       {
+        "command": "wc3.testMapSetup",
+        "title": "Set Up Test Map…",
+        "category": "WC3"
+      },
+      {
         "command": "wc3.txt2.preview",
         "title": "Open Preview",
         "category": "txt2",

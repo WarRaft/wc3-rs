@@ -111,6 +111,7 @@ dialect=vjass
 | `[lint]`    | a rule or group id | `off`, `warning` or `error`     | turn a lint rule (or every rule of a group) off or on, at that level (see [Lint](#lint)) |
 | `[external]` | a tool's name | its program and first arguments, comma-separated BNI strings (`"wine","tools/ObjectMerger.exe"`; a program with a `/` relative to the project root) | the tool JassHelper's `//! external NAME` runs on the map built (see below) |
 | `[test]`    | `build`   | a `[build]`'s name                       | the build Test Map runs; the default without it |
+| `[test]`    | `game`    | a path, relative to the project root     | the game's folder Test Map copies the map into and runs the game in (a wrapper's); the last `[project] game` with `War3.exe` without it |
 | `[test]`    | `window`  | `1` or `0`                               | the game in a window (`-window`); `0` without it |
 | `[test]`    | `command` | its program and arguments, comma-separated BNI strings; `{exe}` (the game's `War3.exe`), `{game}` (its folder), `{map}` (`Maps\Test\WorldEditTestMap.w3x`) filled in | what runs the game with the map; on Windows `{exe} -loadfile {map}` without it, elsewhere needed (`"wine","{exe}","-loadfile","{map}"`, a wrapper's) |
 
@@ -135,8 +136,21 @@ dialect=vjass
   `wc3 test [name] [--project <path>]`, the extension's Test Map (the
   button over `wc3.bni`; the World Editor's Test map, which saves
   first). macOS and Linux can't run the Windows game by themselves:
-  `command=` says how; a setup that installs the game into Porting Kit
-  and fills it in is to come.
+  `command=` says how, and `game=` where the game is (a wrapper's).
+  On macOS Set Up Test Map… (`wc3.testMapSetup`, offered when Test
+  Map can't run; `extension/test-setup.js`) does it in a window of
+  steps, each checked by itself (and every few seconds), a button for
+  what's left: Porting Kit (found in `/Applications`,
+  `~/Applications`; else its page opened to download it), a wrapper of
+  its (an `.app` with a `drive_c`: `Contents/SharedSupport/prefix` or
+  `Contents`, a level under those folders too; else Porting Kit
+  opened to make a port), the game in it (its `War3.exe`; else the
+  project's game folder copied into its `C:\Program Files\Warcraft
+  III`), the wrapper's Wine, then `[test]` written into `wc3.bni`
+  (`game=` the wrapper's game folder, `command="/usr/bin/env",
+  "WINEPREFIX=<its prefix>","<its wine>","{exe}","-loadfile","{map}",
+  "-opengl"`, `window=1`) and Test Map run. On Linux a window says no
+  way has been found yet, and what to write by hand.
 - **`dialect`.** A file's own header always wins over the project, so a
   project can still mix dialects. Without either, a file is plain JASS.
   A `.vj` file is vJASS unless its header says otherwise. The order is

@@ -2523,6 +2523,7 @@ async function pickManifest(arg, title) {
  */
 function registerBuild(context, binary) {
     const output = window.createOutputChannel('WC3 Build')
+    const setup = require('./test-setup').registerTestSetup(context)
     let running = false
 
     const run = async (arg, name) => {
@@ -2608,7 +2609,12 @@ function registerBuild(context, binary) {
         else {
             output.show(true)
             const first = /^error: (.*)$/m.exec(result.err)?.[1] ?? 'see the output "WC3 Build"'
-            window.showErrorMessage(`WC3: Test Map: ${first}`, 'Open wc3.bni').then(go => go && window.showTextDocument(Uri.file(manifest)))
+            // The game can't run here by itself: the setup (macOS), or the word on it (Linux).
+            const setup = /can't run by itself/.test(first) && process.platform !== 'win32'
+            window.showErrorMessage(`WC3: Test Map: ${first}`, ...(setup ? ['Set Up…'] : []), 'Open wc3.bni').then(go => {
+                if (go === 'Set Up…') commands.executeCommand('wc3.testMapSetup', Uri.file(manifest))
+                else if (go) window.showTextDocument(Uri.file(manifest))
+            })
         }
         return {code: result.code, output: result.out + result.err}
     }
@@ -2620,6 +2626,12 @@ function registerBuild(context, binary) {
         commands.registerCommand('wc3.testMap', arg => test(arg).catch(e => {
             window.showErrorMessage(`WC3: ${e.message}`)
         })),
+        // Test Map's setup: Porting Kit's on macOS, the word on Linux.
+        commands.registerCommand('wc3.testMapSetup', async arg => {
+            const manifest = await pickManifest(arg, 'Set up Test Map for which project?')
+            if (!manifest) return window.showWarningMessage('WC3: no wc3.bni in the workspace or above the active file.')
+            return setup.open(manifest)
+        }),
         // A menu passes the file and what it was run from (the editor
         // group's ids); a lens, the file and the build's name.
         commands.registerCommand('wc3.build', (arg, name) => run(arg, typeof name === 'string' ? name : undefined).catch(e => {

@@ -107,6 +107,10 @@ pub struct Project {
 pub struct Test {
     /// `build=`: the build tested; the default when left out.
     pub build: Option<String>,
+    /// `game=`: the game's folder the map is copied into and the game run
+    /// in (a wrapper's: Porting Kit's `drive_c`), resolved against the
+    /// root; the last of `[project] game=` with `War3.exe` when left out.
+    pub game: Option<PathBuf>,
     /// `window=1|0`: the game in a window (`-window`); 0 by default.
     pub window: bool,
     /// `command="program","arg",...`: what runs the game, its `{game}`
@@ -455,6 +459,7 @@ pub fn load(root: &Path, src: &str) -> (Project, Vec<Issue>) {
                     };
                     match name {
                         "build" => project.test.build = one(),
+                        "game" => project.test.game = one().map(|g| root.join(g.trim_matches('"'))),
                         "window" => match one().as_deref() {
                             Some("1") => project.test.window = true,
                             Some("0") => project.test.window = false,
@@ -514,7 +519,7 @@ fn unknown_key(item: &Item, section: &str, issues: &mut Vec<Issue>) {
         "code" => "sources' or 'exclude",
         "map" => "root",
         "build" => "name', 'out', 'script', 'uglify', 'inline', 'dead_code' or 'string_hash",
-        "test" => "build', 'window' or 'command",
+        "test" => "build', 'game', 'window' or 'command",
         _ => "dialect",
     };
     issues.push(at_name(

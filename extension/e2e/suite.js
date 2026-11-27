@@ -7,6 +7,7 @@
 const vscode = require('vscode')
 const {execFileSync} = require('child_process')
 const fs = require('fs')
+const os = require('os')
 const path = require('path')
 
 /**
@@ -795,6 +796,51 @@ async function steps(only) {
                 check(ran.code === 0 && fs.statSync(copied).size > 1000000, `built, copied (${Math.round(fs.statSync(copied).size / 1024)} KB) into Maps\\Test, run: ${ran.output.trim()}`)
             } finally {
                 fs.writeFileSync(bni, was)
+            }
+        }},
+        {name: 'test-setup', editor: true, run: async () => {
+            log("Test Map's setup on macOS: Porting Kit and a wrapper found, the game copied in, [test] written, Test Map run with the wrapper's Wine")
+            if (process.platform !== 'darwin') {
+                const linux = await vscode.commands.executeCommand('wc3.testMapSetup', manifest)
+                check(linux?.state().platform === process.platform, 'the word that no way has been found yet')
+                return
+            }
+            const bni = manifest.fsPath
+            const was = fs.readFileSync(bni, 'utf8')
+            const apps = fs.mkdtempSync(path.join(os.tmpdir(), 'wc3-apps-'))
+            try {
+                // Porting Kit, a port of it (its prefix's drive_c, its Wine: a script that leaves a file), a game of the project's.
+                fs.mkdirSync(path.join(apps, 'Porting Kit.app', 'Contents'), {recursive: true})
+                const app = path.join(apps, 'Porting Kit Library', 'Warcraft III.app')
+                fs.mkdirSync(path.join(app, 'Contents', 'SharedSupport', 'prefix', 'drive_c', 'windows'), {recursive: true})
+                const wine = path.join(app, 'Contents', 'SharedSupport', 'wine', 'bin', 'wine')
+                fs.mkdirSync(path.dirname(wine), {recursive: true})
+                fs.writeFileSync(wine, '#!/bin/sh\necho "$@" > ran.txt\n', {mode: 0o755})
+                const game = path.join(apps, 'game')
+                fs.mkdirSync(game)
+                fs.writeFileSync(path.join(game, 'War3.exe'), '')
+                fs.writeFileSync(bni, was.replace(/^(game=.*)$/m, `$1\ngame=${JSON.stringify(game)}`))
+                process.env.WC3_SETUP_DIRS = apps
+                const setup = await vscode.commands.executeCommand('wc3.testMapSetup', manifest)
+                const first = setup.state()
+                check(first.portingKit && first.wrapper?.app === app && first.wrapper.wine === wine && !first.wrapper.game && first.source === game && !first.written,
+                    `found: ${path.basename(first.portingKit)}, ${first.wrapper?.name} (its Wine), no game in it; the project's ${first.source}`)
+                const copied = await setup.act('copy')
+                check(copied.wrapper.game === path.join(app, 'Contents', 'SharedSupport', 'prefix', 'drive_c', 'Program Files', 'Warcraft III'), `the game copied in: ${copied.wrapper.game}`)
+                const written = await setup.act('write')
+                const text = fs.readFileSync(bni, 'utf8')
+                check(written.written && /\[test\]\ngame=".*drive_c\/Program Files\/Warcraft III"\ncommand="\/usr\/bin\/env","WINEPREFIX=.*\/prefix",".*\/wine","\{exe\}","-loadfile","\{map\}","-opengl"\nwindow=1/.test(text), 'wc3.bni: [test] written')
+                await setup.act('test')
+                const ran = path.join(copied.wrapper.game, 'ran.txt')
+                await until(() => fs.existsSync(ran) || undefined, "the wrapper's Wine run")
+                const args = fs.readFileSync(ran, 'utf8').trim()
+                check(/War3\.exe -loadfile Maps\\Test\\WorldEditTestMap\.w3x -opengl -window$/.test(args) && fs.existsSync(path.join(copied.wrapper.game, 'Maps', 'Test', 'WorldEditTestMap.w3x')), `Test Map in the wrapper: wine ${args}`)
+                await shot('world-editor-test-setup')
+                setup.panel.dispose()
+            } finally {
+                delete process.env.WC3_SETUP_DIRS
+                fs.writeFileSync(bni, was)
+                fs.rmSync(apps, {recursive: true, force: true})
             }
         }},
         {name: 'constants', editor: true, run: async () => {
