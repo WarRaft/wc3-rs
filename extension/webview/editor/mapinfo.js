@@ -124,6 +124,17 @@ const EditorMapInfo = (() => {
             return el('label', {className: 'info-field'}, el('span', {textContent: label}), input)
         }
 
+        /** The camera bounds by their sides, within the map; or from the playable area, as World Editor works them out. */
+        cameraBounds() {
+            const reset = el('button', {textContent: 'From the playable area'})
+            reset.dataset.field = 'camera.reset'
+            reset.onclick = () => this.setField('camera.reset', '')
+            const [x0, y0, x1, y1] = this.get('camera.extent').split(',')
+            return this.section('Camera bounds',
+                el('div', {className: 'info-note', textContent: `The map: ${x0}, ${y0} to ${x1}, ${y1}`}),
+                this.text('camera.left', 'Left'), this.text('camera.right', 'Right'), this.text('camera.bottom', 'Bottom'), this.text('camera.top', 'Top'), reset)
+        }
+
         section(title, ...children) {
             return el('div', {className: 'info-section'}, el('div', {className: 'obj-category', textContent: title}), ...children)
         }
@@ -138,6 +149,7 @@ const EditorMapInfo = (() => {
                 this.section('Loading screen', this.text('loading_screen', 'Campaign screen (-1 none)'), ...(tft ? [this.text('loading_screen_model', 'Custom model')] : []), this.text('loading_title', 'Title'), this.text('loading_subtitle', 'Subtitle'), this.text('loading_text', 'Text', true)),
                 this.section('Prologue', ...(tft ? [this.text('prologue_path', 'Custom screen')] : []), this.text('prologue_title', 'Title'), this.text('prologue_subtitle', 'Subtitle'), this.text('prologue_text', 'Text', true)),
                 this.section('Options', this.bits('flags', FLAGS)),
+                this.cameraBounds(),
             ]
             if (tft) {
                 parts.push(this.section('Environment',

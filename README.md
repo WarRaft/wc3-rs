@@ -1881,6 +1881,13 @@ step), this list updated.
      when the panel opens). The flags that use them (custom tech tree,
      upgrades) stay the options' checkboxes. MCP: `w3i_text`,
      `w3i_write`.
+     Camera bounds (after the water brushes): a section of the Info…
+     panel, World Editor's Modify Camera Bounds: each side typed
+     (`camera.left` ... in the game's units; its corners kept a
+     rectangle within the map, `camera.extent`), or From the playable
+     area (`camera.reset`: `resize::camera_bounds`, four cells in on the
+     sides, two at the bottom and top); the bounds' lines follow (the
+     overlays sent again, after an undo too).
    - **The triggers** (done after the sounds' Browse…): the trigger
      editor is one code, `webview/triggers.js` (with `triggers.css`): a
      map's triggers and a `.trg` alike, the tree of a map's beside its

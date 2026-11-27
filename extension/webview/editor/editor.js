@@ -1383,6 +1383,8 @@
                 regions: msg.regions.length,
                 cameras: msg.cameras.length,
                 bounds: msg.bounds.length / 7,
+                // Where they are (their numbers summed): moved or not.
+                boundsAt: msg.bounds.reduce((n, v) => n + v, 0),
                 minimap: msg.minimap.width,
                 // The first region's name and middle (the game's units).
                 region: msg.regions[0] && {name: msg.regions[0].name, x: (msg.regions[0].bounds[0] + msg.regions[0].bounds[2]) / 2, y: (msg.regions[0].bounds[1] + msg.regions[0].bounds[3]) / 2},

@@ -587,6 +587,7 @@ impl Session {
             crate::edit::Snapshot::Info(_) => {
                 out.push(self.info_msg());
                 out.push(self.map_msg());
+                out.push(ServerMsg::Overlays(self.overlays()));
             }
             crate::edit::Snapshot::Many(all) => {
                 for s in all {
@@ -1940,6 +1941,15 @@ impl Session {
             ("prologue_subtitle".into(), text(&i.prologue_subtitle)),
             ("flags".into(), i.flags.to_string()),
         ];
+        // The camera bounds by their sides (its bottom left and top right
+        // corners), and the map's extent they're within.
+        let b = i.camera_bounds;
+        let t = &self.terrain;
+        let extent = [t.offset_x, t.offset_y, t.offset_x + (t.width as f32 - 1.0) * w3e_rs::CELL, t.offset_y + (t.height as f32 - 1.0) * w3e_rs::CELL];
+        for (k, v) in [("camera.left", b[0]), ("camera.bottom", b[1]), ("camera.right", b[2]), ("camera.top", b[3])] {
+            out.push((k.into(), format!("{}", v.round())));
+        }
+        out.push(("camera.extent".into(), extent.map(|v| v.round().to_string()).join(",")));
         if has.tft {
             // The fog's colour is stored blue, green, red, alpha.
             let f = i.fog.color;
@@ -2060,6 +2070,23 @@ impl Session {
                         return Err("a fog style is 0 to 3".into());
                     }
                     info.fog.style = v;
+                }
+                // A side of the camera bounds (its corners kept a rectangle,
+                // within the map), or all of them as World Editor works them
+                // out from the playable area.
+                "camera.reset" => info.camera_bounds = crate::resize::camera_bounds(&self.terrain, info.camera_complements),
+                f if f.starts_with("camera.") => {
+                    let side = ["camera.left", "camera.bottom", "camera.right", "camera.top"].iter().position(|s| *s == f).ok_or(format!("no field {f}"))?;
+                    let mut sides = [info.camera_bounds[0], info.camera_bounds[1], info.camera_bounds[2], info.camera_bounds[3]];
+                    sides[side] = real(value)?;
+                    let t = &self.terrain;
+                    let (x0, y0) = (t.offset_x, t.offset_y);
+                    let (x1, y1) = (x0 + (t.width as f32 - 1.0) * w3e_rs::CELL, y0 + (t.height as f32 - 1.0) * w3e_rs::CELL);
+                    let [l, b, r, tp] = sides;
+                    if !(x0 <= l && l < r && r <= x1 && y0 <= b && b < tp && tp <= y1) {
+                        return Err(format!("{l}, {b} to {r}, {tp} isn't within the map ({x0}, {y0} to {x1}, {y1}), left of and below its other corner"));
+                    }
+                    info.camera_bounds = [l, b, r, tp, l, tp, r, b];
                 }
                 "fog_start" => (tft_only()?, info.fog.start_z = real(value)?).1,
                 "fog_end" => (tft_only()?, info.fog.end_z = real(value)?).1,
@@ -2244,11 +2271,13 @@ impl Session {
             Ok(())
         })();
         if let Err(e) = changed {
-            return vec![ServerMsg::State(self.state(format!("The map's {}: {e}.", field.replace('_', " "))))];
+            let what = if field.starts_with("camera.") { "camera bounds".to_string() } else { field.replace('_', " ") };
+            return vec![ServerMsg::State(self.state(format!("The map's {what}: {e}.")))];
         }
         let before = self.info.replace(info);
         self.edits.record(crate::edit::Snapshot::Info(Box::new(before)));
-        vec![self.info_msg(), self.map_msg(), ServerMsg::State(self.state(String::new()))]
+        // (The overlays: the bounds' lines.)
+        vec![self.info_msg(), self.map_msg(), ServerMsg::Overlays(self.overlays()), ServerMsg::State(self.state(String::new()))]
     }
 
     /// The map's imported files (`war3map.imp`), as the page lists them:

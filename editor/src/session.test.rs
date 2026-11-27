@@ -1083,3 +1083,37 @@ fn the_scripts_names_of_what_a_click_on_the_map_picks_for_a_triggers_parameter()
     assert!(find(&s, "gg_unit_hfoo_0999").3.contains("no gg_unit_hfoo_0999"));
     assert!(find(&s, "udg_Hero").3.contains("no name of what's on the map"));
 }
+
+#[test]
+fn the_camera_bounds_set_by_their_sides_within_the_map_and_from_the_playable_area() {
+    let dir = TestDir::new("session-camera-bounds");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &terrain_32());
+    let mut info = w3i_rs::parse(&testdir::info()).unwrap();
+    info.camera_complements = [2, 2, 2, 2];
+    dir.write("map/war3map.w3i", &info.to_bytes().unwrap());
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let get = |s: &Session, k: &str| s.info_fields().into_iter().find(|(f, _)| f == k).map(|(_, v)| v).unwrap();
+    let said = |msgs: &[ServerMsg]| match msgs.last() {
+        Some(ServerMsg::State(st)) => st.message.clone(),
+        m => panic!("{m:?}"),
+    };
+    let (x0, y0) = (s.terrain.offset_x, s.terrain.offset_y);
+    assert_eq!(get(&s, "camera.extent"), format!("{},{},{},{}", x0, y0, x0 + 32.0 * 128.0, y0 + 32.0 * 128.0));
+    // From the playable area: four cells in on the sides, two at the bottom and top.
+    let msgs = s.info_set("camera.reset", "");
+    assert!(msgs.iter().any(|m| matches!(m, ServerMsg::Overlays(_))), "the bounds' lines again");
+    assert_eq!(get(&s, "camera.left"), format!("{}", x0 + 6.0 * 128.0));
+    assert_eq!(get(&s, "camera.top"), format!("{}", y0 + 28.0 * 128.0));
+    // A side: the corners a rectangle still.
+    assert_eq!(said(&s.info_set("camera.left", &format!("{}", x0 + 512.0))), "");
+    let b = s.info.as_ref().unwrap().camera_bounds;
+    assert_eq!((b[0], b[4]), (x0 + 512.0, x0 + 512.0));
+    // Past the map, or past the other side: said, kept.
+    assert!(said(&s.info_set("camera.right", &format!("{}", x0 + 40.0 * 128.0))).contains("within the map"));
+    assert!(said(&s.info_set("camera.left", &format!("{}", x0 + 30.0 * 128.0))).contains("within the map"));
+    assert_eq!(s.info.as_ref().unwrap().camera_bounds[0], x0 + 512.0);
+    s.undo(false);
+    assert_eq!(get(&s, "camera.left"), format!("{}", x0 + 6.0 * 128.0));
+}

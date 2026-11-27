@@ -208,11 +208,20 @@ fn playable(i: &mut w3i_rs::Info, t: &Terrain, margins: [i32; 4]) {
     i.camera_complements = margins;
     i.playable_width = w - l - r;
     i.playable_height = h - b - tp;
+    i.camera_bounds = camera_bounds(t, margins);
+}
+
+/// The camera bounds World Editor works out from `margins` (left, right,
+/// bottom, top): four cells in from the playable area's sides, two from
+/// its bottom and top; its corners as `w3i_rs::Info::camera_bounds`.
+pub fn camera_bounds(t: &Terrain, margins: [i32; 4]) -> [f32; 8] {
+    let (w, h) = (t.width as i32 - 1, t.height as i32 - 1);
+    let [l, r, b, tp] = margins;
     let x = |cells: i32| cells as f32 * w3e_rs::CELL + t.offset_x;
     let y = |cells: i32| cells as f32 * w3e_rs::CELL + t.offset_y;
     let (left, right, bottom, top) = (x(l + 4), x(w - r - 4), y(b + 2), y(h - tp - 2));
     // Bottom left, top right, top left, bottom right.
-    i.camera_bounds = [left, bottom, right, top, left, top, right, bottom];
+    [left, bottom, right, top, left, top, right, bottom]
 }
 
 #[cfg(test)]

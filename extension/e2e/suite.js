@@ -661,6 +661,20 @@ async function steps(only) {
             await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: 'weather', value: 'RAhr'})
             await until(() => we.info?.weather === 'RAhr', 'the weather chosen')
             check(true, `author ${we.info.author}, terrain fog ${!fog}, player 1 an orc, weather ${we.info.weather}`)
+            // The camera bounds: a side moved (the bounds' lines with it), past the map
+            // said, then from the playable area again.
+            const left = Number(we.info['camera.left'])
+            const [x0] = we.info['camera.extent'].split(',').map(Number)
+            const linesBefore = we.overlays?.boundsAt
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: 'camera.left', value: left + 256})
+            await until(() => Number(we.info?.['camera.left']) === left + 256 && we.overlays?.boundsAt !== linesBefore, 'the left side moved')
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: 'camera.left', value: x0 - 1000})
+            const past = await until(() => we.state?.message && we.state, 'past the map said')
+            check(/within the map/.test(past.message) && Number(we.info['camera.left']) === left + 256, `camera bounds: left ${left} → ${left + 256}; past the map: ${past.message}`)
+            await we.panel.webview.postMessage({type: 'mapInfo', action: 'set', field: 'camera.reset'})
+            await until(() => Number(we.info?.['camera.left']) !== left + 256, 'from the playable area')
+            check(true, `from the playable area: left ${we.info['camera.left']}, right ${we.info['camera.right']}, bottom ${we.info['camera.bottom']}, top ${we.info['camera.top']}`)
             // A player and a force added, then taken out.
             const count = k => Object.keys(we.info ?? {}).filter(f => new RegExp(`^${k}\\.\\d+\\.name$`).test(f)).length
             const [ps, fs] = [count('player'), count('force')]
