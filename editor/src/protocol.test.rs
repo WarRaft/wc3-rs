@@ -45,6 +45,7 @@ fn edits_round_trip() {
         ClientMsg::Redo,
         ClientMsg::Save,
         ClientMsg::ThingAsk { file: 1, index: 7 },
+        ClientMsg::ThingSetText { file: 1, index: 7, field: "drops".into(), value: "ratc:50,ckng:50;sreg:100".into() },
         ClientMsg::ObjectList { kind: 4 },
         ClientMsg::ObjectAsk { kind: 0, id: "hfoo".into() },
         ClientMsg::ObjectSet { kind: 4, id: "A000".into(), field: "Hbz1".into(), level: 2, column: 1, value: "12".into() },
@@ -82,7 +83,7 @@ fn edits_round_trip() {
         fields: vec![FieldRow { field: "Hbz1".into(), name: "Number of Waves".into(), category: "data".into(), ty: "int".into(), level: 2, column: 1, value: "8".into(), default: "6".into(), changed: true, hint: String::new() }],
     }));
     round_trip(ServerMsg::ObjectEnums(vec![("attackType".into(), false, vec![("normal".into(), "Normal".into())]), ("targetList".into(), true, vec![])]));
-    round_trip(ServerMsg::Thing(ThingMsg { file: 1, index: 7, fields: vec![("x".into(), 64.0), ("hp".into(), -1.0)] }));
+    round_trip(ServerMsg::Thing(ThingMsg { file: 1, index: 7, fields: vec![("x".into(), 64.0), ("hp".into(), -1.0)], texts: vec![("items".into(), "ratc,,,,,".into())] }));
     round_trip(ServerMsg::State(StateMsg { dirty: true, undo: true, redo: false, message: "Saved".into() }));
     round_trip(ServerMsg::Palette(PaletteMsg {
         grounds: vec![PaletteEntry { id: "Ldrt".into(), name: "Dirt".into(), icon: crate::textures::Icon { width: 1, height: 1, rgba: vec![1, 2, 3, 4] } }],

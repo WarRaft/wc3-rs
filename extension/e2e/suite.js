@@ -13,7 +13,7 @@ const path = require('path')
  * The steps of the work in hand (`node e2e/run.js current`): moved on as
  * the work does; `all` runs every step.
  */
-const CURRENT = ['objects']
+const CURRENT = ['things']
 
 const out = process.env.E2E_OUT
 const map = process.env.E2E_MAP
@@ -257,6 +257,18 @@ async function steps(only) {
             we.state = undefined
             await we.panel.webview.postMessage({type: 'redo'})
             await until(() => new Map(we.thing?.fields ?? []).get('player') === 3, 'and done again')
+            // Its lists: an ability added, an item set to drop, as typed in the panel.
+            const texts = () => new Map(we.thing?.texts ?? [])
+            check(texts().get('abilities') === '' && texts().get('drops') === '' && !texts().has('items'), `a unit's lists: ${[...texts()].map(t => t.join('=')).join(' ')}`)
+            await we.panel.webview.postMessage({type: 'thingList', list: 'abilities:add', value: 'AHhb'})
+            await until(() => texts().get('abilities') === 'AHhb:1:0', 'an ability added')
+            await we.panel.webview.postMessage({type: 'thingList', list: 'drops:new', value: 'ratc'})
+            await until(() => texts().get('drops') === 'ratc:100', 'a set to drop')
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'thingList', list: 'drops:0:add', value: 'ckng'})
+            const over = await until(() => we.state?.message && we.state, 'a second item typed')
+            check(/over 100/.test(over.message) && texts().get('drops') === 'ratc:100', `two of 100% refused: ${over.message}`)
+            await shot('world-editor-thing-lists')
 
             for (const m of [{type: 'rotate', delta: Math.PI / 2}, {type: 'drag', x: 0.2, y: 0}, {type: 'delete'}]) {
                 we.state = undefined

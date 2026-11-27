@@ -1791,7 +1791,16 @@ step), this list updated.
      `abilList`, `Units\UnitAbilities.slk`, has `Agld`) gold. Each set
      as it's typed (`ThingSet`), in its range or said and put back; an
      undo each. Messages `ThingAsk`, `ThingSet`, `Thing`. MCP: the
-     `doo_*` tools already change them.
+     `doo_*` tools already change them. Its lists (done after 6h,
+     `thinglists.js`): a hero's inventory (six slots, an item id each),
+     a unit's or hero's abilities changed (id, level, autocast), a unit's
+     or destructable's item drops (sets of items and their chances, a
+     set's 100% at most) and the map's random item table it drops from
+     instead (`item_table`, -1 none); each named by the object editor's
+     lists, as text to the editor (`Thing`'s texts: `ratc,,ckng,,,`,
+     `AHhb:2:0`, `ratc:50,ckng:50;sreg:100`; `ThingSetText`), read and
+     checked there, an undo each. Not yet: random units and items
+     (`uDNR`, `iDNR`'s levels, groups, tables).
    - **6f, sounds** (done after 6e): `war3map.w3s` a piece of the
      session as the cameras are (read with the rest, taken in when
      changed on disk, saved, its text form in step; `Snapshot::Sounds`).

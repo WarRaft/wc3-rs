@@ -581,6 +581,7 @@
         {field: 'gold', label: 'Gold', step: 500},
         {field: 'target_acquisition', label: 'Acquisition (-1 normal, -2 camp)', step: 50},
         {field: 'color', label: 'Colour (-1 its owner\'s)', step: 1},
+        {field: 'item_table', label: 'Item table (-1 none)', step: 1},
     ]
     for (const f of THING_FIELDS) {
         f.row = Object.assign(document.createElement('label'), {className: 'camera-field', textContent: f.label + ' ', hidden: true})
@@ -621,7 +622,24 @@
             }
             f.input.value = String(v)
         }
+        showThingLists(t)
         vscode.postMessage({type: 'thing', thing: t})
+    }
+    /**
+     * Its lists (a hero's inventory, its abilities, its drops), named by
+     * the object editor's lists (asked for once); kept while one of them
+     * is typed in.
+     */
+    let listsAsked = false
+    function showThingLists(t) {
+        const box = $('thing-lists')
+        if (box.contains(document.activeElement)) return
+        if (t?.texts.length && !listsAsked) {
+            listsAsked = true
+            for (const k of EditorThingLists.KINDS) send(encode.objectList(k))
+        }
+        const at = selected
+        EditorThingLists.render(box, t?.texts ?? [], (field, value) => at && send(encode.thingSetText(at.file, at.index, field, value)), (kind, id) => objectsPanel.lists.get(kind)?.find(o => o.id === id)?.name)
     }
 
     // Sounds (`war3map.w3s`, the Sounds tool): the list, New of a file,
@@ -1177,6 +1195,7 @@
             objectsPanel.setEnums(msg.enums)
         } else if (msg.kind === 'objectList') {
             objectsPanel.setList(msg)
+            if (EditorThingLists.KINDS.includes(msg.objectKind)) showThingLists(thing)
         } else if (msg.kind === 'objectFields') {
             objectsPanel.setFields(msg)
         } else if (msg.kind === 'sounds') {
@@ -1311,6 +1330,13 @@
                 }
             } else if (msg.action === 'play') $('sound-play').onclick()
             else if (msg.action === 'delete') $('sound-delete').onclick()
+        } else if (msg.type === 'thingList') {
+            // A list's input typed (`list`: `items:2`, `abilities:add`, `drops:new` ...): for the tests.
+            const input = $('thing-lists').querySelector(`[data-list="${CSS.escape(msg.list)}"]`)
+            if (input) {
+                input.value = String(msg.value)
+                input.oninput()
+            }
         } else if (msg.type === 'thingField') {
             // A field of the thing picked typed (`scale_x` ...): for the tests.
             const f = THING_FIELDS.find(f => f.field === msg.field)

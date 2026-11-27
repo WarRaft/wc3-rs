@@ -236,6 +236,7 @@ impl Editor {
                     ClientMsg::SoundSet { index, field, value } => s.sound_set(index, &field, &value),
                     ClientMsg::SoundDelete { index } => s.sound_delete(index),
                     ClientMsg::SoundPlay { file } => vec![s.sound_data(&file)],
+                    ClientMsg::ThingSetText { file, index, field, value } => s.thing_set_text(file, index, &field, &value),
                     ClientMsg::ThingAsk { file, index } => vec![ServerMsg::Thing(s.thing(file, index))],
                     ClientMsg::ThingSet { file, index, field, value } => s.thing_set(file, index, &field, value),
                     ClientMsg::Text { path, text } => s.text_changed(&path, &text),

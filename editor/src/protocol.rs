@@ -58,6 +58,7 @@
 //! | 36 | `ObjectSet` | an object's field set: `u8` kind, its id, the field's id, `u32` level, `u32` data column, the value as text (empty: the game's again); answered by `ObjectList`, `State` |
 //! | 37 | `ObjectNew` | a custom object: `u8` kind, the id of the one it's based on; answered the same, `ObjectFields` of it |
 //! | 38 | `ObjectDelete` | `u8` kind, an id: a custom object taken away, a standard one's changes; answered the same |
+//! | 39 | `ThingSetText` | a thing's list set: `u8` file, `u32` index, its name (`items`, `abilities`, `drops`), its text (`Session::thing_set_text`); answered as `Move` |
 //! | 22 | `TilePathing` | the tile pather's: `u8` a tile's index in the terrain's list, `u8` what it forbids (`wpm` flags: 2 walking, 4 flying, 8 building); answered by `Overlays` and `State` |
 //! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id; kind 255: id a texture's path); answered by `Icons` |
 //!
@@ -83,7 +84,7 @@
 //! | 144 | `SaveDocs` | the documents VS Code saves (their paths), the rest the editor saved |
 //! | 146 | `MapSettings` | the map's size, tiles, the game's tiles: see [`MapSettingsMsg`] |
 //! | 145 | `Light` | the light through the day, the shadows, the fog: see [`LightMsg`] |
-//! | 147 | `Thing` | a thing's fields: `u8` file, `u32` index, a list of (name, `f32` value); none for no such thing |
+//! | 147 | `Thing` | a thing's fields: `u8` file, `u32` index, a list of (name, `f32` value), a list of (name, its text: `items`, `abilities`, `drops`); none for no such thing |
 //! | 148 | `Sounds` | the map's sounds: a list of (name, file, EAX label, `u32` flags, `f32` array of `w3s_rs::Sound::numbers`' 16) |
 //! | 149 | `SoundData` | a sound file: its path, its bytes (an array of `u8`), why not (empty: found) |
 //! | 150 | `ObjectList` | a kind's objects: see [`ObjectListMsg`] |
@@ -150,6 +151,7 @@ mod kind {
     pub const OBJECT_SET: u8 = 36;
     pub const OBJECT_NEW: u8 = 37;
     pub const OBJECT_DELETE: u8 = 38;
+    pub const THING_SET_TEXT: u8 = 39;
     pub const OBJECT_LIST_ANSWER: u8 = 150;
     pub const OBJECT_FIELDS: u8 = 151;
     pub const OBJECT_ENUMS: u8 = 152;
@@ -240,6 +242,8 @@ pub enum ClientMsg {
     SoundDelete { index: u32 },
     /// Kind 33.
     SoundPlay { file: String },
+    /// Kind 39.
+    ThingSetText { file: u8, index: u32, field: String, value: String },
     /// Kind 34.
     ObjectList { kind: u8 },
     /// Kind 35.
@@ -438,6 +442,9 @@ pub struct ThingMsg {
     pub file: u8,
     pub index: u32,
     pub fields: Vec<(String, f32)>,
+    /// Its lists as text (`Session::thing`'s: `items`, `abilities`,
+    /// `drops`).
+    pub texts: Vec<(String, String)>,
 }
 
 /// Kind 136's body: the pathing (`u32` width, height, a byte a cell, an
@@ -659,6 +666,7 @@ impl ClientMsg {
             kind::CAMERA_RENAME => Some(ClientMsg::CameraRename { index: r.u32()?, name: r.string()? }),
             kind::CAMERA_DELETE => Some(ClientMsg::CameraDelete { index: r.u32()? }),
             kind::CAMERA_SET => Some(ClientMsg::CameraSet { index: r.u32()?, field: r.string()?, value: r.f32()? }),
+            kind::THING_SET_TEXT => Some(ClientMsg::ThingSetText { file: r.u8()?, index: r.u32()?, field: r.string()?, value: r.string()? }),
             kind::OBJECT_LIST => Some(ClientMsg::ObjectList { kind: r.u8()? }),
             kind::OBJECT_ASK => Some(ClientMsg::ObjectAsk { kind: r.u8()?, id: r.string()? }),
             kind::OBJECT_SET => Some(ClientMsg::ObjectSet { kind: r.u8()?, id: r.string()?, field: r.string()?, level: r.u32()?, column: r.u32()?, value: r.string()? }),
@@ -794,6 +802,13 @@ impl ClientMsg {
                 w.string(field);
                 w.f32(*value);
                 kind::CAMERA_SET
+            }
+            ClientMsg::ThingSetText { file, index, field, value } => {
+                w.u8(*file);
+                w.u32(*index);
+                w.string(field);
+                w.string(value);
+                kind::THING_SET_TEXT
             }
             ClientMsg::ObjectList { kind } => {
                 w.u8(*kind);
@@ -1085,6 +1100,10 @@ impl ServerMsg {
                 w.list(&t.fields, |w, (name, value)| {
                     w.string(name);
                     w.f32(*value);
+                });
+                w.list(&t.texts, |w, (name, value)| {
+                    w.string(name);
+                    w.string(value);
                 });
                 kind::THING
             }
@@ -1387,7 +1406,8 @@ impl ServerMsg {
             kind::SOUND_DATA => ServerMsg::SoundData { file: r.string()?, bytes: r.bytes()?, error: r.string()? },
             kind::THING => {
                 let (file, index) = (r.u8()?, r.u32()?);
-                ServerMsg::Thing(ThingMsg { file, index, fields: r.list(|r| Ok((r.string()?, r.f32()?)))? })
+                let fields = r.list(|r| Ok((r.string()?, r.f32()?)))?;
+                ServerMsg::Thing(ThingMsg { file, index, fields, texts: r.list(|r| Ok((r.string()?, r.string()?)))? })
             }
             kind::OVERLAYS => {
                 use crate::overlays::{Camera, Grid, Overlays, Region};

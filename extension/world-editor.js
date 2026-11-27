@@ -162,6 +162,7 @@ function registerWorldEditor(context, binary, pickManifest) {
   <div id="thing-panel" class="region-panel" hidden>
     <span id="thing-hint" class="region-bounds"></span>
     <div id="thing-fields" class="camera-fields"></div>
+    <div id="thing-lists" class="thing-lists"></div>
   </div>
   <div id="objects-palette" class="objects-palette" hidden>
     <div id="object-kinds" class="object-kinds"></div>
@@ -184,6 +185,7 @@ function registerWorldEditor(context, binary, pickManifest) {
 <script nonce="${nonce}" src="${asset('light.js')}"></script>
 <script nonce="${nonce}" src="${asset('mapsettings.js')}"></script>
 <script nonce="${nonce}" src="${asset('objecteditor.js')}"></script>
+<script nonce="${nonce}" src="${asset('thinglists.js')}"></script>
 <script nonce="${nonce}" src="${asset('terrain.js')}"></script>
 <script nonce="${nonce}" src="${asset('particles.js')}"></script>
 <script nonce="${nonce}" src="${asset('objects.js')}"></script>

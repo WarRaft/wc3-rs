@@ -693,3 +693,62 @@ button:hover {
     border: 1px solid var(--vscode-focusBorder, #555);
     box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
 }
+
+.thing-lists {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.thing-list, .thing-set {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.thing-head {
+    font-weight: bold;
+}
+
+.thing-sub {
+    color: var(--vscode-descriptionForeground);
+}
+
+.thing-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.thing-row input {
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, #555);
+    font: inherit;
+    padding: 1px 3px;
+}
+
+.thing-id {
+    width: 4.5em;
+}
+
+.thing-number {
+    width: 3.5em;
+}
+
+.thing-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--vscode-descriptionForeground);
+}
+
+.thing-row button {
+    background: transparent;
+    color: var(--vscode-foreground);
+    border: 1px solid var(--vscode-panel-border, #555);
+    padding: 0 4px;
+    font: inherit;
+}

@@ -612,10 +612,10 @@ fn a_things_fields_said_set_in_their_ranges_undone_and_saved() {
     let value = |s: &Session, file, index, name: &str| s.thing(file, index).fields.into_iter().find(|(n, _)| n == name).map(|(_, v)| v);
     let common = "x y facing scale_x scale_y scale_z";
     assert_eq!(names(&s, 0, 0), "x y z facing scale_x scale_y scale_z variation state");
-    assert_eq!(names(&s, 0, 1), "x y z facing scale_x scale_y scale_z variation state life");
-    assert_eq!(names(&s, 1, 0), format!("{common} player hp mana target_acquisition color"));
-    assert_eq!(names(&s, 1, 1), format!("{common} player hp mana target_acquisition color level strength agility intelligence"));
-    assert_eq!(names(&s, 1, 2), format!("{common} player hp mana target_acquisition color gold"));
+    assert_eq!(names(&s, 0, 1), "x y z facing scale_x scale_y scale_z variation state life item_table");
+    assert_eq!(names(&s, 1, 0), format!("{common} player hp mana target_acquisition color item_table"));
+    assert_eq!(names(&s, 1, 1), format!("{common} player hp mana target_acquisition color item_table level strength agility intelligence"));
+    assert_eq!(names(&s, 1, 2), format!("{common} player hp mana target_acquisition color item_table gold"));
     assert_eq!(names(&s, 1, 3), common);
     assert!(s.thing(1, 9).fields.is_empty());
     assert_eq!((value(&s, 1, 0, "facing"), value(&s, 1, 0, "player"), value(&s, 1, 0, "hp")), (Some(270.0), Some(3.0), Some(-1.0)));
@@ -653,6 +653,27 @@ fn a_things_fields_said_set_in_their_ranges_undone_and_saved() {
     s.save();
     let back = doo_rs::parse_units_any(&std::fs::read(dir.path().join("map/war3mapUnits.doo")).unwrap()).unwrap();
     assert_eq!((back.units[1].level, back.units[0].hp, back.units[0].player), (5, 50, 3));
+    // Its lists as text: a hero's inventory, abilities, drops; a
+    // destructable's drops; read back, or said.
+    let texts = |s: &Session, file, index| s.thing(file, index).texts.into_iter().map(|(n, v)| format!("{n}={v}")).collect::<Vec<_>>().join(" ");
+    assert_eq!(texts(&s, 1, 1), "items=,,,,, abilities= drops=");
+    assert_eq!(texts(&s, 1, 0), "abilities= drops=");
+    assert_eq!(texts(&s, 0, 1), "drops=");
+    assert_eq!(texts(&s, 0, 0), "", "a doodad has none");
+    assert_eq!(texts(&s, 1, 3), "", "an item none");
+    assert_eq!(said(s.thing_set_text(1, 1, "items", "ratc,,ckng")), "");
+    assert_eq!(said(s.thing_set_text(1, 1, "abilities", "AHhb:2:0,AHds:1:1")), "");
+    assert_eq!(said(s.thing_set_text(1, 0, "drops", "ratc:50,ckng:50;sreg:100")), "");
+    assert_eq!(said(s.thing_set_text(0, 1, "drops", "ratc:25")), "");
+    assert!(said(s.thing_set_text(1, 0, "drops", "ratc:60,ckng:50")).contains("110%, over 100"));
+    assert!(said(s.thing_set_text(1, 1, "abilities", "AHhb:0")).contains("a level from 1"));
+    assert!(said(s.thing_set_text(1, 1, "items", "toolong")).contains("isn't an id"));
+    assert!(said(s.thing_set_text(1, 0, "items", "ratc")).contains("has no items"));
+    assert_eq!(texts(&s, 1, 1), "items=ratc,,ckng,,, abilities=AHhb:2:0,AHds:1:1 drops=");
+    assert_eq!(texts(&s, 1, 0), "abilities= drops=ratc:50,ckng:50;sreg:100");
+    assert_eq!(texts(&s, 0, 1), "drops=ratc:25");
+    s.undo(false);
+    assert_eq!(texts(&s, 0, 1), "drops=");
 }
 
 #[test]

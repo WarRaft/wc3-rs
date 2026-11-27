@@ -2052,7 +2052,119 @@ impl Session {
     /// mine's (an ability `Agld`) `gold`. None for no such thing.
     pub fn thing(&self, file: u8, index: u32) -> ThingMsg {
         let fields = self.thing_fields(file, index).unwrap_or_default();
-        ThingMsg { file, index, fields: fields.into_iter().map(|(n, v)| (n.to_string(), v)).collect() }
+        let texts = self.thing_texts(file, index).unwrap_or_default();
+        ThingMsg { file, index, fields: fields.into_iter().map(|(n, v)| (n.to_string(), v)).collect(), texts: texts.into_iter().map(|(n, v)| (n.to_string(), v)).collect() }
+    }
+
+    /// What a thing is, for its lists: a destructable (file 0), a unit
+    /// or building, a hero; `None` for a doodad, an item, a start
+    /// location.
+    fn thing_sort(&self, file: u8, index: u32) -> Option<ThingSort> {
+        let i = index as usize;
+        let types = self.types.as_ref();
+        if file == 0 {
+            let id = self.placed.doodads.as_ref()?.doodads.get(i)?.placement.id.to_string();
+            return types.is_some_and(|t| t.has(w3abdhqtu_rs::Kind::Destructable, &id)).then_some(ThingSort::Destructable);
+        }
+        let id = self.placed.units.as_ref()?.units.get(i)?.placement.id.to_string();
+        if id == "iDNR" || id == crate::placed::START_LOCATION || types.is_some_and(|t| t.has(w3abdhqtu_rs::Kind::Item, &id)) {
+            return None;
+        }
+        Some(if id.starts_with(|c: char| c.is_ascii_uppercase()) { ThingSort::Hero } else { ThingSort::Unit })
+    }
+
+    /// A thing's lists as text: a hero's `items` (its inventory's six
+    /// slots, an item id or none each: `ratc,,ckng,,,`); a unit's or
+    /// hero's `abilities` changed (`AHhb:2:0`: id, level, autocast on);
+    /// a unit's or destructable's `drops` (its item sets: `;` between
+    /// sets, `id:chance` in percent by `,`: `ratc:50,ckng:50;sreg:100`).
+    fn thing_texts(&self, file: u8, index: u32) -> Option<Vec<(&'static str, String)>> {
+        let sort = self.thing_sort(file, index)?;
+        let i = index as usize;
+        let drops = |sets: &[doo_rs::ItemSet]| sets.iter().map(|set| set.iter().map(|(id, c)| format!("{id}:{c}")).collect::<Vec<_>>().join(",")).collect::<Vec<_>>().join(";");
+        if sort == ThingSort::Destructable {
+            return Some(vec![("drops", drops(&self.placed.doodads.as_ref()?.doodads[i].item_sets))]);
+        }
+        let u = &self.placed.units.as_ref()?.units[i];
+        let mut out = Vec::new();
+        if sort == ThingSort::Hero {
+            let slots: Vec<String> = (0..6).map(|s| u.items.iter().find(|(slot, _)| *slot == s).map_or(String::new(), |(_, id)| id.to_string())).collect();
+            out.push(("items", slots.join(",")));
+        }
+        out.push(("abilities", u.abilities.iter().map(|(id, auto, level)| format!("{id}:{level}:{auto}")).collect::<Vec<_>>().join(",")));
+        out.push(("drops", drops(&u.item_sets)));
+        Some(out)
+    }
+
+    /// Thing `index` of `file`'s list `field` ([`thing`](Self::thing)'s
+    /// texts) set from `value`, as that text writes it; an undo. Said and
+    /// not set when it doesn't read: an id not of four characters, a
+    /// level under 1, a set's chances over 100.
+    pub fn thing_set_text(&mut self, file: u8, index: u32, field: &str, value: &str) -> Vec<ServerMsg> {
+        let has = self.thing_texts(file, index).is_some_and(|t| t.iter().any(|(n, _)| *n == field));
+        if !has {
+            return vec![ServerMsg::State(self.state(format!("This thing has no {field}.")))];
+        }
+        let id = |t: &str| parser_rs::bin::Rawcode::parse(t.trim()).ok_or(format!("{:?} isn't an id", t.trim()));
+        let parsed: Result<ThingList, String> = (|| match field {
+            "items" => {
+                let slots: Vec<&str> = value.split(',').collect();
+                if slots.len() > 6 {
+                    return Err("an inventory has 6 slots".to_string());
+                }
+                let mut items = Vec::new();
+                for (slot, t) in slots.iter().enumerate() {
+                    if !t.trim().is_empty() {
+                        items.push((slot as u32, id(t)?));
+                    }
+                }
+                Ok(ThingList::Items(items))
+            }
+            "abilities" => {
+                let mut list = Vec::new();
+                for a in value.split(',').filter(|a| !a.trim().is_empty()) {
+                    let parts: Vec<&str> = a.split(':').collect();
+                    let level: u32 = parts.get(1).map_or(Ok(1), |l| l.trim().parse().map_err(|_| format!("{a:?}: a level is a number")))?;
+                    let auto: u32 = parts.get(2).map_or(Ok(0), |l| l.trim().parse().map_err(|_| format!("{a:?}: autocast is 0 or 1")))?;
+                    if level < 1 || auto > 1 {
+                        return Err(format!("{a:?}: a level from 1, autocast 0 or 1"));
+                    }
+                    list.push((id(parts[0])?, auto, level));
+                }
+                Ok(ThingList::Abilities(list))
+            }
+            _ => {
+                let mut sets = Vec::new();
+                for set in value.split(';').filter(|s| !s.trim().is_empty()) {
+                    let mut items = Vec::new();
+                    for e in set.split(',').filter(|e| !e.trim().is_empty()) {
+                        let (i, c) = e.split_once(':').unwrap_or((e, "100"));
+                        let c: u32 = c.trim().parse().map_err(|_| format!("{e:?}: a chance is a number"))?;
+                        items.push((id(i)?, c));
+                    }
+                    let total: u32 = items.iter().map(|(_, c)| c).sum();
+                    if total > 100 {
+                        return Err(format!("a set's chances are {total}%, over 100"));
+                    }
+                    sets.push(items);
+                }
+                Ok(ThingList::Drops(sets))
+            }
+        })();
+        let list = match parsed {
+            Ok(l) => l,
+            Err(e) => return vec![ServerMsg::State(self.state(format!("Its {field}: {e}.")))],
+        };
+        self.things_edit(file, move |files| {
+            let i = index as usize;
+            match list {
+                ThingList::Drops(sets) if file == 0 => files.doodads.as_mut().unwrap().doodads[i].item_sets = sets,
+                ThingList::Drops(sets) => files.units.as_mut().unwrap().units[i].item_sets = sets,
+                ThingList::Items(items) => files.units.as_mut().unwrap().units[i].items = items,
+                ThingList::Abilities(list) => files.units.as_mut().unwrap().units[i].abilities = list,
+            }
+            Ok(())
+        })
     }
 
     fn thing_fields(&self, file: u8, index: u32) -> Option<Vec<(&'static str, f32)>> {
@@ -2070,7 +2182,7 @@ impl Session {
             let d = &self.placed.doodads.as_ref()?.doodads[i];
             out.extend([("variation", d.placement.variation as f32), ("state", d.flags as f32)]);
             if types.is_some_and(|t| t.has(w3abdhqtu_rs::Kind::Destructable, &id)) {
-                out.push(("life", d.life as f32));
+                out.extend([("life", d.life as f32), ("item_table", d.item_table as f32)]);
             }
             return Some(out);
         }
@@ -2083,7 +2195,7 @@ impl Session {
         if id == crate::placed::START_LOCATION {
             return Some(out);
         }
-        out.extend([("hp", u.hp as f32), ("mana", u.mana as f32), ("target_acquisition", u.target_acquisition), ("color", u.color as f32)]);
+        out.extend([("hp", u.hp as f32), ("mana", u.mana as f32), ("target_acquisition", u.target_acquisition), ("color", u.color as f32), ("item_table", u.item_table as f32)]);
         if id.starts_with(|c: char| c.is_ascii_uppercase()) {
             out.extend([("level", u.level as f32), ("strength", u.stats[0] as f32), ("agility", u.stats[1] as f32), ("intelligence", u.stats[2] as f32)]);
         }
@@ -2117,6 +2229,7 @@ impl Session {
                 "mana" => whole && value >= -1.0,
                 "target_acquisition" => value == -1.0 || value == -2.0 || value >= 0.0,
                 "color" => whole && (-1.0..=23.0).contains(&value),
+                "item_table" => whole && value >= -1.0,
                 "level" => whole && value >= 1.0,
                 "strength" | "agility" | "intelligence" | "gold" => whole && value >= 0.0,
                 _ => true,
@@ -2145,6 +2258,7 @@ impl Session {
                     let d = &mut files.doodads.as_mut().unwrap().doodads[i];
                     match field.as_str() {
                         "state" => d.flags = value as u8,
+                        "item_table" => d.item_table = value as i32,
                         _ => d.life = value as u8,
                     }
                 }
@@ -2156,6 +2270,7 @@ impl Session {
                         "mana" => u.mana = value as i32,
                         "target_acquisition" => u.target_acquisition = value,
                         "color" => u.color = value as i32,
+                        "item_table" => u.item_table = value as i32,
                         "level" => u.level = value as u32,
                         "strength" => u.stats[0] = value as u32,
                         "agility" => u.stats[1] = value as u32,
@@ -2281,4 +2396,19 @@ fn hash(bytes: &[u8]) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     bytes.hash(&mut h);
     h.finish()
+}
+
+/// What a thing is, for its lists ([`Session::thing_texts`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ThingSort {
+    Destructable,
+    Unit,
+    Hero,
+}
+
+/// A thing's list as read from its text.
+enum ThingList {
+    Items(Vec<(u32, parser_rs::bin::Rawcode)>),
+    Abilities(Vec<(parser_rs::bin::Rawcode, u32, u32)>),
+    Drops(Vec<doo_rs::ItemSet>),
 }

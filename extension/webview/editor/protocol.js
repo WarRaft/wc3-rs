@@ -50,6 +50,7 @@ const EditorProtocol = (() => {
         CAMERA_SET: 27,
         THING_ASK: 28,
         THING_SET: 29,
+        THING_SET_TEXT: 39,
         THING: 147,
         SOUND_NEW: 30,
         SOUND_SET: 31,
@@ -313,6 +314,15 @@ const EditorProtocol = (() => {
             w.f32(value)
             return w.frame(KIND.THING_SET)
         },
+        /** A thing's list (`items`, `abilities`, `drops`) set from its text. */
+        thingSetText(file, index, field, value) {
+            const w = new Writer()
+            w.u8(file)
+            w.u32(index)
+            w.string(field)
+            w.string(value)
+            return w.frame(KIND.THING_SET_TEXT)
+        },
         /** A sound of `file` made. */
         soundNew(file) {
             const w = new Writer()
@@ -524,7 +534,8 @@ const EditorProtocol = (() => {
             case KIND.THING: {
                 const file = r.u8()
                 const index = r.u32()
-                return {kind: 'thing', file, index, fields: r.list(r => [r.string(), r.f32()])}
+                const fields = r.list(r => [r.string(), r.f32()])
+                return {kind: 'thing', file, index, fields, texts: r.list(r => [r.string(), r.string()])}
             }
             case KIND.OVERLAYS: {
                 const grid = r => ({width: r.u32(), height: r.u32(), data: r.bytes()})
