@@ -160,6 +160,19 @@ impl Store for Mods {
     fn read(&self, name: &str) -> Option<Vec<u8>> {
         self.storage.read(&self.full(name)?).ok()
     }
+
+    /// The names its mods have, each without its mod (the longest that
+    /// names it), `\`-separated.
+    fn names(&self) -> Vec<String> {
+        let mut prefixes: Vec<&String> = self.prefixes.iter().collect();
+        prefixes.sort_by_key(|p| std::cmp::Reverse(p.len()));
+        self.storage
+            .names()
+            .filter_map(|n| prefixes.iter().find_map(|p| n.strip_prefix(p.as_str())))
+            .filter(|n| !n.contains(':'))
+            .map(|n| n.replace('/', "\\"))
+            .collect()
+    }
 }
 
 #[cfg(test)]

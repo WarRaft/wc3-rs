@@ -890,3 +890,28 @@ button:hover {
 .info-wrap {
     flex-wrap: wrap;
 }
+
+.sound-browser {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    height: 260px;
+}
+
+.sound-browser[hidden] {
+    display: none;
+}
+
+.sound-browser input {
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, #555);
+    font: inherit;
+}
+
+.sound-browser .obj-row {
+    font-size: .85em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

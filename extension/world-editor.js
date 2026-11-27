@@ -155,6 +155,11 @@ function registerWorldEditor(context, binary, pickManifest) {
   <div id="sound-panel" class="region-panel" hidden>
     <select id="sound-list" class="camera-list" size="8"></select>
     <input id="sound-new-file" type="text" placeholder="Sound\\Ambient\\…\\….wav">
+    <button id="sound-browse" title="The game's and the map's sound files, to pick from">Browse…</button>
+    <div id="sound-browser" class="sound-browser" hidden>
+      <input id="sound-browse-search" type="search" placeholder="Search the sound files">
+      <div id="sound-browse-list" class="obj-list"></div>
+    </div>
     <button id="sound-new" title="A new sound of that file">New sound</button>
     <span id="sound-hint" class="region-bounds"></span>
     <div id="sound-fields" class="camera-fields"></div>
@@ -353,6 +358,8 @@ function registerWorldEditor(context, binary, pickManifest) {
                 editor.imports = msg.imports
             } else if (msg.type === 'objects') {
                 editor.objects = msg.objects
+            } else if (msg.type === 'soundFiles') {
+                editor.soundFiles = msg.soundFiles
             } else if (msg.type === 'sounds') {
                 editor.sounds = msg.sounds
             } else if (msg.type === 'played') {

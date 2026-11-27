@@ -2546,6 +2546,24 @@ impl Session {
         })
     }
 
+    /// The sound files the game's and the map's layers have (`.wav`,
+    /// `.mp3`, `.flac`, `.ogg`), and the ones to be imported: what a
+    /// sound is made of, to pick from.
+    pub fn sound_files(&self) -> Vec<String> {
+        let sound = |n: &str| {
+            let n = n.to_ascii_lowercase();
+            [".wav", ".mp3", ".flac", ".ogg"].iter().any(|e| n.ends_with(e))
+        };
+        let mut out: Vec<String> = self.game.names().into_iter().filter(|n| sound(n)).collect();
+        for (path, bytes) in &self.placed.import_files {
+            if bytes.is_some() && sound(path) && !out.iter().any(|n| n.eq_ignore_ascii_case(path)) {
+                out.push(path.clone());
+            }
+        }
+        out.sort_by_key(|n| n.to_ascii_lowercase());
+        out
+    }
+
     /// A sound file's bytes, for the page to play: through the layers (a
     /// `.wav` the game has as `.flac` or `.mp3` too); empty, and why, when
     /// none has it.

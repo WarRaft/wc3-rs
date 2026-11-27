@@ -66,6 +66,7 @@
 //! | 44 | `ImportPreview` | `u32` index; answered by `ImportPreview` |
 //! | 45 | `InfoAsk` | nothing; answered by `Info` |
 //! | 46 | `InfoSet` | a field of the map's info set: its name (`Session::info_fields`'), its value as text; answered by `Info`, `Map`, `State` |
+//! | 47 | `SoundFiles` | nothing; answered by `SoundFiles`: the game's and the map's sound files |
 //! | 22 | `TilePathing` | the tile pather's: `u8` a tile's index in the terrain's list, `u8` what it forbids (`wpm` flags: 2 walking, 4 flying, 8 building); answered by `Overlays` and `State` |
 //! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id; kind 255: id a texture's path); answered by `Icons` |
 //!
@@ -100,6 +101,7 @@
 //! | 153 | `Imports` | the imported files: a list of (its path in the map, as `war3map.imp` keeps it, `u8` flags, `u8` found: the map has it or will, `u8` to be written on save) |
 //! | 154 | `ImportPreview` | an imported file: its path, `u8` what it is (0 other, 1 a texture, 2 a sound, 3 a model), `u32` its size, a picture (`u32` width, height, RGBA; 0 by 0 for none), why not (empty: fine) |
 //! | 155 | `Info` | the map's info: a list of (field, its value as text): `Session::info_fields` |
+//! | 156 | `SoundFiles` | the sound files of the game's and the map's layers (`.wav`, `.mp3`, `.flac`, `.ogg`): a list of names, sorted |
 //! | 141 | `Icons` | a list of (`u8` kind, id, `u32` width, height, RGBA; 0 by 0 for none) |
 //!
 //! After an edit the terrain's messages come again: `Cliffs` with no
@@ -171,6 +173,8 @@ mod kind {
     pub const INFO_ASK: u8 = 45;
     pub const INFO_SET: u8 = 46;
     pub const INFO: u8 = 155;
+    pub const SOUND_FILES_ASK: u8 = 47;
+    pub const SOUND_FILES: u8 = 156;
     pub const IMPORT_PREVIEW_ANSWER: u8 = 154;
     pub const OBJECT_LIST_ANSWER: u8 = 150;
     pub const OBJECT_FIELDS: u8 = 151;
@@ -262,6 +266,8 @@ pub enum ClientMsg {
     SoundDelete { index: u32 },
     /// Kind 33.
     SoundPlay { file: String },
+    /// Kind 47.
+    SoundFiles,
     /// Kind 45.
     InfoAsk,
     /// Kind 46.
@@ -572,6 +578,8 @@ pub enum ServerMsg {
     Thing(ThingMsg),
     /// Kind 148.
     Sounds(Vec<w3s_rs::Sound>),
+    /// Kind 156.
+    SoundFiles(Vec<String>),
     /// Kind 155: each field and its value as text.
     Info(Vec<(String, String)>),
     /// Kind 153: (path in the map, as kept, flags, found, to be written).
@@ -706,6 +714,7 @@ impl ClientMsg {
             kind::CAMERA_RENAME => Some(ClientMsg::CameraRename { index: r.u32()?, name: r.string()? }),
             kind::CAMERA_DELETE => Some(ClientMsg::CameraDelete { index: r.u32()? }),
             kind::CAMERA_SET => Some(ClientMsg::CameraSet { index: r.u32()?, field: r.string()?, value: r.f32()? }),
+            kind::SOUND_FILES_ASK => Some(ClientMsg::SoundFiles),
             kind::INFO_ASK => Some(ClientMsg::InfoAsk),
             kind::INFO_SET => Some(ClientMsg::InfoSet { field: r.string()?, value: r.string()? }),
             kind::IMPORT_LIST => Some(ClientMsg::ImportList),
@@ -850,6 +859,7 @@ impl ClientMsg {
                 w.f32(*value);
                 kind::CAMERA_SET
             }
+            ClientMsg::SoundFiles => kind::SOUND_FILES_ASK,
             ClientMsg::InfoAsk => kind::INFO_ASK,
             ClientMsg::InfoSet { field, value } => {
                 w.string(field);
@@ -1141,6 +1151,10 @@ impl ServerMsg {
                     });
                 });
                 kind::OBJECT_ENUMS
+            }
+            ServerMsg::SoundFiles(list) => {
+                w.list(list, |w, n| w.string(n));
+                kind::SOUND_FILES
             }
             ServerMsg::Info(list) => {
                 w.list(list, |w, (k, v)| {
@@ -1488,6 +1502,7 @@ impl ServerMsg {
                 ServerMsg::ObjectFields(ObjectFieldsMsg { kind, id, base, name, levels, fields })
             }
             kind::OBJECT_ENUMS => ServerMsg::ObjectEnums(r.list(|r| Ok((r.string()?, r.u8()? != 0, r.list(|r| Ok((r.string()?, r.string()?)))?)))?),
+            kind::SOUND_FILES => ServerMsg::SoundFiles(r.list(|r| r.string())?),
             kind::INFO => ServerMsg::Info(r.list(|r| Ok((r.string()?, r.string()?)))?),
             kind::IMPORTS => ServerMsg::Imports(r.list(|r| Ok((r.string()?, r.string()?, r.u8()?, r.u8()? != 0, r.u8()? != 0)))?),
             kind::IMPORT_PREVIEW_ANSWER => {

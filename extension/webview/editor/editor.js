@@ -769,6 +769,34 @@
         selectNewSound = true
         send(encode.soundNew(file))
     }
+    // The game's and the map's sound files (asked for once), searched: a
+    // click takes one as the new sound's file and plays it.
+    let soundFiles = null
+    const SHOWN = 300
+    function showSoundFiles() {
+        const words = $('sound-browse-search').value.toLowerCase().split(/\s+/).filter(Boolean)
+        const found = (soundFiles ?? []).filter(f => words.every(w => f.toLowerCase().includes(w)))
+        const rows = found.slice(0, SHOWN).map(f => {
+            const row = Object.assign(document.createElement('div'), {className: 'obj-row', textContent: f, title: f})
+            row.dataset.file = f
+            row.onclick = () => {
+                $('sound-new-file').value = f
+                for (const r of $('sound-browse-list').children) r.classList.toggle('on', r === row)
+                send(encode.soundPlay(f))
+            }
+            return row
+        })
+        if (found.length > SHOWN) rows.push(Object.assign(document.createElement('div'), {className: 'thing-sub', textContent: `… ${found.length - SHOWN} more: search`}))
+        if (soundFiles === null) rows.push(Object.assign(document.createElement('div'), {className: 'thing-sub', textContent: 'Reading the files…'}))
+        $('sound-browse-list').replaceChildren(...rows)
+        vscode.postMessage({type: 'soundFiles', soundFiles: {count: soundFiles?.length ?? -1, shown: Math.min(found.length, SHOWN), first: found[0] ?? ''}})
+    }
+    $('sound-browse').onclick = () => {
+        $('sound-browser').hidden = !$('sound-browser').hidden
+        if (!$('sound-browser').hidden && soundFiles === null) send(encode.soundFiles())
+        showSoundFiles()
+    }
+    $('sound-browse-search').oninput = showSoundFiles
     $('sound-delete').onclick = () => {
         if (selectedSound !== null) send(encode.soundDelete(selectedSound))
     }
@@ -1237,6 +1265,9 @@
             }
             if (selectedSound !== null && selectedSound >= sounds.length) selectedSound = null
             showSounds()
+        } else if (msg.kind === 'soundFiles') {
+            soundFiles = msg.files
+            showSoundFiles()
         } else if (msg.kind === 'soundData') {
             playSound(msg)
         } else if (msg.kind === 'thing') {
@@ -1374,6 +1405,13 @@
                     f.input.value = String(msg.value)
                     f.input.oninput()
                 }
+            } else if (msg.action === 'browse') {
+                // The browser opened, searched, the first found taken.
+                if ($('sound-browser').hidden) $('sound-browse').onclick()
+                $('sound-browse-search').value = msg.search ?? ''
+                showSoundFiles()
+            } else if (msg.action === 'takeFirst') {
+                $('sound-browse-list').querySelector('[data-file]')?.onclick()
             } else if (msg.action === 'play') $('sound-play').onclick()
             else if (msg.action === 'delete') $('sound-delete').onclick()
         } else if (msg.type === 'select') {

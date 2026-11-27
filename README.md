@@ -1822,8 +1822,14 @@ step), this list updated.
      or said; Play (its file's bytes, `SoundPlay`: a `.wav` the game has
      as `.flac` or `.mp3` too, decoded and played by the page's
      `AudioContext`); Delete. An undo each. Messages `SoundNew`,
-     `SoundSet`, `SoundDelete`, `SoundPlay`, `Sounds`, `SoundData`. MCP:
-     the `w3s_*` tools already change the file.
+     `SoundSet`, `SoundDelete`, `SoundPlay`, `Sounds`, `SoundData`.
+     Browse… (done after 6j): the game's and the map's sound files
+     (`Session::sound_files`: every name the layers know, `Game::names`,
+     `storm_rs::archive::Layers::names`: an archive's listfile, a folder
+     walked, a Reforged storage's root without its mods' prefixes; and
+     the files to be imported), searched, a click taking one as the new
+     sound's file and playing it; 6198 in 1.26a. MCP: the `w3s_*` tools
+     already change the file.
    - **6j, the map's info** (done after 6i): the page's Info… panel
      (`mapinfo.js`, as World Editor's Scenario menu has it): the
      description (name, author, suggested players, description), loading

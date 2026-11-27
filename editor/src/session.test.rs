@@ -738,6 +738,8 @@ fn sounds_made_set_in_their_ranges_deleted_undone_saved_played_and_in_step_with_
     s.undo(false);
     assert_eq!(sounds(&s)[0].name, "gg_snd_Rain");
     s.undo(true);
+    // The sound files to pick from: the map's (a root folder's) and the ones to be imported.
+    assert_eq!(s.sound_files(), ["Sound\\Rain.wav"]);
     // Played: the file's bytes, or why not.
     assert!(matches!(s.sound_data("Sound\\Rain.wav"), ServerMsg::SoundData { bytes, error, .. } if bytes == b"RIFF....WAVE" && error.is_empty()));
     assert!(matches!(s.sound_data("Sound\\Thunder.wav"), ServerMsg::SoundData { bytes, error, .. } if bytes.is_empty() && error.contains("isn't")));

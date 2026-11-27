@@ -13,7 +13,7 @@ const path = require('path')
  * The steps of the work in hand (`node e2e/run.js current`): moved on as
  * the work does; `all` runs every step.
  */
-const CURRENT = ['info']
+const CURRENT = ['sounds']
 
 const out = process.env.E2E_OUT
 const map = process.env.E2E_MAP
@@ -401,7 +401,14 @@ async function steps(only) {
             await we.panel.webview.postMessage({type: 'tool', tool: 'sounds'})
             const listed = await until(() => we.sounds, 'the sounds listed')
             const at = listed.count
-            await we.panel.webview.postMessage({type: 'sound', action: 'new', file: 'Sound\\Interface\\BattleNetTick.wav'})
+            // The file picked from the game's sound files, searched.
+            await we.panel.webview.postMessage({type: 'sound', action: 'browse', search: 'battlenettick'})
+            const files = await until(() => we.soundFiles?.count > 0 && we.soundFiles.shown > 0 && we.soundFiles, 'the sound files')
+            check(files.count > 1000 && /BattleNetTick\.wav$/i.test(files.first), `${files.count} sound files; found ${files.first}`)
+            we.played = undefined
+            await we.panel.webview.postMessage({type: 'sound', action: 'takeFirst'})
+            await until(() => we.played, 'played as it was picked')
+            await we.panel.webview.postMessage({type: 'sound', action: 'new', file: files.first})
             const made = await until(() => we.sounds?.count === at + 1 && we.sounds.picked && we.sounds, 'a sound made')
             check(made.picked.name.startsWith('gg_snd_BattleNetTick') && made.picked.flags === 6 && !we.state?.message, `${made.picked.name}: ${made.picked.file}, flags ${made.picked.flags}`)
             for (const [field, value, bit] of [['volume', 90], ['pitch', 1.5], ['channel', 8], ['flags', true, 1], ['name', 'gg_snd_E2ETick'], ['volume', 200]]) {

@@ -284,6 +284,12 @@ impl Game {
         self.0.find(name)
     }
 
+    /// Every file's name its layers know (`storm_rs::archive::Layers::
+    /// names`): sorted, each once.
+    pub fn names(&self) -> Vec<String> {
+        self.0.names()
+    }
+
     /// The contents of `name` from the topmost layer that has it, and
     /// where it came from.
     pub fn read(&self, name: &str) -> Option<(Vec<u8>, Source)> {

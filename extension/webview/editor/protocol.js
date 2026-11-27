@@ -60,6 +60,8 @@ const EditorProtocol = (() => {
         INFO_ASK: 45,
         INFO_SET: 46,
         INFO: 155,
+        SOUND_FILES_ASK: 47,
+        SOUND_FILES: 156,
         IMPORT_PREVIEW_ANSWER: 154,
         THING: 147,
         SOUND_NEW: 30,
@@ -334,6 +336,7 @@ const EditorProtocol = (() => {
             return w.frame(KIND.THING_SET_TEXT)
         },
         infoAsk: () => new Writer().frame(KIND.INFO_ASK),
+        soundFiles: () => new Writer().frame(KIND.SOUND_FILES_ASK),
         /** A field of the map's info (`name`, `player.0.race` ...) set from its text. */
         infoSet(field, value) {
             const w = new Writer()
@@ -568,6 +571,8 @@ const EditorProtocol = (() => {
             }
             case KIND.OBJECT_ENUMS:
                 return {kind: 'objectEnums', enums: r.list(r => ({ty: r.string(), multi: r.u8() !== 0, values: r.list(r => [r.string(), r.string()])}))}
+            case KIND.SOUND_FILES:
+                return {kind: 'soundFiles', files: r.list(r => r.string())}
             case KIND.INFO:
                 return {kind: 'info', fields: r.list(r => [r.string(), r.string()])}
             case KIND.IMPORTS:
