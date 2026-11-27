@@ -796,10 +796,15 @@ fn objects_listed_their_fields_set_reset_made_deleted_undone_saved_and_in_step_w
     let made = s.object_new(0, "hfoo");
     assert!(made.iter().any(|m| matches!(m, ServerMsg::ObjectPalette(p) if p.iter().any(|e| e.id == "h000" && e.custom))), "the palette has it");
     assert!(matches!(&made[1], ServerMsg::ObjectFields(f) if f.id == "h000" && f.base == "hfoo"), "{made:?}");
-    assert!(said(&s.object_new(0, "zzzz")).contains("isn't one of the game's"));
+    assert!(said(&s.object_new(0, "zzzz")).contains("isn't an object"));
     s.object_set(0, "h000", "uhpm", 0, 0, "900");
     assert_eq!(list(&mut s)[4], ("h000".into(), "Swordsman".into(), "Custom · Melee · human · Units".into(), 2), "its base's name change copied");
     assert_eq!(row(&fields(&mut s, "h000"), "uhpm").value, "900");
+    // Copied and pasted: its base, its changes.
+    let pasted = s.object_new(0, "h000");
+    assert!(matches!(&pasted[1], ServerMsg::ObjectFields(f) if f.id == "h001" && f.base == "hfoo"), "{pasted:?}");
+    assert_eq!(row(&fields(&mut s, "h001"), "uhpm").value, "900");
+    s.undo(false);
     // Deleted, undone.
     s.object_delete(0, "h000");
     assert_eq!(list(&mut s).len(), 4);
@@ -851,7 +856,17 @@ fn an_objects_string_of_the_map_shown_as_its_text_and_set_in_war3map_wts() {
     s.undo(false);
     assert_eq!(name(&mut s).0, "Knight of the Map");
     s.undo(true);
+    // A copy names a string of its own, the same text; undone as one.
+    let copy = s.object_new(0, "hfoo");
+    assert!(matches!(&copy[1], ServerMsg::ObjectFields(f) if f.name == "Knight Renamed"), "{copy:?}");
+    let mods: Vec<_> = s.placed.objects[&w3abdhqtu_rs::Kind::Unit].customs[0].mods().map(|m| m.value.clone()).collect();
+    assert_eq!(mods, [w3abdhqtu_rs::Value::Str("TRIGSTR_008".into())]);
+    s.object_set(0, "h000", "unam", 0, 0, "The Copy");
+    assert_eq!(name(&mut s).0, "Knight Renamed", "the original's string untouched");
+    s.undo(false);
+    s.undo(false);
+    assert!(s.placed.objects[&w3abdhqtu_rs::Kind::Unit].customs.is_empty() && !s.placed.strings.as_ref().unwrap().0.contains("STRING 8"));
     let saved = s.save();
-    assert!(matches!(saved.last(), Some(ServerMsg::State(st)) if st.message.contains("war3map.wts") && !st.message.contains("w3u")), "{saved:?}");
+    assert!(matches!(saved.last(), Some(ServerMsg::State(st)) if st.message.contains("war3map.wts")), "{saved:?}");
     assert_eq!(std::fs::read_to_string(dir.path().join("map/war3map.wts")).unwrap(), "\u{FEFF}STRING 7\n{\nKnight Renamed\n}\n");
 }

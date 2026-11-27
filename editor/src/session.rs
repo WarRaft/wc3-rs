@@ -563,31 +563,47 @@ impl Session {
         let target = crate::edit::Target { terrain: &mut self.terrain, files: &mut self.placed };
         let done = if redo { self.edits.redo(target) } else { self.edits.undo(target) };
         let mut out = Vec::new();
-        if let Some(what) = done {
-            match what {
-                crate::edit::Snapshot::Regions(_) | crate::edit::Snapshot::Cameras(_) | crate::edit::Snapshot::Pathing(_) => out.push(ServerMsg::Overlays(self.overlays())),
-                crate::edit::Snapshot::Sounds(_) => out.push(self.sounds_msg()),
-                crate::edit::Snapshot::Strings(_) => self.strings_changed(),
-                crate::edit::Snapshot::Objects(kind, _) => {
-                    let k = crate::objdata::KINDS.iter().position(|x| *x == kind).unwrap_or(0) as u8;
-                    out.push(self.object_list(k));
-                    out.extend(self.object_types_changed(kind));
-                }
-                crate::edit::Snapshot::Whole(_) => {
-                    let changed = self.tileset_letter() != self.terrain.tileset;
-                    self.retileset(changed);
-                    return self.redraw(changed, String::new());
-                }
-                crate::edit::Snapshot::Terrain(..) => {
-                    out.extend(self.terrain_msgs(false));
-                    out.extend(self.place_objects());
-                    out.push(ServerMsg::Overlays(self.overlays()));
-                }
-                _ => out.extend(self.place_objects()),
-            }
+        if let Some(what) = done
+            && let Some(all) = self.undone(&what, &mut out)
+        {
+            return all;
         }
         out.push(ServerMsg::State(self.state(String::new())));
         out
+    }
+
+    /// What the page is told after `what` was undone or redone, into
+    /// `out`; or all of it (the whole terrain: the map drawn again).
+    fn undone(&mut self, what: &crate::edit::Snapshot, out: &mut Vec<ServerMsg>) -> Option<Vec<ServerMsg>> {
+        match what {
+            crate::edit::Snapshot::Regions(_) | crate::edit::Snapshot::Cameras(_) | crate::edit::Snapshot::Pathing(_) => out.push(ServerMsg::Overlays(self.overlays())),
+            crate::edit::Snapshot::Sounds(_) => out.push(self.sounds_msg()),
+            crate::edit::Snapshot::Strings(_) => self.strings_changed(),
+            crate::edit::Snapshot::Many(all) => {
+                for s in all {
+                    if let Some(whole) = self.undone(s, out) {
+                        return Some(whole);
+                    }
+                }
+            }
+            crate::edit::Snapshot::Objects(kind, _) => {
+                let k = crate::objdata::KINDS.iter().position(|x| x == kind).unwrap_or(0) as u8;
+                out.push(self.object_list(k));
+                out.extend(self.object_types_changed(*kind));
+            }
+            crate::edit::Snapshot::Whole(_) => {
+                let changed = self.tileset_letter() != self.terrain.tileset;
+                self.retileset(changed);
+                return Some(self.redraw(changed, String::new()));
+            }
+            crate::edit::Snapshot::Terrain(..) => {
+                out.extend(self.terrain_msgs(false));
+                out.extend(self.place_objects());
+                out.push(ServerMsg::Overlays(self.overlays()));
+            }
+            _ => out.extend(self.place_objects()),
+        }
+        None
     }
 
     /// Writes the terrain where it came from: the root folder's file, or
@@ -1717,13 +1733,16 @@ impl Session {
     }
 
     /// A custom object of `kind` based on the game's `base` (with the
-    /// map's changes to it, as World Editor copies them), its id the next
-    /// World Editor would give (`objdata::new_id`).
+    /// map's changes to it, as World Editor copies them), or a copy of the
+    /// map's own `base` (its base, its changes: Copy and Paste), its id
+    /// the next World Editor would give (`objdata::new_id`).
     pub fn object_new(&mut self, k: u8, base: &str) -> Vec<ServerMsg> {
         let Some(kind) = self.object_kind(k) else { return vec![ServerMsg::State(self.state(format!("no kind {k}")))] };
         let std = &self.object_tables.standard[&kind];
-        let Some(base_code) = parser_rs::bin::Rawcode::parse(base).filter(|_| std.has(base)) else {
-            return vec![ServerMsg::State(self.state(format!("{base} isn't one of the game's objects to base one on.")))];
+        // One of the map's own: a copy of it (its base, its changes).
+        let own = parser_rs::bin::Rawcode::parse(base).and_then(|code| self.placed.objects.get(&kind)?.customs.iter().find(|o| o.id == code)).map(|o| (o.base, o.sets.clone()));
+        let Some(base_code) = own.as_ref().map(|o| o.0).or_else(|| parser_rs::bin::Rawcode::parse(base).filter(|_| std.has(base))) else {
+            return vec![ServerMsg::State(self.state(format!("{base} isn't an object to base one on.")))];
         };
         let taken: std::collections::HashSet<String> = crate::objdata::KINDS
             .iter()
@@ -1733,14 +1752,44 @@ impl Session {
         let Some(id) = crate::objdata::new_id(kind, base_code, |id| taken.contains(&id.to_string())) else {
             return vec![ServerMsg::State(self.state("No id left.".to_string()))];
         };
-        let mut out = self.objects_edit(k, kind, |data, _| {
-            // The base's changes, as World Editor copies them.
-            let changed = data.originals.iter().find(|o| o.base == base_code).map(|o| o.sets.clone());
-            let sets = changed.unwrap_or_else(|| if data.version < 3 { vec![w3abdhqtu_rs::Set { flags: 0, mods: Vec::new() }] } else { Vec::new() });
-            data.customs.push(w3abdhqtu_rs::Object { base: base_code, id, sets });
-            Ok(String::new())
-        });
-        out.insert(1, self.object_fields(k, &id.to_string()));
+        let before = self.placed.objects.get(&kind).cloned();
+        let mut data = before.clone().unwrap_or_else(|| w3abdhqtu_rs::ObjectData { version: self.object_version(), ..w3abdhqtu_rs::ObjectData::new(kind) });
+        // The base's changes (or the one copied's), as World Editor copies them.
+        let changed = own.map(|o| o.1).or_else(|| data.originals.iter().find(|o| o.base == base_code).map(|o| o.sets.clone()));
+        let mut sets = changed.unwrap_or_else(|| if data.version < 3 { vec![w3abdhqtu_rs::Set { flags: 0, mods: Vec::new() }] } else { Vec::new() });
+        // A string of the map's it names copied too, a new one each: the
+        // copy's own, as World Editor makes them.
+        let strings_before = self.placed.strings.clone();
+        if let Some((mut src, bom)) = self.placed.strings.clone() {
+            let mut next = wts_rs::parse(&src).strings.iter().filter_map(|e| e.id).max().map_or(0, |n| n + 1);
+            let mut copied = false;
+            for m in sets.iter_mut().flat_map(|s| s.mods.iter_mut()) {
+                let w3abdhqtu_rs::Value::Str(v) = &m.value else { continue };
+                let Some(n) = v.strip_prefix("TRIGSTR_").and_then(|n| n.parse::<u32>().ok()) else { continue };
+                let doc = wts_rs::parse(&src);
+                let Some(text) = doc.get(n).map(|e| e.text.clone()) else { continue };
+                let Ok(edits) = wts_rs::set_string(&doc, next, &text) else { continue };
+                src = wts_rs::apply(&src, &edits);
+                m.value = w3abdhqtu_rs::Value::Str(format!("TRIGSTR_{next:03}"));
+                next += 1;
+                copied = true;
+            }
+            if copied {
+                self.placed.strings = Some((src, bom));
+                self.strings_changed();
+            }
+        }
+        data.customs.push(w3abdhqtu_rs::Object { base: base_code, id, sets });
+        self.placed.objects.insert(kind, data);
+        let snapshot = if self.placed.strings != strings_before {
+            crate::edit::Snapshot::Many(vec![crate::edit::Snapshot::Strings(strings_before), crate::edit::Snapshot::Objects(kind, before)])
+        } else {
+            crate::edit::Snapshot::Objects(kind, before)
+        };
+        self.edits.record(snapshot);
+        let mut out = vec![self.object_list(k), self.object_fields(k, &id.to_string())];
+        out.extend(self.object_types_changed(kind));
+        out.push(ServerMsg::State(self.state(String::new())));
         out
     }
 

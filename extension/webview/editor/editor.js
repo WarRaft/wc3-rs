@@ -1282,6 +1282,9 @@
             else if (msg.action === 'pick') objectsPanel.pick(msg.id)
             else if (msg.action === 'field') objectsPanel.type(msg.field, msg.level, msg.value)
             else if (msg.action === 'new') objectsPanel.newButton.onclick()
+            else if (msg.action === 'copy') objectsPanel.copyButton.onclick()
+            else if (msg.action === 'paste') objectsPanel.pasteButton.onclick()
+            else if (msg.action === 'pickId') objectsPanel.pickId(msg.field, msg.level, msg.id)
             else if (msg.action === 'delete') objectsPanel.deleteButton.onclick()
             else if (msg.action === 'close') objectsPanel.close()
         } else if (msg.type === 'sound') {

@@ -1864,8 +1864,16 @@ step), this list updated.
      buildings (`isbldg`), heroes or special (`special`); an item under
      its class; an ability under units, heroes (`hero`) or items (`item`)
      and its race; a buff or upgrade under its race; a doodad or
-     destructable its category; the map's own under Custom. MCP: the
-     `obj_*` tools already change them.
+     destructable its category; the map's own under Custom. An id
+     field's … picks from the objects of its kinds (`abilityList`
+     abilities, `techList` units, upgrades, items ...: their lists asked
+     for once), searched: a click adds an id to a list or takes it out,
+     or sets one id. Copy and Paste: a new object, a copy of the one
+     copied (one of the game's: its base and the map's changes to it; one
+     of the map's: its base and its changes), each string of the map's
+     it names copied to a new one (the next number, the same text: the
+     copy's own, renamed apart), undone as one (`Snapshot::Many`). MCP:
+     the `obj_*` tools already change them.
 
 7. **In step with the rest** (done). Decided with the user: a text form
    open in VS Code and the editor are one (the text is the truth, as

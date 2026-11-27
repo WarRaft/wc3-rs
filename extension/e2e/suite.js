@@ -399,7 +399,7 @@ async function steps(only) {
             check(!saved.dirty && saved.message.includes('war3map.w3s'), saved.message)
         }},
         {name: 'objects', editor: true, run: async () => {
-            log("the object editor: the units listed, the footman's hit points typed and refused, one based on it made, deleted and back; Blizzard's cooldown at level 2; saved")
+            log("the object editor: the units listed, the footman's fields by type, an ability picked, hit points typed and refused, one based on it made, deleted and back; a string of the map's; copy and paste; Blizzard's cooldown at level 2; saved")
             await we.panel.webview.postMessage({type: 'object', action: 'open'})
             const units = await until(() => we.objects?.kind === 0 && we.objects.count > 100 && we.objects, 'the units listed')
             check(true, `${units.count} units, ${units.changed.length} changed by the map, ${units.custom.length} its own`)
@@ -415,6 +415,11 @@ async function steps(only) {
             await we.panel.webview.postMessage({type: 'object', action: 'field', field: 'ua1t', value: 'pierce'})
             await until(() => field('ua1t')?.[2] === 'pierce' && field('ua1t')[3], 'its attack type chosen')
             check(true, `attack type ${field('ua1t')[2]} (${field('ua1t')[5]})`)
+            // An ability picked from the list: its id added, named.
+            await we.panel.webview.postMessage({type: 'object', action: 'pickId', field: 'uabi', id: 'AHhb'})
+            // (The map renames Holy Light: its name, not its id.)
+            await until(() => field('uabi')?.[2].split(',').includes('AHhb') && field('uabi')[4].split(', ').length === 3 && !field('uabi')[4].includes('AHhb'), 'Holy Light picked')
+            check(true, `abilities ${field('uabi')[2]}: ${field('uabi')[4]}`)
             await we.panel.webview.postMessage({type: 'object', action: 'pick', id: 'Hpal'})
             const paladin = await until(() => we.objects?.picked?.id === 'Hpal' && we.objects.picked, "the paladin's fields")
             check(!!field('ustr'), `${paladin.name}, a hero: ${paladin.fields.length} fields, strength ${field('ustr')?.[2]}`)
@@ -444,6 +449,18 @@ async function steps(only) {
             await we.panel.webview.postMessage({type: 'object', action: 'field', field: 'unam', value: 'E2E Elemental'})
             await until(() => we.objects?.picked?.name.startsWith('E2E Elemental') && field('unam')?.[2] === 'E2E Elemental', 'its string typed')
             check(true, 'its name typed: war3map.wts\'s string')
+            // Copied and pasted: a new one, its base and changes h000's.
+            const before = we.objects.custom.length
+            await we.panel.webview.postMessage({type: 'object', action: 'copy'})
+            await we.panel.webview.postMessage({type: 'object', action: 'paste'})
+            const pasted = await until(() => we.objects?.custom.length === before + 1 && we.objects.picked?.id !== 'h000' && we.objects.picked?.base === 'hwat' && we.objects.picked, 'pasted')
+            check(pasted.name.startsWith('E2E Elemental'), `pasted: ${pasted.id}, ${pasted.name}`)
+            // Its name its own string: renamed, h000's stays.
+            await we.panel.webview.postMessage({type: 'object', action: 'field', field: 'unam', value: 'E2E Copy'})
+            await until(() => we.objects?.picked?.name.startsWith('E2E Copy'), 'the copy renamed')
+            await we.panel.webview.postMessage({type: 'object', action: 'pick', id: 'h000'})
+            const kept = await until(() => we.objects?.picked?.id === 'h000' && we.objects.picked, 'h000 again')
+            check(kept.name.startsWith('E2E Elemental'), `the copy's name its own: h000 still ${kept.name}`)
             await we.panel.webview.postMessage({type: 'object', action: 'kind', k: 4})
             await until(() => we.objects?.kind === 4 && we.objects.count > 300, 'the abilities listed')
             await we.panel.webview.postMessage({type: 'object', action: 'pick', id: 'AHbz'})

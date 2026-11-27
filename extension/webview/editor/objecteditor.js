@@ -17,6 +17,12 @@ const EditorObjectEditor = (() => {
         sound: 'Sound', stats: 'Stats', tech: 'Techtree', text: 'Text',
     }
     const STATES = ['', 'changed', 'custom']
+    /** The kinds (`KINDS`' indices) a field type names objects of (`objdata::id_kinds`). */
+    const ID_KINDS = {
+        abilityList: [4], heroAbilityList: [4], abilCode: [4], abilityCode: [4],
+        unitList: [0], unitCode: [0], itemList: [1], itemCode: [1], upgradeList: [6], upgradeCode: [6],
+        buffList: [5], buffCode: [5], effectList: [5], techList: [0, 6, 1], destructableList: [2], destructableCode: [2],
+    }
 
     /** An icon (`ImageData`) drawn on a canvas, its size. */
     const paint = (canvas, image) => {
@@ -53,6 +59,12 @@ const EditorObjectEditor = (() => {
             this.filter = ''
             /** The field types' values (`ObjectEnums`), by type. */
             this.enums = new Map()
+            /** Each kind's objects as last listed, by kind. */
+            this.lists = new Map()
+            /** The object copied: {kind, id}. */
+            this.copied = null
+            /** The id picker open: {kinds, update}. */
+            this.picker = null
             /** Icons by path (`null`: none), and the canvases waiting for them. */
             this.icons = new Map()
             this.build()
@@ -76,11 +88,21 @@ const EditorObjectEditor = (() => {
                 this.send(this.encode.objectNew(this.kind, this.base()))
             }})
             this.deleteButton = el('button', {textContent: 'Delete', title: 'A custom object taken away; a standard one\'s changes taken out', onclick: () => this.picked && this.send(this.encode.objectDelete(this.kind, this.picked))})
+            this.copyButton = el('button', {textContent: 'Copy', title: 'The one picked, to paste as a new one', onclick: () => {
+                if (!this.picked) return
+                this.copied = {kind: this.kind, id: this.picked}
+                this.renderList()
+            }})
+            this.pasteButton = el('button', {textContent: 'Paste', title: 'A new one, a copy of the one copied (its base, its changes)', onclick: () => {
+                if (this.copied?.kind !== this.kind) return
+                this.pendingNew = true
+                this.send(this.encode.objectNew(this.kind, this.copied.id))
+            }})
             this.closeButton = el('button', {textContent: 'Close', onclick: () => this.close()})
             this.title = el('div', {className: 'obj-title'})
             this.table = el('div', {className: 'obj-fields'})
             this.root.append(
-                el('div', {className: 'obj-side'}, this.tabs, this.search, this.list, el('div', {className: 'obj-buttons'}, this.newButton, this.deleteButton, this.closeButton)),
+                el('div', {className: 'obj-side'}, this.tabs, this.search, this.list, el('div', {className: 'obj-buttons'}, this.newButton, this.copyButton, this.pasteButton, this.deleteButton, this.closeButton)),
                 el('div', {className: 'obj-main'}, this.title, this.table),
             )
         }
@@ -91,6 +113,7 @@ const EditorObjectEditor = (() => {
         }
 
         close() {
+            this.closePicker()
             this.root.hidden = true
         }
 
@@ -121,6 +144,8 @@ const EditorObjectEditor = (() => {
 
         /** A kind's objects (`objectList`): shown; the picked one's fields asked again. */
         setList(msg) {
+            this.lists.set(msg.objectKind, msg.objects)
+            this.picker?.update()
             if (msg.objectKind !== this.kind) return
             this.objects = msg.objects
             if (this.picked && !this.objects.some(o => o.id === this.picked)) {
@@ -148,7 +173,9 @@ const EditorObjectEditor = (() => {
                 rows.push(row)
             }
             this.list.replaceChildren(...rows)
-            this.newButton.disabled = this.deleteButton.disabled = !this.picked
+            this.newButton.disabled = this.deleteButton.disabled = this.copyButton.disabled = !this.picked
+            this.pasteButton.disabled = this.copied?.kind !== this.kind
+            this.pasteButton.title = this.copied ? `A new one, a copy of ${this.copied.id}` : 'Copy one first'
             this.report()
         }
 
@@ -203,8 +230,16 @@ const EditorObjectEditor = (() => {
                 clearTimeout(timer)
                 timer = setTimeout(() => send(input.value), 400)
             }
-            if (!r.hint && r.ty !== 'icon') return input
+            const kinds = ID_KINDS[r.ty]
+            if (!r.hint && r.ty !== 'icon' && !kinds) return input
             const box = el('div', {className: 'obj-value-box'}, input)
+            if (kinds) {
+                // The objects to pick from, by name.
+                const pick = el('button', {className: 'obj-pick', textContent: '…', title: 'Pick from the list'})
+                pick.onclick = () => this.openPicker(r, kinds, send)
+                box.classList.add('with-pick')
+                box.prepend(el('div', {className: 'obj-pick-row'}, input, pick))
+            }
             if (r.hint) box.append(el('div', {className: 'obj-hint', textContent: r.hint}))
             if (r.ty === 'icon' && r.value.trim()) {
                 const path = r.value.split(',')[0].trim()
@@ -220,6 +255,71 @@ const EditorObjectEditor = (() => {
                 box.classList.add('with-icon')
             }
             return box
+        }
+
+        /**
+         * The id picker of field `r`: the objects of `kinds` searched, a
+         * click adding one to its list or taking it out (a list's type),
+         * or setting it (one id's).
+         */
+        openPicker(r, kinds, send) {
+            this.closePicker()
+            const multi = /List$/.test(r.ty)
+            let now = r.value.split(',').map(v => v.trim()).filter(Boolean)
+            const search = el('input', {type: 'search', placeholder: 'Search', className: 'obj-search'})
+            const list = el('div', {className: 'obj-list'})
+            const done = el('button', {textContent: 'Done', onclick: () => this.closePicker()})
+            const box = el('div', {className: 'obj-picker'}, el('div', {className: 'obj-title', textContent: r.name}), search, list, done)
+            const update = () => {
+                const words = search.value.toLowerCase().split(/\s+/).filter(Boolean)
+                const rows = []
+                for (const k of kinds) {
+                    const objects = this.lists.get(k)
+                    if (!objects) continue
+                    for (const o of objects) {
+                        if (!words.every(w => `${o.name} ${o.id} ${o.group}`.toLowerCase().includes(w))) continue
+                        const on = now.includes(o.id)
+                        const row = el('div', {className: `obj-row ${STATES[o.state]}${on ? ' on' : ''}`, textContent: `${o.name} (${o.id})`, title: o.group})
+                        row.dataset.id = o.id
+                        row.onclick = () => {
+                            now = multi ? (on ? now.filter(x => x !== o.id) : [...now, o.id]) : [o.id]
+                            send(now.join(','))
+                            update()
+                            if (!multi) this.closePicker()
+                        }
+                        rows.push(row)
+                        if (rows.length >= 400) break
+                    }
+                }
+                list.replaceChildren(...rows)
+            }
+            search.oninput = update
+            this.picker = {box, update, field: r.field}
+            this.root.append(box)
+            for (const k of kinds) if (!this.lists.has(k)) this.send(this.encode.objectList(k))
+            update()
+            search.focus()
+        }
+
+        closePicker() {
+            this.picker?.box.remove()
+            this.picker = null
+        }
+
+        /** An id picked in field `field`'s picker (for the tests): as a click would, once listed. */
+        pickId(field, level, id) {
+            const r = this.fields?.fields.find(r => r.field === field && r.level === (level ?? 0))
+            const kinds = r && ID_KINDS[r.ty]
+            if (!kinds) return
+            const [kind, objectId] = [this.kind, this.fields.id]
+            this.openPicker(r, kinds, value => this.send(this.encode.objectSet(kind, objectId, r.field, r.level, r.column, value)))
+            const end = Date.now() + 10000
+            const click = () => {
+                const row = this.picker?.box.querySelector(`[data-id="${CSS.escape(id)}"]`)
+                if (row) row.onclick()
+                else if (Date.now() < end) setTimeout(click, 100)
+            }
+            click()
         }
 
         /** The picked one's fields (`objectFields`). */

@@ -668,3 +668,28 @@ button:hover {
 .obj-field > input[type=checkbox] {
     justify-self: start;
 }
+
+.obj-pick-row {
+    display: flex;
+    gap: 2px;
+    min-width: 0;
+}
+
+.obj-pick-row input {
+    flex: 1;
+}
+
+.obj-picker {
+    position: absolute;
+    right: 16px;
+    top: 40px;
+    bottom: 16px;
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+    border: 1px solid var(--vscode-focusBorder, #555);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
+}

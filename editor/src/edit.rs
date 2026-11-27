@@ -89,6 +89,9 @@ pub enum Snapshot {
     Objects(w3abdhqtu_rs::Kind, Option<w3abdhqtu_rs::ObjectData>),
     /// The map's strings' text, whole (`placed::Files::strings`).
     Strings(Option<(String, bool)>),
+    /// Several, undone as one (an object pasted and the strings it
+    /// copied).
+    Many(Vec<Snapshot>),
     Pathing(Vec<u8>),
     /// The whole terrain (the tile setter's: its list, cliffs, tileset).
     Whole(Box<Terrain>),
@@ -245,7 +248,14 @@ impl Edits {
     /// it is, to undo it.
     pub fn record(&mut self, before: Snapshot) {
         self.end();
-        match &before {
+        self.mark(&before);
+        self.undo.push(before);
+        self.redo.clear();
+    }
+
+    /// The files `s` changes have changes not saved.
+    fn mark(&mut self, s: &Snapshot) {
+        match s {
             Snapshot::Terrain(..) | Snapshot::Whole(_) => self.dirty.terrain = true,
             Snapshot::Doodads(_) => self.dirty.doodads = true,
             Snapshot::Units(_) => self.dirty.units = true,
@@ -255,9 +265,8 @@ impl Edits {
             Snapshot::Objects(kind, _) => self.dirty.objects |= crate::objdata::bit(*kind),
             Snapshot::Strings(_) => self.dirty.strings = true,
             Snapshot::Pathing(_) => self.dirty.pathing = true,
+            Snapshot::Many(all) => all.iter().for_each(|s| self.mark(s)),
         }
-        self.undo.push(before);
-        self.redo.clear();
     }
 
     /// Lays a pathing brush at `(x, y)` (terrain cells) on `p`: its
@@ -367,6 +376,11 @@ impl Edits {
                     None => t.files.objects.remove(&kind),
                 };
                 Snapshot::Objects(kind, before)
+            }
+            Snapshot::Many(all) => {
+                let mut back: Vec<Snapshot> = all.into_iter().rev().map(|s| self.swap(s, Target { terrain: &mut *t.terrain, files: &mut *t.files })).collect();
+                back.reverse();
+                Snapshot::Many(back)
             }
             Snapshot::Strings(text) => {
                 self.dirty.strings = true;
