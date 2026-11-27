@@ -83,8 +83,9 @@ const EditorObjectEditor = (() => {
             this.list = el('div', {className: 'obj-list'})
             this.newButton = el('button', {textContent: 'New', title: 'A custom object based on the one picked', onclick: () => {
                 if (!this.picked) return
-                // The new one comes picked (its fields with the list).
-                this.pendingNew = true
+                // The new one comes picked (its fields with the list): the
+                // one not among these (an answer on its way is another's).
+                this.pendingNew = new Set(this.objects.map(o => o.id))
                 this.send(this.encode.objectNew(this.kind, this.base()))
             }})
             this.deleteButton = el('button', {textContent: 'Delete', title: 'A custom object taken away; a standard one\'s changes taken out', onclick: () => this.picked && this.send(this.encode.objectDelete(this.kind, this.picked))})
@@ -95,7 +96,8 @@ const EditorObjectEditor = (() => {
             }})
             this.pasteButton = el('button', {textContent: 'Paste', title: 'A new one, a copy of the one copied (its base, its changes)', onclick: () => {
                 if (this.copied?.kind !== this.kind) return
-                this.pendingNew = true
+                // The one that comes not among these.
+                this.pendingNew = new Set(this.objects.map(o => o.id))
                 this.send(this.encode.objectNew(this.kind, this.copied.id))
             }})
             this.closeButton = el('button', {textContent: 'Close', onclick: () => this.close()})
@@ -324,8 +326,8 @@ const EditorObjectEditor = (() => {
 
         /** The picked one's fields (`objectFields`). */
         setFields(msg) {
-            if (this.pendingNew && msg.objectKind === this.kind) {
-                this.pendingNew = false
+            if (this.pendingNew && msg.objectKind === this.kind && !this.pendingNew.has(msg.id)) {
+                this.pendingNew = null
                 this.picked = msg.id
                 this.renderList()
             }
