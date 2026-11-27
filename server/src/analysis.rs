@@ -242,16 +242,39 @@ fn declarations(program: Option<&jass_rs::Program>, symbols: &[Occurrence]) -> D
     d
 }
 
+/// The type of the values that are frames: a string passed to a function
+/// returning one (`BlzCreateFrame("EscMenuButtonTemplate", ...)`,
+/// `BlzGetFrameByName("Name", 0)`, a function of the map's own that
+/// makes a frame) names a frame of the frame files (FDF).
+pub const FRAME_TYPE: &str = "framehandle";
+
 /// Each name `program` (of `doc`) uses that neither it nor `env` (what
 /// the rest of its project and the game's scripts declare) has, and each
 /// call of the wrong arity (`jass_rs::names`), with `project`'s `[lint]`
-/// settings.
-pub fn names(doc: &Document, project: Option<&Project>, program: &jass_rs::Program, env: &[&Declarations]) -> Vec<Diagnostic> {
+/// settings; and the strings it passes to functions returning a frame
+/// ([`FRAME_TYPE`]), as references to frames (`Scope::Data`, as FDF's).
+pub fn names(doc: &Document, project: Option<&Project>, program: &jass_rs::Program, env: &[&Declarations]) -> (Vec<Diagnostic>, Vec<Occurrence>) {
     let text = doc.text.as_str();
     let lines = LineIndex::new(text);
     let out = Out { text, lines: &lines };
-    let found = jass_rs::names::check(program, env);
-    project::apply_lint(found, project).into_iter().map(|d| out.lint(d)).collect()
+    let (found, strings) = jass_rs::names::check_with_strings(program, env);
+    let frames = strings
+        .into_iter()
+        // An empty one too: a frame's name is being typed there.
+        .filter(|s| s.returns.as_deref() == Some(FRAME_TYPE))
+        .map(|s| Occurrence {
+            name: s.text,
+            line: s.span.start_line,
+            col: s.span.start_col,
+            end_col: s.span.end_col,
+            kind: parser_rs::SymbolKind::Frame,
+            declaration: false,
+            scope: parser_rs::Scope::Data,
+            namespace: String::new(),
+            qualifier: None,
+        })
+        .collect();
+    (project::apply_lint(found, project).into_iter().map(|d| out.lint(d)).collect(), frames)
 }
 
 /// `found` (lint of `doc` its project's other files tell: an FDF file's

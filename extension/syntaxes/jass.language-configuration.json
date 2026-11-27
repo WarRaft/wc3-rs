@@ -9,7 +9,8 @@
     "autoClosingPairs": [
         { "open": "[", "close": "]", "notIn": ["string", "comment"] },
         { "open": "(", "close": ")", "notIn": ["string", "comment"] },
-        { "open": "'", "close": "'", "notIn": ["string", "comment"] }
+        { "open": "'", "close": "'", "notIn": ["string", "comment"] },
+        { "open": "\"", "close": "\"", "notIn": ["string", "comment"] }
     ],
     "surroundingPairs": [
         ["[", "]"],

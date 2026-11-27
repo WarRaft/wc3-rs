@@ -137,7 +137,7 @@ async function steps(only) {
             await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
         }},
         {name: 'fdf-links', run: async () => {
-            log('a frame file\'s names: INHERITS to the game\'s template (inside the game\'s archive), its references, hover, the outline a tree, IncludeFile a link, completion in a string, a frame inherited that\'s declared nowhere an error')
+            log('a frame file\'s names: INHERITS to the game\'s template (inside the game\'s archive), its references, hover, the outline a tree, IncludeFile a link, completion in a string, a frame inherited that\'s declared nowhere an error; JASS\'s strings passed to a function returning a frame linked to it')
             const file = path.join(root, 'UI', 'FrameDef', 'Links.fdf')
             fs.mkdirSync(path.dirname(file), {recursive: true})
             fs.writeFileSync(file, [
@@ -182,6 +182,47 @@ async function steps(only) {
             check(['EscMenuButtonTemplate', 'LinksBack', 'ACCEPT'].every(n => labels.includes(n)), `completion in the string: ${labels.length} names, ${['EscMenuButtonTemplate', 'LinksBack', 'ACCEPT'].filter(n => labels.includes(n)).join(', ')} among them`)
             const problems = await until(() => vscode.languages.getDiagnostics(uri).length ? vscode.languages.getDiagnostics(uri) : null, 'the unknown template reported')
             check(problems.length === 1 && problems[0].range.start.line === 3 && problems[0].message.includes("'NoSuchTemplate'") && doc.getText(problems[0].range) === 'NoSuchTemplate', `one problem: ${problems.map(d => `${d.range.start.line + 1}: ${d.message} [${doc.getText(d.range)}]`).join('; ')}`)
+            // JASS: a string passed to a function returning a frame names it.
+            const jass = path.join(root, 'Frames.j')
+            // (1.26's common.j has no frames: declared here, as the game's 1.31+ has them.)
+            fs.writeFileSync(jass, [
+                'type framehandle extends handle',
+                'native BlzGetOriginFrame takes integer frameType, integer index returns framehandle',
+                'native BlzCreateFrame takes string name, framehandle owner, integer priority, integer createContext returns framehandle',
+                'native BlzFrameSetText takes framehandle frame, string text returns nothing',
+                'function MakeLinks takes nothing returns nothing',
+                '    local framehandle b = BlzCreateFrame("LinksButton", BlzGetOriginFrame(0, 0), 0, 0)',
+                '    local framehandle e = BlzCreateFrame("EscMenuButtonTemplate", b, 0, 0)',
+                '    call BlzFrameSetText(b, "LinksButton")',
+                'endfunction',
+                '',
+            ].join('\n'))
+            const juri = vscode.Uri.file(jass)
+            const jdoc = await vscode.workspace.openTextDocument(juri)
+            const jeditor = await vscode.window.showTextDocument(jdoc)
+            const jat = (line, text) => new vscode.Position(line, jdoc.lineAt(line).text.indexOf(text) + 2)
+            const mine = await until(async () => {
+                const d = await vscode.commands.executeCommand('vscode.executeDefinitionProvider', juri, jat(5, 'LinksButton'))
+                return d && d.length ? d : null
+            }, 'BlzCreateFrame("LinksButton") to its frame', 60000)
+            check(mine.length === 1 && mine[0].uri.fsPath === file && mine[0].range.start.line === 1, `BlzCreateFrame("LinksButton") → ${mine.map(where).join(', ')}`)
+            const game = await vscode.commands.executeCommand('vscode.executeDefinitionProvider', juri, jat(6, 'EscMenuButtonTemplate'))
+            check(game.length === 1 && path.basename(game[0].uri.fsPath) === 'EscMenuTemplates.fdf', `BlzCreateFrame("EscMenuButtonTemplate") → ${game.map(where).join(', ')}`)
+            const text = await vscode.commands.executeCommand('vscode.executeDefinitionProvider', juri, jat(7, 'LinksButton'))
+            check(text.length === 0, `BlzFrameSetText's text names nothing: ${text.length}`)
+            const uses = await vscode.commands.executeCommand('vscode.executeReferenceProvider', uri, at(1, 'LinksButton'))
+            check(uses.some(r => r.uri.fsPath === jass && r.range.start.line === 5), `"LinksButton" used in Frames.j: ${uses.map(where).join(', ')}`)
+            // Typing a new one: '"' closes itself, and the frames come up.
+            await jeditor.edit(e => e.insert(new vscode.Position(8, 0), '    set e = BlzCreateFrame(, b, 0, 0)\n'))
+            jeditor.selection = new vscode.Selection(8, 27, 8, 27)
+            await vscode.commands.executeCommand('type', {text: '"'})
+            check(jdoc.lineAt(8).text.includes('BlzCreateFrame("", b'), `'"' closed: ${jdoc.lineAt(8).text.trim()}`)
+            const offered = await until(async () => {
+                const l = await vscode.commands.executeCommand('vscode.executeCompletionItemProvider', juri, new vscode.Position(8, 28), '"')
+                return l && l.items.length ? l.items.map(i => typeof i.label === 'string' ? i.label : i.label.label) : null
+            }, 'frames offered in the string')
+            check(['LinksButton', 'EscMenuButtonTemplate'].every(n => offered.includes(n)), `offered in BlzCreateFrame(""): ${offered.length} names, LinksButton and EscMenuButtonTemplate among them`)
+            await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
             await vscode.commands.executeCommand('outline.focus')
             await vscode.window.showTextDocument(doc)
             await vscode.commands.executeCommand('outline.expand')

@@ -99,7 +99,8 @@ pub enum QueryKind {
     /// [`QueryKind::TriggerJass`]'s JASS in UjAPI's AngelScript
     /// (`triggers::converted`).
     TriggerAngelScript,
-    /// In a frame file (FDF), in a string: the names it can be, each a
+    /// In a frame file (FDF), in a string, or in JASS in a string that
+    /// names a frame (`BlzCreateFrame("|", ...)`): the names it can be, each a
     /// location with its `name`, `kind` (a frame, a key), `container`
     /// (where it's declared: the file's name), and the `range` it
     /// replaces (the string's text); `id` the declaring file.
@@ -156,23 +157,23 @@ fn frame_links(ws: &Workspace, id: &str) -> Answer {
 /// cursor on its line; strings have no escapes): every frame and key the
 /// file sees, once each, the project's over the game's. Nothing elsewhere.
 fn frame_completion(ws: &Workspace, id: &str, pos: Position) -> Answer {
-    let Some((doc, _)) = ws.file(id).filter(|(d, _)| d.language == crate::document::Language::Fdf) else {
+    let Some((doc, _)) = ws.file(id) else {
         return Answer::default();
     };
     let text = doc.text.as_str();
     let lines = LineIndex::new(text);
-    let line_text = lines.line(text, pos.line as usize);
-    let col = lines.column(text, pos);
-    let chars: Vec<char> = line_text.chars().collect();
-    let before = &chars[..(col - 1).min(chars.len())];
-    // In a comment, or not in a string: nothing.
-    let code_end = line_text.find("//").map_or(chars.len(), |b| line_text[..b].chars().count());
-    if before.len() > code_end || before.iter().filter(|c| **c == '"').count() % 2 == 0 {
-        return Answer::default();
-    }
-    let start = before.iter().rposition(|c| *c == '"').expect("an odd count") + 2;
-    let end = chars[before.len()..].iter().position(|c| *c == '"').map_or(chars.len(), |i| before.len() + i) + 1;
-    let range = lines.range(text, pos.line as usize + 1, start, end);
+    let range = if doc.language == crate::document::Language::Fdf {
+        match fdf_string_at(text, &lines, pos) {
+            Some(range) => range,
+            None => return Answer::default(),
+        }
+    } else {
+        // Code: a string the names found naming a frame.
+        match at(ws, id, pos).filter(|o| o.scope == Scope::Data && !o.declaration) {
+            Some(o) => lines.range(text, o.line, o.col, o.end_col),
+            None => return Answer::default(),
+        }
+    };
     let mut found: Vec<(&str, &Occurrence)> = ws
         .scope(id)
         .flat_map(|(fid, _, symbols)| symbols.iter().map(move |o| (fid, o)))
@@ -191,6 +192,24 @@ fn frame_completion(ws: &Workspace, id: &str, pos: Position) -> Answer {
         })
         .collect();
     Answer { locations, text: String::new() }
+}
+
+/// In a frame file, the text of the string at `pos` (typed or not: an
+/// open `"` before it on its line; strings have no escapes), outside
+/// comments.
+fn fdf_string_at(text: &str, lines: &LineIndex, pos: Position) -> Option<Range> {
+    let line_text = lines.line(text, pos.line as usize);
+    let col = lines.column(text, pos);
+    let chars: Vec<char> = line_text.chars().collect();
+    let before = &chars[..(col - 1).min(chars.len())];
+    // In a comment, or not in a string: nothing.
+    let code_end = line_text.find("//").map_or(chars.len(), |b| line_text[..b].chars().count());
+    if before.len() > code_end || before.iter().filter(|c| **c == '"').count() % 2 == 0 {
+        return None;
+    }
+    let start = before.iter().rposition(|c| *c == '"').expect("an odd count") + 2;
+    let end = chars[before.len()..].iter().position(|c| *c == '"').map_or(chars.len(), |i| before.len() + i) + 1;
+    Some(lines.range(text, pos.line as usize + 1, start, end))
 }
 
 /// Path completion and links in a manifest; nothing for any other file.

@@ -903,8 +903,9 @@ function registerQueries(context) {
                 return edit
             },
         }),
-        // A frame file: in a string, the frames and keys it sees.
-        languages.registerCompletionItemProvider({language: 'fdf'}, {
+        // A frame file: in a string, the frames and keys it sees; JASS: in
+        // a string passed to a function returning a frame, the same.
+        languages.registerCompletionItemProvider(['fdf', 'jass', 'vjass', 'wct'].map(language => ({language})), {
             provideCompletionItems: async (doc, pos) => {
                 const answer = await query(QUERY.COMPLETION, idOf(doc), pos)
                 return (answer?.locations ?? []).map(l => {

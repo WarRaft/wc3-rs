@@ -1586,6 +1586,19 @@ name, read with the project's `game=` like its scripts):
 - a frame a block inherits that's declared nowhere an error
   (`unknown-name`), checked once the game's frame files are seen.
 
+**From JASS.** A string passed to a function that returns a
+`framehandle` names a frame: the game's `BlzCreateFrame("Name", ...)`,
+`BlzGetFrameByName`, `BlzCreateSimpleFrame`, and a function of the
+map's own that makes one (`MakeButton("EscMenuButtonTemplate")`); not
+`BlzFrameSetText(f, "...")`, which returns nothing. Which function and
+what it returns come from the names check (`jass_rs::names::
+check_with_strings`: every string passed to a declared function, with
+what it returns), so it holds wherever the game's `common.j` is seen
+(1.31 and later have frames). Such a string goes to its frame (F12), is
+among the frame's references, is renamed with it, and completes the
+frames and keys (`"` closes itself in JASS now, so a typed string
+parses at once). Lua, Zinc and AngelScript strings aren't linked yet.
+
 ## SLK tables
 
 A `.slk` (the game's data tables: `Units\UnitBalance.slk`, the
@@ -2838,7 +2851,8 @@ statement's shape, a missing comma an error at once, unsaved, and gone
 when it's typed back); `fdf-links`, its names (`INHERITS` to the game's
 template in its archive, a key, references, hover, the outline a tree,
 `IncludeFile` a link, completion in a string, an unknown template an
-error). `run.js`
+error; from JASS, `BlzCreateFrame("...")` to its frame, among its
+references, completion in a new one). `run.js`
 extension in a VS Code of its own: the one installed (`VSCODE`, else
 `/Applications/Visual Studio Code.app`), with a profile and extensions
 folder of its own in a temporary folder (no other extension; it opens

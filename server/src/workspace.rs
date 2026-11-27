@@ -57,6 +57,10 @@ struct Entry {
     open: bool,
     /// From the last analysis; empty until the file is first analyzed.
     symbols: Vec<Occurrence>,
+    /// How many of `symbols` are the file's own (its analysis'); the rest
+    /// its strings that name frames, found with its project's names
+    /// (`check_names`).
+    own_symbols: usize,
     /// The root of the project it was last analyzed with.
     project: Option<PathBuf>,
     /// One of the game's scripts (see the module docs).
@@ -91,6 +95,7 @@ impl Entry {
             doc,
             open,
             symbols: Vec::new(),
+            own_symbols: 0,
             project: None,
             game: false,
             objects: None,
@@ -405,6 +410,7 @@ impl Workspace {
         let mut analyzed = Vec::new();
         for (id, _, mut a) in results {
             if let Some(entry) = self.files.get_mut(&id) {
+                entry.own_symbols = a.symbols.len();
                 entry.symbols = a.symbols;
                 entry.settings = roots.remove(&id).flatten();
                 entry.project = entry.settings.as_ref().map(|p| p.root.clone());
@@ -425,7 +431,13 @@ impl Workspace {
         } else {
             analyzed.iter().filter(|id| self.files.get(*id).is_some_and(|e| e.program.is_some())).cloned().collect()
         };
-        let mut named = self.check_names(&recheck);
+        let mut named = Vec::new();
+        for (id, diags, frames) in self.check_names(&recheck) {
+            let entry = self.files.get_mut(&id).expect("checked");
+            entry.symbols.truncate(entry.own_symbols);
+            entry.symbols.extend(frames);
+            named.push((id, diags));
+        }
         // A frame file analyzed (what it declares may have changed), or
         // files left: every frame file's inherited frames are checked again.
         let frames: Vec<String> = if changed || analyzed.iter().any(|id| self.files.get(id).is_some_and(|e| e.doc.language == Language::Fdf)) {
@@ -462,11 +474,11 @@ impl Workspace {
     /// where the game's `common.j` is seen (without it every native would
     /// be unknown); never in the game's scripts or a map's own script,
     /// whose problems aren't reported. Each id with its diagnostics.
-    fn check_names(&self, ids: &[String]) -> Vec<(String, Vec<analysis::Diagnostic>)> {
+    fn check_names(&self, ids: &[String]) -> Vec<(String, Vec<analysis::Diagnostic>, Vec<Occurrence>)> {
         let jobs: Vec<(&String, &Entry)> = ids.iter().filter_map(|id| self.files.get(id).map(|e| (id, e))).collect();
         parallel_map(&jobs, |(id, e)| {
             let Some(program) = e.program.as_deref().filter(|_| !e.game && !self.is_map_script(id)) else {
-                return ((*id).clone(), Vec::new());
+                return ((*id).clone(), Vec::new(), Vec::new());
             };
             let mut env = Vec::new();
             let mut common = false;
@@ -477,7 +489,7 @@ impl Workspace {
                 }
             }
             if !common {
-                return ((*id).clone(), Vec::new());
+                return ((*id).clone(), Vec::new(), Vec::new());
             }
             // A map's custom script: what World Editor's script declares
             // for it too.
@@ -485,7 +497,8 @@ impl Workspace {
             if let Some(d) = &map {
                 env.push(d);
             }
-            ((*id).clone(), analysis::names(&e.doc, e.settings.as_deref(), program, &env))
+            let (diagnostics, frames) = analysis::names(&e.doc, e.settings.as_deref(), program, &env);
+            ((*id).clone(), diagnostics, frames)
         })
     }
 

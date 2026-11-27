@@ -1013,3 +1013,62 @@ fn frame_files_link_to_each_other_and_the_games() {
     // Not in a string, or in a comment: nothing.
     assert!(ask(QueryKind::Completion, 1, 2).locations.is_empty());
 }
+
+#[test]
+fn jass_strings_that_make_frames_name_them() {
+    use crate::document::Position;
+    use crate::index::{answer, QueryKind};
+    const COMMON: &str = concat!(
+        "type handle extends handle\n",
+        "type framehandle extends handle\n",
+        "native BlzCreateFrame takes string name, framehandle owner, integer priority, integer createContext returns framehandle\n",
+        "native BlzGetOriginFrame takes integer frameType, integer index returns framehandle\n",
+        "native BlzFrameSetText takes framehandle frame, string text returns nothing\n",
+    );
+    const TOC: &str = "UI\\FrameDef\\UI\\Templates.fdf\r\n";
+    const TEMPLATES: &str = "Frame \"GLUETEXTBUTTON\" \"ButtonTemplate\" {\n}\n";
+    const MINE: &str = "Frame \"BACKDROP\" \"MyBack\" {\n}\n";
+    const MAIN: &str = concat!(
+        "function MakeBack takes string name returns framehandle\n",
+        "    return BlzCreateFrame(name, BlzGetOriginFrame(0, 0), 0, 0)\n",
+        "endfunction\n",
+        "function F takes nothing returns nothing\n",
+        "    local framehandle b = BlzCreateFrame(\"ButtonTemplate\", BlzGetOriginFrame(0, 0), 0, 0)\n",
+        "    local framehandle m = MakeBack(\"MyBack\")\n",
+        "    call BlzFrameSetText(b, \"MyBack\")\n",
+        "    set b = BlzCreateFrame(\"\", null, 0, 0)\n",
+        "endfunction\n",
+    );
+    let tmp = project("ws-jass-frames", &[
+        ("game/README", ""),
+        ("p/wc3.bni", "[project]\ngame=../game\n[code]\nsources=.\n"),
+        ("p/UI/FrameDef/My.fdf", MINE),
+        ("p/main.j", MAIN),
+    ]);
+    let patch = tmp.0.join("game/War3Patch.mpq");
+    crate::map::tests::make_map(&patch, &[
+        ("Scripts\\common.j", COMMON),
+        ("UI\\FrameDef\\FrameDef.toc", TOC),
+        ("UI\\FrameDef\\UI\\Templates.fdf", TEMPLATES),
+    ]);
+    let mut ws = init(&tmp.0);
+    reports(&mut ws);
+    let main = path_id(&tmp.0.join("p/main.j"));
+    let mine = path_id(&tmp.0.join("p/UI/FrameDef/My.fdf"));
+    let templates = path_id(&patch.join("UI/FrameDef/UI/Templates.fdf"));
+    let ids = |a: crate::index::Answer| a.locations.into_iter().map(|l| (l.id, l.range.start.line, l.range.start.character)).collect::<Vec<_>>();
+    // A string passed to a function returning a frame → the frame: the
+    // game's native, and a function of the map's own.
+    assert_eq!(ids(answer(&ws, QueryKind::Definition, &main, Position::new(4, 45), "")), [(templates.clone(), 0, 24)]);
+    assert_eq!(ids(answer(&ws, QueryKind::Definition, &main, Position::new(5, 37), "")), [(mine.clone(), 0, 18)]);
+    // A string passed to one that doesn't (BlzFrameSetText's text): none.
+    assert!(answer(&ws, QueryKind::Definition, &main, Position::new(6, 30), "").locations.is_empty());
+    // From the frame file: its uses in JASS too.
+    assert_eq!(ids(answer(&ws, QueryKind::References, &mine, Position::new(0, 20), "")), [(mine.clone(), 0, 18), (main.clone(), 5, 36)]);
+    // Renaming it renames the string.
+    let renamed = answer(&ws, QueryKind::Rename, &mine, Position::new(0, 20), "MyBackdrop");
+    assert_eq!((renamed.text.as_str(), ids(renamed.clone())), ("", vec![(mine.clone(), 0, 18), (main.clone(), 5, 36)]));
+    // In an empty string there: every frame.
+    let names: Vec<String> = answer(&ws, QueryKind::Completion, &main, Position::new(7, 28), "").locations.into_iter().map(|l| l.name).collect();
+    assert_eq!(names, ["ButtonTemplate", "MyBack"]);
+}
