@@ -75,7 +75,8 @@ pub const GAME_FILES: [&str; 3] = ["Units\\MiscData.txt", "Units\\MiscGame.txt",
 
 /// The game interface's: a section of a file (`CustomSkin` the race
 /// skins' `[Default]`, then `[Human]` over it), or the frames' strings
-/// (`FrameDef`: `UI\FrameDef\GlobalStrings.fdf`'s `StringList`).
+/// (`FrameDef`: the `StringList`s of the frame files
+/// `UI\FrameDef\FrameDef.toc` names).
 const SKIN_FILES: [(&str, &str, &str); 4] =
     [("Units\\CommandStrings.txt", "Errors", "Errors"), ("Units\\UnitGlobalStrings.txt", "Categories", "Categories"), ("UI\\war3skins.txt", "Default", "CustomSkin"), ("UI\\war3skins.txt", "Human", "CustomSkin")];
 
@@ -106,7 +107,8 @@ impl Constants {
                     key: cell(row, "field"),
                     section: cell(row, "section"),
                     ty: cell(row, "type"),
-                    name: if shown.is_empty() { id.clone() } else { name(&shown) },
+                    // (A text's named by the game's value, below.)
+                    name: if shown.is_empty() { id.clone() } else { shown },
                     min: cell(row, "minval"),
                     max: cell(row, "maxval"),
                     id,
@@ -124,8 +126,13 @@ impl Constants {
                 }
             }
             Book::Skin => {
-                for (key, value) in string_list(&text("UI\\FrameDef\\GlobalStrings.fdf").unwrap_or_default()) {
-                    values.insert(("framedef".to_string(), key.to_ascii_lowercase()), value);
+                // The frames' strings: every frame file the game's list
+                // names (`GlobalStrings.fdf`, `InfoPanelStrings.fdf` ...).
+                let toc = text("UI\\FrameDef\\FrameDef.toc").unwrap_or_default();
+                for file in toc.lines().map(str::trim).filter(|l| !l.is_empty()) {
+                    for (key, value) in string_list(&text(file).unwrap_or_default()) {
+                        values.insert(("framedef".to_string(), key.to_ascii_lowercase()), value);
+                    }
                 }
                 for (file, from, to) in SKIN_FILES {
                     for (section, key, value) in entries(&text(file).unwrap_or_default()) {
@@ -135,6 +142,25 @@ impl Constants {
                     }
                 }
             }
+        }
+        // Named as World Editor names them: a `WESTRING_`'s text, or a
+        // text field by its kind and the game's text (`Text - General -
+        // 'Gold'`).
+        for f in &mut fields {
+            let pattern = match f.name.as_str() {
+                "FrameDefDefault" => Some("WESTRING_SKINVAL_FRAMEDEF_DEFAULT"),
+                "ErrorStringDefault" => Some("WESTRING_SKINVAL_ERROR_DEFAULT"),
+                _ => None,
+            };
+            f.name = match pattern {
+                Some(p) => {
+                    let text = values.get(&(f.section.to_ascii_lowercase(), f.key.to_ascii_lowercase())).cloned().unwrap_or_else(|| f.key.clone());
+                    let p = name(p);
+                    if p.contains("%s") { p.replacen("%s", &text, 1) } else { format!("{p} {text}") }
+                }
+                None if f.name.starts_with("WESTRING_") => name(&f.name),
+                None => f.name.clone(),
+            };
         }
         Constants { fields, game: values }
     }

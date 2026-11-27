@@ -889,6 +889,13 @@ button:hover {
 .constants-bar input[type=search] {
     flex: 1;
 }
+.info-body.constants-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+}
+.info-field.constant {
+    grid-template-columns: 18em 24px minmax(0, 1fr) auto;
+}
 .constant.changed > span {
     font-weight: bold;
 }

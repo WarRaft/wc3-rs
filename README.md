@@ -1949,8 +1949,9 @@ step), this list updated.
      the Interface… panel, the same code (`constants::Book`: which,
      its file, its metadata): `war3mapSkin.txt` over
      `UI\SkinMetaData.slk`'s 854 fields, the game's values its
-     sections' own: `[FrameDef]` the frames' strings
-     (`UI\FrameDef\GlobalStrings.fdf`'s `StringList`,
+     sections' own: `[FrameDef]` the frames' strings (the
+     `StringList`s of the frame files `UI\FrameDef\FrameDef.toc`
+     names, `GlobalStrings.fdf`, `InfoPanelStrings.fdf` ...;
      `constants::string_list`), `[CustomSkin]` the race skins
      (`UI\war3skins.txt`'s `[Default]`, `[Human]` over it), `[Errors]`
      (`Units\CommandStrings.txt`), `[Categories]`
@@ -1959,7 +1960,11 @@ step), this list updated.
      text, and what's typed sets that string in `war3map.wts`; its
      panel follows the strings (an undo, a change on disk). Keys
      the metadata hasn't (`LOADING_LOADING`) stay in the file as they
-     are.
+     are. Named as World Editor names them: a text by its kind and the
+     game's text (`Text - General - 'Agility'`, `Text - Message - ...`:
+     `WESTRING_SKINVAL_FRAMEDEF_DEFAULT`, `..._ERROR_DEFAULT`); an
+     icon's picture beside it (`Icons` of kind 255, as the object
+     editor's); a field a row.
    - **The triggers** (done after the sounds' Browse…): the trigger
      editor is one code, `webview/triggers.js` (with `triggers.css`): a
      map's triggers and a `.trg` alike, the tree of a map's beside its

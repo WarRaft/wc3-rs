@@ -1542,6 +1542,7 @@
                 // A texture's by its path: the object editor's.
                 if (i.kind === 255) {
                     objectsPanel.setIcon(i.id, image)
+                    skinPanel.setIcon(i.id, image)
                     continue
                 }
                 icons.cache.set(key, image)

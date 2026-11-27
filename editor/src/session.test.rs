@@ -1263,6 +1263,7 @@ fn the_game_interface_its_strings_sections_and_the_maps_strings() {
         ]),
     );
     dir.write("map/UI/war3skins.txt", b"[Human]\nLumberIcon=Human.blp\n[Default]\nLumberIcon=Default.blp\n");
+    dir.write("map/UI/FrameDef/FrameDef.toc", b"UI\\FrameDef\\GlobalStrings.fdf\r\n");
     dir.write("map/UI/FrameDef/GlobalStrings.fdf", b"StringList {\n    GOLD \"Gold\",\n}\n");
     dir.write("map/Units/CommandStrings.txt", b"[Errors]\nEmptycontrolgroup=Unable to form an empty control group.\n");
     // The map's: its gold a string of its own.

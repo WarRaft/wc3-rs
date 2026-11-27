@@ -16,6 +16,14 @@ const EditorConstants = (() => {
         return e
     }
 
+    const paint = (canvas, image) => {
+        if (!image) return
+        canvas.width = image.width
+        canvas.height = image.height
+        canvas.getContext('2d').putImageData(image, 0, 0)
+        canvas.dataset.painted = '1'
+    }
+
     /** Whether two values are the same: as numbers when they're numbers (`0` and `0.0`), item by item (`constants::same`). */
     const same = (a, b) => {
         const [x, y] = [a.split(','), b.split(',')].map(l => l.map(i => i.trim()))
@@ -31,6 +39,8 @@ const EditorConstants = (() => {
             Object.assign(this, {root, book, send, encode, said})
             this.custom = false
             this.fields = []
+            /** The icons read by path (lower case; `null` asked for, or none). */
+            this.icons = new Map()
             this.filter = ''
             const close = el('button', {textContent: 'Close', onclick: () => this.close()})
             this.useCustom = el('input', {type: 'checkbox'})
@@ -76,7 +86,18 @@ const EditorConstants = (() => {
         }
 
         report() {
-            return {custom: this.custom, count: this.fields.length, changed: this.fields.filter(f => !same(f.value, f.game)).map(f => [f.id, f.value])}
+            const painted = this.root.querySelectorAll('canvas.obj-icon[data-painted]').length
+            const name = id => this.fields.find(f => f.id === id)?.name
+            return {custom: this.custom, count: this.fields.length, changed: this.fields.filter(f => !same(f.value, f.game)).map(f => [f.id, f.value]), icons: painted, names: ['f001', 'e001'].map(name)}
+        }
+
+        /** An icon read (`Icons` of kind 255): drawn where it's shown. */
+        setIcon(path, image) {
+            const key = path.toLowerCase()
+            if (!this.icons.has(key)) return
+            this.icons.set(key, image)
+            for (const c of this.root.querySelectorAll('canvas.obj-icon')) if (c.dataset.path === key) paint(c, image)
+            this.said(this.report())
         }
 
         render() {
@@ -101,8 +122,21 @@ const EditorConstants = (() => {
                 }
             }
             input.dataset.field = f.id
+            // An icon's picture beside it, asked for once.
+            let picture = el('span')
+            if (f.ty === 'icon' && f.value.trim()) {
+                const path = f.value.trim().toLowerCase()
+                picture = el('canvas', {className: 'obj-icon', width: 32, height: 32})
+                picture.dataset.path = path
+                const image = this.icons.get(path)
+                if (image) paint(picture, image)
+                else if (image === undefined) {
+                    this.icons.set(path, null)
+                    this.send(this.encode.icons([[255, f.value.trim()]]))
+                }
+            }
             const reset = el('button', {textContent: '↺', title: `The game's: ${f.game}`, disabled: !this.custom || !changed, onclick: () => this.set(f.id, f.game)})
-            return el('label', {className: changed ? 'info-field constant changed' : 'info-field constant', title: f.key}, el('span', {textContent: f.name}), input, reset)
+            return el('label', {className: changed ? 'info-field constant changed' : 'info-field constant', title: f.key}, el('span', {textContent: f.name}), picture, input, reset)
         }
 
         /** A constant typed as its input would be: for the tests. */
