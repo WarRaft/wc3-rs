@@ -1646,15 +1646,21 @@ water colours, the camera); none of its code is taken as is.
   **Open World Editor**.
 - The page: a line with the map's name (its size, tileset, author),
   then a line of icon buttons with tooltips of their own (name, key,
-  what it does): the edits (undo, redo, save, reload), the map's windows
-  (Test map, Map, Triggers, Info, Constants, Interface, Imports,
+  what it does): the edits (undo, redo, save, reload), Test map, the
+  windows (Tools, Map, Triggers, Info, Constants, Interface, Imports,
   Objects), the layers, the time of day (dragged while the day goes
   round, it goes on from there), then the controls' window (F1) and
-  Donate. Nothing over the view but the tools and the
-  minimap (the panels as far from its bottom as from its top); under it
-  one line: what was said, and where the mouse is on
-  the ground (the game's X, Y, Z, the cell). The view follows the
-  page's size at once (a `ResizeObserver`).
+  Donate. Under the view one line: what was said, and where the mouse is
+  on the ground (the game's X, Y, Z, the cell). The view follows the
+  page's size at once (a `ResizeObserver`); the minimap is at its bottom
+  left.
+- The windows: one open at a time, its button lit, a second click
+  closing it; one close, a cross over the top right corner of the one
+  open (the controls' window has the same). None open at first. The
+  tools (the brushes, placing, regions, cameras, sounds, pathing, what's
+  picked) and Map open on the right, 12 px in, over the view; the others
+  over all of it, 12 px in. A panel closing itself (Triggers' "show on
+  the map") turns its button off too.
 - The view of each map (the layers shown, the time of day) is kept by
   the extension (`globalState`, by the project's folder) between runs.
 - One editor per project (its process holds a lock on it). Opened

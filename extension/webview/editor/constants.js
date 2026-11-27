@@ -42,7 +42,6 @@ const EditorConstants = (() => {
             /** The icons read by path (lower case; `null` asked for, or none). */
             this.icons = new Map()
             this.filter = ''
-            const close = el('button', {textContent: 'Close', onclick: () => this.close()})
             this.useCustom = el('input', {type: 'checkbox'})
             this.useCustom.dataset.field = 'custom'
             this.useCustom.onchange = () => this.set('custom', this.useCustom.checked ? '1' : '0')
@@ -53,7 +52,7 @@ const EditorConstants = (() => {
             }
             this.body = el('div', {className: 'info-body constants-body'})
             this.root.append(
-                el('div', {className: 'info-head'}, el('span', {className: 'obj-title', textContent: title}), close),
+                el('div', {className: 'info-head'}, el('span', {className: 'obj-title', textContent: title})),
                 el('div', {className: 'constants-bar'}, el('label', {}, this.useCustom, `Use custom ${title.toLowerCase()}`), this.search),
                 this.body,
             )

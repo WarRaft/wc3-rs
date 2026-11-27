@@ -30,11 +30,10 @@ const EditorImports = (() => {
             this.preview = null
             const add = el('button', {textContent: 'Add…', title: 'Files from disk, imported', onclick: () => this.post({type: 'importPick'})})
             this.deleteButton = el('button', {textContent: 'Delete', title: 'Taken out of the list, and its file out of the map on save', onclick: () => this.picked !== null && this.send(this.encode.importDelete(this.picked))})
-            const close = el('button', {textContent: 'Close', onclick: () => this.close()})
             this.list = el('div', {className: 'obj-list imp-list'})
             this.view = el('div', {className: 'imp-view'})
             this.root.append(
-                el('div', {className: 'obj-side imp-side'}, el('div', {className: 'obj-title', textContent: 'Imported files'}), this.list, el('div', {className: 'obj-buttons'}, add, this.deleteButton, close)),
+                el('div', {className: 'obj-side imp-side'}, el('div', {className: 'obj-title', textContent: 'Imported files'}), this.list, el('div', {className: 'obj-buttons'}, add, this.deleteButton)),
                 el('div', {className: 'obj-main'}, this.view),
             )
         }

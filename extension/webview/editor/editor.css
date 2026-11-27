@@ -222,9 +222,10 @@ button:hover {
 .pick-box[hidden] {
     display: none;
 }
+/* On the left: the windows open on the right. */
 .minimap {
     position: absolute;
-    right: 12px;
+    left: 12px;
     bottom: 12px;
     width: min(220px, 30%);
     max-height: calc(100% - 24px);
@@ -243,9 +244,14 @@ button:hover {
     box-sizing: border-box;
 }
 
+.tools[hidden], .map-panel[hidden], .window-close[hidden] {
+    display: none;
+}
+
+/* The tools: a window on the right, as the Map window. */
 .tools {
     position: absolute;
-    left: 12px;
+    right: 12px;
     top: 12px;
     width: 220px;
     max-height: calc(100% - 24px);
@@ -556,10 +562,9 @@ kbd {
 }
 
 .help-box {
+    position: relative;
     max-width: 560px;
     width: 100%;
-    max-height: 100%;
-    overflow: auto;
     padding: 12px 16px;
     background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
     border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, #454545));
@@ -581,6 +586,8 @@ kbd {
 }
 
 .help-keys {
+    max-height: calc(100vh - 100px);
+    overflow: auto;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     gap: 4px 16px;
@@ -677,9 +684,10 @@ kbd {
     flex: 1;
 }
 
+/* A window over all of the view. */
 .obj-panel {
     position: absolute;
-    left: 260px;
+    left: 12px;
     right: 12px;
     top: 12px;
     bottom: 12px;
@@ -693,6 +701,47 @@ kbd {
 
 .obj-panel[hidden] {
     display: none;
+}
+
+/* The Triggers window: the trigger editor filling it, to its edges (here,
+   in the scope: the scoped .obj-panel's padding would win outside it). */
+.obj-panel.trg-panel {
+    padding: 0;
+}
+
+.trg-panel > .trg-root {
+    flex: 1;
+    min-width: 0;
+}
+
+/* The close of the window open: a cross over its top right corner (each
+   window's, the controls' too). */
+.window-close {
+    position: absolute;
+    z-index: 20;
+    top: 1px;
+    right: 1px;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border-radius: 50%;
+    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+    color: var(--vscode-foreground);
+    border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, #555));
+    box-shadow: 0 1px 4px var(--vscode-widget-shadow, rgba(0, 0, 0, .4));
+    font-size: 12px;
+}
+
+.window-close:hover {
+    background: var(--vscode-toolbar-hoverBackground, var(--vscode-editorWidget-background));
+}
+
+.help .window-close {
+    top: -11px;
+    right: -11px;
 }
 
 .obj-side {
@@ -1159,12 +1208,3 @@ kbd {
     text-overflow: ellipsis;
 }
 
-/* The Triggers panel: the trigger editor filling it. */
-.trg-panel {
-    padding: 0;
-}
-
-.trg-panel > .trg-root {
-    flex: 1;
-    min-width: 0;
-}

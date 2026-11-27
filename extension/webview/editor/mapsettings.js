@@ -76,8 +76,7 @@ const EditorMapSettings = (() => {
 
         render() {
             const s = this.settings
-            const close = el('button', {textContent: '✕', title: 'Close', className: 'map-close', onclick: () => this.close()})
-            this.root.replaceChildren(el('div', {className: 'map-head'}, el('b', {textContent: 'Map'}), close), this.sizeSection(s), this.tilesSection(s), this.pathingSection(s))
+            this.root.replaceChildren(el('div', {className: 'map-head'}, el('b', {textContent: 'Map'})), this.sizeSection(s), this.tilesSection(s), this.pathingSection(s))
         }
 
         sizeSection(s) {

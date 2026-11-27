@@ -517,7 +517,6 @@
         save()
     }
     const mapPanel = new EditorMapSettings.Panel($('map-panel'), send, encode)
-    $('map-open').onclick = () => (mapPanel.isOpen ? mapPanel.close() : mapPanel.open())
     const importsPanel = new EditorImports.Panel($('imports-panel'), send, encode, msg => vscode.postMessage(msg))
     // Its tech tree's and upgrades' objects named by the object editor's lists: units, items, abilities, upgrades.
     const INFO_KINDS = [0, 1, 4, 6]
@@ -671,22 +670,58 @@
         e.stopImmediatePropagation()
         mapPickAt(e.clientX, e.clientY)
     }, true)
-    // One of these panels at a time.
-    const panels = () => [importsPanel, objectsPanel, infoPanel, constantsPanel, skinPanel, triggersPanel]
-    const toggle = panel => {
-        if (panel.isOpen) return panel.close()
-        for (const p of panels()) if (p !== panel) p.close()
-        panel.open()
-    }
-    $('imports-open').onclick = () => toggle(importsPanel)
-    $('info-open').onclick = () => toggle(infoPanel)
-    $('constants-open').onclick = () => toggle(constantsPanel)
-    $('skin-open').onclick = () => toggle(skinPanel)
-    $('triggers-open').onclick = () => toggle(triggersPanel)
     // The panel's report, or a dialog it asks for (Export…, Import…: the extension's).
     const objectsPanel = new EditorObjectEditor.Panel($('objects-panel'), send, encode, objects =>
         vscode.postMessage(objects.dialog ? {type: 'objectFile', action: objects.dialog, kind: objects.kind} : {type: 'objects', objects}))
-    $('objects-open').onclick = () => toggle(objectsPanel)
+    // The tools: a window of their own too.
+    const toolsPanel = {
+        get isOpen() {
+            return !tools.hidden
+        },
+        open() {
+            tools.hidden = false
+        },
+        close() {
+            tools.hidden = true
+        },
+    }
+    // The windows: one at a time, each its button on the bar (lit while
+    // it's open, a second click closes it), and one close button over the
+    // top right corner of the one open. However a window closes (its
+    // button, the corner's, a panel closing itself), the bar follows.
+    const WINDOWS = [
+        [toolsPanel, 'tools-open', 'tools'],
+        [mapPanel, 'map-open', 'map-panel'],
+        [triggersPanel, 'triggers-open', 'triggers-panel'],
+        [infoPanel, 'info-open', 'info-panel'],
+        [constantsPanel, 'constants-open', 'constants-panel'],
+        [skinPanel, 'skin-open', 'skin-panel'],
+        [importsPanel, 'imports-open', 'imports-panel'],
+        [objectsPanel, 'objects-open', 'objects-panel'],
+    ]
+    const panels = () => WINDOWS.map(([p]) => p)
+    const toggle = panel => {
+        if (panel.isOpen) return panel.close()
+        for (const p of panels()) if (p !== panel && p.isOpen) p.close()
+        panel.open()
+    }
+    function showWindows() {
+        let any = false
+        for (const [p, button] of WINDOWS) {
+            $(button).classList.toggle('on', p.isOpen)
+            any ||= p.isOpen
+        }
+        $('window-close').hidden = !any
+    }
+    const watchWindows = new MutationObserver(showWindows)
+    for (const [p, button, root] of WINDOWS) {
+        $(button).onclick = () => toggle(p)
+        watchWindows.observe($(root), {attributes: true, attributeFilter: ['hidden']})
+    }
+    $('window-close').onclick = () => {
+        for (const p of panels()) if (p.isOpen) p.close()
+    }
+    showWindows()
     $('reload').onclick = () => send(encode.reload())
     showTools()
 
@@ -2025,6 +2060,9 @@
             // y up): the mouse there first; `help`: the controls' window
             // opened (true) or closed (false) first.
             if (msg.help !== undefined) showHelp(msg.help)
+            // `click`: a button of the bar clicked (an id); `closeWindow`: the corner's close.
+            if (msg.button) $(msg.button).click()
+            if (msg.closeWindow) $('window-close').click()
             // `drag`: the time's slider held and dragged there, the day going round.
             if (msg.drag !== undefined) {
                 show.cycle = true
@@ -2051,6 +2089,8 @@
                     help: !$('help').hidden, cursor: $('cursor').textContent, hours: light.hours,
                     now: light.now(performance.now() / 1000, show.cycle), slider: Number($('hours').value),
                     panels: ['tools', 'map-panel'].map(id => getComputedStyle($(id)).boxSizing),
+                    windows: WINDOWS.map(([p, button, root]) => ({button, open: p.isOpen, on: $(button).classList.contains('on'), ...box(root)})),
+                    trg: box('trg-root'), stage: box('view'), close: $('window-close').hidden ? null : box('window-close'),
                     hoursAfter: [...document.querySelectorAll('.tool-bar > *')].findIndex(e => e.classList.contains('hours')) > [...document.querySelectorAll('.tool-bar > *')].findIndex(e => e.id === 'toggles'),
                 }})
                 if (msg.drag !== undefined) window.dispatchEvent(new PointerEvent('pointerup'))

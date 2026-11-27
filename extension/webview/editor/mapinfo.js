@@ -41,8 +41,7 @@ const EditorMapInfo = (() => {
             Object.assign(this, {root, send, encode, said, nameOf})
             this.fields = new Map()
             this.body = el('div', {className: 'info-body'})
-            const close = el('button', {textContent: 'Close', onclick: () => this.close()})
-            this.root.append(el('div', {className: 'info-head'}, el('span', {className: 'obj-title', textContent: 'Map info'}), close), this.body)
+            this.root.append(el('div', {className: 'info-head'}, el('span', {className: 'obj-title', textContent: 'Map info'})), this.body)
         }
 
         open() {
