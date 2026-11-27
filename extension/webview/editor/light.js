@@ -43,6 +43,10 @@ vec3 fogged(vec3 c, float dist) {
             this.units = new Float32Array(0)
             this.fog = null
             this.hours = 12
+            /** When the day started going round from `hours` (seconds). */
+            this.from = 0
+            /** Whether it was going round at the last `now`. */
+            this.cycling = false
             this.showFog = false
         }
 
@@ -52,9 +56,24 @@ vec3 fogged(vec3 c, float dist) {
             this.fog = msg.fog
         }
 
-        /** The hours of the day now: `hours`, or going round. */
+        /**
+         * The hours of the day now: `hours`, or going round from `hours`
+         * since it started to (or was last set); stopped, it stays where
+         * it went round to.
+         */
         now(time, cycle) {
-            return cycle ? (this.hours + time / DAY * 24) % 24 : this.hours
+            if (cycle !== this.cycling) {
+                if (cycle) this.from = time
+                else this.hours = (this.hours + (time - this.from) / DAY * 24) % 24
+                this.cycling = cycle
+            }
+            return cycle ? (this.hours + (time - this.from) / DAY * 24) % 24 : this.hours
+        }
+
+        /** The time of day set to `hours` at `time`: going round, from there. */
+        setHours(hours, time) {
+            this.hours = hours
+            this.from = time
         }
 
         /** The light of `samples` at `hours`, between the half hours. */

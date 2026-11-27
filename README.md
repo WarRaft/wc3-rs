@@ -1648,9 +1648,11 @@ water colours, the camera); none of its code is taken as is.
   then a line of icon buttons with tooltips of their own (name, key,
   what it does): the edits (undo, redo, save, reload), the map's windows
   (Test map, Map, Triggers, Info, Constants, Interface, Imports,
-  Objects), the time of day, the layers, then the controls' window
-  (F1) and Donate. Nothing over the view but the tools and the
-  minimap; under it one line: what was said, and where the mouse is on
+  Objects), the layers, the time of day (dragged while the day goes
+  round, it goes on from there), then the controls' window (F1) and
+  Donate. Nothing over the view but the tools and the
+  minimap (the panels as far from its bottom as from its top); under it
+  one line: what was said, and where the mouse is on
   the ground (the game's X, Y, Z, the cell). The view follows the
   page's size at once (a `ResizeObserver`).
 - The view of each map (the layers shown, the time of day) is kept by

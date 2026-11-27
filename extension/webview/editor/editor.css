@@ -239,6 +239,10 @@ button:hover {
 .minimap[hidden] {
     display: none;
 }
+.tools, .map-panel {
+    box-sizing: border-box;
+}
+
 .tools {
     position: absolute;
     left: 12px;
@@ -482,6 +486,12 @@ button:hover {
 .hours input {
     width: 90px;
     margin: 0;
+    accent-color: var(--vscode-button-background);
+}
+
+/* No focus ring of its own (the browser's, yellow): the thumb's enough. */
+.hours input:focus, .hours input:focus-visible {
+    outline: none;
 }
 
 .hours span {

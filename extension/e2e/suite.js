@@ -102,6 +102,13 @@ async function steps(only) {
             check(l.bar.every(b => b.icon && !b.text && b.tip), `its buttons icons, a tooltip each (${l.bar.filter(b => !b.icon || b.text || !b.tip).map(b => b.id || b.tip).join(', ') || 'all'})`)
             check(l.status.top >= l.view.bottom && l.status.bottom <= l.window.height, `the bottom line under the view (${l.view.bottom} ≤ ${l.status.top}, ${l.status.bottom} ≤ ${l.window.height})`)
             check(/^X -?[\d\u2009]+ {2}Y -?[\d\u2009]+ {2}Z -?[\d\u2009]+ {2}· {2}Cell \d+, \d+$/.test(l.cursor), `the ground under the mouse: ${l.cursor}`)
+            check(l.hoursAfter, 'the time after the layers\' buttons')
+            check(l.panels.every(b => b === 'border-box'), `the panels over the view inside it, as far from its bottom as from its top: ${l.panels.join(', ')}`)
+            // The time dragged while the day goes round: from there, the slider not taken back.
+            l = await layout({drag: 6})
+            check(Math.abs(l.now - 6) < 0.1 && Math.abs(l.slider - 6) < 0.1, `the day going round from where the slider was dragged: ${l.now.toFixed(2)} hours, the slider at ${l.slider}`)
+            await we.panel.webview.postMessage({type: 'show', show: {cycle: false}})
+            await we.panel.webview.postMessage({type: 'hours', hours: 12})
             l = await layout({help: true})
             check(l.help, 'the controls\' window opened')
             await shot('world-editor-help')

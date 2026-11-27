@@ -1473,8 +1473,13 @@
 
     // The time of day: the slider, or the day going round.
     $('hours').value = String(light.hours)
+    // Dragged, it sets the time (going round, the day goes on from there);
+    // held, the day going round doesn't move it under the mouse.
+    let holdingHours = false
+    $('hours').addEventListener('pointerdown', () => { holdingHours = true })
+    window.addEventListener('pointerup', () => { holdingHours = false })
     $('hours').oninput = () => {
-        light.hours = Number($('hours').value)
+        light.setHours(Number($('hours').value), performance.now() / 1000)
         keepView()
     }
     let shownHours = -1
@@ -1483,7 +1488,7 @@
         if (minutes === shownHours) return
         shownHours = minutes
         $('hours-value').textContent = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
-        if (show.cycle) $('hours').value = String(hours)
+        if (show.cycle && !holdingHours) $('hours').value = String(hours)
     }
 
     function showNotes() {
@@ -2012,7 +2017,7 @@
         } else if (msg.type === 'tilePathing') {
             send(encode.tilePathing(msg.index, msg.forbids))
         } else if (msg.type === 'hours') {
-            light.hours = msg.hours
+            light.setHours(msg.hours, performance.now() / 1000)
             $('hours').value = String(msg.hours)
             keepView()
         } else if (msg.type === 'layout') {
@@ -2020,6 +2025,14 @@
             // y up): the mouse there first; `help`: the controls' window
             // opened (true) or closed (false) first.
             if (msg.help !== undefined) showHelp(msg.help)
+            // `drag`: the time's slider held and dragged there, the day going round.
+            if (msg.drag !== undefined) {
+                show.cycle = true
+                applyShow()
+                $('hours').dispatchEvent(new PointerEvent('pointerdown'))
+                $('hours').value = String(msg.drag)
+                $('hours').dispatchEvent(new Event('input'))
+            }
             if (msg.hover) {
                 const r = canvas.getBoundingClientRect()
                 canvas.dispatchEvent(new MouseEvent('mousemove', {clientX: r.left + (msg.hover[0] + 1) / 2 * r.width, clientY: r.top + (1 - msg.hover[1]) / 2 * r.height}))
@@ -2036,7 +2049,11 @@
                     buffer: {width: canvas.width, height: canvas.height, dpr: window.devicePixelRatio || 1},
                     bar: [...document.querySelectorAll('.tool-bar button')].map(b => ({id: b.id, tip: b.dataset.tip, on: b.classList.contains('on'), text: b.textContent.trim(), icon: !!b.querySelector('i.fa-solid')})),
                     help: !$('help').hidden, cursor: $('cursor').textContent, hours: light.hours,
+                    now: light.now(performance.now() / 1000, show.cycle), slider: Number($('hours').value),
+                    panels: ['tools', 'map-panel'].map(id => getComputedStyle($(id)).boxSizing),
+                    hoursAfter: [...document.querySelectorAll('.tool-bar > *')].findIndex(e => e.classList.contains('hours')) > [...document.querySelectorAll('.tool-bar > *')].findIndex(e => e.id === 'toggles'),
                 }})
+                if (msg.drag !== undefined) window.dispatchEvent(new PointerEvent('pointerup'))
             }, 200)
         } else if (msg.type === 'show') {
             // Layers turned on or off, as the buttons do: for the tests.
