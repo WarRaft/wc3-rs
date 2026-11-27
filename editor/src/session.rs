@@ -2998,6 +2998,58 @@ impl Session {
         regions.iter().rposition(|r| x >= r.left && x <= r.right && y >= r.bottom && y <= r.top).map(|i| i as u32)
     }
 
+    /// What a name of the map's script is on the map (`gg_unit_hfoo_0012`,
+    /// `gg_item_`, `gg_dest_`: the thing of that type and number;
+    /// `gg_rct_`, `gg_cam_`: the region or camera so named, as an
+    /// identifier), and where; nothing, said, for a name of none.
+    pub fn map_find(&self, name: &str) -> ServerMsg {
+        let found = |what: u8, file: u8, index: usize, at: [f32; 3], said: String| ServerMsg::MapFound { name: name.to_string(), what, file, index: index as u32, at, said };
+        let none = |said: String| ServerMsg::MapFound { name: name.to_string(), what: 0, file: 0, index: 0, at: [0.0; 3], said };
+        let ident = wtg_rs::jass::ident;
+        let thing = |rest: &str| -> Option<(parser_rs::bin::Rawcode, i32)> {
+            let (id, number) = rest.rsplit_once('_')?;
+            Some((parser_rs::bin::Rawcode::parse(id)?, number.parse().ok()?))
+        };
+        if let Some(rest) = name.strip_prefix("gg_rct_") {
+            let regions = self.placed.regions.as_ref().map_or(&[][..], |r| &r.regions[..]);
+            return match regions.iter().position(|r| ident(&r.name) == rest) {
+                Some(i) => {
+                    let r = &regions[i];
+                    found(2, 0, i, [(r.left + r.right) / 2.0, (r.bottom + r.top) / 2.0, 0.0], r.name.clone())
+                }
+                None => none(format!("The map has no region {name}.")),
+            };
+        }
+        if let Some(rest) = name.strip_prefix("gg_cam_") {
+            let cameras = self.placed.cameras.as_ref().map_or(&[][..], |c| &c.cameras[..]);
+            return match cameras.iter().position(|c| ident(&c.name) == rest) {
+                Some(i) => found(3, 0, i, [cameras[i].target_x, cameras[i].target_y, 0.0], cameras[i].name.clone()),
+                None => none(format!("The map has no camera {name}.")),
+            };
+        }
+        let (file, rest) = if let Some(r) = name.strip_prefix("gg_dest_") {
+            (0, r)
+        } else if let Some(r) = name.strip_prefix("gg_unit_").or_else(|| name.strip_prefix("gg_item_")) {
+            (1, r)
+        } else {
+            return none(format!("{name} is no name of what's on the map."));
+        };
+        let Some((id, number)) = thing(rest) else { return none(format!("{name} is no name of what's on the map.")) };
+        let at = if file == 0 {
+            self.placed.doodads.as_ref().and_then(|d| d.doodads.iter().position(|d| d.placement.id == id && d.number == number).map(|i| (i, &d.doodads[i].placement)))
+        } else {
+            self.placed.units.as_ref().and_then(|u| u.units.iter().position(|u| u.placement.id == id && u.number == number).map(|i| (i, &u.units[i].placement)))
+        };
+        match at {
+            Some((i, p)) => {
+                let kind = if file == 0 { w3abdhqtu_rs::Kind::Destructable } else if name.starts_with("gg_item_") { w3abdhqtu_rs::Kind::Item } else { w3abdhqtu_rs::Kind::Unit };
+                let said = self.names.objects.get(kind, &id.to_string()).map(|n| wc3_server::names::plain(&n.shown())).unwrap_or_else(|| id.to_string());
+                found(1, file, i, [p.x, p.y, p.z], said)
+            }
+            None => none(format!("The map has no {name}: nothing of type {id} numbered {number}.")),
+        }
+    }
+
     /// The name the map's script gives what's on the map, for a trigger's
     /// parameter of type `kind`: a unit, item or destructable a ray meets
     /// (`gg_unit_hfoo_0012`: its type and number, as World Editor's script

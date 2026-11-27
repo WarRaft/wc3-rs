@@ -1379,7 +1379,14 @@ function paramDialog(line, path, c) {
                 if (name) vscode.postMessage({type: 'set', line, path, kind: 'variable', value: name})
             })
         })
-        body.push(h('div', {class: 'choice'}, [h('label', {class: 'choice-label'}, ['On the map']), pick]))
+        // What it names now, there: the view over it, it picked.
+        const now = c.current.kind === 'variable' && /^gg_(unit|item|dest|rct|cam)_/.test(c.current.value) ? c.current.value : ''
+        const show = h('button', {type: 'button', class: 'text-button', disabled: !now}, ['Show on the map'])
+        show.addEventListener('click', () => {
+            closeDialog()
+            vscode.showOnMap(now)
+        })
+        body.push(h('div', {class: 'choice'}, [h('label', {class: 'choice-label'}, ['On the map']), pick, show]))
     }
     if (c.presets.length) {
         const select = /** @type {HTMLSelectElement} */ (h('select', {class: 'wide'}, c.presets.map(([k, d]) => h('option', {value: k}, [d]))))

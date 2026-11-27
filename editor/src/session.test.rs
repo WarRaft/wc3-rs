@@ -1070,4 +1070,16 @@ fn the_scripts_names_of_what_a_click_on_the_map_picks_for_a_triggers_parameter()
     assert!(name(s.map_name("camerasetup", 3, [0.0; 3], down)).1.contains("No camera"));
     assert!(name(s.map_name("unit", -1, [1.0, 0.5, 10.0], down)).1.contains("No unit there"));
     assert!(name(s.map_name("integer", -1, [1.0, 0.5, 10.0], down)).1.contains("Nothing of type integer"));
+    // And back: what a name is, and where.
+    let find = |s: &Session, n: &str| match s.map_find(n) {
+        ServerMsg::MapFound { what, index, at, said, .. } => (what, index, at, said),
+        m => panic!("{m:?}"),
+    };
+    assert_eq!(find(&s, "gg_rct_My_Spawn_1"), (2, 0, [0.0, 0.0, 0.0], "My Spawn 1".to_string()));
+    assert_eq!(find(&s, "gg_cam_Intro_Cam_u").0, 3);
+    s.place(2, "hfoo", 0, [1.0, 0.5, 10.0], down);
+    let n = s.placed.units.as_ref().unwrap().units[0].number;
+    assert_eq!(find(&s, &format!("gg_unit_hfoo_{n:04}")).0, 1);
+    assert!(find(&s, "gg_unit_hfoo_0999").3.contains("no gg_unit_hfoo_0999"));
+    assert!(find(&s, "udg_Hero").3.contains("no name of what's on the map"));
 }

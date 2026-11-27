@@ -64,6 +64,8 @@ const EditorProtocol = (() => {
         SOUND_FILES: 156,
         MAP_NAME_ASK: 48,
         MAP_NAME: 157,
+        MAP_FIND: 49,
+        MAP_FOUND: 158,
         IMPORT_PREVIEW_ANSWER: 154,
         THING: 147,
         SOUND_NEW: 30,
@@ -339,6 +341,12 @@ const EditorProtocol = (() => {
         },
         infoAsk: () => new Writer().frame(KIND.INFO_ASK),
         soundFiles: () => new Writer().frame(KIND.SOUND_FILES_ASK),
+        /** What a name of the map's script is (`gg_unit_hfoo_0012` ...), and where. */
+        mapFind(name) {
+            const w = new Writer()
+            w.string(name)
+            return w.frame(KIND.MAP_FIND)
+        },
         /** The script's name of what a ray meets (or camera `index`), for a trigger's parameter of `type`. */
         mapName(type, index, origin, dir) {
             const w = new Writer()
@@ -581,6 +589,8 @@ const EditorProtocol = (() => {
             }
             case KIND.OBJECT_ENUMS:
                 return {kind: 'objectEnums', enums: r.list(r => ({ty: r.string(), multi: r.u8() !== 0, values: r.list(r => [r.string(), r.string()])}))}
+            case KIND.MAP_FOUND:
+                return {kind: 'mapFound', name: r.string(), what: r.u8(), file: r.u8(), index: r.u32(), at: [r.f32(), r.f32(), r.f32()], said: r.string()}
             case KIND.MAP_NAME:
                 return {kind: 'mapName', type: r.string(), name: r.string(), said: r.string()}
             case KIND.SOUND_FILES:

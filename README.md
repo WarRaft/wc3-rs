@@ -1877,6 +1877,19 @@ step), this list updated.
      (`openTriggers`, then `trg` messages both ways); the page's own
      styles `@scope (:root) to (.trg-root)`, so the class names they
      share don't meet.
+     There, a parameter of a unit, item, destructable, region or camera
+     is picked on the map (its dialog's On the map: Pick…, where the host
+     can: `host.pickOnMap`): the panel hidden, the layer shown, a click
+     asks the editor the name the map's script gives what it meets
+     (`MapName`: `gg_unit_hfoo_0012` by its type and number,
+     `gg_rct_`/`gg_cam_` and the name as an identifier, World Editor's
+     `_u` after a last `_`; the region drawn last over the point; another
+     kind said, still picking; Esc none), written as a variable. And
+     back: Show on the map (`host.showOnMap`, `MapFind`, `MapFound`) puts
+     the view over what a name is and picks it with its tool. The
+     trigger editor's keys are its own in the panel (the World Editor's
+     Delete, Ctrl+Z aren't); Save saves its documents (`war3map.wtg`,
+     `war3map.wct`) too.
    - **6i, the import manager** (done after 6h): `war3map.imp` a piece
      of the session (read, taken in when changed on disk, its text form
      in step), with the files to write into the map on save or take out

@@ -644,6 +644,12 @@ async function steps(only) {
             check(we.mapPick.waiting, 'a doodad is no unit: still picking')
             await we.panel.webview.postMessage({type: 'mapPickEsc'})
             await until(() => we.mapPick && !we.mapPick.waiting && we.mapPick.name === null, 'given up')
+            // And back: the region's name shown on the map, it picked with the Regions tool.
+            we.mapFound = undefined
+            await we.panel.webview.postMessage({type: 'showOnMap', name: rect.name})
+            const found = await until(() => we.mapFound, 'found')
+            await until(() => we.region?.name === found.said, 'the region picked')
+            check(found.what === 2, `${rect.name}: the region ${found.said}, picked`)
             await we.panel.webview.postMessage({type: 'button', id: 'triggers-open'})
         }},
         {name: 'map', editor: true, run: async () => {

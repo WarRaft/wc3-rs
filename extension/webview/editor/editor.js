@@ -399,6 +399,10 @@
             vscode.postMessage({type: 'openTriggers'})
             triggerEditor = TriggerEditor.mount($('trg-root'), {
                 pickOnMap: type => new Promise(resolve => startMapPick(type, resolve)),
+                showOnMap: name => {
+                    triggersPanel.close()
+                    send(encode.mapFind(name))
+                },
                 postMessage: m => vscode.postMessage({type: 'trg', msg: m}),
                 getState: () => vscode.getState()?.triggers,
                 setState: s => vscode.setState({...(vscode.getState() ?? {}), triggers: s}),
@@ -441,6 +445,33 @@
         const index = mapPick.type === 'camerasetup' ? cameraAt(x - r.left, y - r.top) ?? -1 : -1
         const {origin, dir} = rayAt(x, y)
         send(encode.mapName(mapPick.type, index, origin, dir))
+    }
+    /**
+     * What a name of the map's script is, found (`MapFound`): the view over
+     * it, it picked with its tool (a thing with Select, a region with
+     * Regions, a camera with Cameras).
+     */
+    function showFound(msg) {
+        $('status').textContent = msg.what ? `${msg.name}: ${msg.said}` : msg.said
+        vscode.postMessage({type: 'mapFound', mapFound: {name: msg.name, what: msg.what, index: msg.index, said: msg.said}})
+        if (!msg.what || !terrain?.terrain) return
+        const offset = terrain.terrain.offset
+        const [x, y] = [(msg.at[0] - offset[0]) / 128, (msg.at[1] - offset[1]) / 128]
+        camera.position = [x, y, msg.what === 1 ? msg.at[2] / 128 : camera.heightAt(x, y)]
+        camera.distance = Math.min(camera.distance, 16)
+        brush.tool = ['select', 'select', 'regions', 'cameras'][msg.what]
+        showTools()
+        if (msg.what === 1) {
+            selected = {file: msg.file, index: msg.index}
+            const found = objects?.find(msg.file, msg.index)
+            objects?.select(found ? found.model : -1, found ? found.instance : -1)
+            askThing()
+        } else if (msg.what === 2) {
+            selectedRegion = msg.index
+            showRegion()
+        } else {
+            pickCamera(msg.index)
+        }
     }
     canvas.addEventListener('click', e => {
         if (!mapPick) return
@@ -1350,6 +1381,8 @@
             }
             if (selectedSound !== null && selectedSound >= sounds.length) selectedSound = null
             showSounds()
+        } else if (msg.kind === 'mapFound') {
+            showFound(msg)
         } else if (msg.kind === 'mapName') {
             if (!mapPick || msg.type !== mapPick.type) return
             if (msg.name) endMapPick(msg.name)
@@ -1447,6 +1480,9 @@
         } else if (msg.type === 'trg') {
             // The trigger editor's logic, for its panel.
             triggerEditor?.receive(msg.msg)
+        } else if (msg.type === 'showOnMap') {
+            // A name shown on the map, as a trigger's parameter dialog shows it: for the tests.
+            send(encode.mapFind(msg.name))
         } else if (msg.type === 'pickOnMap') {
             // A pick on the map begun, as a trigger's parameter dialog begins it: for the tests.
             toggle(triggersPanel)

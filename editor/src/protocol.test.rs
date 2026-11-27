@@ -48,6 +48,7 @@ fn edits_round_trip() {
         ClientMsg::ImportList,
         ClientMsg::InfoAsk,
         ClientMsg::SoundFiles,
+        ClientMsg::MapFind { name: "gg_rct_Spawn".into() },
         ClientMsg::MapName { kind: "unit".into(), index: -1, origin: [1.0, 2.0, 3.0], dir: [0.0, 0.0, -1.0] },
         ClientMsg::InfoSet { field: "player.0.name".into(), value: "Red".into() },
         ClientMsg::ImportAdd { source: "/a/b.blp".into(), path: "".into() },
@@ -92,6 +93,7 @@ fn edits_round_trip() {
         fields: vec![FieldRow { field: "Hbz1".into(), name: "Number of Waves".into(), category: "data".into(), ty: "int".into(), level: 2, column: 1, value: "8".into(), default: "6".into(), changed: true, hint: String::new() }],
     }));
     round_trip(ServerMsg::ObjectEnums(vec![("attackType".into(), false, vec![("normal".into(), "Normal".into())]), ("targetList".into(), true, vec![])]));
+    round_trip(ServerMsg::MapFound { name: "gg_rct_Spawn".into(), what: 2, file: 0, index: 3, at: [1.0, 2.0, 0.0], said: "Spawn".into() });
     round_trip(ServerMsg::MapName { kind: "unit".into(), name: "gg_unit_hfoo_0012".into(), said: "Footman".into() });
     round_trip(ServerMsg::SoundFiles(vec!["Sound\\Interface\\Click.wav".into()]));
     round_trip(ServerMsg::Info(vec![("name".into(), "A Map".into())]));
