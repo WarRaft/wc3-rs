@@ -2197,6 +2197,19 @@ step), this list updated.
      over the pathing shown, a bridge's deck walked on over the water
      under it. On the Diablo III beta map 12572 cells, 2320 of them
      bridges' decks.
+   - **The minimap's picture** (`war3mapMap.blp`, after the Noise
+     brush) is made again on save when the terrain, the doodads or the
+     map's info changed, as World Editor makes it (`editor/src/
+     minimap.rs`): 256 by 256, the terrain from above
+     (`picture::paint`, the editor's own minimap) fitted in it, its
+     shape kept (World Editor's: a map 192 by 128 a band across the
+     middle, black above and below), outside the camera bounds darker,
+     each doodad and destructable the game's tables show on the minimap
+     a dot in its colour (`showInMM`, `useMMColor`, `MMRed` ...: a tree
+     dark green), no units (the game draws them). Written as a
+     paletted BLP1 (256 colours by median cut): World Editor's is a
+     JPEG one, which needs libjpeg-turbo (a C build this one leaves
+     out); the game reads both.
    - **The shadow map** (`war3map.shd`) isn't made: HiveWE keeps the
      file as it is, and how World Editor bakes it (which doodads, which
      direction) isn't known here; a guess would be wrong on every save.

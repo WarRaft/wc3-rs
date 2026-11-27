@@ -705,6 +705,15 @@ impl Session {
                 Err(e) => failed.push(format!("{name}: {e}")),
             }
         }
+        // The minimap's picture, as World Editor makes it again on save:
+        // what it shows changed (the terrain, the doodads, the bounds).
+        if dirty.terrain || dirty.doodads || dirty.info {
+            let bytes = self.minimap_blp();
+            match self.write_file("war3mapMap.blp", bytes) {
+                Ok(to) => saved.push(to.display().to_string()),
+                Err(e) => failed.push(format!("war3mapMap.blp: {e}")),
+            }
+        }
         // The gameplay constants and the game interface: the map's own
         // written, the game's again (Use Custom ... off) no file. Not one
         // whose text form is open: VS Code saves that.
@@ -1310,6 +1319,36 @@ impl Session {
         let Some(types) = self.types.as_ref() else { return Default::default() };
         let (w, h) = ((self.terrain.width.saturating_sub(1)) * 4, (self.terrain.height.saturating_sub(1)) * 4);
         crate::overlays::Grid { width: w, height: h, data: crate::pathing::destructables(&self.game, &self.terrain, types, &self.placed) }
+    }
+
+    /// The minimap's picture (`war3mapMap.blp`, `crate::minimap`): the
+    /// terrain from above, the doodads and destructables the game shows
+    /// on the minimap in their colours, outside the camera bounds darker.
+    pub fn minimap_blp(&mut self) -> Vec<u8> {
+        let draw = self.drawn.clone().expect("drawn");
+        let (_, grounds, textures, layers) = self.ground_cache.as_ref().expect("drawn");
+        let (w, h, picture) = crate::picture::paint(&self.terrain, grounds, textures, layers, &draw, self.tileset.water.as_ref(), 1);
+        let types = self.types.get_or_insert_with(|| crate::types::Types::load(&self.game));
+        let (ox, oy) = (self.terrain.offset_x, self.terrain.offset_y);
+        let mut dots = Vec::new();
+        for d in self.placed.doodads.iter().flat_map(|d| d.doodads.iter()) {
+            let id = d.placement.id.to_string();
+            let kind = if types.has(w3abdhqtu_rs::Kind::Destructable, &id) { w3abdhqtu_rs::Kind::Destructable } else { w3abdhqtu_rs::Kind::Doodad };
+            let n = |k: &str| types.number(kind, &id, k).unwrap_or(0.0);
+            if n("showInMM") == 1.0 && n("useMMColor") == 1.0 {
+                dots.push(((d.placement.x - ox) / 128.0, (d.placement.y - oy) / 128.0, [n("MMRed") as u8, n("MMGreen") as u8, n("MMBlue") as u8]));
+            }
+        }
+        let bounds = self.info.as_ref().map(|i| {
+            let c = i.camera_bounds;
+            let xs = [c[0], c[2], c[4], c[6]];
+            let ys = [c[1], c[3], c[5], c[7]];
+            let (l, r) = (xs.iter().copied().fold(f32::MAX, f32::min), xs.iter().copied().fold(f32::MIN, f32::max));
+            let (b, t) = (ys.iter().copied().fold(f32::MAX, f32::min), ys.iter().copied().fold(f32::MIN, f32::max));
+            [(l - ox) / 128.0, (b - oy) / 128.0, (r - ox) / 128.0, (t - oy) / 128.0]
+        });
+        let img = crate::minimap::image((w, h, &picture), &dots, bounds);
+        crate::minimap::blp(&img, crate::minimap::SIZE, crate::minimap::SIZE)
     }
 
     /// The overlays worked out again (the regions, the pathing, the

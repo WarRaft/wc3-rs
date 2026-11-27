@@ -16,6 +16,7 @@ pub mod constants;
 pub mod edit;
 pub mod light;
 pub mod lock;
+pub mod minimap;
 pub mod objdata;
 pub mod overlays;
 pub mod pathing;

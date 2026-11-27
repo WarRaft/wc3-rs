@@ -210,6 +210,9 @@ fn things_placed_moved_turned_deleted_undone_and_saved() {
     );
     let back = doo_rs::parse_doodads_any(&std::fs::read(dir.path().join("map/war3map.doo")).unwrap()).unwrap();
     assert_eq!(back.doodads.len(), 1);
+    // The minimap's picture made again with them: 256 by 256.
+    let blp = wc3_server::texture::decode(&std::fs::read(dir.path().join("map/war3mapMap.blp")).unwrap());
+    assert_eq!((blp.version.as_str(), blp.width, blp.height), ("BLP1", 256, 256));
     assert_eq!(back.doodads[0].placement.x, 128.0);
 }
 
