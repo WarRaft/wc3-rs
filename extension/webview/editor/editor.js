@@ -1782,6 +1782,7 @@
             else if (msg.action === 'pickId') objectsPanel.pickId(msg.field, msg.level, msg.id)
             else if (msg.action === 'delete') objectsPanel.deleteButton.onclick()
             else if (msg.action === 'close') objectsPanel.close()
+            else if (msg.action === 'raw') objectsPanel.setRaw(!!msg.on)
         } else if (msg.type === 'sound') {
             // The Sounds tool's, for the tests: `new` of a `file`, `pick`
             // one (`index`), a `field` typed (a flag's `bit` checked or not),

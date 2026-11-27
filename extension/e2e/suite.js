@@ -671,6 +671,13 @@ async function steps(only) {
             // Its abilities by their names (the game's language's), not their ids.
             check(field('uabi')?.[4].split(', ').length === 2 && !/Adef|Aihn/.test(field('uabi')[4]) && typed.controls.selects > 3 && typed.controls.checkboxes > 5,
                 `abilities ${field('uabi')?.[2]}: ${field('uabi')?.[4]}; ${typed.controls.selects} choices, ${typed.controls.checkboxes} checkboxes, ${typed.controls.icons} icon`)
+            // Raw data (World Editor's Ctrl+D): the fields' ids, every value as text, the list by id; and back.
+            await we.panel.webview.postMessage({type: 'object', action: 'raw', on: true})
+            const raw = await until(() => we.objects?.raw && we.objects, 'raw data')
+            check(raw.controls.selects === 0 && raw.controls.checkboxes === 0 && raw.names.every(n => /^[a-z0-9]{4}/i.test(n)) && /^\w{4} \(/.test(raw.rows[0] ?? ''),
+                `raw: ${raw.names.join(', ')} ...; ${raw.rows.join(', ')} ...; no choices, no checkboxes`)
+            await we.panel.webview.postMessage({type: 'object', action: 'raw', on: false})
+            await until(() => we.objects && !we.objects.raw && we.objects.controls.selects > 3, 'names again')
             await we.panel.webview.postMessage({type: 'object', action: 'field', field: 'ua1t', value: 'pierce'})
             await until(() => field('ua1t')?.[2] === 'pierce' && field('ua1t')[3], 'its attack type chosen')
             check(true, `attack type ${field('ua1t')[2]} (${field('ua1t')[5]})`)

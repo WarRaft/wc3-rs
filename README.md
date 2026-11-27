@@ -2085,7 +2085,12 @@ step), this list updated.
      of the map's: its base and its changes), each string of the map's
      it names copied to a new one (the next number, the same text: the
      copy's own, renamed apart), undone as one (`Snapshot::Many`). MCP:
-     the `obj_*` tools already change them.
+     the `obj_*` tools already change them. Raw data (after the game
+     interface): World Editor's View > Display Values as Raw Data, Raw
+     beside the buttons or Ctrl+D in the panel: each field by its id
+     (`uhpm`; a level's `Hbz1 (2)`), every value as text as it's
+     stored (no choices, checkboxes or names: `Adef,Aihn`), the list
+     by id (`hfoo (Footman)`); off: as before.
 
 7. **In step with the rest** (done). Decided with the user: a text form
    open in VS Code and the editor are one (the text is the truth, as

@@ -67,6 +67,8 @@ const EditorObjectEditor = (() => {
             this.picker = null
             /** Icons by path (`null`: none), and the canvases waiting for them. */
             this.icons = new Map()
+            /** World Editor's View > Display Values as Raw Data (Ctrl+D): ids, not names; every value as it's stored. */
+            this.raw = false
             this.build()
         }
 
@@ -100,11 +102,21 @@ const EditorObjectEditor = (() => {
                 this.pendingNew = new Set(this.objects.map(o => o.id))
                 this.send(this.encode.objectNew(this.kind, this.copied.id))
             }})
+            this.rawBox = el('input', {type: 'checkbox', title: 'Display values as raw data (Ctrl+D)'})
+            this.rawBox.onchange = () => this.setRaw(this.rawBox.checked)
             this.closeButton = el('button', {textContent: 'Close', onclick: () => this.close()})
             this.title = el('div', {className: 'obj-title'})
             this.table = el('div', {className: 'obj-fields'})
+            // Ctrl+D: raw data on and off, as in World Editor.
+            this.root.addEventListener('keydown', e => {
+                if ((e.ctrlKey || e.metaKey) && e.code === 'KeyD') {
+                    e.preventDefault()
+                    this.setRaw(!this.raw)
+                }
+            })
+            this.root.tabIndex = -1
             this.root.append(
-                el('div', {className: 'obj-side'}, this.tabs, this.search, this.list, el('div', {className: 'obj-buttons'}, this.newButton, this.copyButton, this.pasteButton, this.deleteButton, this.closeButton)),
+                el('div', {className: 'obj-side'}, this.tabs, this.search, this.list, el('div', {className: 'obj-buttons'}, this.newButton, this.copyButton, this.pasteButton, this.deleteButton, el('label', {className: 'obj-raw'}, this.rawBox, 'Raw'), this.closeButton)),
                 el('div', {className: 'obj-main'}, this.title, this.table),
             )
         }
@@ -121,6 +133,14 @@ const EditorObjectEditor = (() => {
 
         get isOpen() {
             return !this.root.hidden
+        }
+
+        /** Raw data (ids, values as stored) on or off. */
+        setRaw(on) {
+            this.raw = on
+            this.rawBox.checked = on
+            this.renderList()
+            this.renderFields()
         }
 
         /** The picked one's base: its own id for one of the game's. */
@@ -170,7 +190,7 @@ const EditorObjectEditor = (() => {
                     group = o.group
                     rows.push(el('div', {className: 'obj-group', textContent: group || 'Other'}))
                 }
-                const row = el('div', {className: `obj-row ${STATES[o.state]}${o.id === this.picked ? ' on' : ''}`, textContent: `${o.name} (${o.id})`, title: o.group})
+                const row = el('div', {className: `obj-row ${STATES[o.state]}${o.id === this.picked ? ' on' : ''}`, textContent: this.raw ? `${o.id} (${o.name})` : `${o.name} (${o.id})`, title: o.group})
                 row.onclick = () => this.pick(o.id)
                 rows.push(row)
             }
@@ -199,8 +219,9 @@ const EditorObjectEditor = (() => {
          * choice, a list's checkboxes, text), sending `value` as text.
          */
         control(r, send) {
-            const values = this.enums.get(r.ty)
-            if (r.ty === 'bool') {
+            // Raw data: every value as text, as it's stored.
+            const values = this.raw ? undefined : this.enums.get(r.ty)
+            if (r.ty === 'bool' && !this.raw) {
                 const box = el('input', {type: 'checkbox', checked: r.value.trim() === '1'})
                 box.onchange = () => send(box.checked ? '1' : '0')
                 return box
@@ -232,8 +253,9 @@ const EditorObjectEditor = (() => {
                 clearTimeout(timer)
                 timer = setTimeout(() => send(input.value), 400)
             }
-            const kinds = ID_KINDS[r.ty]
-            if (!r.hint && r.ty !== 'icon' && !kinds) return input
+            const kinds = this.raw ? undefined : ID_KINDS[r.ty]
+            const hint = this.raw ? '' : r.hint
+            if (!hint && r.ty !== 'icon' && !kinds) return input
             const box = el('div', {className: 'obj-value-box'}, input)
             if (kinds) {
                 // The objects to pick from, by name.
@@ -242,7 +264,7 @@ const EditorObjectEditor = (() => {
                 box.classList.add('with-pick')
                 box.prepend(el('div', {className: 'obj-pick-row'}, input, pick))
             }
-            if (r.hint) box.append(el('div', {className: 'obj-hint', textContent: r.hint}))
+            if (hint) box.append(el('div', {className: 'obj-hint', textContent: hint}))
             if (r.ty === 'icon' && r.value.trim()) {
                 const path = r.value.split(',')[0].trim()
                 const canvas = el('canvas', {className: 'obj-icon', width: 32, height: 32})
@@ -356,7 +378,9 @@ const EditorObjectEditor = (() => {
                     rows.push(el('div', {className: 'obj-category', textContent: CATEGORIES[category] ?? (category || 'Other')}))
                 }
                 const key = `${r.field}:${r.level}:${r.column}`
-                const name = el('span', {className: 'obj-name', textContent: r.level ? `${r.name} - Level ${r.level}` : r.name, title: `${r.field} · ${r.ty}${r.changed ? ` · the game's: ${r.default}` : ''}`})
+                // Raw data: the field's id (and its level).
+                const label = this.raw ? (r.level ? `${r.field} (${r.level})` : r.field) : r.level ? `${r.name} - Level ${r.level}` : r.name
+                const name = el('span', {className: 'obj-name', textContent: label, title: `${this.raw ? r.name : r.field} · ${r.ty}${r.changed ? ` · the game's: ${r.default}` : ''}`})
                 const [kind, id] = [this.kind, f.id]
                 const input = this.control(r, value => this.send(this.encode.objectSet(kind, id, r.field, r.level, r.column, value)))
                 input.dataset.key = key
@@ -408,6 +432,9 @@ const EditorObjectEditor = (() => {
                 custom: this.objects.filter(o => o.state === 2).map(o => o.id),
                 changed: this.objects.filter(o => o.state === 1).map(o => o.id),
                 picked: f && f.id === this.picked ? {id: f.id, base: f.base, name: f.name, levels: f.levels, fields: f.fields.map(r => [r.field, r.level, r.value, r.changed, r.hint, r.ty])} : null,
+                raw: this.raw,
+                names: [...this.table.querySelectorAll('.obj-name')].slice(0, 3).map(n => n.textContent),
+                rows: [...this.list.querySelectorAll('.obj-row')].slice(0, 2).map(n => n.textContent),
                 controls: {
                     selects: this.table.querySelectorAll('select').length,
                     checkboxes: this.table.querySelectorAll('input[type=checkbox]').length,
