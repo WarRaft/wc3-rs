@@ -1799,8 +1799,14 @@ step), this list updated.
      instead (`item_table`, -1 none); each named by the object editor's
      lists, as text to the editor (`Thing`'s texts: `ratc,,ckng,,,`,
      `AHhb:2:0`, `ratc:50,ckng:50;sreg:100`; `ThingSetText`), read and
-     checked there, an undo each. Not yet: random units and items
-     (`uDNR`, `iDNR`'s levels, groups, tables).
+     checked there, an undo each. A random unit or building (`uDNR`,
+     `bDNR`) or item (`iDNR`): how it's random (`random`: `any:<level>`,
+     an item's `any:<level>:<class>`, level -1 any, class 0 to 7;
+     `group:<group>:<column>` of the map's random groups, `war3map.w3i`'s,
+     sent as `random_groups`; `table:hfoo:50,hkni:50`, 100% at most);
+     a thing without a model (a random one) stays picked: the editor
+     says when it's gone. The map's item table checked against
+     `war3map.w3i`'s.
    - **6f, sounds** (done after 6e): `war3map.w3s` a piece of the
      session as the cameras are (read with the rest, taken in when
      changed on disk, saved, its text form in step; `Snapshot::Sounds`).

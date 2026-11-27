@@ -16,6 +16,9 @@ const EditorThingLists = (() => {
     /** The object editor's kinds: items 1, abilities 4. */
     const ITEMS = 1
     const ABILITIES = 4
+    const UNITS = 0
+    /** Item classes a random item is of (`doo_rs::Random::Any`'s class). */
+    const CLASSES = ['Any class', 'Permanent', 'Charged', 'Power Up', 'Artifact', 'Purchasable', 'Campaign', 'Miscellaneous']
 
     /**
      * @param root where the lists go
@@ -37,7 +40,75 @@ const EditorThingLists = (() => {
             return input
         }
         const sections = []
+        const groups = (texts.find(([f]) => f === 'random_groups')?.[1] ?? '').split('\n').filter(Boolean).map(l => {
+            const [name, columns] = l.split('\t')
+            return {name, columns: Number(columns)}
+        })
+        const unit = texts.some(([f]) => f === 'random_groups')
         for (const [field, text] of texts) {
+            if (field === 'random') {
+                const [how, ...rest] = text.split(':')
+                const head = el('div', {className: 'thing-head', textContent: unit ? 'Random unit' : 'Random item'})
+                const mode = el('select', {className: 'thing-mode'})
+                mode.append(...[['any', unit ? 'Any of a level' : 'Any of a level and class'], ...(unit ? [['group', 'From a random group'], ['table', 'From a table']] : [])].map(([v, t]) => el('option', {value: v, textContent: t})))
+                mode.value = how || 'any'
+                mode.dataset.list = 'random:mode'
+                mode.onchange = () => send('random', mode.value === 'any' ? (unit ? 'any:-1' : 'any:-1:0') : mode.value === 'group' ? 'group:0:0' : 'table:')
+                const rows = [el('div', {className: 'thing-row'}, mode)]
+                if ((how || 'any') === 'any') {
+                    const level = el('input', {type: 'number', min: -1, value: rest[0] ?? '-1', className: 'thing-number', title: 'Level (-1 any)'})
+                    level.dataset.list = 'random:level'
+                    const klass = el('select')
+                    klass.append(...CLASSES.map((c, i) => el('option', {value: i, textContent: c})))
+                    klass.value = rest[1] ?? '0'
+                    const out = () => send('random', unit ? `any:${level.value}` : `any:${level.value}:${klass.value}`)
+                    level.onchange = out
+                    klass.onchange = out
+                    rows.push(el('div', {className: 'thing-row'}, el('span', {textContent: 'Level'}), level, ...(unit ? [] : [klass])))
+                } else if (how === 'group') {
+                    const group = el('select')
+                    group.append(...groups.map((g, i) => el('option', {value: i, textContent: g.name || `Group ${i}`})))
+                    group.value = rest[0] ?? '0'
+                    const column = el('input', {type: 'number', min: 1, value: Number(rest[1] ?? 0) + 1, className: 'thing-number', title: 'Column'})
+                    const out = () => send('random', `group:${group.value}:${Number(column.value) - 1}`)
+                    group.onchange = out
+                    column.onchange = out
+                    rows.push(el('div', {className: 'thing-row'}, group, el('span', {textContent: 'Column'}), column))
+                } else {
+                    const list = rest.join(':').split(',').filter(Boolean).map(e => {
+                        const [id, chance = '100'] = e.split(':')
+                        return {id, chance}
+                    })
+                    const out = () => send('random', `table:${list.filter(e => e.id).map(e => `${e.id}:${e.chance}`).join(',')}`)
+                    for (const e of list) {
+                        const input = idInput(e.id, () => {
+                            e.id = input.value.trim()
+                            out()
+                        })
+                        const chance = el('input', {type: 'number', min: 0, max: 100, value: e.chance, className: 'thing-number', title: 'Chance (%)'})
+                        chance.onchange = () => {
+                            e.chance = chance.value
+                            out()
+                        }
+                        const remove = el('button', {textContent: '×', title: 'Take it out'})
+                        remove.onclick = () => {
+                            list.splice(list.indexOf(e), 1)
+                            out()
+                        }
+                        rows.push(el('div', {className: 'thing-row'}, input, named(UNITS, e.id), chance, remove))
+                    }
+                    const add = idInput('', () => {
+                        if (!add.value.trim()) return
+                        list.push({id: add.value.trim(), chance: '100'})
+                        out()
+                    })
+                    add.placeholder = '+ id'
+                    add.dataset.list = 'random:add'
+                    rows.push(el('div', {className: 'thing-row'}, add))
+                }
+                sections.push(el('div', {className: 'thing-list'}, head, ...rows))
+                continue
+            }
             if (field === 'items') {
                 const slots = text.split(',')
                 while (slots.length < 6) slots.push('')
@@ -135,7 +206,7 @@ const EditorThingLists = (() => {
     }
 
     /** The kinds the lists name objects of: their names wanted. */
-    const KINDS = [ITEMS, ABILITIES]
+    const KINDS = [ITEMS, ABILITIES, UNITS]
 
     return {render, KINDS}
 })()

@@ -2067,7 +2067,12 @@ impl Session {
             return types.is_some_and(|t| t.has(w3abdhqtu_rs::Kind::Destructable, &id)).then_some(ThingSort::Destructable);
         }
         let id = self.placed.units.as_ref()?.units.get(i)?.placement.id.to_string();
-        if id == "iDNR" || id == crate::placed::START_LOCATION || types.is_some_and(|t| t.has(w3abdhqtu_rs::Kind::Item, &id)) {
+        match id.as_str() {
+            "uDNR" | "bDNR" => return Some(ThingSort::RandomUnit),
+            "iDNR" => return Some(ThingSort::RandomItem),
+            _ => {}
+        }
+        if id == crate::placed::START_LOCATION || types.is_some_and(|t| t.has(w3abdhqtu_rs::Kind::Item, &id)) {
             return None;
         }
         Some(if id.starts_with(|c: char| c.is_ascii_uppercase()) { ThingSort::Hero } else { ThingSort::Unit })
@@ -2087,6 +2092,24 @@ impl Session {
         }
         let u = &self.placed.units.as_ref()?.units[i];
         let mut out = Vec::new();
+        if matches!(sort, ThingSort::RandomUnit | ThingSort::RandomItem) {
+            let random = match &u.random {
+                doo_rs::Random::Any { level, class } if sort == ThingSort::RandomItem => format!("any:{level}:{class}"),
+                doo_rs::Random::Any { level, .. } => format!("any:{level}"),
+                doo_rs::Random::Group { group, position } => format!("group:{group}:{position}"),
+                doo_rs::Random::Table(list) => format!("table:{}", list.iter().map(|(id, c)| format!("{id}:{c}")).collect::<Vec<_>>().join(",")),
+                doo_rs::Random::None(_) => String::new(),
+            };
+            out.push(("random", random));
+            if sort == ThingSort::RandomUnit {
+                // The map's random groups to pick from: a line each, its
+                // name and how many columns it has.
+                let groups = self.info.as_ref().map_or(Vec::new(), |i| i.unit_tables.iter().map(|t| format!("{}\t{}", self.text(&t.name), t.columns.len())).collect());
+                out.push(("random_groups", groups.join("\n")));
+                out.push(("drops", drops(&u.item_sets)));
+            }
+            return Some(out);
+        }
         if sort == ThingSort::Hero {
             let slots: Vec<String> = (0..6).map(|s| u.items.iter().find(|(slot, _)| *slot == s).map_or(String::new(), |(_, id)| id.to_string())).collect();
             out.push(("items", slots.join(",")));
@@ -2101,7 +2124,7 @@ impl Session {
     /// not set when it doesn't read: an id not of four characters, a
     /// level under 1, a set's chances over 100.
     pub fn thing_set_text(&mut self, file: u8, index: u32, field: &str, value: &str) -> Vec<ServerMsg> {
-        let has = self.thing_texts(file, index).is_some_and(|t| t.iter().any(|(n, _)| *n == field));
+        let has = field != "random_groups" && self.thing_texts(file, index).is_some_and(|t| t.iter().any(|(n, _)| *n == field));
         if !has {
             return vec![ServerMsg::State(self.state(format!("This thing has no {field}.")))];
         }
@@ -2119,6 +2142,44 @@ impl Session {
                     }
                 }
                 Ok(ThingList::Items(items))
+            }
+            "random" => {
+                let (how, rest) = value.split_once(':').unwrap_or((value, ""));
+                let num = |t: Option<&str>, what: &str| -> Result<i64, String> { t.unwrap_or("").trim().parse().map_err(|_| format!("{what} is a number")) };
+                let parts: Vec<&str> = rest.split(':').collect();
+                match how.trim() {
+                    "any" => {
+                        let level = num(parts.first().copied(), "a level")?;
+                        let class = if parts.len() > 1 { num(parts.get(1).copied(), "a class")? } else { 0 };
+                        if level < -1 || !(0..=7).contains(&class) {
+                            return Err("a level from -1 (any), a class 0 to 7".into());
+                        }
+                        Ok(ThingList::Random(doo_rs::Random::Any { level: level as i32, class: class as u8 }))
+                    }
+                    "group" => {
+                        let (group, position) = (num(parts.first().copied(), "a group")?, num(parts.get(1).copied(), "a column")?);
+                        let table = usize::try_from(group).ok().and_then(|g| self.info.as_ref()?.unit_tables.get(g));
+                        let Some(table) = table else { return Err(format!("the map has no random group {group}")) };
+                        if position < 0 || position as usize >= table.columns.len() {
+                            return Err(format!("its group has {} columns, not {}", table.columns.len(), position + 1));
+                        }
+                        Ok(ThingList::Random(doo_rs::Random::Group { group: group as u32, position: position as u32 }))
+                    }
+                    "table" => {
+                        let mut list = Vec::new();
+                        for e in rest.split(',').filter(|e| !e.trim().is_empty()) {
+                            let (i, c) = e.split_once(':').unwrap_or((e, "100"));
+                            let c: u32 = c.trim().parse().map_err(|_| format!("{e:?}: a chance is a number"))?;
+                            list.push((id(i)?, c));
+                        }
+                        let total: u32 = list.iter().map(|(_, c)| c).sum();
+                        if total > 100 {
+                            return Err(format!("the table's chances are {total}%, over 100"));
+                        }
+                        Ok(ThingList::Random(doo_rs::Random::Table(list)))
+                    }
+                    other => Err(format!("{other:?}: any, group or table")),
+                }
             }
             "abilities" => {
                 let mut list = Vec::new();
@@ -2162,6 +2223,7 @@ impl Session {
                 ThingList::Drops(sets) => files.units.as_mut().unwrap().units[i].item_sets = sets,
                 ThingList::Items(items) => files.units.as_mut().unwrap().units[i].items = items,
                 ThingList::Abilities(list) => files.units.as_mut().unwrap().units[i].abilities = list,
+                ThingList::Random(r) => files.units.as_mut().unwrap().units[i].random = r,
             }
             Ok(())
         })
@@ -2229,7 +2291,7 @@ impl Session {
                 "mana" => whole && value >= -1.0,
                 "target_acquisition" => value == -1.0 || value == -2.0 || value >= 0.0,
                 "color" => whole && (-1.0..=23.0).contains(&value),
-                "item_table" => whole && value >= -1.0,
+                "item_table" => whole && value >= -1.0 && (value < 0.0 || self.info.as_ref().is_none_or(|i| (value as usize) < i.item_tables.len())),
                 "level" => whole && value >= 1.0,
                 "strength" | "agility" | "intelligence" | "gold" => whole && value >= 0.0,
                 _ => true,
@@ -2404,6 +2466,10 @@ enum ThingSort {
     Destructable,
     Unit,
     Hero,
+    /// `uDNR`, `bDNR`.
+    RandomUnit,
+    /// `iDNR`.
+    RandomItem,
 }
 
 /// A thing's list as read from its text.
@@ -2411,4 +2477,5 @@ enum ThingList {
     Items(Vec<(u32, parser_rs::bin::Rawcode)>),
     Abilities(Vec<(parser_rs::bin::Rawcode, u32, u32)>),
     Drops(Vec<doo_rs::ItemSet>),
+    Random(doo_rs::Random),
 }

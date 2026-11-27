@@ -674,6 +674,22 @@ fn a_things_fields_said_set_in_their_ranges_undone_and_saved() {
     assert_eq!(texts(&s, 0, 1), "drops=ratc:25");
     s.undo(false);
     assert_eq!(texts(&s, 0, 1), "drops=");
+    // A random unit and a random item: how they're random.
+    s.place(2, "uDNR", 0, [1.0, 0.5, 10.0], down);
+    s.place(3, "iDNR", 0, [1.0, 0.5, 10.0], down);
+    assert_eq!(texts(&s, 1, 4), "random=any:0 random_groups= drops=");
+    assert_eq!(texts(&s, 1, 5), "random=any:0:0");
+    assert_eq!(said(s.thing_set_text(1, 4, "random", "table:hfoo:50,hkni:50")), "");
+    assert!(said(s.thing_set_text(1, 4, "random", "group:0:0")).contains("no random group 0"));
+    assert!(said(s.thing_set_text(1, 4, "random", "table:hfoo:60,hkni:50")).contains("over 100"));
+    assert!(said(s.thing_set_text(1, 4, "random", "some")).contains("any, group or table"));
+    assert_eq!(said(s.thing_set_text(1, 5, "random", "any:3:2")), "");
+    assert!(said(s.thing_set_text(1, 5, "random", "any:3:9")).contains("class 0 to 7"));
+    assert_eq!(texts(&s, 1, 4), "random=table:hfoo:50,hkni:50 random_groups= drops=");
+    assert_eq!(texts(&s, 1, 5), "random=any:3:2");
+    s.save();
+    let back = doo_rs::parse_units_any(&std::fs::read(dir.path().join("map/war3mapUnits.doo")).unwrap()).unwrap();
+    assert_eq!(back.units[5].random, doo_rs::Random::Any { level: 3, class: 2 });
 }
 
 #[test]

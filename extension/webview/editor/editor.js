@@ -1075,8 +1075,9 @@
         } else if (msg.kind === 'instances' && objects) {
             objects.setInstances(msg.models)
             // What's picked, where it is now (an edit moves the instances).
+            // (A thing without a model, a random unit, is still there: the
+            // editor says when it isn't.)
             const found = selected && objects.find(selected.file, selected.index)
-            if (selected && !found) selected = null
             objects.select(found ? found.model : -1, found ? found.instance : -1)
             askThing()
             if (!drawnSaid) {
@@ -1210,6 +1211,7 @@
             playSound(msg)
         } else if (msg.kind === 'thing') {
             thing = msg.fields.length ? msg : null
+            if (!thing && selected?.file === msg.file && selected.index === msg.index) selected = null
             showThing()
         } else if (msg.kind === 'error') {
             $('name').textContent = 'Can\'t open the map'
@@ -1330,12 +1332,18 @@
                 }
             } else if (msg.action === 'play') $('sound-play').onclick()
             else if (msg.action === 'delete') $('sound-delete').onclick()
+        } else if (msg.type === 'select') {
+            // A thing picked by its file and index: for the tests.
+            selected = {file: msg.file, index: msg.index}
+            const found = objects?.find(msg.file, msg.index)
+            objects?.select(found ? found.model : -1, found ? found.instance : -1)
+            askThing()
         } else if (msg.type === 'thingList') {
             // A list's input typed (`list`: `items:2`, `abilities:add`, `drops:new` ...): for the tests.
             const input = $('thing-lists').querySelector(`[data-list="${CSS.escape(msg.list)}"]`)
             if (input) {
                 input.value = String(msg.value)
-                input.oninput()
+                ;(input.oninput ?? input.onchange)()
             }
         } else if (msg.type === 'thingField') {
             // A field of the thing picked typed (`scale_x` ...): for the tests.

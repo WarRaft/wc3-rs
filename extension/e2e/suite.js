@@ -269,6 +269,25 @@ async function steps(only) {
             const over = await until(() => we.state?.message && we.state, 'a second item typed')
             check(/over 100/.test(over.message) && texts().get('drops') === 'ratc:100', `two of 100% refused: ${over.message}`)
             await shot('world-editor-thing-lists')
+            // A random unit placed beside it: from a table of two.
+            const at = Number(/#(\d+)/.exec(footman)[1]) + 1
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'place', kind: 2, id: 'uDNR', player: 0, x: 0.1, y: 0})
+            await until(() => we.state, 'a random unit placed')
+            await we.panel.webview.postMessage({type: 'select', file: 1, index: at})
+            await until(() => texts().get('random') === 'any:0', 'its randomness: any of level 0')
+            await we.panel.webview.postMessage({type: 'thingList', list: 'random:mode', value: 'table'})
+            await until(() => texts().get('random') === 'table:', 'from a table')
+            await we.panel.webview.postMessage({type: 'thingList', list: 'random:add', value: 'hfoo'})
+            await until(() => texts().get('random') === 'table:hfoo:100', 'a footman in it')
+            check(texts().has('random_groups'), `random unit #${at}: ${texts().get('random')}`)
+            await shot('world-editor-random-unit')
+            await we.panel.webview.postMessage({type: 'undo'})
+            await we.panel.webview.postMessage({type: 'undo'})
+            await we.panel.webview.postMessage({type: 'undo'})
+            await until(() => !we.thing, 'the random unit undone')
+            await we.panel.webview.postMessage({type: 'select', file: 1, index: at - 1})
+            await until(() => we.thing?.index === at - 1, 'the footman again')
 
             for (const m of [{type: 'rotate', delta: Math.PI / 2}, {type: 'drag', x: 0.2, y: 0}, {type: 'delete'}]) {
                 we.state = undefined
