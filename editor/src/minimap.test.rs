@@ -35,4 +35,3 @@ fn a_jpeg_blp1_as_world_editors_our_decoder_reads() {
     let worst = rgba.chunks_exact(4).zip(back.chunks_exact(4)).map(|(a, b)| (0..3).map(|k| (a[k] as i32 - b[k] as i32).abs()).max().unwrap()).max().unwrap();
     assert!(worst <= 16, "{worst}");
 }
-

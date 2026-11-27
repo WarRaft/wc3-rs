@@ -73,6 +73,9 @@ pub struct Water {
     /// RGBA, 0-255: shallow at its least and most depth, deep at its least
     /// and most.
     pub colors: [[u8; 4]; 4],
+    /// The first frame's average colour (what `colors` tint in the game),
+    /// when it's found.
+    pub average: Option<[u8; 3]>,
 }
 
 /// The game's data a terrain is drawn with.
@@ -105,7 +108,10 @@ impl Tileset {
         };
         let terrain = table("TerrainArt\\Terrain.slk");
         let cliffs = table("TerrainArt\\CliffTypes.slk");
-        let water = table("TerrainArt\\Water.slk").and_then(|w| water(&w, letter));
+        let water = table("TerrainArt\\Water.slk").and_then(|w| water(&w, letter)).map(|mut w| {
+            w.average = crate::textures::average(game, &with_extension(&format!("{}00", w.texture)));
+            w
+        });
         let fields: Vec<String> = game
             .read_patched("UI\\WorldEditData.txt")
             .and_then(|text| {
@@ -148,6 +154,7 @@ fn water(slk: &Slk, letter: char) -> Option<Water> {
         count: n("numTex") as u32,
         rate: n("texRate"),
         colors: [color("Smin"), color("Smax"), color("Dmin"), color("Dmax")],
+        average: None,
     })
 }
 

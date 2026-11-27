@@ -2210,7 +2210,11 @@ step), this list updated.
      Editor writes it: a JPEG BLP1, one mip, its header's (no alpha,
      picture type 5), by blp-rs's encoder (libjpeg-turbo, built from
      source for each target: `server/build-conf.sh` installs cmake),
-     the game's own format over a build of Rust alone.
+     the game's own format over a build of Rust alone. Its water (and the
+     editor's minimap's), as the game draws it: the tileset's water
+     texture's colour tinted by its `Water.slk` colour, not the tint
+     alone (Icecrown's near white tint over a blue texture: blue, as
+     World Editor's).
    - **The shadow map** (`war3map.shd`) isn't made: HiveWE keeps the
      file as it is, and how World Editor bakes it (which doodads, which
      direction) isn't known here; a guess would be wrong on every save.

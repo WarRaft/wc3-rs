@@ -86,7 +86,10 @@ pub fn paint(
             {
                 let depth = (draw.water[i] - draw.heights[i]).clamp(0.0, 1.0);
                 let [r, g, b, a] = if depth <= 0.5 { wt.colors[1] } else { wt.colors[3] };
+                // As the game: the water's texture, tinted by its colour.
+                let texture = wt.average.unwrap_or([255; 3]).map(|v| v as f32 / 255.0);
                 let (a, over) = (a as f32 / 255.0, [r, g, b].map(|v| v as f32 / 255.0));
+                let over = [0, 1, 2].map(|k| over[k] * texture[k]);
                 c = [0, 1, 2].map(|k| over[k] * a + c[k] * (1.0 - a));
             }
             if draw.corners[i] & (corner::BOUNDARY | corner::EDGE) != 0 {
