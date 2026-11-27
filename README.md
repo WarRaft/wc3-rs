@@ -148,8 +148,9 @@ dialect=vjass
   project's game folder copied into its `C:\Program Files\Warcraft
   III`), the wrapper's Wine, then `[test]` written into `wc3.bni`
   (`game=` the wrapper's game folder, `command="/usr/bin/env",
-  "WINEPREFIX=<its prefix>","<its wine>","{exe}","-loadfile","{map}",
-  "-opengl"`, `window=1`) and Test Map run. On Linux a window says no
+  "WINEPREFIX=<its prefix>","<its wine>","{exe}","-loadfile","{map}"`,
+  `window=1`: the game's own DirectX, which the wrapper's Wine turns
+  into the Mac's) and Test Map run. On Linux a window says no
   way has been found yet, and what to write by hand.
 - **`dialect`.** A file's own header always wins over the project, so a
   project can still mix dialects. Without either, a file is plain JASS.

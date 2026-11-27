@@ -116,7 +116,7 @@ function scan(manifest, chosen) {
 /** `wc3.bni`'s `[test]` for `w`: its game folder, its wine with its prefix. */
 function testSection(w) {
     const q = s => JSON.stringify(s)
-    return `[test]\ngame=${q(w.game)}\ncommand=${['/usr/bin/env', `WINEPREFIX=${w.prefix}`, w.wine, '{exe}', '-loadfile', '{map}', '-opengl'].map(q).join(',')}\nwindow=1\n`
+    return `[test]\ngame=${q(w.game)}\ncommand=${['/usr/bin/env', `WINEPREFIX=${w.prefix}`, w.wine, '{exe}', '-loadfile', '{map}'].map(q).join(',')}\nwindow=1\n`
 }
 
 /** `text` with its `[test]` sections out and `section` at the end. */
