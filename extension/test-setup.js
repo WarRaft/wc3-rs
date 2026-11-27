@@ -226,11 +226,15 @@ function registerTestSetup(context) {
                 }
                 me.busy = null
             } else if (action === 'write' && w?.game && w.wine) {
-                const doc = await workspace.openTextDocument(Uri.file(me.manifest))
-                const edit = new WorkspaceEdit()
-                edit.replace(doc.uri, new Range(0, 0, doc.lineCount, 0), withTest(doc.getText(), testSection(w)))
-                await workspace.applyEdit(edit)
-                await doc.save()
+                // Its open document's changes not saved edited there (the text
+                // is the truth); else the file, as it is on disk.
+                const open = workspace.textDocuments.find(d => d.uri.scheme === 'file' && d.uri.fsPath === me.manifest)
+                if (open?.isDirty) {
+                    const edit = new WorkspaceEdit()
+                    edit.replace(open.uri, new Range(0, 0, open.lineCount, 0), withTest(open.getText(), testSection(w)))
+                    await workspace.applyEdit(edit)
+                    await open.save()
+                } else fs.writeFileSync(me.manifest, withTest(fs.readFileSync(me.manifest, 'utf8'), testSection(w)))
                 me.said = 'wc3.bni: [test] written.'
             } else if (action === 'test') {
                 me.said = 'Test Map…'
