@@ -63,6 +63,7 @@ pub mod protocol;
 pub mod rename;
 pub mod server;
 pub mod sheet;
+pub mod test_map;
 pub mod texture;
 pub mod trigstr;
 pub mod workspace;

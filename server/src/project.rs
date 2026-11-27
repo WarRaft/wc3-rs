@@ -98,6 +98,22 @@ pub struct Project {
     /// it resolved against `root`; `"wine","tools/ObjectMerger.exe"` runs
     /// a Windows tool), in the order written.
     pub externals: Vec<(String, Vec<String>)>,
+    /// `[test]`: how Test Map runs the game with the map (`crate::test_map`).
+    pub test: Test,
+}
+
+/// `[test]`: Test Map's settings.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Test {
+    /// `build=`: the build tested; the default when left out.
+    pub build: Option<String>,
+    /// `window=1|0`: the game in a window (`-window`); 0 by default.
+    pub window: bool,
+    /// `command="program","arg",...`: what runs the game, its `{game}`
+    /// (the game's folder), `{exe}` (its `War3.exe`) and `{map}` (the map
+    /// as the game's folder has it: `Maps\Test\WorldEditTestMap.w3x`)
+    /// filled in; empty: Windows' `{exe} -loadfile {map}`.
+    pub command: Vec<String>,
 }
 
 /// A `[build]`: a scenario of building the project's map. Any number of
@@ -429,12 +445,39 @@ pub fn load(root: &Path, src: &str) -> (Project, Vec<Issue>) {
                     project.externals.push((tool.to_string(), argv));
                 }
             }
+            "test" => {
+                for item in items {
+                    let Some(name) = key_of(item, &mut issues) else { continue };
+                    let key = item.key.as_ref().expect("a key");
+                    let one = || match item.fields.as_slice() {
+                        [f] => Some(f.text().trim().to_string()),
+                        _ => None,
+                    };
+                    match name {
+                        "build" => project.test.build = one(),
+                        "window" => match one().as_deref() {
+                            Some("1") => project.test.window = true,
+                            Some("0") => project.test.window = false,
+                            _ => issues.push(at_name(key, Level::Error, "'window' is 1 or 0".into())),
+                        },
+                        "command" => {
+                            let argv: Vec<String> = item.fields.iter().map(|f| f.text().trim().trim_matches('"').to_string()).collect();
+                            if argv.first().is_none_or(|p| p.is_empty()) {
+                                issues.push(at_name(key, Level::Error, "'command' needs its program: command=\"wine\",\"{exe}\",\"-loadfile\",\"{map}\"".into()));
+                            } else {
+                                project.test.command = argv;
+                            }
+                        }
+                        _ => unknown_key(item, "test", &mut issues),
+                    }
+                }
+            }
             // An empty name is already a bni-rs lint warning.
             "" => {}
             other => issues.push(at_name(
                 &section.name,
                 Level::Warning,
-                format!("unknown section [{other}] (expected [project], [code], [map], [build], [jass], [lint] or [external])"),
+                format!("unknown section [{other}] (expected [project], [code], [map], [build], [jass], [lint], [external] or [test])"),
             )),
         }
     }
@@ -471,6 +514,7 @@ fn unknown_key(item: &Item, section: &str, issues: &mut Vec<Issue>) {
         "code" => "sources' or 'exclude",
         "map" => "root",
         "build" => "name', 'out', 'script', 'uglify', 'inline', 'dead_code' or 'string_hash",
+        "test" => "build', 'window' or 'command",
         _ => "dialect",
     };
     issues.push(at_name(

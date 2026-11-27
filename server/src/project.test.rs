@@ -80,7 +80,7 @@ fn unknown_sections_and_keys_are_warnings() {
     assert_eq!(
         messages,
         vec![
-            (1, "unknown section [jas] (expected [project], [code], [map], [build], [jass], [lint] or [external])"),
+            (1, "unknown section [jas] (expected [project], [code], [map], [build], [jass], [lint], [external] or [test])"),
             (4, "unknown setting 'source' in [project] (expected 'game', 'hd', 'de' or 'locale')"),
             (5, "setting without a name"),
         ]

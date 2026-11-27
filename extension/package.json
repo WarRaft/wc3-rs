@@ -126,6 +126,12 @@
         "icon": "$(play)"
       },
       {
+        "command": "wc3.testMap",
+        "title": "Test Map",
+        "category": "WC3",
+        "icon": "$(debug-start)"
+      },
+      {
         "command": "wc3.txt2.preview",
         "title": "Open Preview",
         "category": "txt2",
@@ -446,6 +452,11 @@
       "editor/title": [
         {
           "command": "wc3.build",
+          "when": "resourceFilename == wc3.bni",
+          "group": "navigation"
+        },
+        {
+          "command": "wc3.testMap",
           "when": "resourceFilename == wc3.bni",
           "group": "navigation"
         },

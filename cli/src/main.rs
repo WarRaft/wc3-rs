@@ -7,6 +7,9 @@
 //! - `wc3 build [name] [--project <path>]`: builds the map of the project
 //!   of the current folder (or of `path`), its `[build]` `name` or its
 //!   first (`wc3_server::build`);
+//! - `wc3 test [name] [--project <path>]`: Test Map: builds the map,
+//!   copies it into the game's folder and runs the game with it
+//!   (`wc3_server::test_map`);
 //! - `wc3 editor --project <path>`: the World Editor's backend of a
 //!   project, one per project, speaking the editor protocol over stdio
 //!   (`wc3_editor::run`).
@@ -14,7 +17,7 @@
 //! The server, MCP and the editor talk over stdin and stdout and end
 //! when stdin closes.
 
-const USAGE: &str = "usage: wc3 <mode>\n\n  server   the language backend of the VS Code extension (stdio)\n  mcp      the MCP server for AI assistants (stdio)\n  build    builds the project's map: wc3 build [name] [--project <path>]\n  editor   the World Editor's backend of a project (stdio): wc3 editor --project <path>\n  version  the version\n";
+const USAGE: &str = "usage: wc3 <mode>\n\n  server   the language backend of the VS Code extension (stdio)\n  mcp      the MCP server for AI assistants (stdio)\n  build    builds the project's map: wc3 build [name] [--project <path>]\n  test     builds the map and runs the game with it: wc3 test [name] [--project <path>]\n  editor   the World Editor's backend of a project (stdio): wc3 editor --project <path>\n  version  the version\n";
 
 fn main() {
     let mode = std::env::args().nth(1).unwrap_or_default();
@@ -23,6 +26,7 @@ fn main() {
         "mcp" => wc3_mcp::run(),
         "build" => build(std::env::args().skip(2).collect()),
         "editor" => editor(std::env::args().skip(2).collect()),
+        "test" => test(std::env::args().skip(2).collect()),
         "version" | "--version" | "-V" => println!("wc3 {}", env!("CARGO_PKG_VERSION")),
         "help" | "--help" | "-h" => print!("{USAGE}"),
         other => {
@@ -45,6 +49,28 @@ fn editor(args: Vec<String>) {
         }
     }
     std::process::exit(wc3_editor::run(&project));
+}
+
+/// `wc3 test [name] [--project <path>]`: 1 when it can't.
+fn test(args: Vec<String>) {
+    let mut name = None;
+    let mut project = std::path::PathBuf::from(".");
+    let mut it = args.into_iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--project" | "-p" => project = it.next().map(Into::into).unwrap_or(project),
+            _ => name = Some(a),
+        }
+    }
+    match wc3_server::test_map::run(&project, name.as_deref()) {
+        Ok(done) => println!("{done}"),
+        Err(errors) => {
+            for e in errors.iter().take(50) {
+                eprintln!("error: {e}");
+            }
+            std::process::exit(1);
+        }
+    }
 }
 
 /// `wc3 build [name] [--project <path>]`.

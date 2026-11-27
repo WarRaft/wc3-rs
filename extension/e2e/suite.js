@@ -772,6 +772,31 @@ async function steps(only) {
             check(!saved.dirty && saved.message.includes('war3map.imp') && saved.message.includes('Scripts\\Setup.j'), saved.message)
             await we.panel.webview.postMessage({type: 'import', action: 'close'})
         }},
+        {name: 'test-map', editor: true, run: async () => {
+            log("Test Map: saved, built, copied into the game's folder as World Editor does, the game run; on macOS [test] command= says how")
+            const bni = manifest.fsPath
+            const was = fs.readFileSync(bni, 'utf8')
+            try {
+                we.tested = undefined
+                await we.panel.webview.postMessage({type: 'testMap'})
+                const plain = await until(() => we.tested, 'tested')
+                check(process.platform === 'win32' || (plain.code === 1 && /\[test\] command=/.test(plain.output)), `without a command: ${plain.output.trim().split('\n').pop()}`)
+                // A game folder of its own (War3.exe), its "game" a command that leaves a file.
+                const game = path.join(path.dirname(bni), 'e2e-game')
+                fs.mkdirSync(game, {recursive: true})
+                fs.writeFileSync(path.join(game, 'War3.exe'), '')
+                fs.rmSync(path.join(game, 'ran.txt'), {force: true})
+                fs.writeFileSync(bni, was.replace('[map]', `[test]\ncommand="/usr/bin/touch","ran.txt"\n\n[map]`).replace(/^(game=.*)$/m, `$1\ngame=${JSON.stringify(game)}`))
+                we.tested = undefined
+                await we.panel.webview.postMessage({type: 'testMap'})
+                const ran = await until(() => we.tested, 'tested again')
+                const copied = path.join(game, 'Maps', 'Test', 'WorldEditTestMap.w3x')
+                await until(() => fs.existsSync(path.join(game, 'ran.txt')) || undefined, 'the command run')
+                check(ran.code === 0 && fs.statSync(copied).size > 1000000, `built, copied (${Math.round(fs.statSync(copied).size / 1024)} KB) into Maps\\Test, run: ${ran.output.trim()}`)
+            } finally {
+                fs.writeFileSync(bni, was)
+            }
+        }},
         {name: 'constants', editor: true, run: async () => {
             log("the gameplay constants: the map's own (war3mapMisc.txt), a constant typed, one past its limits said, off and undone; saved")
             await we.panel.webview.postMessage({type: 'constants', action: 'open'})

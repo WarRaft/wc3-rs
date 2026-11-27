@@ -110,6 +110,9 @@ dialect=vjass
 | `[jass]`    | `dialect` | `jass` or `vjass` (case-insensitive)     | the dialect of `.j` files that don't declare one in a `// @dialect` header |
 | `[lint]`    | a rule or group id | `off`, `warning` or `error`     | turn a lint rule (or every rule of a group) off or on, at that level (see [Lint](#lint)) |
 | `[external]` | a tool's name | its program and first arguments, comma-separated BNI strings (`"wine","tools/ObjectMerger.exe"`; a program with a `/` relative to the project root) | the tool JassHelper's `//! external NAME` runs on the map built (see below) |
+| `[test]`    | `build`   | a `[build]`'s name                       | the build Test Map runs; the default without it |
+| `[test]`    | `window`  | `1` or `0`                               | the game in a window (`-window`); `0` without it |
+| `[test]`    | `command` | its program and arguments, comma-separated BNI strings; `{exe}` (the game's `War3.exe`), `{game}` (its folder), `{map}` (`Maps\Test\WorldEditTestMap.w3x`) filled in | what runs the game with the map; on Windows `{exe} -loadfile {map}` without it, elsewhere needed (`"wine","{exe}","-loadfile","{map}"`, a wrapper's) |
 
 - **`[external]`: JassHelper's tools.** A build runs each `//! external
   NAME args` and `//! externalblock [extension=x] NAME args` ... `//! i
@@ -123,6 +126,17 @@ dialect=vjass
   other than 0 fails the build, with what it said at its line; what it
   says otherwise is a note. Code alone (no `[map]`) makes no map: an
   error.
+- **`[test]`: Test Map.** As World Editor's: the map built (`[test]
+  build`, else the default), copied into the game's folder (the last of
+  `[project] game=` with `War3.exe`) as `Maps\Test\WorldEditTestMap.w3x`,
+  where World Editor puts it, and the game run with it, the game's own
+  command line (`War3.exe -loadfile Maps\Test\WorldEditTestMap.w3x`,
+  run in its folder, not waited for). A script with errors isn't run.
+  `wc3 test [name] [--project <path>]`, the extension's Test Map (the
+  button over `wc3.bni`; the World Editor's Test map, which saves
+  first). macOS and Linux can't run the Windows game by themselves:
+  `command=` says how; a setup that installs the game into Porting Kit
+  and fills it in is to come.
 - **`dialect`.** A file's own header always wins over the project, so a
   project can still mix dialects. Without either, a file is plain JASS.
   A `.vj` file is vJASS unless its header says otherwise. The order is

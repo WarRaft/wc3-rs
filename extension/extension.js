@@ -2579,10 +2579,47 @@ function registerBuild(context, binary) {
         return {code: result.code, output: logged}
     }
 
+    // Test Map: the map built, copied into the game's folder, the game run
+    // with it (`wc3 test`, `wc3_server::test_map`); what it says to the
+    // same output.
+    const test = async arg => {
+        if (running) return window.showWarningMessage('WC3: a build is running.')
+        const manifest = await pickManifest(arg, 'Test the map of which project?')
+        if (!manifest) return window.showWarningMessage('WC3: no wc3.bni in the workspace or above the active file.')
+        const root = path.dirname(manifest)
+        for (const d of workspace.textDocuments) if (d.isDirty && d.uri.scheme === 'file' && d.uri.fsPath.startsWith(root + path.sep)) await d.save()
+        running = true
+        output.clear()
+        const args = ['test', '--project', root]
+        output.appendLine(`> wc3 ${args.join(' ')}`)
+        const result = await window.withProgress(
+            {location: ProgressLocation.Notification, title: `WC3: testing the map of ${path.basename(root)}…`},
+            () => new Promise(resolve => {
+                const child = spawn(binary, args, {cwd: root})
+                let out = ''
+                let err = ''
+                child.stdout.on('data', d => { out += d; output.append(d.toString()) })
+                child.stderr.on('data', d => { err += d; output.append(d.toString()) })
+                child.on('error', e => resolve({code: -1, out: '', err: e.message}))
+                child.on('close', code => resolve({code, out, err}))
+            }),
+        ).finally(() => { running = false })
+        if (result.code === 0) window.showInformationMessage('WC3: the game started with the map.')
+        else {
+            output.show(true)
+            const first = /^error: (.*)$/m.exec(result.err)?.[1] ?? 'see the output "WC3 Build"'
+            window.showErrorMessage(`WC3: Test Map: ${first}`, 'Open wc3.bni').then(go => go && window.showTextDocument(Uri.file(manifest)))
+        }
+        return {code: result.code, output: result.out + result.err}
+    }
+
     const lenses = new EventEmitter()
     context.subscriptions.push(
         output,
         lenses,
+        commands.registerCommand('wc3.testMap', arg => test(arg).catch(e => {
+            window.showErrorMessage(`WC3: ${e.message}`)
+        })),
         // A menu passes the file and what it was run from (the editor
         // group's ids); a lens, the file and the build's name.
         commands.registerCommand('wc3.build', (arg, name) => run(arg, typeof name === 'string' ? name : undefined).catch(e => {

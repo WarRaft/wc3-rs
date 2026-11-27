@@ -88,6 +88,7 @@ const VIEW = 'wc3.editors'
  * @property {{name: string, uses: {nth: number, trigger: string, line: number, text: string}[]} | undefined} usedBy  the triggers that use a name of the map's script, as last found
  * @property {{instances: number, ramps: number, missing: number, byVariation: number[]} | undefined} cliffs  the cliffs and ramps the page was last sent (the pieces by their variation)
  * @property {{height: number, water: number, wet: boolean, blight: boolean, boundary: boolean} | undefined} corner  a corner the page was asked of
+ * @property {{code: number, output: string} | undefined} tested  what the last Test Map said
  * @property {{file: number, index: number}[] | undefined} pasted  the things a paste made last
  * @property {{custom: boolean, count: number, changed: [string, string][]} | undefined} constants  the gameplay constants the panel last showed: the map's own or not, how many, those changed
  * @property {{custom: boolean, count: number, changed: [string, string][]} | undefined} skin  the game interface the panel last showed, the same
@@ -190,6 +191,7 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
   </div>
   <div id="used-by" class="used-by" hidden></div>
   <div class="edits"><button id="undo" title="Undo (Ctrl+Z)" disabled>Undo</button><button id="redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button><button id="save" title="Save the files changed (Ctrl+S)" disabled>Save</button><button id="reload" title="Read the map again, the changes not saved dropped">Reload</button></div>
+  <button id="test-map" title="Test Map: saved, built, and the game run with it ([test] in wc3.bni)">Test map</button>
   <button id="map-open" title="The map's size, its tiles and their pathing">Map…</button>
   <button id="triggers-open" title="The map's triggers, in the trigger editor beside">Triggers…</button>
   <button id="info-open" title="The map's info: its description, loading screen, options, environment, players and forces">Info…</button>
@@ -466,6 +468,9 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
                 editor.thing = msg.thing
             } else if (msg.type === 'overlays') {
                 editor.overlays = msg.overlays
+            } else if (msg.type === 'testMap') {
+                // Saved: the map built and the game run with it.
+                commands.executeCommand('wc3.testMap', Uri.file(path.join(editor.root, 'wc3.bni'))).then(r => (editor.tested = r))
             } else if (msg.type === 'error') {
                 editor.error = msg.message
             } else if (msg.type === 'reopen') {

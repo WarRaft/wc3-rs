@@ -421,6 +421,13 @@
         if (triggerEditor) vscode.postMessage({type: 'saveTriggers'})
     }
     $('save').onclick = save
+    // Test Map: saved first; when the editor says so, the extension builds
+    // the map and runs the game with it.
+    let testing = false
+    $('test-map').onclick = () => {
+        testing = true
+        save()
+    }
     const mapPanel = new EditorMapSettings.Panel($('map-panel'), send, encode)
     $('map-open').onclick = () => (mapPanel.isOpen ? mapPanel.close() : mapPanel.open())
     const importsPanel = new EditorImports.Panel($('imports-panel'), send, encode, msg => vscode.postMessage(msg))
@@ -1524,6 +1531,10 @@
             if (regionDrag) regionDrag.pending = false
             if (cameraDrag) cameraDrag.pending = false
             showState(msg)
+            if (testing && !msg.dirty) {
+                testing = false
+                vscode.postMessage({type: 'testMap'})
+            } else if (testing && msg.message) testing = false
             // A value refused: the thing's fields as they are again.
             if (msg.message && selected) askThing()
             // The object editor's list and fields as they are now (an undo
@@ -1842,6 +1853,9 @@
             deletePicked()
         } else if (msg.type === 'save') {
             save()
+        } else if (msg.type === 'testMap') {
+            // Test Map, as its button: for the tests.
+            $('test-map').onclick()
         } else if (msg.type === 'undo' || msg.type === 'redo') {
             send(encode[msg.type]())
         } else if (msg.type === 'unfocus' && focusedFrom) {
