@@ -146,17 +146,28 @@ async function steps(only) {
             check(down[1] > 40, `the mouse down: the camera north, the map following it (y ${down[1].toFixed(2)})`)
             l = await layout({pan: {steps: 1, dx: 40, dy: 0}})
             check(l.panned[0][0] < 96, `the mouse right: the camera west (x ${l.panned[0][0].toFixed(2)})`)
-            // Across the map (a step a 1/60 s): the developer's camera's height
-            // goes to the ground's at most 3 cells a second; the game's is on it.
+            // Across the map and back: the developer's camera's height a
+            // function of the place (back where it started, the same; still,
+            // it doesn't move), no jump where the game's jumps (a cliff).
             await we.panel.webview.postMessage({type: 'look', x: 30, y: 10, distance: 20, horizontal: 0, vertical: -0.9})
-            l = await layout({pan: {steps: 110, dx: 0, dy: 60, dt: 1 / 60}})
-            const p = l.panned
-            const fast = p.filter((s, i) => i && Math.abs(s[2] - p[i - 1][2]) > 3 / 60 + 1e-6).length
-            const off = p.filter(s => Math.abs(s[2] - s[3]) > 0.05).length
-            check(!fast && off > 0, `the developer's camera across ${p.length} steps (${p[0][1].toFixed(0)} to ${p[p.length - 1][1].toFixed(0)} north): its height never faster than 3 cells a second (${fast} steps faster), off the ground where it jumps (${off})`)
+            l = await layout({pan: {steps: 110, dx: 0, dy: 60}})
+            const there = l.panned
+            l = await layout({pan: {steps: 110, dx: 0, dy: -60}})
+            const back = l.panned
+            const steepest = path => Math.max(...path.slice(1).map((s, i) => Math.abs(s[2] - path[i][2])))
+            l = await layout({pan: {steps: 0, dx: 0, dy: 0}})
+            const still = l.camera[2]
+            await sleep(500)
+            l = await layout({})
+            check(Math.abs(l.camera[2] - still) < 1e-9, `still, the developer's camera stays (${still.toFixed(4)}, then ${l.camera[2].toFixed(4)})`)
+            const pairs = back.map(s => [s, there.find(t => Math.abs(t[0] - s[0]) < 1e-6 && Math.abs(t[1] - s[1]) < 1e-6)]).filter(([, t]) => t)
+            const differ = pairs.filter(([s, t]) => Math.abs(s[2] - t[2]) > 1e-6).length
+            check(pairs.length > 50 && !differ, `back over the same places, the same heights: ${pairs.length} places, ${differ} differ`)
             await we.panel.webview.postMessage({type: 'look', x: 30, y: 10, distance: 20, horizontal: 0, vertical: -0.9})
-            l = await layout({button: undefined, pan: {steps: 110, dx: 0, dy: 60, dt: 1 / 60, game: true}})
-            check(l.panned.every(s => Math.abs(s[2] - s[3]) < 1e-6) && l.panned.some((s, i) => i && Math.abs(s[2] - l.panned[i - 1][2]) > 3 / 60), 'the game\'s camera on the ground, at once (dives)')
+            l = await layout({pan: {steps: 110, dx: 0, dy: 60, game: true}})
+            const game = l.panned
+            check(game.every(s => Math.abs(s[2] - s[3]) < 1e-6), 'the game\'s camera on the ground under it')
+            check(steepest(there) < steepest(game) / 3, `the developer's steepest step ${steepest(there).toFixed(3)} cells against the game's ${steepest(game).toFixed(3)} (a cliff)`)
             // The Game camera button: on, the camera the game's; kept with the map's view.
             l = await layout({button: undefined})
             const gameButton = l.bar.find(b => b.tip === 'Game camera')

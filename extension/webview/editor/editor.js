@@ -37,6 +37,7 @@
     let lightNotes = []
     const camera = new EditorCamera.Camera()
     camera.heightAt = (x, y) => terrain?.heightAt(x, y) ?? 0
+    camera.smoothHeightAt = (x, y, sigma) => terrain?.smoothHeightAt(x, y, sigma) ?? 0
     let placed = false
     let mapNotes = []
     let drawnSaid = false
@@ -140,7 +141,7 @@
         const dx = (k('ArrowRight') || k('KeyD') ? 1 : 0) - (k('ArrowLeft') || k('KeyA') ? 1 : 0)
         const dy = (k('ArrowDown') || k('KeyS') ? 1 : 0) - (k('ArrowUp') || k('KeyW') ? 1 : 0)
         if (dx || dy) camera.move(dx * speed, dy * speed)
-        camera.update(dt)
+        camera.update()
         draw(now)
         if (flicker) flickerFrame()
         drawMinimap()
@@ -411,6 +412,7 @@
         const x = Math.max(0, Math.min(minimap.width - 1, (e.clientX - b.left) / b.width * minimap.width))
         const y = Math.max(0, Math.min(minimap.height - 1, minimap.height - 1 - (e.clientY - b.top) / b.height * minimap.height))
         camera.position = [x, y, camera.heightAt(x, y)]
+        camera.pinned = false
     }
     minimap.addEventListener('contextmenu', e => e.preventDefault())
     minimap.addEventListener('pointerdown', e => {
@@ -734,6 +736,7 @@
         const offset = terrain.terrain.offset
         const [x, y] = [(msg.at[0] - offset[0]) / 128, (msg.at[1] - offset[1]) / 128]
         camera.position = [x, y, msg.what === 1 ? msg.at[2] / 128 : camera.heightAt(x, y)]
+        camera.pinned = msg.what === 1
         camera.distance = Math.min(camera.distance, 16)
         brush.tool = ['select', 'select', 'regions', 'cameras'][msg.what]
         showTools()
@@ -1549,6 +1552,7 @@
         const d = [0, 1, 2].map(k => c.target[k] - c.eye[k])
         const len = Math.hypot(...d) || 1
         camera.position = [...c.target]
+        camera.pinned = true
         camera.distance = Math.max(0.5, len)
         camera.vertical = Math.max(-Math.PI / 2 + 0.001, Math.min(Math.PI / 2 - 0.001, Math.asin(d[2] / len)))
         camera.horizontal = Math.atan2(d[0], d[1])
@@ -1891,6 +1895,7 @@
             const k = msg.world ? 128 : 1
             const [x, y] = [(msg.x - offset[0]) / k, (msg.y - offset[1]) / k]
             camera.position = [x, y, msg.z !== undefined ? msg.z / k : camera.heightAt(x, y)]
+            camera.pinned = msg.z !== undefined
             if (msg.distance) camera.distance = msg.distance
             if (msg.horizontal !== undefined) camera.horizontal = msg.horizontal
             if (msg.vertical !== undefined) camera.vertical = msg.vertical
@@ -2117,6 +2122,7 @@
                 focusedFrom = {position: [...camera.position], distance: camera.distance, vertical: camera.vertical, horizontal: camera.horizontal}
                 const d = data[mi]
                 camera.position = [d[0], d[1], d[2] + 1]
+                camera.pinned = true
                 camera.distance = msg.distance ?? 8
                 camera.vertical = -0.6
             }
@@ -2165,7 +2171,7 @@
                     x += dx
                     y += dy
                     window.dispatchEvent(new MouseEvent('mousemove', {clientX: x, clientY: y, buttons: 2}))
-                    camera.update(dt)
+                    camera.update()
                     panned.push([camera.position[0], camera.position[1], camera.position[2], camera.heightAt(camera.position[0], camera.position[1])])
                 }
                 if (outside) {

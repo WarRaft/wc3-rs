@@ -1666,11 +1666,21 @@ water colours, the camera); none of its code is taken as is.
 - The camera, moved (a right drag, WASD, the arrows): the map follows
   the mouse both ways (the vertical was the wrong way round, and W went
   back). Two cameras, the Game camera button (V) between them, kept with
-  the map's view: the game's follows the ground under where it looks at
-  once (into hollows, up hills); the developer's (the default) goes to it
-  at most 3 cells (384 units) a second, up or down (`Camera.update`, each
-  frame), so a cliff or a hollow passed over is no jump; only the ground
-  coming above the camera itself lifts it at once.
+  the map's view. The height either looks at is a function of where it
+  looks and how far it is, never of the time: nothing goes on after a
+  move, and back over a place it's the same. The game's: the ground's
+  there (HiveWE's and Waric's: `interpolated_height`,
+  `CM_GetHeightAtPoint`, neither smoothed; a cliff a jump). The
+  developer's (the default): the ground seen at its scale, the heights
+  convolved with a Gaussian of deviation distance / 8, read from their
+  Gaussian pyramid (`HeightPyramid` in `terrain.js`: Burt and Adelson's,
+  the binomial kernel [1 4 6 4 1] / 16; level k a deviation of
+  sqrt((4^k - 1) / 3) cells; a continuous level between two, as a
+  texture's trilinear mip; against a true Gaussian of a step, within 7%
+  of its height); never so low that the camera itself would be under
+  the ground. Over the Diablo map's length its steepest step is a cell
+  against the game camera's ten. A height given (a thing looked at, a
+  camera looked through) is kept till the camera's moved.
 - A button let go outside the page (outside VS Code even) is let go on
   the next move over the page without it, or when the page loses the
   focus: a drag (the view's, a brush's, a thing's, a box, the minimap's)

@@ -345,6 +345,76 @@ void main() {
         return t
     }
 
+    /**
+     * The heights' Gaussian pyramid (Burt and Adelson's): level 0 the
+     * corners' heights, each next level the last convolved with the
+     * binomial kernel [1 4 6 4 1] / 16 (a Gaussian of deviation 1 in its
+     * samples) and taken every second sample. Level k is the heights
+     * convolved with a Gaussian of deviation sqrt((4^k - 1) / 3) cells
+     * (the deviations of its steps added in quadrature, each step's twice
+     * the last's), sampled every 2^k cells. `at` reads the level whose
+     * deviation is the one asked, between two levels linearly (a
+     * continuous level, as a texture's trilinear mip).
+     */
+    class HeightPyramid {
+        constructor(heights, w, h) {
+            this.levels = [{w, h, data: Float32Array.from(heights)}]
+            for (let last = this.levels[0]; last.w > 1 || last.h > 1;) {
+                last = HeightPyramid.reduce(last)
+                this.levels.push(last)
+            }
+        }
+
+        /** One level down: blurred along x, then y (the kernel's separable), every second sample kept. */
+        static reduce({w, h, data}) {
+            const K = [1 / 16, 4 / 16, 6 / 16, 4 / 16, 1 / 16]
+            const clamp = (v, n) => v < 0 ? 0 : v >= n ? n - 1 : v
+            const nw = Math.ceil(w / 2)
+            const nh = Math.ceil(h / 2)
+            const rows = new Float32Array(nw * h)
+            for (let y = 0; y < h; y++) {
+                for (let i = 0; i < nw; i++) {
+                    let s = 0
+                    for (let k = -2; k <= 2; k++) s += K[k + 2] * data[y * w + clamp(2 * i + k, w)]
+                    rows[y * nw + i] = s
+                }
+            }
+            const out = new Float32Array(nw * nh)
+            for (let j = 0; j < nh; j++) {
+                for (let i = 0; i < nw; i++) {
+                    let s = 0
+                    for (let k = -2; k <= 2; k++) s += K[k + 2] * rows[clamp(2 * j + k, h) * nw + i]
+                    out[j * nw + i] = s
+                }
+            }
+            return {w: nw, h: nh, data: out}
+        }
+
+        /** Level `k` at `(x, y)` (cells): between its samples, bilinearly (an axis one sample long: that one). */
+        sample(k, x, y) {
+            const {w, h, data} = this.levels[k]
+            const axis = (c, n) => {
+                const u = Math.max(0, Math.min(n - 1, c / 2 ** k))
+                const i = Math.min(Math.max(0, n - 2), Math.floor(u))
+                return [i, Math.min(n - 1, i + 1), u - i]
+            }
+            const [i0, i1, fx] = axis(x, w)
+            const [j0, j1, fy] = axis(y, h)
+            const row = j => data[j * w + i0] * (1 - fx) + data[j * w + i1] * fx
+            return row(j0) * (1 - fy) + row(j1) * fy
+        }
+
+        /** The heights convolved with a Gaussian of deviation `sigma` (cells), at `(x, y)`. */
+        at(x, y, sigma) {
+            // Level k's deviation: sqrt((4^k - 1) / 3), so the level of sigma's: log4(3 sigma^2 + 1).
+            const level = Math.max(0, Math.min(this.levels.length - 1, Math.log(3 * sigma * sigma + 1) / Math.log(4)))
+            const k = Math.min(this.levels.length - 2, Math.floor(level))
+            if (k < 0) return this.sample(0, x, y)
+            const f = level - k
+            return this.sample(k, x, y) * (1 - f) + this.sample(k + 1, x, y) * f
+        }
+    }
+
     class Terrain {
         /** @param {WebGL2RenderingContext} gl */
         constructor(gl) {
@@ -502,6 +572,7 @@ void main() {
                 height: h,
                 offset: msg.offset,
                 heights: msg.heights,
+                pyramid: new HeightPyramid(msg.heights, w, h),
                 textures: {
                     heights: dataTexture(gl, gl.R32F, gl.RED, gl.FLOAT, w, h, msg.heights),
                     ground: dataTexture(gl, gl.R32F, gl.RED, gl.FLOAT, w, h, msg.ground),
@@ -511,6 +582,16 @@ void main() {
                     tileFlags: dataTexture(gl, gl.R8UI, gl.RED_INTEGER, gl.UNSIGNED_BYTE, w - 1, h - 1, msg.tileFlags),
                 },
             }
+        }
+
+        /**
+         * The ground's height at `(x, y)` (cells) seen at scale `sigma`
+         * (cells): the heights convolved with a Gaussian of that deviation,
+         * from their pyramid (`HeightPyramid`). A function of the place and
+         * the scale only, smooth in both: a cliff is a slope `sigma` wide.
+         */
+        smoothHeightAt(x, y, sigma) {
+            return this.terrain?.pyramid.at(x, y, sigma) ?? 0
         }
 
         /** The ground's height at `(x, y)` (cells), between its corners. */
@@ -616,5 +697,5 @@ void main() {
         }
     }
 
-    return {Terrain}
+    return {HeightPyramid, Terrain}
 })()

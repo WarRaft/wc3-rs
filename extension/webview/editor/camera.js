@@ -13,12 +13,15 @@
  * right drag (or middle drag) turns it, the wheel brings it nearer or
  * further, the arrow keys and WASD move it (W and Up: forward).
  *
- * The height it looks at: the game's camera (`game`) on the ground under
- * where it looks, at once (it dives into a hollow, up a hill); the
- * developer's goes to the ground there at most `CLIMB` cells a second
- * (`update`, every frame), up or down, so a cliff or a hollow passed over
- * is no jump; only the ground coming above the camera itself lifts it at
- * once.
+ * The height it looks at is a function of where it looks and how far it
+ * is, never of the time (nothing goes on after a move): the game's camera
+ * (`game`) the ground's there, as HiveWE's and Waric's (a cliff a jump);
+ * the developer's the ground seen at its scale, the heights convolved
+ * with a Gaussian of deviation `distance / SMOOTH` (`smoothHeightAt`): a
+ * cliff or a hollow a slope as wide as a part of the view, the ground
+ * itself where it's flat; and never so low that the camera itself would
+ * be under the ground. A height given (a thing looked at) is kept till
+ * the camera's moved.
  */
 const EditorCamera = (() => {
     const mat4 = {
@@ -58,8 +61,8 @@ const EditorCamera = (() => {
         return [a[0] / l, a[1] / l, a[2] / l]
     }
 
-    /** How fast the developer's camera's height goes to the ground's: cells (128 units) a second. */
-    const CLIMB = 3
+    /** The developer's camera's scale: the deviation of its ground's Gaussian, a part of its distance. */
+    const SMOOTH = 8
 
     class Camera {
         constructor() {
@@ -72,8 +75,12 @@ const EditorCamera = (() => {
             this.roll = 0
             /** The ground's height under a point, to keep the camera on it. */
             this.heightAt = () => 0
-            /** Moved, whether it follows the ground as the game's camera does (dives); else the editor's. */
+            /** The ground's height seen at a scale (cells): `heightAt` convolved with a Gaussian of that deviation. */
+            this.smoothHeightAt = (x, y) => this.heightAt(x, y)
+            /** Whether it's the game's camera (on the ground under where it looks); else the developer's. */
             this.game = false
+            /** Whether the height it looks at was given (a thing looked at): kept till it's moved. */
+            this.pinned = false
         }
 
         /** Looks at the middle of a map `w` by `h` cells, all of it in view, at 70°. */
@@ -128,22 +135,23 @@ const EditorCamera = (() => {
             const k = this.distance / 30
             this.position[0] += (x[0] * dx + forward[0] * dy) * k
             this.position[1] += (x[1] * dx + forward[1] * dy) * k
-            if (this.game) this.position[2] = this.heightAt(this.position[0], this.position[1])
+            this.pinned = false
         }
 
-        /** `dt` seconds on: the developer's camera's height toward the ground's (see `CLIMB`). */
-        update(dt) {
-            const ground = this.heightAt(this.position[0], this.position[1])
+        /** The height it looks at, from where it looks and how far it is (see above). */
+        update() {
+            if (this.pinned) return
+            const [x, y] = this.position
             if (this.game) {
-                this.position[2] = ground
+                this.position[2] = this.heightAt(x, y)
                 return
             }
-            const step = CLIMB * dt
-            this.position[2] += Math.max(-step, Math.min(step, ground - this.position[2]))
-            // Never under the ground itself.
-            const eye = this.eye()
-            const under = this.heightAt(eye[0], eye[1]) + 0.5 - eye[2]
-            if (under > 0) this.position[2] += under
+            const d = this.direction
+            // The camera's own place doesn't hang on the height: above the ground there by half a cell.
+            const ex = x - d[0] * this.distance
+            const ey = y - d[1] * this.distance
+            const above = this.heightAt(ex, ey) + 0.5 + d[2] * this.distance
+            this.position[2] = Math.max(this.smoothHeightAt(x, y, this.distance / SMOOTH), above)
         }
 
         turn(dx, dy) {
