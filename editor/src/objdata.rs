@@ -56,6 +56,29 @@ fn profile_files() -> Vec<String> {
         }
     }
     out.extend(["Units\\ItemFunc.txt", "Units\\ItemStrings.txt", "Units\\CommandFunc.txt", "Units\\CommandStrings.txt"].map(String::from));
+    // Since 1.32 (Reforged) a type's art and its words are in its skins'
+    // files, over the rest; a map's own last.
+    out.extend(
+        [
+            "Units\\UnitSkin.txt",
+            "Units\\UnitSkinStrings.txt",
+            "Units\\UnitWeaponsSkin.txt",
+            "Units\\ItemSkin.txt",
+            "Units\\ItemSkinStrings.txt",
+            "Units\\AbilitySkin.txt",
+            "Units\\AbilitySkinStrings.txt",
+            "Units\\UpgradeSkin.txt",
+            "Units\\UpgradeSkinStrings.txt",
+            "Units\\DestructableSkin.txt",
+            "Units\\DestructableSkinStrings.txt",
+            "Units\\CommandSkinStrings.txt",
+            "Doodads\\DoodadSkins.txt",
+            "Doodads\\DoodadSkinsAddons.txt",
+            "Doodads\\DoodadSkinStrings.txt",
+            "war3mapSkin.txt",
+        ]
+        .map(String::from),
+    );
     out
 }
 
@@ -66,6 +89,8 @@ fn profile_files() -> Vec<String> {
 #[derive(Debug, Clone, Default)]
 pub struct Standard {
     pub ids: Vec<String>,
+    /// A field's HD value (`file:hd`) over its own (`Game::hd`).
+    pub hd: bool,
     rows: HashMap<String, HashMap<String, String>>,
     profile: HashMap<String, HashMap<String, String>>,
 }
@@ -73,7 +98,7 @@ pub struct Standard {
 impl Standard {
     /// `kind`'s standard objects through `game`, its profile `profile`'s.
     pub fn load(game: &Game, kind: Kind, profile: &HashMap<String, HashMap<String, String>>) -> Standard {
-        let mut out = Standard::default();
+        let mut out = Standard { hd: game.hd(), ..Standard::default() };
         for name in tables(kind) {
             let Some(slk) = crate::tileset::Slk::read(game, name) else { continue };
             let mut rows: Vec<_> = slk.rows().collect();
@@ -134,6 +159,12 @@ impl Standard {
     /// Field `key` of `id`: its profile's first, or its tables'.
     fn from(&self, id: &str, key: &str, profile_first: bool) -> Option<&str> {
         let key = key.to_ascii_lowercase();
+        if self.hd
+            && !key.ends_with(":hd")
+            && let Some(v) = self.from(id, &format!("{key}:hd"), profile_first)
+        {
+            return Some(v);
+        }
         let profile = || self.profile.get(id)?.get(&key).map(String::as_str);
         let table = || self.rows.get(id)?.get(&key).map(String::as_str);
         if profile_first { profile().or_else(table) } else { table().or_else(profile) }

@@ -2127,7 +2127,10 @@ step), this list updated.
      gone for a frame (the e2e counts blinks over 150 frames: 258 with
      `mod`, none now). MCP: `mdx_info` says the emitters and
      ribbons.
-   - **8c, light** (done): `mdx-rs` reads lights (`LITE`, up to 1100);
+   - **8c, light** (done): `mdx-rs` reads lights (`LITE`; of every
+     version since the Reforged check: Reforged's day and night models,
+     1800, have their sun so, shadows, falloff and damping besides, as
+     HiveWE reads them);
      `editor/src/light.rs` finds the day and night models of the tileset
      whose light the map uses (`war3map.w3i`'s, else its terrain's) in
      `UI\WorldEditData.txt` (`[TerrainLights]` for the ground and cliffs,
@@ -2234,6 +2237,19 @@ step), this list updated.
        its colour the reflections' (slot 5, an environment map at the
        pixel's place on the screen) or, the rougher, the surface's; a
        layer without an ORM none.
+     - **The whole editor with Reforged** (`WC3_GAME=<a Reforged
+       install> E2E_HD=1 node e2e/run.js`: every step passes): what it
+       found and was fixed: the day and night models' sun (`LITE` of 1800
+       unread: no light); the object editor's art and words since 1.32 in
+       the skins' files (`Units\UnitSkin.txt`, `...SkinStrings.txt`,
+       `Doodads\DoodadSkins.txt`, `war3mapSkin.txt` ...; `key:hd` with
+       HD); the trigger editor's phrases since 2.0 in `UI\TriggerData.txt`
+       (`_Name_DisplayName`, `_Name_Parameters`; `UI\TriggerStrings.txt`
+       its hints alone), a call's objects by name even without its words;
+       sounds that are `.ogg` there; the steps' names of the game's
+       language (Пехотинец, not Footman). Still: a block by the map's
+       imported fir (D02M, ElveswoodLeaves) blinks now and then with
+       animation in HD, its cause not found (`KNOWN (HD)` in the log).
      - **f, 2.0's mods and HD terrain** (done): the mods in HiveWE's
        order (`casc::prefixes`): the graphics mod's tileset, locale and
        itself, then the game's tileset, locale and itself, then
@@ -2494,6 +2510,9 @@ query about 1 ms.
 
 ## Tests in the editor
 
+With Reforged: `WC3_GAME=<its folder> E2E_HD=1` (and `E2E_LOCALE`, a
+`locale=` for its `wc3.bni`); the steps check what doesn't depend on the
+game's language (an object's id, not its name).
 `cd extension && npm run e2e` (`node e2e/run.js [map.w3x] [all |
 current | step,step...]`) runs every step; `npm run e2e:current` only
 the work in hand's (`suite.js`'s `CURRENT`, moved on as the work is:

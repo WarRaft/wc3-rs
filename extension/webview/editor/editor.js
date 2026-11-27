@@ -100,7 +100,9 @@
                 const jump = Math.min(Math.abs(f[i][b] - f[i - 1][b]), Math.abs(f[i][b] - f[i + 1][b]))
                 if (jump > 25 && around < 6) {
                     blinks++
-                    if (where.length < 10) where.push({frame: i, x: b % bw, y: Math.floor(b / bw), jump: Math.round(jump)})
+                    // Where, in the view's terms too (-1 to 1, y up): to click there.
+                    const [bx, by] = [b % bw, Math.floor(b / bw)]
+                    if (where.length < 10) where.push({frame: i, x: bx, y: by, jump: Math.round(jump), vx: ((bx + 0.5) * BLOCK / w) * 2 - 1, vy: ((by + 0.5) * BLOCK / h) * 2 - 1})
                 }
             }
         }
