@@ -51,8 +51,9 @@ item's details are in its section below):
   multiplayer; today's maps make campaigns for several players, and
   tools to carry data between maps exist already. Not before everything
   else.
-- **Tests in the editor** ([below](#tests-in-the-editor)): every new
-  piece of the editor gets a step in `extension/e2e/suite.js`.
+- **Tests in the editor** ([below](#tests-in-the-editor)): only the work
+  in hand has steps in `extension/e2e/suite.js`; a step goes when its
+  work is done.
 - **Data**: the real maps tested are in `../maps` (Diablo III beta, The
   Castle, CruiserCommand, LastGuards, three-corridors, Edemium; Castle
   Revival and Diablo Reforged, Reforged 2.0 maps: `w3i` 39, `doo` 13,
@@ -1643,7 +1644,23 @@ water colours, the camera); none of its code is taken as is.
 - A button over an open `wc3.bni` (beside Build), the Explorer's menu of
   a `wc3.bni`, and the command palette (the active file's project):
   **Open World Editor**.
-- Every new piece gets a step in `extension/e2e/suite.js`.
+- The page: a line with the map's name (its size, tileset, author),
+  then a line of icon buttons with tooltips of their own (name, key,
+  what it does): the edits (undo, redo, save, reload), the map's windows
+  (Test map, Map, Triggers, Info, Constants, Interface, Imports,
+  Objects), the time of day, the layers, then the controls' window
+  (F1) and Donate. Nothing over the view but the tools and the
+  minimap; under it one line: what was said, and where the mouse is on
+  the ground (the game's X, Y, Z, the cell). The view follows the
+  page's size at once (a `ResizeObserver`).
+- The view of each map (the layers shown, the time of day) is kept by
+  the extension (`globalState`, by the project's folder) between runs.
+- One editor per project (its process holds a lock on it). Opened
+  again just after it's closed, the editor waits for the last process to
+  end; a project still held after that (a window closing or reloading)
+  is tried again for 5 seconds before the page says another window has
+  it.
+- The work in hand gets a step in `extension/e2e/suite.js` (only it).
 
 ### Steps
 
@@ -2429,8 +2446,7 @@ step), this list updated.
        `file`, `numVar`, `vertR` as lists, `file:hd` taken with HD):
        `editor/src/types.rs` reads them over the tables. The Diablo III
        beta map with Reforged HD: all 13221 things placed, 103 models
-       and 326 textures read, none failing (`e2e/editor-look.js`,
-       `E2E_HD=1`). Its trees (FTtw, Lordaeron's fall trees:
+       and 326 textures read, none failing (`E2E_HD=1`). Its trees (FTtw, Lordaeron's fall trees:
        autumn's by their `texFile`) came out red: an HD layer's
        replaceable texture (all three of a tree's, diffuse, normal, ORM,
        are 31) was the stand-in itself in every slot, the ORM's alpha
@@ -2734,15 +2750,15 @@ With Reforged: `WC3_GAME=<its folder> E2E_HD=1` (and `E2E_LOCALE`, a
 `locale=` for its `wc3.bni`); the steps check what doesn't depend on the
 game's language (an object's id, not its name).
 `cd extension && npm run e2e` (`node e2e/run.js [map.w3x] [all |
-current | step,step...]`) runs every step; `npm run e2e:current` only
-the work in hand's (`suite.js`'s `CURRENT`, moved on as the work is:
-some 15 seconds against two minutes), and names (`things,cameras`) those
-steps. Each step of `suite.js`'s `STEPS` has a name, says whether it
-works in the World Editor (opened before the first such step, closed
-after the last) and the steps it needs (`w3r-text` the region of
-`regions`), run with it. A new piece of the editor gets a step, or its
-part of one; while it's worked on, the current steps are run, and every
-step before a commit. `run.js`
+current | step,step...]`) runs every step; `npm run e2e:current` the
+work in hand's (`suite.js`'s `CURRENT`), and names those steps. Only the
+work in hand has steps: the old ones only took time, so a step goes
+when its work is done. Each step of `suite.js`'s `STEPS` has a name,
+says whether it works in the World Editor (opened before the first such
+step, closed after the last) and the steps it needs, run with it. Now:
+`layout`, the World Editor's page (its two lines over the view, the
+tooltips, the controls' window, the bottom line, a resize, the view
+kept per map). `run.js`
 extension in a VS Code of its own: the one installed (`VSCODE`, else
 `/Applications/Visual Studio Code.app`), with a profile and extensions
 folder of its own in a temporary folder (no other extension; it opens
@@ -2753,9 +2769,7 @@ a `wc3.bni` naming the game (`WC3_GAME`). `e2e/suite.js` drives it as a
 user would: the trigger editors take the page's messages through the
 extension's `test` export (`triggerEditors`), and each step is checked
 on the documents, diagnostics and the map on disk (the window fills the
-screen, with no chat or tips: its profile's settings); `E2E_SUITE=probe.js
-E2E_OPEN='wc3map://{map}/war3map.w3i|...'` only opens each and takes a
-screenshot, to look at something; what it says goes to
+screen, with no chat or tips: its profile's settings); what it says goes to
 `<out>/log.txt` (`E2E_OUT`, else a temporary folder), printed at the
 end, and screenshots of the screen to `<out>/*.png` (`run.js` takes them,
 with macOS's `screencapture`: the terminal needs Screen Recording).

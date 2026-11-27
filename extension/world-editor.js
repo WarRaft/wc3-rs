@@ -19,8 +19,11 @@
 const path = require('path')
 const {spawn} = require('child_process')
 const {triggerMarkup, triggerHead} = require('./trigger-markup.js')
-const {window, workspace, commands, Uri, ViewColumn, EventEmitter, TreeItem, TreeItemCollapsibleState, ThemeIcon, ThemeColor, WorkspaceEdit, Range} = require('vscode')
+const {window, workspace, commands, env, Uri, ViewColumn, EventEmitter, TreeItem, TreeItemCollapsibleState, ThemeIcon, ThemeColor, WorkspaceEdit, Range} = require('vscode')
 const {FrameReader} = require('./protocol.js')
+
+/** The donate link (the README's). */
+const DONATE = 'https://send.monobank.ua/jar/7uKvD6jK8T'
 
 /**
  * The editor protocol's kinds this file reads or writes itself (the rest
@@ -127,7 +130,9 @@ function registerWorldEditor(context, binary, pickManifest, triggers) {
     const listChanged = new EventEmitter()
     const refresh = () => listChanged.fire(undefined)
 
-    const html = webview => {
+    /** Where a map's view (the layers shown, the time of day) is kept between runs. */
+    const viewKey = root => `wc3.worldEditor.view:${root}`
+    const html = (webview, view) => {
         const nonce = [...Array(32)].map(() => Math.floor(Math.random() * 36).toString(36)).join('')
         const asset = name => webview.asWebviewUri(Uri.joinPath(media, name))
         return `<!doctype html><html><head><meta charset="utf-8">
@@ -135,7 +140,8 @@ function registerWorldEditor(context, binary, pickManifest, triggers) {
 ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extensionUri, 'webview', name))))}
 <link rel="stylesheet" href="${asset('editor.css')}">
 </head><body>
-<div class="bar"><span id="name" class="name">Opening…</span><span id="meta" class="meta"></span><span class="spacer"></span><label class="hours" title="The time of day">Time <input id="hours" type="range" min="0" max="24" step="0.25"> <span id="hours-value"></span></label><span id="toggles" class="toggles"></span><span class="hint">Click: pick (Shift: more; a drag of nothing picked or with Shift: a box; drag them to move, Q/E turn, Delete, Ctrl+C/X/V copy, cut, paste) · Right drag: move · Ctrl + right drag: turn · Wheel: zoom · WASD · G: grid · Home: all of it</span></div>
+<div class="bar title-bar"><span id="name" class="name">Opening…</span><span id="meta" class="meta"></span></div>
+<div class="bar tool-bar"><span class="group"><button id="undo" class="toggle" data-tip="Undo" data-key="Ctrl+Z" disabled><i class="fa-solid fa-rotate-left"></i></button><button id="redo" class="toggle" data-tip="Redo" data-key="Ctrl+Shift+Z" disabled><i class="fa-solid fa-rotate-right"></i></button><button id="save" class="toggle" data-tip="Save" data-key="Ctrl+S" data-more="The files changed" disabled><i class="fa-solid fa-floppy-disk"></i></button><button id="reload" class="toggle" data-tip="Reload" data-more="Read the map again, the changes not saved dropped"><i class="fa-solid fa-arrows-rotate"></i></button></span><span class="group"><button id="test-map" class="toggle" data-tip="Test map" data-more="Saved, built, and the game run with it ([test] in wc3.bni)"><i class="fa-solid fa-gamepad"></i></button><button id="map-open" class="toggle" data-tip="Map" data-more="The map's size, its tiles and their pathing"><i class="fa-solid fa-ruler-combined"></i></button><button id="triggers-open" class="toggle" data-tip="Triggers" data-more="The map's triggers, in the trigger editor"><i class="fa-solid fa-bolt"></i></button><button id="info-open" class="toggle" data-tip="Info" data-more="The map's info: its description, loading screen, options, environment, players and forces"><i class="fa-solid fa-circle-info"></i></button><button id="constants-open" class="toggle" data-tip="Constants" data-more="The gameplay constants: the game's, or the map's own (war3mapMisc.txt)"><i class="fa-solid fa-sliders"></i></button><button id="skin-open" class="toggle" data-tip="Interface" data-more="The game interface: the game's, or the map's own (war3mapSkin.txt)"><i class="fa-solid fa-display"></i></button><button id="imports-open" class="toggle" data-tip="Imports" data-more="The import manager: the map's imported files"><i class="fa-solid fa-file-import"></i></button><button id="objects-open" class="toggle" data-tip="Objects" data-more="The object editor: units, items, destructables, doodads, abilities, buffs, upgrades"><i class="fa-solid fa-cubes"></i></button></span><label class="hours" data-tip="The time of day"><i class="fa-solid fa-clock"></i><input id="hours" type="range" min="0" max="24" step="0.25"><span id="hours-value"></span></label><span id="toggles" class="toggles"></span><span class="spacer"></span><span class="group"><button id="help-open" class="toggle" data-tip="Controls" data-key="F1"><i class="fa-solid fa-circle-question"></i></button><button id="donate" class="toggle donate" data-tip="Donate" data-more="Support the work: a monobank jar"><i class="fa-solid fa-heart"></i></button></span></div>
 <div class="stage"><canvas id="view"></canvas><canvas id="minimap" class="minimap" hidden></canvas><div id="pick-box" class="pick-box" hidden></div>
 <div id="tools" class="tools">
   <div id="tool-buttons" class="tool-buttons"></div>
@@ -191,15 +197,6 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
     <div id="object-list" class="object-list"></div>
   </div>
   <div id="used-by" class="used-by" hidden></div>
-  <div class="edits"><button id="undo" title="Undo (Ctrl+Z)" disabled>Undo</button><button id="redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button><button id="save" title="Save the files changed (Ctrl+S)" disabled>Save</button><button id="reload" title="Read the map again, the changes not saved dropped">Reload</button></div>
-  <button id="test-map" title="Test Map: saved, built, and the game run with it ([test] in wc3.bni)">Test map</button>
-  <button id="map-open" title="The map's size, its tiles and their pathing">Map…</button>
-  <button id="triggers-open" title="The map's triggers, in the trigger editor beside">Triggers…</button>
-  <button id="info-open" title="The map's info: its description, loading screen, options, environment, players and forces">Info…</button>
-  <button id="constants-open" title="The gameplay constants: the game's, or the map's own (war3mapMisc.txt)">Constants…</button>
-  <button id="skin-open" title="The game interface: the game's, or the map's own (war3mapSkin.txt)">Interface…</button>
-  <button id="imports-open" title="The import manager: the map's imported files">Imports…</button>
-  <button id="objects-open" title="The object editor: units, items, destructables, doodads, abilities, buffs, upgrades">Objects…</button>
 </div>
 <div id="map-panel" class="map-panel" hidden></div>
 <div id="objects-panel" class="obj-panel" hidden></div>
@@ -211,7 +208,29 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
 <div id="message" class="message" hidden><h2 id="message-title"></h2><p id="message-text"></p><button id="reopen" hidden>Reopen</button></div>
 </div>
 <ul id="notes" class="notes" hidden></ul>
-<div id="status" class="status"></div>
+<div class="status-bar"><span id="status" class="status"></span><span id="cursor" class="cursor"></span></div>
+<div id="help" class="help" hidden><div class="help-box" role="dialog" aria-labelledby="help-title">
+  <div class="help-head"><h2 id="help-title">Controls</h2><button id="help-close" class="toggle" data-tip="Close" data-key="Esc"><i class="fa-solid fa-xmark"></i></button></div>
+  <dl class="help-keys">
+    <dt>Click</dt><dd>Pick what's under it</dd>
+    <dt>Shift + click</dt><dd>Pick more</dd>
+    <dt>Drag</dt><dd>A box (of nothing picked, or with Shift); the things picked: move them</dd>
+    <dt>Q / E</dt><dd>Turn the things picked</dd>
+    <dt>Delete</dt><dd>Delete them</dd>
+    <dt>Ctrl + C / X / V</dt><dd>Copy, cut, paste</dd>
+    <dt>Ctrl + Z / Ctrl + Shift + Z</dt><dd>Undo, redo</dd>
+    <dt>Ctrl + S</dt><dd>Save</dd>
+    <dt>Right drag</dt><dd>Move the view</dd>
+    <dt>Ctrl + right drag</dt><dd>Turn the view</dd>
+    <dt>Wheel</dt><dd>Zoom</dd>
+    <dt>W A S D, arrows</dt><dd>Move the view</dd>
+    <dt>G</dt><dd>The grid</dd>
+    <dt>Home</dt><dd>All of the map</dd>
+    <dt>P O R C B M N H F T</dt><dd>The layers over the map (the buttons above)</dd>
+  </dl>
+</div></div>
+<div id="tip" class="tip" hidden></div>
+<script type="application/json" id="view-state">${JSON.stringify(view ?? {}).replace(/</g, '\\u003c')}</script>
 <script nonce="${nonce}" src="${asset('protocol.js')}"></script>
 <script nonce="${nonce}" src="${asset('camera.js')}"></script>
 <script nonce="${nonce}" src="${asset('light.js')}"></script>
@@ -230,8 +249,19 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
 </body></html>`
     }
 
-    /** Starts the editor's process, its frames passed to the page. */
-    const start = editor => {
+    /** The processes of editors closed, by project folder: done when each has ended (and let its project go). */
+    const ending = new Map()
+    /** How long a project held by another process is waited for before the page says so (a window closing, reloading). */
+    const LOCK_WAIT = 5000
+
+    /**
+     * Starts the editor's process, its frames passed to the page: once
+     * the project's last one (an editor of it just closed) has ended.
+     */
+    const start = async (editor, since = Date.now()) => {
+        await ending.get(editor.root)
+        // Closed meanwhile, or started again.
+        if (editors.get(editor.root) !== editor || editor.child) return
         const child = spawn(binary, ['editor', '--project', editor.root], {cwd: editor.root, stdio: ['pipe', 'pipe', 'pipe']})
         editor.child = child
         let stderr = ''
@@ -255,6 +285,12 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
             // Closed by us: nothing to say.
             if (!editors.has(editor.root)) return
             const locked = code === EXIT_LOCKED
+            // Held: by a process still ending (another window closing or
+            // reloading), tried again for a while; by another window open, said.
+            if (locked && Date.now() - since < LOCK_WAIT) {
+                setTimeout(() => start(editor, since), 250)
+                return
+            }
             editor.panel.webview.postMessage({
                 type: 'exit',
                 locked,
@@ -270,6 +306,16 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
         const child = editor.child
         editor.child = null
         if (!child) return
+        // Its end awaited by the next editor of the project.
+        const ended = new Promise(resolve => {
+            if (child.exitCode !== null || child.signalCode !== null) resolve()
+            else {
+                child.once('exit', () => resolve())
+                child.once('error', () => resolve())
+            }
+        })
+        ending.set(editor.root, ended)
+        ended.then(() => { if (ending.get(editor.root) === ended) ending.delete(editor.root) })
         // Closing stdin is its signal to end; then, if it doesn't, a kill.
         child.stdin.end()
         setTimeout(() => { if (child.exitCode === null) child.kill() }, 3000)
@@ -341,7 +387,7 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
         /** @type {Editor} */
         const editor = {root, panel, child: null, map: null, error: null, drawn: null}
         editors.set(root, editor)
-        panel.webview.html = html(panel.webview)
+        panel.webview.html = html(panel.webview, context.globalState.get(viewKey(root)))
         panel.webview.onDidReceiveMessage(msg => {
             if (msg.type === 'frame') {
                 editor.child?.stdin.write(bytesOf(msg.data))
@@ -467,6 +513,12 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
                 editor.played = msg.played
             } else if (msg.type === 'thing') {
                 editor.thing = msg.thing
+            } else if (msg.type === 'view') {
+                context.globalState.update(viewKey(root), msg.view)
+            } else if (msg.type === 'donate') {
+                env.openExternal(Uri.parse(DONATE))
+            } else if (msg.type === 'layout') {
+                editor.layout = msg.layout
             } else if (msg.type === 'overlays') {
                 editor.overlays = msg.overlays
             } else if (msg.type === 'objectFile') {

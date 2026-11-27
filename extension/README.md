@@ -4,15 +4,14 @@ A Warcraft III map editor in VS Code.
 
 <a href="https://send.monobank.ua/jar/7uKvD6jK8T"><img src="https://raw.githubusercontent.com/WarRaft/wc3-rs/main/extension/images/donate.png" alt="Donate via monobank jar" width="200" height="52"></a>
 
-The goal is a full replacement for World Editor: a map is a project of
-plain files (scripts, triggers, object data, terrain, placed units and
-doodads, imports ...) that you open, edit and build into a `.w3x` here,
-with the code and the map in one place, under version control. It isn't
-all there yet: some parts of the map are already edited as in World
-Editor, some only as text, and some not at all. What works and what's
-coming is listed below.
+A map is a project of plain files (scripts, triggers, object data,
+terrain, placed units and doodads, imports ...) that you open, edit and
+build into a `.w3x` here, with the code and the map in one place, under
+version control: the map's terrain and what's placed on it in a World
+Editor of its own, its triggers, object data, info, constants and
+imports in their editors, and every file of it as text too.
 
-## What works now
+## Features
 
 - An MCP server for chat agents in VS Code ([`wc3-mcp`](https://github.com/WarRaft/wc3-mcp),
   registered as **WC3**): tools that read and change SLK tables, MPQ
@@ -157,18 +156,6 @@ coming is listed below.
   shadows and fog. Its Map… panel makes the map bigger or smaller and
   sets its playable area, its tiles (the tile setter) and their pathing
   (the tile pather) (the repository README, "World Editor").
-
-## Not yet
-
-- **Building the map.** A project's `[build]` scenarios are declared,
-  but the builder that puts the roots and the code together into a
-  `.w3x` isn't there yet.
-- **Terrain.** Only the header is editable; heights, textures, cliffs and
-  water have no editor.
-- **Placing things.** Units, doodads, regions and cameras are edited as
-  text, not on a view of the map.
-- **Object data** as World Editor's tables and forms (it's text for now).
-- **Models** (`.mdx`, `.mdl`): no viewer.
 
 ## Architecture
 

@@ -186,6 +186,17 @@
             endMapPick(null)
             return
         }
+        // The controls' window: F1 opens it, Esc closes it.
+        if (!$('help').hidden && e.code === 'Escape') {
+            e.preventDefault()
+            showHelp(false)
+            return
+        }
+        if (e.code === 'F1') {
+            e.preventDefault()
+            showHelp($('help').hidden)
+            return
+        }
         // The trigger editor's keys are its own (Delete, Ctrl+Z ... there
         // are a trigger's); Ctrl+S saves both.
         if ($('trg-root').contains(/** @type {Node} */ (e.target))) {
@@ -246,32 +257,46 @@
     // The layers over the map: each a button and a key, what's shown kept
     // with the page's state.
     const TOGGLES = [
-        {key: 'pathing', label: 'Pathing', code: 'KeyP'},
-        {key: 'destructables', label: 'Destructables', code: 'KeyO', title: 'The destructables\' pathing over it, as the game lays it (not in war3map.wpm): blockers, a bridge\'s deck walked on'},
-        {key: 'regions', label: 'Regions', code: 'KeyR'},
-        {key: 'cameras', label: 'Cameras', code: 'KeyC'},
-        {key: 'bounds', label: 'Bounds', code: 'KeyB'},
-        {key: 'minimap', label: 'Minimap', code: 'KeyM'},
-        {key: 'animate', label: 'Animate', code: 'KeyN'},
-        {key: 'shadows', label: 'Shadows', code: 'KeyH'},
-        {key: 'fog', label: 'Fog', code: 'KeyF'},
-        {key: 'cycle', label: 'Day cycle', code: 'KeyT'},
+        {key: 'pathing', label: 'Pathing', icon: 'person-walking', code: 'KeyP', title: 'The pathing map (war3map.wpm)'},
+        {key: 'destructables', label: 'Destructables', icon: 'tree', code: 'KeyO', title: 'The destructables\' pathing over it, as the game lays it (not in war3map.wpm): blockers, a bridge\'s deck walked on'},
+        {key: 'regions', label: 'Regions', icon: 'vector-square', code: 'KeyR'},
+        {key: 'cameras', label: 'Cameras', icon: 'video', code: 'KeyC'},
+        {key: 'bounds', label: 'Bounds', icon: 'expand', code: 'KeyB', title: 'The camera\'s bounds and the playable area'},
+        {key: 'minimap', label: 'Minimap', icon: 'map', code: 'KeyM'},
+        {key: 'animate', label: 'Animate', icon: 'play', code: 'KeyN', title: 'What stands on the map moving'},
+        {key: 'shadows', label: 'Shadows', icon: 'circle-half-stroke', code: 'KeyH'},
+        {key: 'fog', label: 'Fog', icon: 'smog', code: 'KeyF'},
+        {key: 'cycle', label: 'Day cycle', icon: 'sun', code: 'KeyT', title: 'The time of day going round'},
     ]
-    const show = {pathing: false, destructables: true, regions: false, cameras: false, bounds: true, minimap: true, animate: true, shadows: true, fog: false, cycle: false, ...(vscode.getState()?.show ?? {})}
+    // A map's view (the layers, the time of day), kept by the extension
+    // between runs: what it was when the map was last open.
+    let saved = {}
+    try {
+        saved = JSON.parse($('view-state').textContent || '{}') ?? {}
+    } catch {
+        saved = {}
+    }
+    const show = {pathing: false, destructables: true, regions: false, cameras: false, bounds: true, minimap: true, animate: true, shadows: true, fog: false, cycle: false, ...(vscode.getState()?.show ?? saved.show ?? {})}
+    if (typeof saved.hours === 'number') light.hours = saved.hours
+    const keepView = () => vscode.postMessage({type: 'view', view: {show, hours: light.hours}})
     const toggles = $('toggles')
     function applyShow() {
         if (terrain) terrain.show = {pathing: show.pathing, regions: show.regions, destructables: show.destructables}
         if (objects) objects.animate = show.animate
         $('minimap').hidden = !show.minimap
-        for (const b of toggles.children) b.classList.toggle('on', !!show[b.dataset.key])
+        for (const b of toggles.children) b.classList.toggle('on', !!show[b.dataset.show])
         vscode.setState({...(vscode.getState() ?? {}), show})
+        keepView()
     }
     for (const t of TOGGLES) {
         const b = document.createElement('button')
         b.className = 'toggle'
-        b.dataset.key = t.key
-        b.textContent = t.label
-        b.title = `${t.title ?? t.label} (${t.code.slice(3)})`
+        b.dataset.show = t.key
+        b.dataset.tip = t.label
+        b.dataset.key = t.code.slice(3)
+        if (t.title) b.dataset.more = t.title
+        b.setAttribute('aria-label', t.label)
+        b.innerHTML = `<i class="fa-solid fa-${t.icon}"></i>`
         b.onclick = () => {
             show[t.key] = !show[t.key]
             applyShow()
@@ -279,6 +304,60 @@
         toggles.append(b)
     }
     applyShow()
+
+    // The tooltips of the bar's buttons (`data-tip`, `data-key`, `data-more`):
+    // one box, put under the button and kept inside the page.
+    const tip = $('tip')
+    function showTip(el) {
+        const head = document.createElement('div')
+        head.className = 'tip-head'
+        head.append(el.dataset.tip)
+        if (el.dataset.key) head.append(Object.assign(document.createElement('kbd'), {textContent: el.dataset.key}))
+        tip.replaceChildren(head)
+        if (el.dataset.more) tip.append(Object.assign(document.createElement('div'), {className: 'tip-more', textContent: el.dataset.more}))
+        tip.hidden = false
+        const r = el.getBoundingClientRect()
+        const t = tip.getBoundingClientRect()
+        const left = Math.max(4, Math.min(window.innerWidth - t.width - 4, r.left + r.width / 2 - t.width / 2))
+        const below = r.bottom + 6
+        const top = below + t.height > window.innerHeight - 4 ? r.top - t.height - 6 : below
+        tip.style.left = `${left}px`
+        tip.style.top = `${Math.max(4, top)}px`
+    }
+    document.addEventListener('mouseover', e => {
+        const el = /** @type {HTMLElement} */ (e.target).closest?.('[data-tip]')
+        if (el) showTip(/** @type {HTMLElement} */ (el))
+        else tip.hidden = true
+    })
+    document.addEventListener('mousedown', () => { tip.hidden = true })
+    document.addEventListener('mouseleave', () => { tip.hidden = true })
+
+    // The controls, in a window of their own.
+    function showHelp(open) {
+        $('help').hidden = !open
+        tip.hidden = true
+        $('help-open').classList.toggle('on', open)
+        if (open) $('help-close').focus()
+    }
+    $('help-open').onclick = () => showHelp($('help').hidden)
+    $('help-close').onclick = () => showHelp(false)
+    $('donate').onclick = () => vscode.postMessage({type: 'donate'})
+    $('help').addEventListener('mousedown', e => { if (e.target === $('help')) showHelp(false) })
+
+    // The page's size: the view's drawing buffer follows it at once (not
+    // on the next frame), the minimap kept to a part of the view.
+    function fit() {
+        const dpr = window.devicePixelRatio || 1
+        const w = Math.max(1, Math.round(canvas.clientWidth * dpr))
+        const h = Math.max(1, Math.round(canvas.clientHeight * dpr))
+        if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w
+            canvas.height = h
+            draw(performance.now())
+        }
+        tip.hidden = true
+    }
+    new ResizeObserver(fit).observe(canvas)
 
     // The minimap: the terrain from above (north up), what's placed on
     // it, the camera's place; a click there moves the camera.
@@ -690,6 +769,27 @@
         }
     })
     setInterval(step, 50)
+
+    // The bottom line: where the mouse points on the ground (the game's
+    // coordinates, the height, the cell), asked again as the view moves.
+    let hover = null
+    canvas.addEventListener('mousemove', e => { hover = {x: e.clientX, y: e.clientY} })
+    canvas.addEventListener('mouseleave', () => {
+        hover = null
+        $('cursor').textContent = ''
+    })
+    setInterval(() => {
+        if (!hover || !terrain?.terrain) return
+        const {origin, dir} = rayAt(hover.x, hover.y)
+        const p = terrain.groundHit(origin, dir)
+        if (!p) {
+            $('cursor').textContent = ''
+            return
+        }
+        const [ox, oy] = terrain.terrain.offset
+        const n = v => Math.round(v).toLocaleString('en-US').replace(/,/g, '\u2009')
+        $('cursor').textContent = `X ${n(ox + p[0] * 128)}  Y ${n(oy + p[1] * 128)}  Z ${n(p[2] * 128)}  ·  Cell ${Math.floor(p[0])}, ${Math.floor(p[1])}`
+    }, 80)
 
     // What's placed: the object palette (a kind, a search, a type), the
     // thing picked; Place lays the type where a click meets the ground,
@@ -1375,6 +1475,7 @@
     $('hours').value = String(light.hours)
     $('hours').oninput = () => {
         light.hours = Number($('hours').value)
+        keepView()
     }
     let shownHours = -1
     function showHours(hours) {
@@ -1913,6 +2014,30 @@
         } else if (msg.type === 'hours') {
             light.hours = msg.hours
             $('hours').value = String(msg.hours)
+            keepView()
+        } else if (msg.type === 'layout') {
+            // The page's layout, measured: for the tests. `hover` (-1 to 1,
+            // y up): the mouse there first; `help`: the controls' window
+            // opened (true) or closed (false) first.
+            if (msg.help !== undefined) showHelp(msg.help)
+            if (msg.hover) {
+                const r = canvas.getBoundingClientRect()
+                canvas.dispatchEvent(new MouseEvent('mousemove', {clientX: r.left + (msg.hover[0] + 1) / 2 * r.width, clientY: r.top + (1 - msg.hover[1]) / 2 * r.height}))
+            }
+            setTimeout(() => {
+                const box = el => {
+                    const r = $(el).getBoundingClientRect()
+                    return {top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right)}
+                }
+                const bars = [...document.querySelectorAll('body > .bar')].map(b => ({className: b.className, ...box(b.querySelector('[id]').id)}))
+                vscode.postMessage({type: 'layout', layout: {
+                    bars, name: box('name'), meta: box('meta'), toggles: box('toggles'), view: box('view'), status: box('status'),
+                    window: {width: window.innerWidth, height: window.innerHeight},
+                    buffer: {width: canvas.width, height: canvas.height, dpr: window.devicePixelRatio || 1},
+                    bar: [...document.querySelectorAll('.tool-bar button')].map(b => ({id: b.id, tip: b.dataset.tip, on: b.classList.contains('on'), text: b.textContent.trim(), icon: !!b.querySelector('i.fa-solid')})),
+                    help: !$('help').hidden, cursor: $('cursor').textContent, hours: light.hours,
+                }})
+            }, 200)
         } else if (msg.type === 'show') {
             // Layers turned on or off, as the buttons do: for the tests.
             Object.assign(show, msg.show)

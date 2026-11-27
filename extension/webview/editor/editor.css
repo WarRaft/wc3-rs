@@ -1,8 +1,9 @@
 /* The World Editor's page; not the trigger editor in its Triggers panel
    (`.trg-root`, `webview/triggers.css`), which shares some of its class
    names. */
-@scope (:root) to (.trg-root) {
-
+/* The page's frame: outside the scope, whose root (html) its selectors
+   don't reach. The page is the window's size: the view takes what the
+   lines over and under it leave, and follows a resize. */
 html, body {
     margin: 0;
     padding: 0;
@@ -19,42 +20,61 @@ body {
     flex-direction: column;
 }
 
+@scope (:root) to (.trg-root) {
+
+/* Two lines over the view: the map's name, then the time and the layers. */
 .bar {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 1em;
-    padding: 6px 12px;
+    padding: 4px 12px;
     border-bottom: 1px solid var(--vscode-panel-border, transparent);
     flex: none;
+    min-width: 0;
+}
+
+.title-bar {
+    align-items: baseline;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.tool-bar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    padding: 3px 12px;
 }
 
 .name {
     font-weight: 600;
+    flex: none;
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .spacer {
     flex: 1;
 }
 
-.hint {
-    color: var(--vscode-descriptionForeground);
-    font-size: .9em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
 .meta {
     color: var(--vscode-descriptionForeground);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .stage {
     position: relative;
     flex: 1;
     min-height: 0;
+    overflow: hidden;
 }
 
+/* Out of the flow: its drawing buffer's size never sizes the stage. */
 #view {
+    position: absolute;
+    inset: 0;
     display: block;
     width: 100%;
     height: 100%;
@@ -112,27 +132,75 @@ button:hover {
     border-top: 1px solid var(--vscode-panel-border, transparent);
     color: var(--vscode-editorWarning-foreground);
 }
-.status {
+/* The bottom line: what was said on the left, what's under the mouse on the right. */
+.status-bar {
     flex: none;
-    min-height: 1.4em;
-    padding: 3px 12px;
+    display: flex;
+    gap: 1.5em;
+    height: 22px;
+    line-height: 22px;
+    padding: 0 12px;
     border-top: 1px solid var(--vscode-panel-border, transparent);
     color: var(--vscode-descriptionForeground);
+    font-size: .9em;
     white-space: nowrap;
+    overflow: hidden;
+}
+
+.status {
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+.cursor {
+    flex: none;
+    white-space: pre;
+    font-variant-numeric: tabular-nums;
+}
 .toggles {
     display: flex;
+    flex-wrap: wrap;
     gap: 2px;
 }
 
 .toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 24px;
     background: transparent;
     color: var(--vscode-descriptionForeground);
     border: 1px solid var(--vscode-panel-border, var(--vscode-descriptionForeground));
-    padding: 1px 8px;
-    font-size: .9em;
+    border-radius: 3px;
+    padding: 0;
+    font-size: .95em;
+}
+
+.toggle:disabled {
+    opacity: .4;
+    cursor: default;
+}
+
+.toggle:disabled:hover {
+    background: transparent;
+}
+
+/* The bar's groups: edits, the map's windows, the layers; apart. */
+.group {
+    display: flex;
+    gap: 2px;
+}
+
+.donate {
+    color: var(--vscode-charts-red, #f14c4c);
+}
+
+.toggle:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: 1px;
 }
 
 .toggle:hover {
@@ -158,7 +226,9 @@ button:hover {
     position: absolute;
     right: 12px;
     bottom: 12px;
-    width: 220px;
+    width: min(220px, 30%);
+    max-height: calc(100% - 24px);
+    object-fit: contain;
     height: auto;
     image-rendering: pixelated;
     border: 1px solid var(--vscode-panel-border, #444);
@@ -191,7 +261,7 @@ button:hover {
     gap: 2px;
 }
 
-.tool-buttons button, .edits button {
+.tool-buttons button {
     background: transparent;
     color: var(--vscode-foreground);
     border: 1px solid var(--vscode-panel-border, #555);
@@ -236,19 +306,6 @@ button:hover {
     border-color: var(--vscode-focusBorder);
 }
 
-.edits {
-    display: flex;
-    gap: 2px;
-}
-
-.edits button {
-    flex: 1;
-}
-
-.edits button:disabled {
-    opacity: .4;
-    cursor: default;
-}
 
 .name.dirty::before {
     content: '● ';
@@ -424,6 +481,110 @@ button:hover {
 
 .hours input {
     width: 90px;
+    margin: 0;
+}
+
+.hours span {
+    min-width: 3em;
+    font-variant-numeric: tabular-nums;
+}
+
+/* A tooltip of the bar's: its name, its key, what it does. */
+.tip {
+    position: fixed;
+    z-index: 100;
+    max-width: 320px;
+    padding: 4px 8px;
+    background: var(--vscode-editorHoverWidget-background, var(--vscode-editorWidget-background));
+    color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground));
+    border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-widget-border, #454545));
+    border-radius: 4px;
+    box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, .36));
+    font-size: .9em;
+    pointer-events: none;
+}
+
+.tip[hidden], .help[hidden] {
+    display: none;
+}
+
+.tip-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.tip-more {
+    margin-top: 2px;
+    color: var(--vscode-descriptionForeground);
+}
+
+kbd {
+    padding: 0 4px;
+    border: 1px solid var(--vscode-keybindingLabel-border, #555);
+    border-bottom-color: var(--vscode-keybindingLabel-bottomBorder, #444);
+    border-radius: 3px;
+    background: var(--vscode-keybindingLabel-background, rgba(128, 128, 128, .17));
+    color: var(--vscode-keybindingLabel-foreground, inherit);
+    font: inherit;
+    font-size: .9em;
+    font-weight: normal;
+}
+
+/* The controls' window, over the page. */
+.help {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, .4);
+}
+
+.help-box {
+    max-width: 560px;
+    width: 100%;
+    max-height: 100%;
+    overflow: auto;
+    padding: 12px 16px;
+    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+    border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, #454545));
+    border-radius: 6px;
+    box-shadow: 0 4px 16px var(--vscode-widget-shadow, rgba(0, 0, 0, .4));
+}
+
+.help-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.help-head h2 {
+    margin: 0;
+    font-size: 1.1em;
+    font-weight: 600;
+}
+
+.help-keys {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px 16px;
+    margin: 0;
+}
+
+.help-keys dt {
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.help-keys dd {
+    margin: 0;
+    color: var(--vscode-descriptionForeground);
 }
 .map-panel {
     position: absolute;
