@@ -102,3 +102,26 @@ fn a_ramp_across_two_tiles_has_no_ground_under_it() {
     assert_eq!(c.tile_flags, [tile::CLIFF | tile::ROMP, tile::CLIFF | tile::ROMP]);
     assert!(!tile::has_ground(c.tile_flags[0]));
 }
+
+#[test]
+fn the_ramp_brush_on_a_cliffs_edge_makes_world_editors_ramp() {
+    // A circle a layer down, the ramp brush between two rows just inside
+    // its east edge (straight there): two pieces, the game's.
+    let dir = TestDir::new("cliffs-ramp-brush");
+    for name in ["LHBA", "ABHL"] {
+        dir.write(&format!("Doodads/Terrain/CliffTrans/CliffTrans{name}0.mdx"), &triangle());
+    }
+    let (game, tileset) = setup(&dir);
+    let mut t = terrain(100, 100, |_, _, _| {});
+    let mut e = crate::edit::Edits::default();
+    let b = |tool, size| crate::edit::Brush { tool, size, strength: 1.0, texture: None, cliff: -1, flags: 0 };
+    e.apply(&mut t, 60.0, 60.0, &b(crate::edit::Tool::CliffDown, 21.0), true).unwrap();
+    e.end();
+    e.apply(&mut t, 70.0, 60.5, &b(crate::edit::Tool::Ramp, 3.0), true).unwrap();
+    let v = t.flags_version();
+    let ramps: Vec<(u32, u32)> = (55..66).flat_map(|y| (65..76).map(move |x| (x, y))).filter(|&(x, y)| t.point(x, y).unwrap().ramp(v)).collect();
+    assert_eq!(ramps, [(69, 60), (70, 60), (71, 60), (69, 61), (70, 61), (71, 61)]);
+    let c = Cliffs::of(&game, &t, &tileset);
+    let pieces: Vec<_> = c.placed.iter().filter(|p| c.models[p.model].0.contains("CliffTrans")).map(|p| (p.x, p.y)).collect();
+    assert_eq!(pieces, [(69, 59), (69, 61)]);
+}

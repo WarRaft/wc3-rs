@@ -305,6 +305,7 @@
         {tool: 'texture', label: 'Texture'},
         {tool: 'cliffUp', label: 'Cliff +'},
         {tool: 'cliffDown', label: 'Cliff −'},
+        {tool: 'ramp', label: 'Ramp'},
         {tool: 'water', label: 'Water'},
         {tool: 'dry', label: 'Dry'},
         {tool: 'place', label: 'Place'},
@@ -333,7 +334,7 @@
         // (Not before the page's state is all declared: its first showing.)
         if (usedByReady) refreshUsedBy()
         $('size-label').hidden = NO_BRUSH.includes(brush.tool)
-        $('strength-label').hidden = NO_BRUSH.includes(brush.tool) || pathing
+        $('strength-label').hidden = NO_BRUSH.includes(brush.tool) || pathing || brush.tool === 'ramp'
         for (const c of $('pathing-flags').querySelectorAll('input')) c.checked = (brush.flags & Number(c.value)) !== 0
         // A tool of a layer shows the layer.
         if ((pathing && !show.pathing) || (brush.tool === 'regions' && !show.regions) || (brush.tool === 'cameras' && !show.cameras)) {
@@ -1290,6 +1291,12 @@
         } else if (msg.kind === 'cliffs' && terrain) {
             terrain.setCliffs(msg)
             showNotes()
+            // How many ramps stand (their models': `CliffTrans` ...), for the tests.
+            const count = m => m.instances.length / 4
+            vscode.postMessage({type: 'cliffs', cliffs: {
+                instances: msg.meshes.reduce((n, m) => n + count(m), 0),
+                ramps: msg.meshes.filter(m => /trans|ramp/i.test(m.path)).reduce((n, m) => n + count(m), 0),
+            }})
         } else if (msg.kind === 'terrain' && terrain) {
             terrain.setTerrain(msg)
             // Resized: the view stays over the same ground.
@@ -1490,14 +1497,14 @@
             if (msg.vertical !== undefined) camera.vertical = msg.vertical
         } else if (msg.type === 'brush') {
             // A stroke at points of the view (-1 to 1, y up), as the mouse
-            // would lay it: for the tests.
+            // would lay it, or at points of the map (`cells`, from above): for the tests.
             Object.assign(brush, msg.brush)
             showTools()
             const r = canvas.getBoundingClientRect()
-            msg.points.forEach((p, i) => {
-                const {origin, dir} = camera.ray(p[0], p[1], r.width / r.height)
-                send(encode.brush(i === 0, origin, dir, brush))
-            })
+            const rays = msg.cells
+                ? msg.cells.map(([x, y]) => ({origin: [x, y, 1000], dir: [0, 0, -1]}))
+                : msg.points.map(p => camera.ray(p[0], p[1], r.width / r.height))
+            rays.forEach(({origin, dir}, i) => send(encode.brush(i === 0, origin, dir, brush)))
             send(encode.strokeEnd())
         } else if (msg.type === 'place') {
             // A type placed at a point of the view: for the tests.

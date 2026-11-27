@@ -255,6 +255,24 @@ async function steps(only) {
             await until(() => we.state?.undo && !we.state.redo, 'redone')
             await we.panel.webview.postMessage({type: 'brush', brush: {tool: 'texture', size: 6}, points: [[-0.2, -0.2]]})
             await until(() => we.state && !we.state.redo && we.state.message === '' && we.state.undo, 'the texture laid')
+            // A cliff lowered (a circle 21 across: its edge straight for 7 corners each
+            // way), then a ramp down its east edge: the brush just inside it, between two
+            // rows (a ramp goes from the corners under the brush toward its middle).
+            for (const size of [41, 21]) {
+                // (The first a layer for all of it: the map isn't flat there.)
+                we.state = undefined
+                await we.panel.webview.postMessage({type: 'brush', brush: {tool: 'cliffDown', size}, cells: [[60, 60]]})
+                await until(() => we.state?.undo, 'a cliff lowered')
+            }
+            await sleep(500)
+            const lowered = we.cliffs
+            we.cliffs = undefined
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'brush', brush: {tool: 'ramp', size: 3}, cells: [[70, 60.5]]})
+            await until(() => we.state?.undo, 'a ramp laid')
+            const ramped = await until(() => we.cliffs, 'its cliffs')
+            check(ramped.ramps > lowered.ramps, `ramps down the lowered cliff: ${lowered.ramps} → ${ramped.ramps} of ${ramped.instances} cliff pieces`)
+            await shot('world-editor-ramps')
             we.state = undefined
             await we.panel.webview.postMessage({type: 'save'})
             const saved = await until(() => we.state?.message && we.state, 'saved')

@@ -101,3 +101,27 @@ fn the_things_placed_undone_and_redone_with_the_terrain() {
     assert!(e.redo(Target { terrain: &mut t, files: &mut files, info: &mut None }).is_some());
     assert_eq!(files.doodads.as_ref().unwrap().doodads.len(), 1);
 }
+
+#[test]
+fn a_ramp_down_a_cliff_toward_the_brush_and_taken_off_by_a_cliff_brush() {
+    // Layer 2, a layer lower from column 5 on.
+    let mut t = flat(9);
+    for y in 0..9 {
+        for x in 5..9 {
+            t.point_mut(x, y).unwrap().set_layer_height(1);
+        }
+    }
+    let v = t.flags_version();
+    let ramp = |t: &Terrain, x: u32, y: u32| t.point(x, y).unwrap().ramp(v);
+    let mut e = Edits::default();
+    // The corner at (4, 4), the brush's middle to its right: down across.
+    e.apply(&mut t, 4.4, 4.0, &Brush { size: 1.0, ..brush(Tool::Ramp) }, true).unwrap();
+    assert!(ramp(&t, 4, 4) && ramp(&t, 5, 4) && ramp(&t, 6, 4), "three corners in a row");
+    assert!(!ramp(&t, 4, 3) && !ramp(&t, 7, 4) && !ramp(&t, 4, 5));
+    // Toward the higher side: nothing (no layer below there).
+    e.apply(&mut t, 1.6, 2.0, &Brush { size: 1.0, ..brush(Tool::Ramp) }, true).unwrap();
+    assert!(!ramp(&t, 2, 2) && !ramp(&t, 1, 2));
+    // A cliff brush over it: its corners another layer, no ramp's.
+    e.apply(&mut t, 5.0, 4.0, &Brush { size: 1.0, ..brush(Tool::CliffUp) }, true).unwrap();
+    assert!(!ramp(&t, 5, 4) && t.point(5, 4).unwrap().layer_height() == 2);
+}

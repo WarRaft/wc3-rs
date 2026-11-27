@@ -1702,7 +1702,17 @@ step), this list updated.
      (`war3map.wpm`, `war3map.shd`): step 7. The whole terrain is
      worked out again after each step (fast enough for 193 by 129;
      the changed rectangle alone, when a bigger map needs it). MCP:
-     `w3e_brush`.
+     `w3e_brush`. Ramps (the Ramp tool, as HiveWE's
+     `CliffOperator::update_ramp`): from each corner under the brush
+     toward its middle, down a layer: three corners across, up or the
+     nine both ways, where the two after it are a layer lower and
+     nothing beside it higher (the brush on the low side of an edge,
+     between two rows: World Editor's ramp, `CliffTrans<ABCD>0`); a
+     cliff brush takes a corner's ramp off when it changes its layer.
+     Not yet: the cliff brush pulling the corners around it to within
+     two layers (HiveWE's `check_nearby`; without it a step of three
+     layers has no model, said under the view). The tests' `brush`
+     message takes `cells` (from above) for exact places.
    - **6b, things placed** (done): the object palette (every type of
      doodad, destructable, unit and item, the game's and the map's
      object data's, named as World Editor names them, with its group:
