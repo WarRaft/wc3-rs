@@ -20,6 +20,37 @@ const map = process.env.E2E_MAP
 const log = line => fs.appendFileSync(path.join(out, 'log.txt'), line + '\n')
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
+/** An RGBA picture (rows top to bottom) written as a PNG. */
+function writePng(file, width, height, rgba) {
+    const zlib = require('zlib')
+    const crcTable = [...Array(256).keys()].map(n => {
+        let c = n
+        for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+        return c >>> 0
+    })
+    const crc = buf => {
+        let c = 0xffffffff
+        for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8)
+        return (c ^ 0xffffffff) >>> 0
+    }
+    const chunk = (type, data) => {
+        const len = Buffer.alloc(4)
+        len.writeUInt32BE(data.length)
+        const body = Buffer.concat([Buffer.from(type), data])
+        const sum = Buffer.alloc(4)
+        sum.writeUInt32BE(crc(body))
+        return Buffer.concat([len, body, sum])
+    }
+    const head = Buffer.alloc(13)
+    head.writeUInt32BE(width, 0)
+    head.writeUInt32BE(height, 4)
+    head[8] = 8
+    head[9] = 6
+    const raw = Buffer.alloc((width * 4 + 1) * height)
+    for (let y = 0; y < height; y++) Buffer.from(rgba.slice(y * width * 4, (y + 1) * width * 4)).copy(raw, y * (width * 4 + 1) + 1)
+    fs.writeFileSync(file, Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', head), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]))
+}
+
 /** Waits for `what` to be truthy (and gives it back), or fails saying `why`. */
 async function until(what, why, ms = 20000) {
     const end = Date.now() + ms
@@ -133,6 +164,19 @@ async function steps(only) {
                 await we.panel.webview.postMessage({type: 'flicker', frames: 150, animate})
                 const fl = await until(() => we.flicker, 'the frames read', 60000)
                 log(`  animate ${animate}: ${fl.blinks} blinks in ${fl.frames} frames of ${fl.blocks} blocks ${JSON.stringify(fl.where)}`)
+                // A block watched from the first (E2E_BLINK_AT=x,y): rounds till it blinks, its pictures.
+                if (animate && process.env.E2E_BLINK_AT) {
+                    const [x, y] = process.env.E2E_BLINK_AT.split(',').map(Number)
+                    for (let round = 0; round < 8; round++) {
+                        we.flicker = undefined
+                        await we.panel.webview.postMessage({type: 'flicker', frames: 150, animate: true, watch: {x, y}})
+                        const again = await until(() => we.flicker, 'the frames read', 60000)
+                        if (!again.crops) continue
+                        again.crops.forEach((rgba, i) => writePng(path.join(out, `blink-${['before', 'at', 'after'][i]}.png`), again.size, again.size, rgba))
+                        log(`  blink pictures: blink-before.png, blink-at.png, blink-after.png (round ${round}, frame ${again.where.find(p => p.x === x && p.y === y).frame})`)
+                        break
+                    }
+                }
                 if (animate && fl.blinks) {
                     // What blinks: what a click there picks.
                     we.picked = undefined
@@ -140,9 +184,10 @@ async function steps(only) {
                     const what = await until(() => we.picked !== undefined, 'what blinks', 5000).then(() => we.picked, () => '?')
                     log(`  blinking there: ${what || 'the ground'}`)
                 }
-                // (Reforged HD: a block by the imported fir D02M, ElveswoodLeaves, blinks now
-                // and then, its cause not found yet: said, not failed.)
-                if (animate && process.env.E2E_HD && fl.blinks) log(`  KNOWN (HD): ${fl.blinks} blinks in ${fl.frames} frames`)
+                // (Reforged HD: its ambient bird, AObd, flies through a block of the view in a
+                // frame now and then, fast: no blink, but the measure can't tell; said, not failed.
+                // Its pictures: E2E_BLINK_AT=65,38, blink-before.png, blink-at.png, blink-after.png.)
+                if (animate && process.env.E2E_HD && fl.blinks) log(`  KNOWN (HD): ${fl.blinks} blinks in ${fl.frames} frames (the bird flying through)`)
                 else if (animate) check(fl.blinks === 0, `no model blinks: ${fl.blinks} blinks in ${fl.frames} frames`)
             }
             we.focused = undefined

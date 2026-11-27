@@ -655,7 +655,11 @@ fn load_model(
     };
     let skinned = model.anim.as_ref().is_some_and(|a| a.bones > 0);
     for (gi, g) in m.geosets().iter().enumerate() {
-        if hidden(gi) || g.uv_sets.is_empty() || g.uv_sets[0].len() != g.vertices.len() || g.normals.len() != g.vertices.len() {
+        // Reforged's models have each part at four levels of detail (LOD 0
+        // the closest): only the first drawn, as HiveWE does; the others
+        // over it were four times the work.
+        let far = g.lod.as_ref().is_some_and(|(lod, _)| *lod != 0);
+        if far || hidden(gi) || g.uv_sets.is_empty() || g.uv_sets[0].len() != g.vertices.len() || g.normals.len() != g.vertices.len() {
             continue;
         }
         for v in &g.vertices {

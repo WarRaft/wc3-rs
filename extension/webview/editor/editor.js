@@ -90,6 +90,19 @@
         }
         const n = (BLOCK / 2) * (BLOCK / 2) * 3
         flicker.frames.push(sums.map(v => v / n))
+        // A block watched (for the tests): its region, three blocks wide,
+        // every frame, rows top to bottom.
+        if (flicker.watch) {
+            const size = BLOCK * 3
+            const x0 = Math.max(0, (flicker.watch.x - 1) * BLOCK)
+            const y0 = Math.max(0, (flicker.watch.y - 1) * BLOCK)
+            const crop = new Uint8Array(size * size * 4)
+            for (let y = 0; y < size; y++) {
+                const from = ((y0 + size - 1 - y) * w + x0) * 4
+                crop.set(px.subarray(from, from + size * 4), y * size * 4)
+            }
+            flicker.crops.push(crop)
+        }
         if (flicker.frames.length < flicker.want) return
         const f = flicker.frames
         let blinks = 0
@@ -106,7 +119,11 @@
                 }
             }
         }
-        vscode.postMessage({type: 'flicker', flicker: {frames: f.length, blocks: f[0].length, blinks, where}})
+        // The watched block's region at the first blink of it and the frames
+        // on both sides.
+        const at = flicker.watch && where.find(p => p.x === flicker.watch.x && p.y === flicker.watch.y)
+        const crops = at ? [at.frame - 1, at.frame, at.frame + 1].map(i => Array.from(flicker.crops[i])) : undefined
+        vscode.postMessage({type: 'flicker', flicker: {frames: f.length, blocks: f[0].length, blinks, where, crops, size: BLOCK * 3}})
         flicker = null
     }
 
@@ -1671,7 +1688,7 @@
                 show.animate = msg.animate
                 applyShow()
             }
-            flicker = {want: msg.frames ?? 120, frames: []}
+            flicker = {want: msg.frames ?? 120, frames: [], watch: msg.watch, crops: []}
         } else if (msg.type === 'mapOpen') {
             mapPanel.open()
         } else if (msg.type === 'mapResize') {

@@ -2247,9 +2247,13 @@ step), this list updated.
        (`_Name_DisplayName`, `_Name_Parameters`; `UI\TriggerStrings.txt`
        its hints alone), a call's objects by name even without its words;
        sounds that are `.ogg` there; the steps' names of the game's
-       language (Пехотинец, not Footman). Still: a block by the map's
-       imported fir (D02M, ElveswoodLeaves) blinks now and then with
-       animation in HD, its cause not found (`KNOWN (HD)` in the log).
+       language (Пехотинец, not Footman); a Reforged model's parts at
+       four levels of detail (a geoset's `lod`: all four were drawn over
+       each other, now LOD 0 alone, as HiveWE). What the blink check
+       finds in HD isn't one: the ambient bird (AObd, Reforged's) flies
+       through a block of the view in a frame (its pictures before, at
+       and after: `E2E_BLINK_AT=x,y`, `blink-*.png`), said in the log as
+       `KNOWN (HD)`, not failed.
      - **f, 2.0's mods and HD terrain** (done): the mods in HiveWE's
        order (`casc::prefixes`): the graphics mod's tileset, locale and
        itself, then the game's tileset, locale and itself, then

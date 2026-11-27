@@ -141,3 +141,36 @@ fn a_dummys_missing_model_said_and_text_models_read() {
     assert_eq!(paths, [("war3mapImported\\Cliff.mdl", ""), ("war3mapImported\\Broken.mdl", "war3mapImported\\Broken.mdl: MDL: line 3: a number expected, `}` found")]);
     assert_eq!(o.models[0].geosets.len(), 1);
 }
+
+#[test]
+fn a_reforged_models_closest_level_of_detail_alone() {
+    // A model of 900 and later: each geoset its level of detail.
+    let geoset = |lod: u32| mdx_rs::Geoset {
+        vertices: vec![[0.0; 3], [64.0, 0.0, 0.0], [0.0, 64.0, 0.0]],
+        normals: vec![[0.0, 0.0, 1.0]; 3],
+        face_types: vec![4],
+        face_groups: vec![3],
+        faces: vec![0, 1, 2],
+        vertex_groups: vec![0; 3],
+        matrix_groups: vec![1],
+        matrix_indices: vec![0],
+        uv_sets: vec![vec![[0.0; 2]; 3]],
+        lod: Some((lod, Fixed::new(&format!("part_LOD{lod}"), 80))),
+        ..Default::default()
+    };
+    let layer = mdx_rs::Layer { filter_mode: 1, shading: 0, texture_id: 0, texture_animation_id: u32::MAX, coord_id: 0, alpha: 1.0, rest: vec![] };
+    let bytes = Mdx {
+        chunks: vec![
+            Chunk::Version(900),
+            Chunk::Textures(vec![mdx_rs::Texture { replaceable_id: 1, path: Fixed::new("", 260), flags: 0 }]),
+            Chunk::Materials(vec![Material { priority_plane: 0, flags: 0, shader: Some(Fixed::new("", 80)), layers: vec![layer] }]),
+            Chunk::Geosets(vec![geoset(0), geoset(1), geoset(2)]),
+        ],
+    }
+    .to_bytes()
+    .unwrap();
+    let (game, _) = Game::open(&[]);
+    let (mut textures, mut texture_of) = (Vec::new(), HashMap::new());
+    let m = load_model("a.mdx", &bytes, None, &game, &mut textures, &mut texture_of);
+    assert_eq!((m.error.as_str(), m.geosets.len()), ("", 1), "LOD 0 alone");
+}
