@@ -311,6 +311,8 @@
         $('camera-panel').hidden = brush.tool !== 'cameras'
         $('thing-panel').hidden = brush.tool !== 'select'
         $('sound-panel').hidden = brush.tool !== 'sounds'
+        // (Not before the page's state is all declared: its first showing.)
+        if (usedByReady) refreshUsedBy()
         $('size-label').hidden = NO_BRUSH.includes(brush.tool)
         $('strength-label').hidden = NO_BRUSH.includes(brush.tool) || pathing
         for (const c of $('pathing-flags').querySelectorAll('input')) c.checked = (brush.flags & Number(c.value)) !== 0
@@ -411,6 +413,48 @@
         close() {
             $('triggers-panel').hidden = true
         },
+    }
+    /**
+     * What uses what's picked (a thing, a region, a camera, by its name in
+     * the map's script: `ident` as World Editor makes it): the triggers
+     * whose lines name it, asked of the extension (`usedBy`), a click
+     * opening one in the Triggers panel.
+     */
+    const ident = name => {
+        const out = [...new TextEncoder().encode(name)].map(b => /[A-Za-z0-9_]/.test(String.fromCharCode(b)) && b < 128 ? String.fromCharCode(b) : '_').join('')
+        return !out || out.endsWith('_') ? out + 'u' : out
+    }
+    let usedName = null
+    function usedBy(name) {
+        if (name === usedName) return
+        usedName = name ?? null
+        $('used-by').hidden = !usedName
+        $('used-by').replaceChildren()
+        if (usedName) vscode.postMessage({type: 'usedBy', name: usedName})
+    }
+    function showUsedBy(msg) {
+        if (msg.name !== usedName) return
+        const head = Object.assign(document.createElement('div'), {className: 'used-head', textContent: msg.uses.length ? `Used by triggers (${usedName})` : `No trigger uses ${usedName}`})
+        $('used-by').replaceChildren(head, ...msg.uses.map(u => {
+            const row = Object.assign(document.createElement('div'), {className: 'used-row', title: u.text})
+            row.append(Object.assign(document.createElement('span'), {className: 'used-trigger', textContent: u.trigger || `Trigger ${u.nth}`}), Object.assign(document.createElement('span'), {className: 'used-text', textContent: u.text}))
+            row.onclick = () => openTrigger(u.nth)
+            return row
+        }))
+    }
+    /** What uses what the tool shown has picked. */
+    // eslint-disable-next-line no-var
+    var usedByReady = false
+    function refreshUsedBy() {
+        if (brush.tool === 'select') usedBy(thing?.texts.find(([k]) => k === 'script_name')?.[1])
+        else if (brush.tool === 'regions') usedBy(selectedRegion !== null && regions[selectedRegion] ? `gg_rct_${ident(regions[selectedRegion].name)}` : undefined)
+        else if (brush.tool === 'cameras') usedBy(selectedCamera !== null && cameras[selectedCamera] ? `gg_cam_${ident(cameras[selectedCamera].name)}` : undefined)
+        else usedBy(undefined)
+    }
+    /** The Triggers panel open on trigger `nth` (from 1). */
+    function openTrigger(nth) {
+        if (!triggersPanel.isOpen) toggle(triggersPanel)
+        vscode.postMessage({type: 'trg', msg: {type: 'pick', nth}})
     }
     // A trigger's parameter picked on the map (`pickOnMap`): the panel
     // hidden, the layer of what's picked shown, a click asks the editor
@@ -762,6 +806,7 @@
             f.input.value = String(v)
         }
         showThingLists(t)
+        usedBy(brush.tool === 'select' ? t?.texts.find(([k]) => k === 'script_name')?.[1] : undefined)
         vscode.postMessage({type: 'thing', thing: t})
     }
     /**
@@ -951,6 +996,7 @@
     const worldOf = p => terrain?.terrain ? [p[0] * 128 + terrain.terrain.offset[0], p[1] * 128 + terrain.terrain.offset[1]] : [0, 0]
     function showRegion() {
         const r = selectedRegion !== null ? regions[selectedRegion] : null
+        if (brush.tool === 'regions') usedBy(r ? `gg_rct_${ident(r.name)}` : undefined)
         $('region-name').disabled = $('region-delete').disabled = !r
         if (document.activeElement !== $('region-name')) $('region-name').value = r ? r.name : ''
         $('region-bounds').textContent = r ? r.bounds.map(v => Math.round(v)).join(', ') : 'Click a region, or drag to draw one'
@@ -1070,6 +1116,7 @@
     }
     function showCamera() {
         const c = selectedCamera !== null ? cameras[selectedCamera] : null
+        if (brush.tool === 'cameras') usedBy(c ? `gg_cam_${ident(c.name)}` : undefined)
         for (const id of ['camera-name', 'camera-set', 'camera-look', 'camera-delete']) $(id).disabled = !c
         if (document.activeElement !== $('camera-name')) $('camera-name').value = c ? c.name : ''
         for (const f of CAMERA_FIELDS) {
@@ -1403,6 +1450,7 @@
         }
     }
 
+    usedByReady = true
     window.addEventListener('message', e => {
         const msg = e.data
         if (msg.type === 'frame') onFrame(msg.kind, msg.body)
@@ -1477,9 +1525,14 @@
                 send(encode.camera(true, c, camera.ray(msg.x, msg.y, aspect())))
                 send(encode.strokeEnd())
             }
+        } else if (msg.type === 'usedBy') {
+            showUsedBy(msg)
         } else if (msg.type === 'trg') {
             // The trigger editor's logic, for its panel.
             triggerEditor?.receive(msg.msg)
+        } else if (msg.type === 'openUse') {
+            // A use of what's picked clicked (`index`): for the tests.
+            $('used-by').querySelectorAll('.used-row')[msg.index]?.onclick()
         } else if (msg.type === 'showOnMap') {
             // A name shown on the map, as a trigger's parameter dialog shows it: for the tests.
             send(encode.mapFind(msg.name))

@@ -2681,8 +2681,33 @@ impl Session {
     /// mine's (an ability `Agld`) `gold`. None for no such thing.
     pub fn thing(&self, file: u8, index: u32) -> ThingMsg {
         let fields = self.thing_fields(file, index).unwrap_or_default();
-        let texts = self.thing_texts(file, index).unwrap_or_default();
+        let mut texts = self.thing_texts(file, index).unwrap_or_default();
+        // What the map's script names it (`gg_unit_hfoo_0012`), for what
+        // uses it: a unit, an item, a destructable.
+        if let Some(name) = self.thing_script_name(file, index) {
+            texts.push(("script_name", name));
+        }
         ThingMsg { file, index, fields: fields.into_iter().map(|(n, v)| (n.to_string(), v)).collect(), texts: texts.into_iter().map(|(n, v)| (n.to_string(), v)).collect() }
+    }
+
+    /// The name the map's script gives thing `index` of `file`: `gg_unit_`,
+    /// `gg_item_` or `gg_dest_`, its type and number; none for a doodad or
+    /// a start location.
+    fn thing_script_name(&self, file: u8, index: u32) -> Option<String> {
+        let i = index as usize;
+        let types = self.types.as_ref();
+        if file == 0 {
+            let d = self.placed.doodads.as_ref()?.doodads.get(i)?;
+            let id = d.placement.id.to_string();
+            return types.is_some_and(|t| t.has(w3abdhqtu_rs::Kind::Destructable, &id)).then(|| format!("gg_dest_{id}_{:04}", d.number));
+        }
+        let u = self.placed.units.as_ref()?.units.get(i)?;
+        let id = u.placement.id.to_string();
+        if id == crate::placed::START_LOCATION {
+            return None;
+        }
+        let item = id == "iDNR" || types.is_some_and(|t| t.has(w3abdhqtu_rs::Kind::Item, &id));
+        Some(format!("gg_{}_{id}_{:04}", if item { "item" } else { "unit" }, u.number))
     }
 
     /// What a thing is, for its lists: a destructable (file 0), a unit

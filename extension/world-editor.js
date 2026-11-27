@@ -85,6 +85,7 @@ const VIEW = 'wc3.editors'
  * @property {Map<string, string> | undefined} follow  the paths of the pieces with a text form, by their lower case
  * @property {string | undefined} picked  what the last click picked, said ('' nothing)
  * @property {{kind: number, count: number, custom: string[], changed: string[], picked: {id: string, base: string, name: string, levels: number, fields: [string, number, string, boolean][]} | null} | undefined} objects  the object editor's kind, its objects, the one picked and its fields
+ * @property {{name: string, uses: {nth: number, trigger: string, line: number, text: string}[]} | undefined} usedBy  the triggers that use a name of the map's script, as last found
  * @property {{name: string, what: number, index: number, said: string} | undefined} mapFound  what a name of the map's script was found to be (0 nothing, 1 a thing, 2 a region, 3 a camera)
  * @property {{type: string, waiting?: boolean, name?: string | null} | undefined} mapPick  a pick on the map for a trigger's parameter: waiting, or what it gave
  * @property {Object<string, string> | undefined} info  the map's info as its panel last showed it (`Session::info_fields`)
@@ -181,6 +182,7 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
     <select id="object-player"></select>
     <div id="object-list" class="object-list"></div>
   </div>
+  <div id="used-by" class="used-by" hidden></div>
   <div class="edits"><button id="undo" title="Undo (Ctrl+Z)" disabled>Undo</button><button id="redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button><button id="save" title="Save the files changed (Ctrl+S)" disabled>Save</button><button id="reload" title="Read the map again, the changes not saved dropped">Reload</button></div>
   <button id="map-open" title="The map's size, its tiles and their pathing">Map…</button>
   <button id="triggers-open" title="The map's triggers, in the trigger editor beside">Triggers…</button>
@@ -393,6 +395,32 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
                     dispose: () => t.disposed.fire(),
                 }
                 workspace.openTextDocument(wtg).then(doc => triggers.host(doc, stand), e => window.showErrorMessage(`WC3: can't open the map's triggers: ${e.message ?? e}`))
+            } else if (msg.type === 'usedBy') {
+                // The triggers that use a name of the map's script
+                // (`gg_unit_hfoo_0012`, `gg_rct_Spawn` ...): each line of
+                // war3map.wtg's text naming it, by its trigger.
+                const terrain = [...(editor.follow?.values() ?? [])].find(p => /war3map\.w3e$/i.test(p))
+                if (!terrain) return
+                const wtg = Uri.file(path.join(path.dirname(terrain), 'war3map.wtg')).with({scheme: OBJECTS_SCHEME})
+                workspace.openTextDocument(wtg).then(doc => {
+                    const uses = []
+                    const word = new RegExp(`\\$${msg.name.replace(/[^A-Za-z0-9_]/g, '\\$&')}(?![A-Za-z0-9_])`)
+                    let nth = 0
+                    let trigger = ''
+                    const lines = doc.getText().split('\n')
+                    for (const [i, line] of lines.entries()) {
+                        if (/^\[trigger\]/.test(line)) {
+                            nth++
+                            trigger = ''
+                        } else if (nth && !trigger && /^name=/.test(line)) {
+                            trigger = line.slice(5).replace(/^"|"\r?$/g, '')
+                        } else if (nth && word.test(line)) {
+                            uses.push({nth, trigger, line: i + 1, text: line.slice(line.indexOf('=') + 1).trim().slice(0, 120)})
+                        }
+                    }
+                    panel.webview.postMessage({type: 'usedBy', name: msg.name, uses})
+                    editor.usedBy = {name: msg.name, uses}
+                }, () => panel.webview.postMessage({type: 'usedBy', name: msg.name, uses: []}))
             } else if (msg.type === 'saveTriggers') {
                 // The World Editor's Save: the triggers' documents too
                 // (war3map.wtg and the custom script beside it), VS Code's.

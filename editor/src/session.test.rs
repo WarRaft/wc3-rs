@@ -656,11 +656,11 @@ fn a_things_fields_said_set_in_their_ranges_undone_and_saved() {
     // Its lists as text: a hero's inventory, abilities, drops; a
     // destructable's drops; read back, or said.
     let texts = |s: &Session, file, index| s.thing(file, index).texts.into_iter().map(|(n, v)| format!("{n}={v}")).collect::<Vec<_>>().join(" ");
-    assert_eq!(texts(&s, 1, 1), "items=,,,,, abilities= drops=");
-    assert_eq!(texts(&s, 1, 0), "abilities= drops=");
-    assert_eq!(texts(&s, 0, 1), "drops=");
+    assert_eq!(texts(&s, 1, 1), "items=,,,,, abilities= drops= script_name=gg_unit_Hpal_0001");
+    assert_eq!(texts(&s, 1, 0), "abilities= drops= script_name=gg_unit_hfoo_0000");
+    assert_eq!(texts(&s, 0, 1), "drops= script_name=gg_dest_LTbr_0001");
     assert_eq!(texts(&s, 0, 0), "", "a doodad has none");
-    assert_eq!(texts(&s, 1, 3), "", "an item none");
+    assert_eq!(texts(&s, 1, 3), "script_name=gg_item_ratc_0003", "an item: its name alone");
     assert_eq!(said(s.thing_set_text(1, 1, "items", "ratc,,ckng")), "");
     assert_eq!(said(s.thing_set_text(1, 1, "abilities", "AHhb:2:0,AHds:1:1")), "");
     assert_eq!(said(s.thing_set_text(1, 0, "drops", "ratc:50,ckng:50;sreg:100")), "");
@@ -669,24 +669,24 @@ fn a_things_fields_said_set_in_their_ranges_undone_and_saved() {
     assert!(said(s.thing_set_text(1, 1, "abilities", "AHhb:0")).contains("a level from 1"));
     assert!(said(s.thing_set_text(1, 1, "items", "toolong")).contains("isn't an id"));
     assert!(said(s.thing_set_text(1, 0, "items", "ratc")).contains("has no items"));
-    assert_eq!(texts(&s, 1, 1), "items=ratc,,ckng,,, abilities=AHhb:2:0,AHds:1:1 drops=");
-    assert_eq!(texts(&s, 1, 0), "abilities= drops=ratc:50,ckng:50;sreg:100");
-    assert_eq!(texts(&s, 0, 1), "drops=ratc:25");
+    assert_eq!(texts(&s, 1, 1), "items=ratc,,ckng,,, abilities=AHhb:2:0,AHds:1:1 drops= script_name=gg_unit_Hpal_0001");
+    assert_eq!(texts(&s, 1, 0), "abilities= drops=ratc:50,ckng:50;sreg:100 script_name=gg_unit_hfoo_0000");
+    assert_eq!(texts(&s, 0, 1), "drops=ratc:25 script_name=gg_dest_LTbr_0001");
     s.undo(false);
-    assert_eq!(texts(&s, 0, 1), "drops=");
+    assert_eq!(texts(&s, 0, 1), "drops= script_name=gg_dest_LTbr_0001");
     // A random unit and a random item: how they're random.
     s.place(2, "uDNR", 0, [1.0, 0.5, 10.0], down);
     s.place(3, "iDNR", 0, [1.0, 0.5, 10.0], down);
-    assert_eq!(texts(&s, 1, 4), "random=any:0 random_groups= drops=");
-    assert_eq!(texts(&s, 1, 5), "random=any:0:0");
+    assert_eq!(texts(&s, 1, 4), "random=any:0 random_groups= drops= script_name=gg_unit_uDNR_0004");
+    assert_eq!(texts(&s, 1, 5), "random=any:0:0 script_name=gg_item_iDNR_0005");
     assert_eq!(said(s.thing_set_text(1, 4, "random", "table:hfoo:50,hkni:50")), "");
     assert!(said(s.thing_set_text(1, 4, "random", "group:0:0")).contains("no random group 0"));
     assert!(said(s.thing_set_text(1, 4, "random", "table:hfoo:60,hkni:50")).contains("over 100"));
     assert!(said(s.thing_set_text(1, 4, "random", "some")).contains("any, group or table"));
     assert_eq!(said(s.thing_set_text(1, 5, "random", "any:3:2")), "");
     assert!(said(s.thing_set_text(1, 5, "random", "any:3:9")).contains("class 0 to 7"));
-    assert_eq!(texts(&s, 1, 4), "random=table:hfoo:50,hkni:50 random_groups= drops=");
-    assert_eq!(texts(&s, 1, 5), "random=any:3:2");
+    assert_eq!(texts(&s, 1, 4), "random=table:hfoo:50,hkni:50 random_groups= drops= script_name=gg_unit_uDNR_0004");
+    assert_eq!(texts(&s, 1, 5), "random=any:3:2 script_name=gg_item_iDNR_0005");
     s.save();
     let back = doo_rs::parse_units_any(&std::fs::read(dir.path().join("map/war3mapUnits.doo")).unwrap()).unwrap();
     assert_eq!(back.units[5].random, doo_rs::Random::Any { level: 3, class: 2 });

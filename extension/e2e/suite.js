@@ -650,6 +650,17 @@ async function steps(only) {
             const found = await until(() => we.mapFound, 'found')
             await until(() => we.region?.name === found.said, 'the region picked')
             check(found.what === 2, `${rect.name}: the region ${found.said}, picked`)
+            // What uses a region: the triggers naming it; one opened from there.
+            we.usedBy = undefined
+            await we.panel.webview.postMessage({type: 'showOnMap', name: 'gg_rct_Rect_093'})
+            const used = await until(() => we.usedBy?.name === 'gg_rct_Rect_093' && we.usedBy, 'what uses Rect 093')
+            const assault = used.uses.find(u => u.trigger === 'Main Chamber Assault')
+            check(!!assault, `used by ${used.uses.length} lines of ${new Set(used.uses.map(u => u.trigger)).size} triggers, Main Chamber Assault's among them`)
+            await shot('world-editor-used-by')
+            await we.panel.webview.postMessage({type: 'openUse', index: used.uses.indexOf(assault)})
+            await until(() => ed.state().picked === assault.nth && ed.state().tree?.picked === assault.nth, 'its trigger opened in the panel')
+            check(true, `opened: trigger ${assault.nth}, ${assault.trigger}`)
+            await we.panel.webview.postMessage({type: 'button', id: 'triggers-open'})
             await we.panel.webview.postMessage({type: 'button', id: 'triggers-open'})
         }},
         {name: 'map', editor: true, run: async () => {

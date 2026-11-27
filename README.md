@@ -1887,6 +1887,13 @@ step), this list updated.
      kind said, still picking; Esc none), written as a variable. And
      back: Show on the map (`host.showOnMap`, `MapFind`, `MapFound`) puts
      the view over what a name is and picks it with its tool. The
+     What uses what's picked (a thing with Select: `Thing`'s
+     `script_name`; a region, a camera: `gg_rct_`/`gg_cam_` and the name as
+     World Editor makes an identifier of it): Used by triggers, below the
+     tools, each line of `war3map.wtg`'s text naming it (`$gg_...`) by its
+     trigger (the extension reads the text: `usedBy`), shown as the text
+     has it; a click opens that trigger in the Triggers panel. Not yet:
+     what a custom script (`war3map.wct`) names. The
      trigger editor's keys are its own in the panel (the World Editor's
      Delete, Ctrl+Z aren't); Save saves its documents (`war3map.wtg`,
      `war3map.wct`) too.
