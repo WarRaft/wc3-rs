@@ -1550,6 +1550,21 @@ updated as you type; the preview and the text follow each other's
 scrolling, a double click in the preview puts the cursor on that line,
 and links open in the browser.
 
+## Frame definitions (FDF)
+
+The game's interface layouts (`UI\FrameDef\*.fdf`: frames, their
+textures and strings, the `StringList`s of the UI's text) are parsed
+and highlighted by the server with [`fdf-rs`](../fdf-rs/README.md), as
+they're typed: one grammar for every statement (a name, its values, an
+optional `{ }` block), nothing in it knowing `Frame` from `Width`, so
+any statement the game reads parses. Colors follow a statement's shape:
+a name with a block as a keyword (`Frame`, `Texture`, `StringList`),
+one without as a property (`Width`, `SetPoint`, a string's key),
+strings, numbers (`-0.002f`), bare words (`TOPLEFT`, `INHERITS`),
+comments. Problems: a statement without its `,`, a `{` not closed, a
+`}` without `{`. The game's 84 files have none. The editor's game
+interface reads the `StringList`s with the same parser.
+
 ## SLK tables
 
 A `.slk` (the game's data tables: `Units\UnitBalance.slk`, the
@@ -2794,9 +2809,9 @@ work in hand has steps: the old ones only took time, so a step goes
 when its work is done. Each step of `suite.js`'s `STEPS` has a name,
 says whether it works in the World Editor (opened before the first such
 step, closed after the last) and the steps it needs, run with it. Now:
-`layout`, the World Editor's page (its two lines over the view, the
-tooltips, the controls' window, the bottom line, a resize, the view
-kept per map). `run.js`
+`fdf`, a frame definition file (its language, the server's colors by a
+statement's shape, a missing comma an error at once, unsaved, and gone
+when it's typed back). `run.js`
 extension in a VS Code of its own: the one installed (`VSCODE`, else
 `/Applications/Visual Studio Code.app`), with a profile and extensions
 folder of its own in a temporary folder (no other extension; it opens

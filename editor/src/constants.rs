@@ -175,30 +175,16 @@ impl Constants {
     }
 }
 
-/// The strings of a frame definition file's `StringList` (`KEY "text",`).
+/// The strings of a frame definition file's `StringList`s (`KEY
+/// "text",`), read by `fdf-rs`: each statement's name and first string.
 pub fn string_list(text: &str) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    let mut inside = false;
-    for line in text.lines() {
-        let line = line.trim();
-        if line.starts_with("StringList") {
-            inside = true;
-            continue;
-        }
-        if !inside {
-            continue;
-        }
-        if line.starts_with('}') {
-            inside = false;
-            continue;
-        }
-        let Some((key, rest)) = line.split_once(char::is_whitespace) else { continue };
-        let rest = rest.trim().trim_end_matches(',').trim();
-        if let Some(v) = rest.strip_prefix('"').and_then(|r| r.strip_suffix('"')) {
-            out.push((key.to_string(), v.to_string()));
-        }
-    }
-    out
+    let doc = fdf_rs::parse(text);
+    doc.items
+        .iter()
+        .filter(|s| s.name.eq_ignore_ascii_case("StringList"))
+        .flat_map(|s| s.children())
+        .filter_map(|e| Some((e.name.clone(), e.strings().next()?.to_string())))
+        .collect()
 }
 
 /// Each `key=value` of a BNI text: its section, key and value (trimmed;

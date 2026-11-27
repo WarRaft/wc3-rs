@@ -47,6 +47,8 @@ pub enum Language {
     Wts,
     /// txt2, XGM's markup (`.txt2`), via `txt2-rs`.
     Txt2,
+    /// Frame definitions (`UI\\FrameDef\\*.fdf`), via `fdf-rs`.
+    Fdf,
 }
 
 impl Language {
@@ -61,6 +63,7 @@ impl Language {
             "slk" => Language::Slk,
             "wts" => Language::Wts,
             "txt2" => Language::Txt2,
+            "fdf" => Language::Fdf,
             // Object data, which the editor shows in its BNI text form
             // (see `objects`).
             "w3a" | "w3b" | "w3d" | "w3h" | "w3q" | "w3t" | "w3u" => Language::Bni,
@@ -86,6 +89,7 @@ impl Language {
             Language::Slk => "slk",
             Language::Wts => "wts",
             Language::Txt2 => "txt2",
+            Language::Fdf => "fdf",
         }
     }
 
@@ -117,6 +121,7 @@ impl Language {
             "slk" => Language::Slk,
             "wts" => Language::Wts,
             "txt2" => Language::Txt2,
+            "fdf" => Language::Fdf,
             // A trigger of its own, as text (see `triggers`).
             "trg" => Language::Bni,
             // Not object data (`.w3a` ...): the files are binary. Only

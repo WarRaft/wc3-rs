@@ -241,6 +241,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "fdf-rs"
+version = "0.1.0"
+dependencies = [
+ "parser-rs",
+]
+
+[[package]]
 name = "flate2"
 version = "1.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -978,6 +985,7 @@ dependencies = [
  "bni-rs",
  "casc-rs",
  "doo-rs",
+ "fdf-rs",
  "image",
  "imp-rs",
  "jass-rs",

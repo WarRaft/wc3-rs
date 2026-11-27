@@ -108,8 +108,9 @@ fn a_map_without_a_listfile_still_shows_the_game_files_it_replaces() {
     assert!(all.iter().any(|n| n.eq_ignore_ascii_case("UI\\FrameDef\\UI\\EscMenuTemplates.fdf")), "{all:?}");
     assert!(all.iter().any(|n| n == "war3map.j"));
     assert!(!all.iter().any(|n| n == "secret.j"), "unknown names can't be found");
-    let scripts: Vec<PathBuf> = files(&map).into_iter().map(|(p, _)| p).collect();
-    assert_eq!(scripts.len(), 2, "{scripts:?}");
+    // The two scripts and the frame definitions (FDF is a language too).
+    let found: Vec<PathBuf> = files(&map).into_iter().map(|(p, _)| p).collect();
+    assert_eq!(found.len(), 3, "{found:?}");
 }
 
 #[test]

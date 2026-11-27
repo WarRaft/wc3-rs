@@ -29,6 +29,7 @@ wtg-rs = { path = "../../wtg-rs" }
 shd-rs = { path = "../../shd-rs" }
 bni-rs = { path = "../../bni-rs" }
 mmp-rs = { path = "../../mmp-rs" }
+fdf-rs = { path = "../../fdf-rs" }
 # Writing BLP as World Editor does (JPEG: libjpeg-turbo, a C build;
 # the game's exact format over a pure Rust build).
 blp = { path = "../../blp-rs", default-features = false, features = ["encode"] }

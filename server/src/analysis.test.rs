@@ -252,6 +252,16 @@ fn text_forms_repeat_sections_without_a_warning() {
 }
 
 #[test]
+fn fdf_is_highlighted_and_checked() {
+    let d = diags(Language::Fdf, "Frame \"TEXT\" \"T\" {\n    Width 0.1\n}\n");
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert_eq!(d[0].range.start.line, 1);
+    assert!(d[0].message.contains("expected ','"));
+    assert!(!tokens(Language::Fdf, "Frame \"TEXT\" \"T\" {\n}\n").is_empty());
+    assert_eq!(Language::from_path(Path::new("/a/UI/FrameDef/Glue/MainMenu.fdf")), Some(Language::Fdf));
+}
+
+#[test]
 fn txt2_is_highlighted_and_checked() {
     let d = diags(Language::Txt2, "**bold**\n((кат open\n");
     assert_eq!(d.len(), 1, "{d:?}");

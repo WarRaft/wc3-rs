@@ -1,7 +1,7 @@
 {
   "name": "wc3",
   "displayName": "WC3",
-  "description": "A Warcraft III map editor in VS Code: a World Editor of its own (terrain, placed units and doodads, regions, cameras, sounds, triggers, object data, map info, imports, Test Map); JASS/vJASS, Zinc, Lua, AngelScript and BNI with semantic highlighting, live diagnostics and wc3.bni projects; maps as folders; GUI triggers (.trg) as World Editor shows them; SLK tables as a grid; BLP textures and pathing maps (.wpm) as pictures; object data (.w3a .w3u ...), cameras, regions, sounds, the terrain's header, map info, the custom script, imports and placed units and doodads as editable text.",
+  "description": "A Warcraft III map editor in VS Code: a World Editor of its own (terrain, placed units and doodads, regions, cameras, sounds, triggers, object data, map info, imports, Test Map); JASS/vJASS, Zinc, Lua, AngelScript, BNI and FDF (frame definitions) with semantic highlighting, live diagnostics and wc3.bni projects; maps as folders; GUI triggers (.trg) as World Editor shows them; SLK tables as a grid; BLP textures and pathing maps (.wpm) as pictures; object data (.w3a .w3u ...), cameras, regions, sounds, the terrain's header, map info, the custom script, imports and placed units and doodads as editable text.",
   "version": "0.0.11",
   "publisher": "WarRaft",
   "icon": "images/logo.png",
@@ -1064,7 +1064,8 @@
         "icon": {
           "light": "./icons/fdf.svg",
           "dark": "./icons/fdf.svg"
-        }
+        },
+        "configuration": "./syntaxes/fdf.language-configuration.json"
       },
       {
         "id": "wc3-toc",
