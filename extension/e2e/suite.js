@@ -258,6 +258,7 @@ async function steps(only) {
             // A cliff lowered (a circle 21 across: its edge straight for 7 corners each
             // way), then a ramp down its east edge: the brush just inside it, between two
             // rows (a ramp goes from the corners under the brush toward its middle).
+            const start = we.cliffs
             for (const size of [41, 21]) {
                 // (The first a layer for all of it: the map isn't flat there.)
                 we.state = undefined
@@ -266,6 +267,8 @@ async function steps(only) {
             }
             await sleep(500)
             const lowered = we.cliffs
+            // The corners around pulled to within two layers: no step without a model.
+            check(start && lowered.missing <= start.missing, `no cliff without its model: ${start?.missing} → ${lowered.missing} said`)
             we.cliffs = undefined
             we.state = undefined
             await we.panel.webview.postMessage({type: 'brush', brush: {tool: 'ramp', size: 3}, cells: [[70, 60.5]]})

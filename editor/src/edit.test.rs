@@ -125,3 +125,24 @@ fn a_ramp_down_a_cliff_toward_the_brush_and_taken_off_by_a_cliff_brush() {
     e.apply(&mut t, 5.0, 4.0, &Brush { size: 1.0, ..brush(Tool::CliffUp) }, true).unwrap();
     assert!(!ramp(&t, 5, 4) && t.point(5, 4).unwrap().layer_height() == 2);
 }
+
+#[test]
+fn a_cliff_brush_pulls_the_corners_around_to_within_two_layers() {
+    let mut t = flat(15);
+    let mut e = Edits::default();
+    let layer = |t: &Terrain, x: u32, y: u32| t.point(x, y).unwrap().layer_height();
+    // Up from 2 to 6 in four strokes at the middle, one corner across.
+    for _ in 0..4 {
+        e.apply(&mut t, 7.0, 7.0, &Brush { size: 1.0, ..brush(Tool::CliffUp) }, true).unwrap();
+        e.end();
+    }
+    assert_eq!(layer(&t, 7, 7), 6);
+    // Its neighbours 4, theirs 2 (as they were): steps of two at most.
+    assert_eq!((layer(&t, 8, 7), layer(&t, 8, 8), layer(&t, 9, 7), layer(&t, 10, 7)), (4, 4, 2, 2));
+    // Down to 0: the ring (4) pulled down to 2 with it, the rest left.
+    for _ in 0..6 {
+        e.apply(&mut t, 7.0, 7.0, &Brush { size: 1.0, ..brush(Tool::CliffDown) }, true).unwrap();
+        e.end();
+    }
+    assert_eq!((layer(&t, 7, 7), layer(&t, 8, 7), layer(&t, 9, 7)), (0, 2, 2));
+}

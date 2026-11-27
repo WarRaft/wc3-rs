@@ -1709,9 +1709,10 @@ step), this list updated.
      nothing beside it higher (the brush on the low side of an edge,
      between two rows: World Editor's ramp, `CliffTrans<ABCD>0`); a
      cliff brush takes a corner's ramp off when it changes its layer.
-     Not yet: the cliff brush pulling the corners around it to within
-     two layers (HiveWE's `check_nearby`; without it a step of three
-     layers has no model, said under the view). The tests' `brush`
+     The cliff brush pulls the corners around it to within two layers,
+     and theirs in turn (HiveWE's `check_nearby`, `edit::pull_nearby`:
+     a step of three layers has no model), those pulled no ramp's,
+     its cliff type on them and its corners' neighbours. The tests' `brush`
      message takes `cells` (from above) for exact places.
    - **6b, things placed** (done): the object palette (every type of
      doodad, destructable, unit and item, the game's and the map's

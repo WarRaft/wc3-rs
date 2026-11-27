@@ -202,6 +202,8 @@ impl Edits {
             _ => None,
         };
         let before = t.points.clone();
+        // The cliff brush's corners, to pull those around them after.
+        let mut seeds = Vec::new();
         let (x0, x1) = (((x - r).floor() as i64).max(0), ((x + r).ceil() as i64).min(w - 1));
         let (y0, y1) = (((y - r).floor() as i64).max(0), ((y + r).ceil() as i64).min(h - 1));
         if brush.tool == Tool::Ramp {
@@ -263,6 +265,7 @@ impl Edits {
                         if brush.cliff >= 0 && (brush.cliff as usize) < t.cliffs.len() {
                             p.set_cliff_texture(brush.cliff as u8);
                         }
+                        seeds.push((px, py));
                     }
                     Tool::Water => p.set_has_water(v, true),
                     Tool::Dry => p.set_has_water(v, false),
@@ -270,6 +273,10 @@ impl Edits {
                     Tool::PathingOn | Tool::PathingOff | Tool::Ramp => {}
                 }
             }
+        }
+        if !seeds.is_empty() {
+            let cliff = (brush.cliff >= 0 && (brush.cliff as usize) < t.cliffs.len()).then_some(brush.cliff as u8);
+            pull_nearby(t, &seeds, cliff);
         }
         self.dirty.terrain = true;
         Ok(())
@@ -432,6 +439,44 @@ impl Edits {
                 match t.files.pathing.as_mut() {
                     Some(p) => Snapshot::Pathing(std::mem::replace(&mut p.cells, cells)),
                     None => Snapshot::Pathing(cells),
+                }
+            }
+        }
+    }
+}
+
+/// The corners around those a cliff brush set (`seeds`), pulled to within
+/// two layers of them, and those around them in turn, as HiveWE's
+/// `CliffOperator::check_nearby`: a step of three layers has no model.
+/// Those pulled are no ramp's; they and the seeds' neighbours take the
+/// brush's cliff type (`cliff`), when it has one.
+fn pull_nearby(t: &mut Terrain, seeds: &[(i64, i64)], cliff: Option<u8>) {
+    const MAX: i64 = 2;
+    let v = t.flags_version();
+    let (w, h) = (t.width as i64, t.height as i64);
+    let at = |x: i64, y: i64| (y * w + x) as usize;
+    let mut brushed = vec![false; t.points.len()];
+    for &(x, y) in seeds {
+        brushed[at(x, y)] = true;
+    }
+    // +1 pulls the corners too low up, -1 those too high down.
+    for direction in [1i64, -1] {
+        let mut stack: Vec<(i64, i64)> = seeds.to_vec();
+        while let Some((cx, cy)) = stack.pop() {
+            let target = t.points[at(cx, cy)].layer_height() as i64 - direction * MAX;
+            for ny in (cy - 1).max(0)..=(cy + 1).min(h - 1) {
+                for nx in (cx - 1).max(0)..=(cx + 1).min(w - 1) {
+                    let i = at(nx, ny);
+                    if let Some(c) = cliff {
+                        t.points[i].set_cliff_texture(c);
+                    }
+                    if brushed[i] || direction * (t.points[i].layer_height() as i64 - target) >= 0 {
+                        continue;
+                    }
+                    let p = &mut t.points[i];
+                    p.set_layer_height(target.clamp(0, 15) as u8);
+                    p.set_ramp(v, false);
+                    stack.push((nx, ny));
                 }
             }
         }

@@ -1296,6 +1296,7 @@
             vscode.postMessage({type: 'cliffs', cliffs: {
                 instances: msg.meshes.reduce((n, m) => n + count(m), 0),
                 ramps: msg.meshes.filter(m => /trans|ramp/i.test(m.path)).reduce((n, m) => n + count(m), 0),
+                missing: msg.meshes.filter(m => m.error).length + (msg.notes?.length ?? 0),
             }})
         } else if (msg.kind === 'terrain' && terrain) {
             terrain.setTerrain(msg)
