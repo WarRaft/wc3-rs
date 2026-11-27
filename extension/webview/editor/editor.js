@@ -437,7 +437,8 @@
         const head = Object.assign(document.createElement('div'), {className: 'used-head', textContent: msg.uses.length ? `Used by triggers (${usedName})` : `No trigger uses ${usedName}`})
         $('used-by').replaceChildren(head, ...msg.uses.map(u => {
             const row = Object.assign(document.createElement('div'), {className: 'used-row', title: u.text})
-            row.append(Object.assign(document.createElement('span'), {className: 'used-trigger', textContent: u.trigger || `Trigger ${u.nth}`}), Object.assign(document.createElement('span'), {className: 'used-text', textContent: u.text}))
+            const where = u.nth === 0 ? 'Map script' : `${u.trigger || `Trigger ${u.nth}`}${u.custom ? ' (custom text)' : ''}`
+            row.append(Object.assign(document.createElement('span'), {className: 'used-trigger', textContent: where}), Object.assign(document.createElement('span'), {className: 'used-text', textContent: u.text}))
             row.onclick = () => openTrigger(u.nth)
             return row
         }))

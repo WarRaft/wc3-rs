@@ -1890,10 +1890,14 @@ step), this list updated.
      What uses what's picked (a thing with Select: `Thing`'s
      `script_name`; a region, a camera: `gg_rct_`/`gg_cam_` and the name as
      World Editor makes an identifier of it): Used by triggers, below the
-     tools, each line of `war3map.wtg`'s text naming it (`$gg_...`) by its
-     trigger (the extension reads the text: `usedBy`), shown as the text
-     has it; a click opens that trigger in the Triggers panel. Not yet:
-     what a custom script (`war3map.wct`) names. The
+     tools (`usedBy`; the trigger editor's `usesOf`): each line of
+     `war3map.wtg`'s text naming it (`$gg_...`) by its trigger, as World
+     Editor's phrase (`Unit - Order gg_unit_n00I_0096 to Attack-Move To
+     (Center of gg_rct_Rect_093)`: the trigger's view, `QUERY.
+     TRIGGER_VIEW`, its line by `at`), and each line of the custom script
+     (`war3map.wct`) naming it, by the trigger whose code it's in
+     (`wct.code`) or the map script's header; a click opens that trigger
+     in the Triggers panel (one of custom text with its code beside). The
      trigger editor's keys are its own in the panel (the World Editor's
      Delete, Ctrl+Z aren't); Save saves its documents (`war3map.wtg`,
      `war3map.wct`) too.

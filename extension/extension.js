@@ -1736,6 +1736,74 @@ function sibling(uri, name) {
 /** A map's triggers and its custom script, each the other's (by file name). */
 const PAIRED = {'war3map.wtg': 'war3map.wct', 'war3map.wct': 'war3map.wtg'}
 
+/** A view's spans as their words (`triggers.js`'s `Span`: text, or a part with its own spans). */
+function spanText(spans) {
+    return (spans ?? []).map(s => (typeof s === 'string' ? s : spanText(s.s))).join('')
+}
+
+/**
+ * What in a map's triggers names `name` (`gg_rct_Spawn`, `gg_unit_hfoo_0012`
+ * ...): each line of `war3map.wtg`'s text that has it (`$name`), its
+ * trigger and the line as World Editor's phrase (the server's view of its
+ * trigger, `QUERY.TRIGGER_VIEW`, its line found by `at`), and each line
+ * of the custom script beside it (`war3map.wct`) that has it, by the
+ * trigger whose code it's in (`wct.code`) or the map's header (`nth` 0).
+ *
+ * @param {import('vscode').TextDocument} document  the map's `war3map.wtg` as text
+ * @param {string} name
+ * @returns {Promise<{nth: number, trigger: string, line: number, text: string, custom: boolean}[]>}
+ */
+async function usesOf(document, name) {
+    const escaped = name.replace(/[^A-Za-z0-9_]/g, c => `\\${c}`)
+    const inWtg = new RegExp(`\\$${escaped}(?![A-Za-z0-9_])`)
+    const inCode = new RegExp(`(?<![A-Za-z0-9_])${escaped}(?![A-Za-z0-9_])`)
+    // The wtg's lines naming it, by trigger (its place, from 1).
+    const found = []
+    let nth = 0
+    for (const [i, line] of document.getText().split('\n').entries()) {
+        if (/^\[trigger\]/.test(line)) nth++
+        else if (nth && inWtg.test(line)) found.push({nth, line: i + 1, raw: line.slice(line.indexOf('=') + 1).trim()})
+    }
+    const id = idOf(document)
+    const views = new Map()
+    const viewOf = async n => {
+        if (!views.has(n)) {
+            const answer = await query(QUERY.TRIGGER_VIEW, id, {line: n, character: 0})
+            views.set(n, answer?.text ? JSON.parse(answer.text) : null)
+        }
+        return views.get(n)
+    }
+    const uses = []
+    for (const f of found) {
+        const map = await viewOf(f.nth)
+        // Its line in the trigger's view, and the node on it.
+        const v = (map?.at ?? []).indexOf(f.line) + 1
+        let phrase = ''
+        const walk = nodes => {
+            for (const n of nodes ?? []) {
+                if (n.line === v) phrase = spanText(n.text)
+                for (const b of n.blocks ?? []) walk(b.nodes)
+            }
+        }
+        for (const list of [map?.view?.events, map?.view?.conditions, map?.view?.actions]) walk(list)
+        uses.push({nth: f.nth, trigger: map?.triggers[f.nth - 1]?.name ?? '', line: f.line, text: phrase || f.raw, custom: false})
+    }
+    // The custom script's lines naming it.
+    const wct = await workspace.openTextDocument(sibling(document.uri, 'war3map.wct')).then(d => d, () => null)
+    if (wct) {
+        const map = await viewOf(1)
+        const code = map?.wct?.code ?? []
+        const header = map?.wct?.header
+        for (const [j, line] of wct.getText().split('\n').entries()) {
+            if (!inCode.test(line)) continue
+            const k = code.findIndex(c => c && c[0] < j && j < c[1])
+            if (k >= 0) uses.push({nth: k + 1, trigger: map.triggers[k]?.name ?? '', line: j + 1, text: line.trim(), custom: true})
+            else if (header && header[0] < j && j < header[1]) uses.push({nth: 0, trigger: '', line: j + 1, text: line.trim(), custom: true})
+        }
+    }
+    return uses
+}
+
 function registerTrigger(context) {
     // A map's triggers and its custom script are saved together: the code
     // of its triggers of custom text is in the one by their places in the
@@ -2121,7 +2189,7 @@ window.addEventListener('message', e => page.receive(e.data))
     // Another page's place for the same trigger editor (the World
     // Editor's Triggers panel): `panel` its webview's stand-in
     // (`postMessage`, `onDidReceiveMessage` ...), the page has the markup.
-    return {host: (document, panel) => editor.resolveCustomTextEditor(document, panel), langs: triggerLangs}
+    return {host: (document, panel) => editor.resolveCustomTextEditor(document, panel), langs: triggerLangs, usesOf}
 }
 
 /**

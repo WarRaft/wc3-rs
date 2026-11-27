@@ -402,22 +402,7 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
                 const terrain = [...(editor.follow?.values() ?? [])].find(p => /war3map\.w3e$/i.test(p))
                 if (!terrain) return
                 const wtg = Uri.file(path.join(path.dirname(terrain), 'war3map.wtg')).with({scheme: OBJECTS_SCHEME})
-                workspace.openTextDocument(wtg).then(doc => {
-                    const uses = []
-                    const word = new RegExp(`\\$${msg.name.replace(/[^A-Za-z0-9_]/g, '\\$&')}(?![A-Za-z0-9_])`)
-                    let nth = 0
-                    let trigger = ''
-                    const lines = doc.getText().split('\n')
-                    for (const [i, line] of lines.entries()) {
-                        if (/^\[trigger\]/.test(line)) {
-                            nth++
-                            trigger = ''
-                        } else if (nth && !trigger && /^name=/.test(line)) {
-                            trigger = line.slice(5).replace(/^"|"\r?$/g, '')
-                        } else if (nth && word.test(line)) {
-                            uses.push({nth, trigger, line: i + 1, text: line.slice(line.indexOf('=') + 1).trim().slice(0, 120)})
-                        }
-                    }
+                workspace.openTextDocument(wtg).then(doc => triggers.usesOf(doc, msg.name)).then(uses => {
                     panel.webview.postMessage({type: 'usedBy', name: msg.name, uses})
                     editor.usedBy = {name: msg.name, uses}
                 }, () => panel.webview.postMessage({type: 'usedBy', name: msg.name, uses: []}))

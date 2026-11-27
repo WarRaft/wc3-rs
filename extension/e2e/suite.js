@@ -656,10 +656,20 @@ async function steps(only) {
             const used = await until(() => we.usedBy?.name === 'gg_rct_Rect_093' && we.usedBy, 'what uses Rect 093')
             const assault = used.uses.find(u => u.trigger === 'Main Chamber Assault')
             check(!!assault, `used by ${used.uses.length} lines of ${new Set(used.uses.map(u => u.trigger)).size} triggers, Main Chamber Assault's among them`)
+            // As World Editor's phrases, not the text form's calls.
+            for (const u of used.uses) log(`    ${u.trigger}${u.custom ? ' (custom text)' : ''}: ${u.text}`)
+            check(!/^[A-Za-z]+\(/.test(assault.text) && /Rect 093|gg_rct_Rect_093/.test(assault.text), `Main Chamber Assault's line: ${assault.text}`)
             await shot('world-editor-used-by')
             await we.panel.webview.postMessage({type: 'openUse', index: used.uses.indexOf(assault)})
             await until(() => ed.state().picked === assault.nth && ed.state().tree?.picked === assault.nth, 'its trigger opened in the panel')
             check(true, `opened: trigger ${assault.nth}, ${assault.trigger}`)
+            // A unit a custom script names: its use by the trigger whose code it's in.
+            await we.panel.webview.postMessage({type: 'button', id: 'triggers-open'})
+            we.usedBy = undefined
+            await we.panel.webview.postMessage({type: 'showOnMap', name: 'gg_unit_e001_0595'})
+            const unitUses = await until(() => we.usedBy?.name === 'gg_unit_e001_0595' && we.usedBy, 'what uses the unit')
+            const custom = unitUses.uses.find(u => u.custom)
+            check(!!custom && (custom.nth === 0 || !!custom.trigger), `gg_unit_e001_0595: in ${custom?.nth ? `${custom.trigger}'s custom text` : 'the map script'}: ${custom?.text}`)
             await we.panel.webview.postMessage({type: 'button', id: 'triggers-open'})
             await we.panel.webview.postMessage({type: 'button', id: 'triggers-open'})
         }},
