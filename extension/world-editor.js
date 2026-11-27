@@ -468,6 +468,14 @@ ${triggerHead(name => String(webview.asWebviewUri(Uri.joinPath(context.extension
                 editor.thing = msg.thing
             } else if (msg.type === 'overlays') {
                 editor.overlays = msg.overlays
+            } else if (msg.type === 'objectFile') {
+                // The object editor's Export… and Import…: the file from VS Code's dialog, given back to the page.
+                const ext = ['w3u', 'w3t', 'w3b', 'w3d', 'w3a', 'w3h', 'w3q'][msg.kind] ?? 'w3u'
+                const filters = {'Object data': [ext]}
+                const asked = msg.action === 'export'
+                    ? window.showSaveDialog({defaultUri: Uri.file(path.join(editor.root, `war3map.${ext}`)), filters, saveLabel: 'Export', title: 'Export the object data'})
+                    : window.showOpenDialog({canSelectMany: false, filters, openLabel: 'Import', title: "Import object data in place of the map's"}).then(u => u?.[0])
+                asked.then(uri => uri && panel.webview.postMessage({type: 'objectFile', action: msg.action, kind: msg.kind, path: uri.fsPath}))
             } else if (msg.type === 'testMap') {
                 // Saved: the map built and the game run with it.
                 commands.executeCommand('wc3.testMap', Uri.file(path.join(editor.root, 'wc3.bni'))).then(r => (editor.tested = r))

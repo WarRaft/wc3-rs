@@ -73,6 +73,8 @@ const EditorProtocol = (() => {
         CONSTANTS_ASK: 55,
         CONSTANT_SET: 56,
         CONSTANTS: 160,
+        OBJECT_EXPORT: 57,
+        OBJECT_IMPORT: 58,
         PASTED: 159,
         MAP_FOUND: 158,
         IMPORT_PREVIEW_ANSWER: 154,
@@ -359,6 +361,20 @@ const EditorProtocol = (() => {
             return w.frame(KIND.THING_SET_TEXT)
         },
         infoAsk: () => new Writer().frame(KIND.INFO_ASK),
+        /** Kind `kind`'s object data written to `path` (World Editor's Export). */
+        objectExport(kind, path) {
+            const w = new Writer()
+            w.u8(kind)
+            w.string(path)
+            return w.frame(KIND.OBJECT_EXPORT)
+        },
+        /** Object data read from `path` in place of kind `kind`'s (World Editor's Import). */
+        objectImport(kind, path) {
+            const w = new Writer()
+            w.u8(kind)
+            w.string(path)
+            return w.frame(KIND.OBJECT_IMPORT)
+        },
         /** The gameplay constants (`book` 0) or the game interface (1). */
         constantsAsk(book) {
             const w = new Writer()

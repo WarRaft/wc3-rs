@@ -1292,3 +1292,39 @@ fn the_game_interface_its_strings_sections_and_the_maps_strings() {
     let saved = s.save();
     assert!(saved.iter().any(|m| matches!(m, ServerMsg::State(st) if st.message.contains("war3mapSkin.txt") && st.message.contains("war3map.wts"))), "{saved:?}");
 }
+
+#[test]
+fn a_kinds_object_data_exported_its_strings_as_text_and_imported_in_place_of_the_maps() {
+    let dir = TestDir::new("session-object-export");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    dir.write("map/Units/UnitMetaData.slk", &testdir::slk(&[&["ID", "field", "slk", "type", "category"], &["unam", "Name", "Profile", "string", "text"]]));
+    dir.write("map/Units/UnitData.slk", &testdir::slk(&[&["unitID", "race"], &["hfoo", "human"]]));
+    dir.write("map/war3map.wts", b"STRING 7\n{\nKnight of the Map\n}\n");
+    let mut data = w3abdhqtu_rs::ObjectData::new(w3abdhqtu_rs::Kind::Unit);
+    data.version = 2;
+    crate::objdata::set(&mut data, parser_rs::bin::Rawcode(*b"hfoo"), parser_rs::bin::Rawcode(*b"unam"), 0, 0, Some(w3abdhqtu_rs::Value::Str("TRIGSTR_007".into())));
+    dir.write("map/war3map.w3u", &data.to_bytes().unwrap());
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let said = |msgs: &[ServerMsg]| msgs.iter().rev().find_map(|m| if let ServerMsg::State(st) = m { Some(st.message.clone()) } else { None }).unwrap();
+    // Exported: the string's text in it.
+    let out = dir.path().join("units.w3u");
+    assert!(said(&s.objects_export(0, out.to_str().unwrap())).contains("Exported 1 changed and 0 custom"));
+    let back = w3abdhqtu_rs::parse(&std::fs::read(&out).unwrap(), w3abdhqtu_rs::Kind::Unit).unwrap();
+    assert_eq!(back.originals[0].mods().map(|m| m.value.clone()).collect::<Vec<_>>(), [w3abdhqtu_rs::Value::Str("Knight of the Map".into())]);
+    // Another's imported in place of the map's: a custom one; an undo.
+    let mut other = w3abdhqtu_rs::ObjectData::new(w3abdhqtu_rs::Kind::Unit);
+    other.version = 2;
+    other.customs.push(w3abdhqtu_rs::Object { base: parser_rs::bin::Rawcode(*b"hfoo"), id: parser_rs::bin::Rawcode(*b"h00A"), sets: vec![w3abdhqtu_rs::Set { flags: 0, mods: Vec::new() }] });
+    let from = dir.path().join("other.w3u");
+    std::fs::write(&from, other.to_bytes().unwrap()).unwrap();
+    assert!(said(&s.objects_import(0, from.to_str().unwrap())).contains("Imported 0 changed and 1 custom"));
+    let now = &s.placed.objects[&w3abdhqtu_rs::Kind::Unit];
+    assert!(now.originals.is_empty() && now.customs[0].id == parser_rs::bin::Rawcode(*b"h00A"));
+    s.undo(false);
+    assert_eq!(s.placed.objects[&w3abdhqtu_rs::Kind::Unit].originals.len(), 1);
+    // A file that isn't one said, nothing changed.
+    std::fs::write(&from, b"nonsense").unwrap();
+    assert!(said(&s.objects_import(0, from.to_str().unwrap())).starts_with("Not imported"));
+}

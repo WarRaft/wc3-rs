@@ -2119,7 +2119,13 @@ step), this list updated.
      beside the buttons or Ctrl+D in the panel: each field by its id
      (`uhpm`; a level's `Hbz1 (2)`), every value as text as it's
      stored (no choices, checkboxes or names: `Adef,Aihn`), the list
-     by id (`hfoo (Footman)`); off: as before.
+     by id (`hfoo (Footman)`); off: as before. Export… and Import… (after
+     Test Map's setup): World Editor's File > Export and Import of a
+     kind's object data, through VS Code's dialogs (`ObjectExport`,
+     `ObjectImport`: a path on disk): its file written (`.w3u` ...), a
+     string of the map's as its text (another map's strings aren't
+     these); a file read in place of the kind's (another map's
+     units, say), an undo.
 
 7. **In step with the rest** (done). Decided with the user: a text form
    open in VS Code and the editor are one (the text is the truth, as

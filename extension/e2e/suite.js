@@ -679,6 +679,21 @@ async function steps(only) {
                 `raw: ${raw.names.join(', ')} ...; ${raw.rows.join(', ')} ...; no choices, no checkboxes`)
             await we.panel.webview.postMessage({type: 'object', action: 'raw', on: false})
             await until(() => we.objects && !we.objects.raw && we.objects.controls.selects > 3, 'names again')
+            // Exported to a file (World Editor's File > Export), imported from it again in place of the map's; undone.
+            const exported = path.join(os.tmpdir(), `wc3-e2e-units-${process.pid}.w3u`)
+            try {
+                we.state = undefined
+                await we.panel.webview.postMessage({type: 'objectFile', action: 'export', kind: 0, path: exported})
+                const ex = await until(() => we.state?.message && we.state, 'exported')
+                check(/^Exported \d+ changed and \d+ custom/.test(ex.message) && fs.statSync(exported).size > 100, ex.message)
+                we.state = undefined
+                await we.panel.webview.postMessage({type: 'objectFile', action: 'import', kind: 0, path: exported})
+                const im = await until(() => we.state?.message && we.state, 'imported')
+                check(/^Imported \d+ changed and \d+ custom/.test(im.message) && im.undo, im.message)
+                await we.panel.webview.postMessage({type: 'undo'})
+            } finally {
+                fs.rmSync(exported, {force: true})
+            }
             await we.panel.webview.postMessage({type: 'object', action: 'field', field: 'ua1t', value: 'pierce'})
             await until(() => field('ua1t')?.[2] === 'pierce' && field('ua1t')[3], 'its attack type chosen')
             check(true, `attack type ${field('ua1t')[2]} (${field('ua1t')[5]})`)

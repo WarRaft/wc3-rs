@@ -104,6 +104,9 @@ const EditorObjectEditor = (() => {
             }})
             this.rawBox = el('input', {type: 'checkbox', title: 'Display values as raw data (Ctrl+D)'})
             this.rawBox.onchange = () => this.setRaw(this.rawBox.checked)
+            // World Editor's File > Export and Import: the kind's file, by VS Code's dialogs.
+            this.exportButton = el('button', {textContent: 'Export…', title: "This kind's object data written to a file (.w3u …), the map's strings as their text", onclick: () => this.said({dialog: 'export', kind: this.kind})})
+            this.importButton = el('button', {textContent: 'Import…', title: "A file's object data (.w3u …) in place of this kind's", onclick: () => this.said({dialog: 'import', kind: this.kind})})
             this.closeButton = el('button', {textContent: 'Close', onclick: () => this.close()})
             this.title = el('div', {className: 'obj-title'})
             this.table = el('div', {className: 'obj-fields'})
@@ -116,7 +119,7 @@ const EditorObjectEditor = (() => {
             })
             this.root.tabIndex = -1
             this.root.append(
-                el('div', {className: 'obj-side'}, this.tabs, this.search, this.list, el('div', {className: 'obj-buttons'}, this.newButton, this.copyButton, this.pasteButton, this.deleteButton, el('label', {className: 'obj-raw'}, this.rawBox, 'Raw'), this.closeButton)),
+                el('div', {className: 'obj-side'}, this.tabs, this.search, this.list, el('div', {className: 'obj-buttons'}, this.newButton, this.copyButton, this.pasteButton, this.deleteButton, this.exportButton, this.importButton, el('label', {className: 'obj-raw'}, this.rawBox, 'Raw'), this.closeButton)),
                 el('div', {className: 'obj-main'}, this.title, this.table),
             )
         }

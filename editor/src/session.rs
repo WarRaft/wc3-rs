@@ -1965,6 +1965,46 @@ impl Session {
         out
     }
 
+    /// A kind's object data written to `path` (World Editor's File >
+    /// Export: `.w3u` ...): the map's changes, a string of the map's
+    /// (`TRIGSTR_7`) as its text (another map's strings aren't these).
+    pub fn objects_export(&mut self, k: u8, path: &str) -> Vec<ServerMsg> {
+        let Some(kind) = self.object_kind(k) else { return vec![ServerMsg::State(self.state(format!("no kind {k}")))] };
+        let Some(mut data) = self.placed.objects.get(&kind).cloned() else {
+            return vec![ServerMsg::State(self.state("The map changes none of these: nothing to export.".into()))];
+        };
+        for o in data.originals.iter_mut().chain(data.customs.iter_mut()) {
+            for m in o.sets.iter_mut().flat_map(|s| s.mods.iter_mut()) {
+                if let w3abdhqtu_rs::Value::Str(v) = &mut m.value
+                    && v.starts_with("TRIGSTR_")
+                {
+                    *v = self.text(v);
+                }
+            }
+        }
+        let message = match data.to_bytes().map_err(|e| e.to_string()).and_then(|b| std::fs::write(path, b).map_err(|e| format!("{path}: {e}"))) {
+            Ok(()) => format!("Exported {} changed and {} custom to {path}.", data.originals.len(), data.customs.len()),
+            Err(e) => format!("Not exported: {e}"),
+        };
+        vec![ServerMsg::State(self.state(message))]
+    }
+
+    /// A kind's object data read from `path` (World Editor's File >
+    /// Import: another map's `.w3u` ...) in place of the map's; an undo.
+    pub fn objects_import(&mut self, k: u8, path: &str) -> Vec<ServerMsg> {
+        let Some(kind) = self.object_kind(k) else { return vec![ServerMsg::State(self.state(format!("no kind {k}")))] };
+        let read = std::fs::read(path).map_err(|e| format!("{path}: {e}")).and_then(|b| w3abdhqtu_rs::parse(&b, kind).map_err(|e| format!("{path}: {e}")));
+        let imported = match read {
+            Ok(d) => d,
+            Err(e) => return vec![ServerMsg::State(self.state(format!("Not imported: {e}")))],
+        };
+        let said = format!("Imported {} changed and {} custom from {path}.", imported.originals.len(), imported.customs.len());
+        self.objects_edit(k, kind, move |data, _| {
+            *data = imported;
+            Ok(said)
+        })
+    }
+
     /// Object `id` of `kind` taken away (one of the map's), or its
     /// changes (one of the game's): the game's again.
     pub fn object_delete(&mut self, k: u8, id: &str) -> Vec<ServerMsg> {

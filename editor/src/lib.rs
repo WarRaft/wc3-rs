@@ -242,6 +242,8 @@ impl Editor {
                     ClientMsg::GroupMove { start, things, origin, dir } => s.group_move(start, &things, origin, dir),
                     ClientMsg::GroupRotate { things, delta } => s.group_rotate(&things, delta),
                     ClientMsg::GroupDelete { things } => s.group_delete(&things),
+                    ClientMsg::ObjectExport { kind, path } => s.objects_export(kind, &path),
+                    ClientMsg::ObjectImport { kind, path } => s.objects_import(kind, &path),
                     ClientMsg::ConstantsAsk { book } => crate::constants::Book::of(book).map(|b| vec![s.constants_msg(b)]).unwrap_or_default(),
                     ClientMsg::ConstantSet { book, id, value } => crate::constants::Book::of(book).map(|b| s.constant_set(b, &id, &value)).unwrap_or_default(),
                     ClientMsg::Paste { origin, dir } => s.paste(origin, dir),

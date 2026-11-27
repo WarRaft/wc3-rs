@@ -595,7 +595,9 @@
     $('constants-open').onclick = () => toggle(constantsPanel)
     $('skin-open').onclick = () => toggle(skinPanel)
     $('triggers-open').onclick = () => toggle(triggersPanel)
-    const objectsPanel = new EditorObjectEditor.Panel($('objects-panel'), send, encode, objects => vscode.postMessage({type: 'objects', objects}))
+    // The panel's report, or a dialog it asks for (Export…, Import…: the extension's).
+    const objectsPanel = new EditorObjectEditor.Panel($('objects-panel'), send, encode, objects =>
+        vscode.postMessage(objects.dialog ? {type: 'objectFile', action: objects.dialog, kind: objects.kind} : {type: 'objects', objects}))
     $('objects-open').onclick = () => toggle(objectsPanel)
     $('reload').onclick = () => send(encode.reload())
     showTools()
@@ -1758,6 +1760,9 @@
         } else if (msg.type === 'button') {
             // A button of the page's pressed (`id`): for the tests.
             $(msg.id)?.onclick()
+        } else if (msg.type === 'objectFile') {
+            // A path the extension's dialog gave (or the tests): the kind exported there, or imported from it.
+            send(msg.action === 'export' ? encode.objectExport(msg.kind, msg.path) : encode.objectImport(msg.kind, msg.path))
         } else if (msg.type === 'constants') {
             // The gameplay constants' panel (`book` 1: the game interface's), for the tests:
             // `open`, a field `set` (`id`, `value`), `close`.

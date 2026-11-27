@@ -74,6 +74,8 @@
 //! | 52 | `GroupMove` | things moved together by a drag: `u8` its first, the things (as `Copy`'s), the ray; answered as `Place` is |
 //! | 53 | `GroupRotate` | things each turned where it stands: the things, `f32` radians; answered the same |
 //! | 54 | `GroupDelete` | things taken away: the things; answered the same |
+//! | 57 | `ObjectExport` | `u8` kind, a path on disk: the kind's object data written there; answered by `State` |
+//! | 58 | `ObjectImport` | `u8` kind, a path on disk: object data read from there in place of the kind's; answered by `ObjectList` and `State` |
 //! | 55 | `ConstantsAsk` | `u8` which (0 the gameplay constants, 1 the game interface: `constants::BOOKS`); answered by `Constants` |
 //! | 56 | `ConstantSet` | `u8` which, a field's id (`custom`: 1 the map's own, 0 the game's), its value; answered by `Constants` and `State` |
 //! | 22 | `TilePathing` | the tile pather's: `u8` a tile's index in the terrain's list, `u8` what it forbids (`wpm` flags: 2 walking, 4 flying, 8 building); answered by `Overlays` and `State` |
@@ -199,6 +201,8 @@ mod kind {
     pub const CONSTANTS_ASK: u8 = 55;
     pub const CONSTANT_SET: u8 = 56;
     pub const CONSTANTS: u8 = 160;
+    pub const OBJECT_EXPORT: u8 = 57;
+    pub const OBJECT_IMPORT: u8 = 58;
     pub const PASTED: u8 = 159;
     pub const MAP_FOUND: u8 = 158;
     pub const IMPORT_PREVIEW_ANSWER: u8 = 154;
@@ -306,6 +310,10 @@ pub enum ClientMsg {
     GroupRotate { things: Vec<(u8, u32)>, delta: f32 },
     /// Kind 54.
     GroupDelete { things: Vec<(u8, u32)> },
+    /// Kind 57.
+    ObjectExport { kind: u8, path: String },
+    /// Kind 58.
+    ObjectImport { kind: u8, path: String },
     /// Kind 55.
     ConstantsAsk { book: u8 },
     /// Kind 56.
@@ -790,6 +798,8 @@ impl ClientMsg {
             kind::GROUP_ROTATE => Some(ClientMsg::GroupRotate { things: r.things()?, delta: r.f32()? }),
             kind::GROUP_DELETE => Some(ClientMsg::GroupDelete { things: r.things()? }),
             kind::CONSTANTS_ASK => Some(ClientMsg::ConstantsAsk { book: r.u8()? }),
+            kind::OBJECT_EXPORT => Some(ClientMsg::ObjectExport { kind: r.u8()?, path: r.string()? }),
+            kind::OBJECT_IMPORT => Some(ClientMsg::ObjectImport { kind: r.u8()?, path: r.string()? }),
             kind::CONSTANT_SET => Some(ClientMsg::ConstantSet { book: r.u8()?, id: r.string()?, value: r.string()? }),
             kind::PASTE => Some(ClientMsg::Paste { origin: [r.f32()?, r.f32()?, r.f32()?], dir: [r.f32()?, r.f32()?, r.f32()?] }),
             kind::MAP_NAME_ASK => Some(ClientMsg::MapName { kind: r.string()?, index: r.u32()? as i32, origin: [r.f32()?, r.f32()?, r.f32()?], dir: [r.f32()?, r.f32()?, r.f32()?] }),
@@ -903,6 +913,16 @@ impl ClientMsg {
             ClientMsg::GroupDelete { things } => {
                 w.things(things);
                 kind::GROUP_DELETE
+            }
+            ClientMsg::ObjectExport { kind, path } => {
+                w.u8(*kind);
+                w.string(path);
+                kind::OBJECT_EXPORT
+            }
+            ClientMsg::ObjectImport { kind, path } => {
+                w.u8(*kind);
+                w.string(path);
+                kind::OBJECT_IMPORT
             }
             ClientMsg::ConstantsAsk { book } => {
                 w.u8(*book);
