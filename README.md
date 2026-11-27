@@ -1842,9 +1842,14 @@ step), this list updated.
      location's) and taken out (`player.<i>.remove`: out of the forces
      too), forces too (`force.add`, `force.<i>.remove`). `war3map.w3i` a
      piece of the session now: its text form (`server/src/mapinfo.rs`) in
-     step, taken in when changed on disk. Not yet: the tech tree,
-     upgrades, random groups and item tables. MCP: `w3i_text`,
-     `w3i_write`.
+     step, taken in when changed on disk. The random groups (each its
+     name, its columns: a unit, a building or an item; its rows: a chance
+     and an id a column, 100% at most; `unit_table.<i>.columns`,
+     `.rows`: `60:hfoo,ratc;40:hkni,`, an empty id none; a column taken
+     out cuts its rows) and The Frozen Throne's item tables (each its
+     name and sets, as a thing's drops: `item_table.<i>.sets`), added
+     (the next number) and taken out. Not yet: the tech tree and
+     upgrades. MCP: `w3i_text`, `w3i_write`.
    - **6i, the import manager** (done after 6h): `war3map.imp` a piece
      of the session (read, taken in when changed on disk, its text form
      in step), with the files to write into the map on save or take out

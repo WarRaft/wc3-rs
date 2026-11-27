@@ -1008,6 +1008,23 @@ fn the_maps_info_shown_set_its_strings_in_war3map_wts_undone_and_saved() {
     assert_eq!((get(&s, "player.1.name"), get(&s, "force.1.players").as_deref()), (None, Some("1")));
     assert_eq!(said(&s.info_set("force.0.remove", "")), "");
     assert_eq!(get(&s, "force.0.name").as_deref(), Some("Force 2"));
+    // Random groups and item tables.
+    assert_eq!(said(&s.info_set("unit_table.add", "")), "");
+    assert_eq!(said(&s.info_set("unit_table.0.columns", "0,2")), "");
+    assert_eq!(said(&s.info_set("unit_table.0.rows", "60:hfoo,ratc;40:hkni,")), "");
+    assert!(said(&s.info_set("unit_table.0.rows", "60:hfoo")).contains("1 ids for 2 columns"));
+    assert!(said(&s.info_set("unit_table.0.rows", "60:hfoo,ratc;50:hkni,ratc")).contains("110%"));
+    assert!(said(&s.info_set("unit_table.0.columns", "0,5")).contains("a column is"));
+    assert_eq!(get(&s, "unit_table.0.name").as_deref(), Some("Random Group 1"));
+    assert_eq!(get(&s, "unit_table.0.rows").as_deref(), Some("60:hfoo,ratc;40:hkni,"));
+    assert_eq!(said(&s.info_set("unit_table.0.columns", "0")), "");
+    assert_eq!(get(&s, "unit_table.0.rows").as_deref(), Some("60:hfoo;40:hkni"), "its rows cut to its columns");
+    assert_eq!(said(&s.info_set("item_table.add", "Loot")), "");
+    assert_eq!(said(&s.info_set("item_table.0.sets", "ratc:50,ckng:50;sreg:100")), "");
+    assert_eq!(get(&s, "item_table.0.sets").as_deref(), Some("ratc:50,ckng:50;sreg:100"));
+    assert_eq!(s.info.as_ref().unwrap().item_tables[0].sets[0][0], (50, parser_rs::bin::Rawcode(*b"ratc")));
+    assert_eq!(said(&s.info_set("item_table.0.remove", "")), "");
+    assert_eq!(get(&s, "item_table.0.name"), None);
     // Its text form: the editor's change goes to it, typed in it the editor follows.
     let path = dir.path().join("map/war3map.w3i").display().to_string();
     let text = s.piece_text("war3map.w3i", &path).unwrap();

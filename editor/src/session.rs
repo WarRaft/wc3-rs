@@ -1967,6 +1967,23 @@ impl Session {
                 out.push((format!("force.{n}.{k}"), v));
             }
         }
+        // The random groups: a column's kind each (0 a unit, 1 a building,
+        // 2 an item), a row each its chance and an id a column.
+        for (n, t) in i.unit_tables.iter().enumerate() {
+            let columns = t.columns.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(",");
+            let id = |id: &parser_rs::bin::Rawcode| if *id == parser_rs::bin::Rawcode::NONE { String::new() } else { id.to_string() };
+            let rows = t.rows.iter().map(|(c, ids)| format!("{c}:{}", ids.iter().map(id).collect::<Vec<_>>().join(","))).collect::<Vec<_>>().join(";");
+            for (k, v) in [("name", text(&t.name)), ("columns", columns), ("rows", rows)] {
+                out.push((format!("unit_table.{n}.{k}"), v));
+            }
+        }
+        // The item tables: their sets as a thing's drops are written.
+        for (n, t) in i.item_tables.iter().enumerate() {
+            let sets = t.sets.iter().map(|set| set.iter().map(|(c, id)| format!("{id}:{c}")).collect::<Vec<_>>().join(",")).collect::<Vec<_>>().join(";");
+            for (k, v) in [("name", text(&t.name)), ("sets", sets)] {
+                out.push((format!("item_table.{n}.{k}"), v));
+            }
+        }
         let mut weathers: Vec<(&String, &String)> = self.names.weather.iter().collect();
         weathers.sort_by(|a, b| a.1.cmp(b.1));
         out.push(("weathers".into(), weathers.iter().map(|(id, n)| format!("{id}\t{n}")).collect::<Vec<_>>().join("\n")));
@@ -1994,6 +2011,8 @@ impl Session {
             "prologue_title" => Some(&info.prologue_title),
             "prologue_subtitle" => Some(&info.prologue_subtitle),
             f if f.starts_with("player.") && f.ends_with(".name") => f.split('.').nth(1).and_then(|n| n.parse::<usize>().ok()).and_then(|n| info.players.get(n)).map(|p| &p.name),
+            f if f.starts_with("unit_table.") && f.ends_with(".name") => f.split('.').nth(1).and_then(|n| n.parse::<usize>().ok()).and_then(|n| info.unit_tables.get(n)).map(|t| &t.name),
+            f if f.starts_with("item_table.") && f.ends_with(".name") => f.split('.').nth(1).and_then(|n| n.parse::<usize>().ok()).and_then(|n| info.item_tables.get(n)).map(|t| &t.name),
             f if f.starts_with("force.") && f.ends_with(".name") => f.split('.').nth(1).and_then(|n| n.parse::<usize>().ok()).and_then(|n| info.forces.get(n)).map(|p| &p.name),
             _ => None,
         };
@@ -2075,6 +2094,17 @@ impl Session {
                     let at = info.players.iter().position(|p| p.number > number).unwrap_or(info.players.len());
                     info.players.insert(at, w3i_rs::Player { number, kind: 1, race: 0, fixed_start: 0, name: format!("Player {}", number + 1), start_x, start_y, ..Default::default() });
                 }
+                "unit_table.add" => {
+                    let number = info.unit_tables.iter().map(|t| t.number).max().map_or(0, |n| n + 1);
+                    let name = if value.trim().is_empty() { format!("Random Group {}", number + 1) } else { value.to_string() };
+                    info.unit_tables.push(w3i_rs::UnitTable { number, name, columns: vec![0], rows: Vec::new() });
+                }
+                "item_table.add" => {
+                    tft_only()?;
+                    let number = info.item_tables.iter().map(|t| t.number).max().map_or(0, |n| n + 1);
+                    let name = if value.trim().is_empty() { format!("Item Table {}", number + 1) } else { value.to_string() };
+                    info.item_tables.push(w3i_rs::ItemTable { number, name, sets: Vec::new() });
+                }
                 "force.add" => {
                     let name = if value.trim().is_empty() { format!("Force {}", info.forces.len() + 1) } else { value.to_string() };
                     info.forces.push(w3i_rs::Force { flags: 0, players: 0, name });
@@ -2098,6 +2128,68 @@ impl Session {
                                     for force in &mut info.forces {
                                         force.players &= !bit;
                                     }
+                                }
+                                _ => return Err(format!("no field {f}")),
+                            }
+                        }
+                        ("unit_table", _) => {
+                            let t = info.unit_tables.get_mut(n).ok_or(format!("no random group {n}"))?;
+                            match key {
+                                "name" => t.name = value.into(),
+                                "columns" => {
+                                    let columns: Vec<i32> = value.split(',').filter(|c| !c.trim().is_empty()).map(|c| c.trim().parse::<i32>().ok().filter(|c| (0..=2).contains(c)).ok_or(format!("{c:?}: a column is 0 a unit, 1 a building, 2 an item"))).collect::<Result<_, _>>()?;
+                                    // Its rows' ids a column each: cut or filled.
+                                    for (_, ids) in &mut t.rows {
+                                        ids.resize(columns.len(), parser_rs::bin::Rawcode::NONE);
+                                    }
+                                    t.columns = columns;
+                                }
+                                "rows" => {
+                                    let mut rows = Vec::new();
+                                    for row in value.split(';').filter(|r| !r.trim().is_empty()) {
+                                        let (c, ids) = row.split_once(':').unwrap_or((row, ""));
+                                        let c: i32 = c.trim().parse().map_err(|_| format!("{row:?}: a row is its chance, then its ids"))?;
+                                        let ids: Vec<parser_rs::bin::Rawcode> = ids.split(',').map(|id| if id.trim().is_empty() { Some(parser_rs::bin::Rawcode::NONE) } else { parser_rs::bin::Rawcode::parse(id.trim()) }).collect::<Option<_>>().ok_or(format!("{row:?}: an id is four characters"))?;
+                                        if ids.len() != t.columns.len() {
+                                            return Err(format!("{row:?}: {} ids for {} columns", ids.len(), t.columns.len()));
+                                        }
+                                        rows.push((c, ids));
+                                    }
+                                    let total: i32 = rows.iter().map(|(c, _)| c).sum();
+                                    if total > 100 {
+                                        return Err(format!("its chances are {total}%, over 100"));
+                                    }
+                                    t.rows = rows;
+                                }
+                                "remove" => {
+                                    info.unit_tables.remove(n);
+                                }
+                                _ => return Err(format!("no field {f}")),
+                            }
+                        }
+                        ("item_table", _) => {
+                            let t = info.item_tables.get_mut(n).ok_or(format!("no item table {n}"))?;
+                            match key {
+                                "name" => t.name = value.into(),
+                                "sets" => {
+                                    let mut sets = Vec::new();
+                                    for set in value.split(';').filter(|s| !s.trim().is_empty()) {
+                                        let mut items = Vec::new();
+                                        for e in set.split(',').filter(|e| !e.trim().is_empty()) {
+                                            let (id, c) = e.split_once(':').unwrap_or((e, "100"));
+                                            let c: i32 = c.trim().parse().map_err(|_| format!("{e:?}: a chance is a number"))?;
+                                            items.push((c, parser_rs::bin::Rawcode::parse(id.trim()).ok_or(format!("{e:?}: an id is four characters"))?));
+                                        }
+                                        let total: i32 = items.iter().map(|(c, _)| c).sum();
+                                        if total > 100 {
+                                            return Err(format!("a set's chances are {total}%, over 100"));
+                                        }
+                                        sets.push(items);
+                                    }
+                                    t.sets = sets;
+                                }
+                                "remove" => {
+                                    info.item_tables.remove(n);
                                 }
                                 _ => return Err(format!("no field {f}")),
                             }

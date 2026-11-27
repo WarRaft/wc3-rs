@@ -26,6 +26,11 @@ const EditorMapInfo = (() => {
     const KINDS = [[1, 'User'], [2, 'Computer'], [3, 'Neutral'], [4, 'Rescuable']]
     const RACES = [[0, 'Selectable'], [1, 'Human'], [2, 'Orc'], [3, 'Undead'], [4, 'Night Elf']]
     const FOG = [[0, 'None'], [1, 'Linear'], [2, 'Exponential'], [3, 'Exponential squared']]
+    /** `input` with its field's name, for the tests. */
+    const tag = (input, field) => {
+        input.dataset.field = field
+        return input
+    }
     const hex = rgba => '#' + rgba.split(',').slice(0, 3).map(v => Number(v).toString(16).padStart(2, '0')).join('')
 
     class Panel {
@@ -169,8 +174,129 @@ const EditorMapInfo = (() => {
                     const number = Number(this.get(`player.${p}.number`))
                     return [2 ** number, this.get(`player.${p}.name`) || `Player ${number + 1}`]
                 }), 'Players')))))
+            parts.push(this.randomGroups(remove))
+            if (tft) parts.push(this.itemTables(remove))
             this.body.replaceChildren(...parts)
             this.said(this.report())
+        }
+
+        /** An id typed: sent once it's whole (four characters) or empty. */
+        idInput(value, done) {
+            const input = el('input', {value, className: 'thing-id', maxLength: 4, placeholder: '----'})
+            let timer = 0
+            input.oninput = () => {
+                clearTimeout(timer)
+                if (input.value.length === 0 || input.value.length === 4) timer = setTimeout(() => done(input.value.trim()), 300)
+            }
+            return input
+        }
+
+        number(value, title, done) {
+            const input = el('input', {type: 'number', min: 0, max: 100, value, className: 'thing-number', title})
+            input.onchange = () => done(input.value)
+            return input
+        }
+
+        /** The random groups: each its name, its columns' kinds, its rows (a chance, an id a column). */
+        randomGroups(remove) {
+            const groups = [...this.fields.keys()].filter(k => /^unit_table\.\d+\.name$/.test(k)).map(k => Number(k.split('.')[1]))
+            const add = el('button', {textContent: 'Add random group'})
+            add.dataset.field = 'unit_table.add'
+            add.onclick = () => this.setField('unit_table.add', '')
+            const KINDS = [[0, 'Unit'], [1, 'Building'], [2, 'Item']]
+            return this.section('Random groups', add, ...groups.map(n => {
+                const f = `unit_table.${n}`
+                const columns = this.get(`${f}.columns`).split(',').filter(Boolean)
+                const rows = this.get(`${f}.rows`).split(';').filter(Boolean).map(r => {
+                    const [chance, ids = ''] = r.split(':')
+                    return {chance, ids: ids.split(',')}
+                })
+                const sendColumns = () => this.setField(`${f}.columns`, columns.join(','))
+                const sendRows = () => this.setField(`${f}.rows`, rows.map(r => `${r.chance}:${r.ids.join(',')}`).join(';'))
+                const head = el('div', {className: 'thing-row'}, el('span', {textContent: 'Chance'}), ...columns.map((c, i) => {
+                    const select = el('select')
+                    select.append(...KINDS.map(([v, t]) => el('option', {value: String(v), textContent: t})))
+                    select.value = c
+                    select.onchange = () => {
+                        columns[i] = select.value
+                        sendColumns()
+                    }
+                    return select
+                }), el('button', {textContent: '+ column', onclick: () => {
+                    columns.push('0')
+                    sendColumns()
+                }}), ...(columns.length > 1 ? [el('button', {textContent: '− column', onclick: () => {
+                    columns.pop()
+                    sendColumns()
+                }})] : []))
+                const lines = rows.map((r, ri) => el('div', {className: 'thing-row'},
+                    tag(this.number(r.chance, 'Chance (%)', v => {
+                        r.chance = v
+                        sendRows()
+                    }), `${f}.row.${ri}.chance`),
+                    ...columns.map((_, i) => tag(this.idInput(r.ids[i] ?? '', v => {
+                        r.ids[i] = v
+                        sendRows()
+                    }), `${f}.row.${ri}.${i}`)),
+                    el('button', {textContent: '×', onclick: () => {
+                        rows.splice(rows.indexOf(r), 1)
+                        sendRows()
+                    }})))
+                const addRow = el('button', {textContent: '+ row'})
+                addRow.dataset.field = `${f}.addRow`
+                addRow.onclick = () => {
+                    rows.push({chance: '0', ids: columns.map(() => '')})
+                    sendRows()
+                }
+                return el('div', {className: 'info-player'},
+                    el('div', {className: 'info-head'}, el('span', {className: 'info-number', textContent: `Group ${n + 1}`}), remove(`${f}.remove`)),
+                    this.text(`${f}.name`, 'Name'), head, ...lines, addRow)
+            }))
+        }
+
+        /** The item tables: each its name, its sets of items and their chances. */
+        itemTables(remove) {
+            const tables = [...this.fields.keys()].filter(k => /^item_table\.\d+\.name$/.test(k)).map(k => Number(k.split('.')[1]))
+            const add = el('button', {textContent: 'Add item table'})
+            add.dataset.field = 'item_table.add'
+            add.onclick = () => this.setField('item_table.add', '')
+            return this.section('Item tables', add, ...tables.map(n => {
+                const f = `item_table.${n}`
+                const sets = this.get(`${f}.sets`).split(';').filter(Boolean).map(set => set.split(',').filter(Boolean).map(e => {
+                    const [id, chance = '100'] = e.split(':')
+                    return {id, chance}
+                }))
+                const out = () => this.setField(`${f}.sets`, sets.map(set => set.filter(e => e.id).map(e => `${e.id}:${e.chance}`).join(',')).filter(Boolean).join(';'))
+                const blocks = sets.map((set, i) => el('div', {className: 'thing-set'},
+                    el('div', {className: 'thing-sub', textContent: `Set ${i + 1} · ${set.reduce((t, e) => t + Number(e.chance || 0), 0)}%`}),
+                    ...set.map(e => el('div', {className: 'thing-row'},
+                        this.idInput(e.id, v => {
+                            e.id = v
+                            out()
+                        }),
+                        this.number(e.chance, 'Chance (%)', v => {
+                            e.chance = v
+                            out()
+                        }),
+                        el('button', {textContent: '×', onclick: () => {
+                            set.splice(set.indexOf(e), 1)
+                            out()
+                        }}))),
+                    el('div', {className: 'thing-row'}, Object.assign(this.idInput('', v => {
+                        if (!v) return
+                        set.push({id: v, chance: '100'})
+                        out()
+                    }), {placeholder: '+ id'}))))
+                const newSet = Object.assign(this.idInput('', v => {
+                    if (!v) return
+                    sets.push([{id: v, chance: '100'}])
+                    out()
+                }), {placeholder: '+ set: id'})
+                newSet.dataset.field = `${f}.newSet`
+                return el('div', {className: 'info-player'},
+                    el('div', {className: 'info-head'}, el('span', {className: 'info-number', textContent: `Table ${n + 1}`}), remove(`${f}.remove`)),
+                    this.text(`${f}.name`, 'Name'), ...blocks, el('div', {className: 'thing-row'}, newSet))
+            }))
         }
 
         /** A field set as the page would (for the tests): a text typed, a choice made, a bit checked. */
@@ -188,7 +314,7 @@ const EditorMapInfo = (() => {
                 c.onchange()
             } else {
                 c.value = String(value)
-                c.oninput()
+                ;(c.oninput ?? c.onchange)()
             }
         }
 
