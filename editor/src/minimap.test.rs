@@ -17,20 +17,22 @@ fn a_wide_map_fitted_its_shape_kept_outside_the_bounds_darker_a_tree_a_dot() {
 }
 
 #[test]
-fn a_paletted_blp1_the_game_and_our_decoder_read() {
-    // A gradient of more than 256 colours.
+fn a_jpeg_blp1_as_world_editors_our_decoder_reads() {
     let mut rgba = Vec::new();
     for y in 0..SIZE {
         for x in 0..SIZE {
-            rgba.extend_from_slice(&[x as u8, y as u8, ((x + y) / 2) as u8, 255]);
+            rgba.extend_from_slice(&[x as u8, y as u8, 128, 255]);
         }
     }
-    let bytes = blp(&rgba, SIZE, SIZE);
-    assert_eq!(bytes.len(), 1180 + 65536);
+    let bytes = blp(&rgba, SIZE, SIZE).unwrap();
     let t = wc3_server::texture::decode(&bytes);
-    assert_eq!((t.version.as_str(), t.width, t.height), ("BLP1", SIZE, SIZE), "{}", t.mips[0].error);
+    assert_eq!((t.version.as_str(), t.encoding.as_str(), t.width, t.height), ("BLP1", "JPEG", SIZE, SIZE), "{}", t.mips[0].error);
+    assert!(t.mips.iter().skip(1).all(|m| m.rgba.is_empty()), "one mip");
+    // World Editor's header: JPEG, no alpha, its picture type 5, no mipmaps.
+    let field = |i: usize| u32::from_le_bytes(bytes[4 + 4 * i..8 + 4 * i].try_into().unwrap());
+    assert_eq!([field(0), field(1), field(4), field(5)], [0, 0, 5, 0]);
     let back = &t.mips[0].rgba;
-    // Each pixel near its colour.
     let worst = rgba.chunks_exact(4).zip(back.chunks_exact(4)).map(|(a, b)| (0..3).map(|k| (a[k] as i32 - b[k] as i32).abs()).max().unwrap()).max().unwrap();
-    assert!(worst <= 24, "{worst}");
+    assert!(worst <= 16, "{worst}");
 }
+

@@ -42,8 +42,8 @@ storm-rs = { path = "../../storm-rs" }
 casc-rs = { path = "../../casc-rs" }
 # Building a project's map (`build`).
 wc3-build = { path = "../../wc3-build" }
-# Decoding only: no libjpeg-turbo (a C build), so cross-compiling stays
-# pure Rust.
+# Decoding here; the editor writes BLP too (`encode`: libjpeg-turbo, a
+# C build), the game's own format.
 blp = { path = "../../blp-rs", default-features = false }
 # TGA for the viewer (map previews, loading screens), and PNG for the
 # trigger editor's icons: the `image` crate blp-rs already uses, pure Rust.

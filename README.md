@@ -2206,10 +2206,11 @@ step), this list updated.
      middle, black above and below), outside the camera bounds darker,
      each doodad and destructable the game's tables show on the minimap
      a dot in its colour (`showInMM`, `useMMColor`, `MMRed` ...: a tree
-     dark green), no units (the game draws them). Written as a
-     paletted BLP1 (256 colours by median cut): World Editor's is a
-     JPEG one, which needs libjpeg-turbo (a C build this one leaves
-     out); the game reads both.
+     dark green), no units (the game draws them). Written as World
+     Editor writes it: a JPEG BLP1, one mip, its header's (no alpha,
+     picture type 5), by blp-rs's encoder (libjpeg-turbo, built from
+     source for each target: `server/build-conf.sh` installs cmake),
+     the game's own format over a build of Rust alone.
    - **The shadow map** (`war3map.shd`) isn't made: HiveWE keeps the
      file as it is, and how World Editor bakes it (which doodads, which
      direction) isn't known here; a guess would be wrong on every save.

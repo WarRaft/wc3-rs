@@ -4,9 +4,8 @@
 //! across the middle), outside the camera bounds darker, and on it each
 //! doodad and destructable the game's tables show on the minimap in its
 //! colour (`showInMM`, `useMMColor`, `MMRed` ...: a tree a dark green
-//! dot); not the units (the game draws them). Written as a paletted
-//! BLP1 ([`blp`]): World Editor's is a JPEG one, which needs a JPEG
-//! encoder this build hasn't; the game reads both.
+//! dot); not the units (the game draws them). Written as World Editor
+//! writes it ([`blp`]): a JPEG BLP1, one mip.
 
 /// The picture's size.
 pub const SIZE: u32 = 256;
@@ -57,74 +56,20 @@ pub fn image(picture: (u32, u32, &[u8]), dots: &[(f32, f32, [u8; 3])], bounds: O
     out
 }
 
-/// `rgba` (`width` by `height`, rows from the top) as a paletted BLP1:
-/// no alpha, no mipmaps, its 256 colours by median cut.
-pub fn blp(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
-    let pixels: Vec<[u8; 3]> = rgba.chunks_exact(4).map(|p| [p[0], p[1], p[2]]).collect();
-    let (palette, index) = quantize(&pixels);
-    let mut out = Vec::with_capacity(1180 + pixels.len());
-    let u32le = |out: &mut Vec<u8>, v: u32| out.extend_from_slice(&v.to_le_bytes());
-    out.extend_from_slice(b"BLP1");
-    // Paletted, no alpha, its size, a picture type of 5 (World Editor's), no mipmaps.
-    for v in [1, 0, width, height, 5, 0] {
-        u32le(&mut out, v);
-    }
-    let data_at = 28 + 64 + 64 + 1024;
-    u32le(&mut out, data_at);
-    for _ in 1..16 {
-        u32le(&mut out, 0);
-    }
-    u32le(&mut out, pixels.len() as u32);
-    for _ in 1..16 {
-        u32le(&mut out, 0);
-    }
-    // The palette: blue, green, red, 0.
-    for i in 0..256 {
-        let [r, g, b] = palette.get(i).copied().unwrap_or([0, 0, 0]);
-        out.extend_from_slice(&[b, g, r, 0]);
-    }
-    out.extend(index);
-    out
+/// `rgba` (`width` by `height`, rows from the top) as World Editor
+/// writes the picture: a JPEG BLP1, its one mip (blp-rs, libjpeg-turbo).
+pub fn blp(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
+    let image = blp::AnyImage::from_rgba(rgba.to_vec(), width, height).map_err(|e| format!("{e:?}"))?;
+    let one = blp::EncodeMipOptions { mip_count: Some(1), ..Default::default() };
+    let mut bytes = image.encode(&blp::EncodeOptions::Blp { quality: QUALITY, mip_options: Some(one), raw: None }).map_err(|e| format!("{e:?}"))?;
+    // World Editor's header: no alpha, its picture type 5.
+    bytes[8..12].copy_from_slice(&0u32.to_le_bytes());
+    bytes[20..24].copy_from_slice(&5u32.to_le_bytes());
+    Ok(bytes)
 }
 
-/// 256 colours at most for `pixels` (median cut: the box of the most
-/// colours, split at its widest channel's median, until 256), and each
-/// pixel's colour among them.
-fn quantize(pixels: &[[u8; 3]]) -> (Vec<[u8; 3]>, Vec<u8>) {
-    let mut colors: Vec<[u8; 3]> = pixels.to_vec();
-    colors.sort_unstable();
-    colors.dedup();
-    let mut boxes: Vec<Vec<[u8; 3]>> = vec![colors];
-    while boxes.len() < 256 {
-        let Some((i, _)) = boxes.iter().enumerate().filter(|(_, b)| b.len() > 1).max_by_key(|(_, b)| b.len()) else { break };
-        let mut b = boxes.swap_remove(i);
-        let range = |c: usize| b.iter().map(|p| p[c]).max().unwrap() - b.iter().map(|p| p[c]).min().unwrap();
-        let channel = (0..3).max_by_key(|&c| range(c)).unwrap();
-        b.sort_unstable_by_key(|p| p[channel]);
-        let upper = b.split_off(b.len() / 2);
-        boxes.push(b);
-        boxes.push(upper);
-    }
-    let palette: Vec<[u8; 3]> = boxes
-        .iter()
-        .map(|b| {
-            let n = b.len().max(1) as u32;
-            let sum = b.iter().fold([0u32; 3], |s, p| [s[0] + p[0] as u32, s[1] + p[1] as u32, s[2] + p[2] as u32]);
-            sum.map(|v| (v / n) as u8)
-        })
-        .collect();
-    let mut nearest = std::collections::HashMap::new();
-    let index = pixels
-        .iter()
-        .map(|p| {
-            *nearest.entry(*p).or_insert_with(|| {
-                let d = |c: &[u8; 3]| (0..3).map(|k| (c[k] as i32 - p[k] as i32).pow(2)).sum::<i32>();
-                (0..palette.len()).min_by_key(|&k| d(&palette[k])).unwrap_or(0) as u8
-            })
-        })
-        .collect();
-    (palette, index)
-}
+/// The JPEG's quality.
+pub const QUALITY: u8 = 85;
 
 #[cfg(test)]
 #[path = "minimap.test.rs"]

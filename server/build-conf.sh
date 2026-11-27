@@ -32,6 +32,9 @@ brew_install jq
 brew_install llvm
 brew_install mingw-w64 x86_64-w64-mingw32-gcc
 brew_install FiloSottile/musl-cross/musl-cross x86_64-linux-musl-gcc
+# libjpeg-turbo, which blp-rs builds from source to write JPEG BLPs as
+# World Editor does (the editor's war3mapMap.blp), for every target.
+brew_install cmake
 
 # ---------------- rustup targets ----------------
 msg "🎯 Добавляю rustup targets…"

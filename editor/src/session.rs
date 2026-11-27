@@ -708,8 +708,7 @@ impl Session {
         // The minimap's picture, as World Editor makes it again on save:
         // what it shows changed (the terrain, the doodads, the bounds).
         if dirty.terrain || dirty.doodads || dirty.info {
-            let bytes = self.minimap_blp();
-            match self.write_file("war3mapMap.blp", bytes) {
+            match self.minimap_blp().and_then(|bytes| self.write_file("war3mapMap.blp", bytes)) {
                 Ok(to) => saved.push(to.display().to_string()),
                 Err(e) => failed.push(format!("war3mapMap.blp: {e}")),
             }
@@ -1324,7 +1323,7 @@ impl Session {
     /// The minimap's picture (`war3mapMap.blp`, `crate::minimap`): the
     /// terrain from above, the doodads and destructables the game shows
     /// on the minimap in their colours, outside the camera bounds darker.
-    pub fn minimap_blp(&mut self) -> Vec<u8> {
+    pub fn minimap_blp(&mut self) -> Result<Vec<u8>, String> {
         let draw = self.drawn.clone().expect("drawn");
         let (_, grounds, textures, layers) = self.ground_cache.as_ref().expect("drawn");
         let (w, h, picture) = crate::picture::paint(&self.terrain, grounds, textures, layers, &draw, self.tileset.water.as_ref(), 1);
