@@ -296,6 +296,25 @@ async function steps(only) {
             check(!dry.wet && shallow.wet && deep.wet && Math.abs(dry.height - shallow.height - 1) < 0.01 && Math.abs(shallow.height - deep.height - 1) < 0.01 && Math.abs(shallow.water - deep.water) < 0.01,
                 `shallow, then deep water: the ground ${dry.height.toFixed(2)} → ${shallow.height.toFixed(2)} → ${deep.height.toFixed(2)}, its surface ${shallow.water.toFixed(2)}, ${deep.water.toFixed(2)}`)
             await shot('world-editor-water')
+            // Blight on the flat ground north of the cut, then a texture over its middle.
+            const cornerAt = async (x, y) => {
+                we.corner = undefined
+                await we.panel.webview.postMessage({type: 'corner', x, y})
+                return until(() => we.corner, 'a corner')
+            }
+            for (const [tool, size, extra] of [['blight', 5, {}], ['texture', 1, {}]]) {
+                we.state = undefined
+                await we.panel.webview.postMessage({type: 'brush', brush: {tool, size, ...extra}, cells: [[50, 75]]})
+                await until(() => we.state?.undo, tool)
+                if (tool === 'blight') {
+                    await sleep(300)
+                    const [mid, side] = [await cornerAt(50, 75), await cornerAt(51, 75)]
+                    check(mid.blight && side.blight, 'blight laid')
+                }
+            }
+            await sleep(300)
+            const [mid, side] = [await cornerAt(50, 75), await cornerAt(51, 75)]
+            check(!mid.blight && side.blight, 'a texture over its middle: blight off there alone')
             we.state = undefined
             await we.panel.webview.postMessage({type: 'save'})
             const saved = await until(() => we.state?.message && we.state, 'saved')

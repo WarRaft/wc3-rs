@@ -177,3 +177,29 @@ fn shallow_and_deep_water_and_one_into_the_other_its_surface_kept() {
     e.apply(&mut t, 4.0, 4.0, &small(Tool::CliffUp), true).unwrap();
     assert!(!at(&t).has_water(v));
 }
+
+#[test]
+fn blight_not_by_a_cliff_taken_off_by_a_texture_and_a_cliff() {
+    let mut t = flat(15);
+    let v = t.flags_version();
+    // A cliff at the left: column 3 on a layer up.
+    for y in 0..15 {
+        for x in 0..4 {
+            t.point_mut(x, y).unwrap().set_layer_height(3);
+        }
+    }
+    let mut e = Edits::default();
+    let blight = |t: &Terrain, x: u32, y: u32| t.point(x, y).unwrap().blight(v);
+    e.apply(&mut t, 5.0, 7.0, &Brush { size: 5.0, ..brush(Tool::Blight) }, true).unwrap();
+    e.end();
+    assert!(blight(&t, 5, 7) && blight(&t, 7, 7));
+    // Corner 4's 3 by 3 has corner 3, a cliff's: none there.
+    assert!(!blight(&t, 3, 7) && !blight(&t, 4, 7));
+    // A texture over it: off.
+    e.apply(&mut t, 7.0, 7.0, &Brush { size: 1.0, texture: Some(Rawcode(*b"Ldrt")), ..brush(Tool::Texture) }, true).unwrap();
+    e.end();
+    assert!(!blight(&t, 7, 7) && blight(&t, 6, 7));
+    // A cliff raised by it: its corners clean.
+    e.apply(&mut t, 5.0, 7.0, &Brush { size: 1.0, ..brush(Tool::CliffUp) }, true).unwrap();
+    assert!(!blight(&t, 5, 7) && !blight(&t, 6, 7) && !blight(&t, 5, 8));
+}

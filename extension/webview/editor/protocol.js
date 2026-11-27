@@ -86,7 +86,7 @@ const EditorProtocol = (() => {
     }
 
     /** The tools by their code (`edit::TOOLS`). */
-    const TOOLS = ['raise', 'lower', 'plateau', 'smooth', 'texture', 'cliffUp', 'cliffDown', 'water', 'dry', 'pathingOn', 'pathingOff', 'ramp', 'shallowWater', 'deepWater']
+    const TOOLS = ['raise', 'lower', 'plateau', 'smooth', 'texture', 'cliffUp', 'cliffDown', 'water', 'dry', 'pathingOn', 'pathingOff', 'ramp', 'shallowWater', 'deepWater', 'blight']
 
     const utf8 = new TextDecoder()
     const utf8Out = new TextEncoder()

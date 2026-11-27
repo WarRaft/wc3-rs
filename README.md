@@ -1718,9 +1718,12 @@ step), this list updated.
      (deep) over the ground's layer; on the other water the cliff a
      layer the other way, the surface kept (which water it is told by
      the cliff's layer, the ground's height under it left out); a cliff
-     brush raising a corner over its water dries it. The tests' `brush`
+     brush raising a corner over its water dries it. Blight (HiveWE's
+     blight texture): set where no cliff is near (a corner of the 3 by 3
+     around it a cliff's, `edit::cliff_corner`); a texture laid takes it
+     off, and a cliff brush off its cliffs' corners. The tests' `brush`
      message takes `cells` (from above) for exact places, `corner` asks
-     a corner of the terrain (its height, water, wet).
+     a corner of the terrain (its height, water, wet, blight).
    - **6b, things placed** (done): the object palette (every type of
      doodad, destructable, unit and item, the game's and the map's
      object data's, named as World Editor names them, with its group:

@@ -42,10 +42,13 @@ pub enum Tool {
     /// `cliff_operation::shallow_water`, `deep_water`).
     ShallowWater,
     DeepWater,
+    /// Blight, not by a cliff (HiveWE's blight texture); a texture laid
+    /// takes it off.
+    Blight,
 }
 
 /// The tools by their code on the wire.
-pub const TOOLS: [Tool; 14] = [
+pub const TOOLS: [Tool; 15] = [
     Tool::Raise,
     Tool::Lower,
     Tool::Plateau,
@@ -60,6 +63,7 @@ pub const TOOLS: [Tool; 14] = [
     Tool::Ramp,
     Tool::ShallowWater,
     Tool::DeepWater,
+    Tool::Blight,
 ];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -273,6 +277,7 @@ impl Edits {
                         p.height = (p.height as f32 + (avg - p.height as f32) * k).round() as u16;
                     }
                     Tool::Texture => {
+                        p.set_blight(v, false);
                         p.set_texture(v, texture.unwrap() as u16);
                         // Mostly the first variation, now and then another.
                         self.seed = self.seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
@@ -302,6 +307,14 @@ impl Edits {
                         }
                         seeds.push((px, py));
                     }
+                    Tool::Blight => {
+                        // Not where a cliff is near (a corner of the 3 by 3
+                        // around it a cliff's).
+                        let near = (-1..=1).any(|dy| (-1..=1).any(|dx| cliff_corner(&before, w, h, px + dx, py + dy)));
+                        if !near {
+                            t.points[i].set_blight(v, true);
+                        }
+                    }
                     Tool::Water => p.set_has_water(v, true),
                     Tool::Dry => p.set_has_water(v, false),
                     // Not the terrain's: `pathing`; the ramps above.
@@ -312,6 +325,16 @@ impl Edits {
         if !seeds.is_empty() {
             let cliff = (brush.cliff >= 0 && (brush.cliff as usize) < t.cliffs.len()).then_some(brush.cliff as u8);
             pull_nearby(t, &seeds, cliff);
+            // A cliff takes the blight off its corners.
+            for py in 0..h {
+                for px in 0..w {
+                    if cliff_corner(&t.points, w, h, px, py) {
+                        for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                            t.points[at(px + dx, py + dy)].set_blight(v, false);
+                        }
+                    }
+                }
+            }
         }
         self.dirty.terrain = true;
         Ok(())
@@ -478,6 +501,17 @@ impl Edits {
             }
         }
     }
+}
+
+/// Is corner `(x, y)` a cliff's: its tile's (it the bottom left) corners
+/// not all of one layer (HiveWE's `corner_cliff`)? Off the terrain: no.
+fn cliff_corner(points: &[Point], w: i64, h: i64, x: i64, y: i64) -> bool {
+    if x < 0 || y < 0 || x + 1 >= w || y + 1 >= h {
+        return false;
+    }
+    let layer = |x: i64, y: i64| points[(y * w + x) as usize].layer_height();
+    let l = layer(x, y);
+    layer(x + 1, y) != l || layer(x, y + 1) != l || layer(x + 1, y + 1) != l
 }
 
 /// A corner's water surface and ground, in layers (HiveWE's
