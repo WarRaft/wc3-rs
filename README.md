@@ -1652,8 +1652,10 @@ water colours, the camera); none of its code is taken as is.
   round, it goes on from there), then the controls' window (F1) and
   Donate. Under the view one line: what was said, and where the mouse is
   on the ground (the game's X, Y, Z, the cell). The view follows the
-  page's size at once (a `ResizeObserver`); the minimap is at its bottom
-  left.
+  page's size at once (a `ResizeObserver`). The minimap: at the view's
+  top left at first; the left button, pressed and held, moves the
+  camera where it is; the right one drags the minimap about the view
+  (kept inside it), where it's left kept with the map's view.
 - The windows: one open at a time, its button lit, a second click
   closing it; one close, a cross over the top right corner of the one
   open (the controls' window has the same). None open at first. The
@@ -1661,7 +1663,8 @@ water colours, the camera); none of its code is taken as is.
   picked) and Map open on the right, 12 px in, over the view; the others
   over all of it, 12 px in. A panel closing itself (Triggers' "show on
   the map") turns its button off too.
-- The view of each map (the layers shown, the time of day) is kept by
+- The view of each map (the layers shown, the time of day, the
+  minimap's place) is kept by
   the extension (`globalState`, by the project's folder) between runs.
 - One editor per project (its process holds a lock on it). Opened
   again just after it's closed, the editor waits for the last process to

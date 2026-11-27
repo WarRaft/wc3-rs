@@ -278,12 +278,15 @@
     }
     const show = {pathing: false, destructables: true, regions: false, cameras: false, bounds: true, minimap: true, animate: true, shadows: true, fog: false, cycle: false, ...(vscode.getState()?.show ?? saved.show ?? {})}
     if (typeof saved.hours === 'number') light.hours = saved.hours
-    const keepView = () => vscode.postMessage({type: 'view', view: {show, hours: light.hours}})
+    /** Where the minimap was dragged to (its top left in the view, px), or null: the view's top left corner. */
+    let minimapAt = saved.minimapAt && Number.isFinite(saved.minimapAt.x) && Number.isFinite(saved.minimapAt.y) ? saved.minimapAt : null
+    const keepView = () => vscode.postMessage({type: 'view', view: {show, hours: light.hours, minimapAt}})
     const toggles = $('toggles')
     function applyShow() {
         if (terrain) terrain.show = {pathing: show.pathing, regions: show.regions, destructables: show.destructables}
         if (objects) objects.animate = show.animate
         $('minimap').hidden = !show.minimap
+        placeMinimap()
         for (const b of toggles.children) b.classList.toggle('on', !!show[b.dataset.show])
         vscode.setState({...(vscode.getState() ?? {}), show})
         keepView()
@@ -356,6 +359,7 @@
             draw(performance.now())
         }
         tip.hidden = true
+        placeMinimap()
     }
     new ResizeObserver(fit).observe(canvas)
 
@@ -373,12 +377,63 @@
         const r = Math.max(2, camera.distance * 0.6)
         c.strokeRect(x - r, minimap.height - 1 - y - r * 0.6, r * 2, r * 1.2)
     }
-    minimap.addEventListener('click', e => {
+    // The left button, pressed and held, moves the camera where it is;
+    // the right one drags the minimap about the view (where it's left is
+    // kept with the map's view).
+    let minimapHeld = null
+    function steerFromMinimap(e) {
         const b = minimap.getBoundingClientRect()
-        const x = (e.clientX - b.left) / b.width * minimap.width
-        const y = minimap.height - 1 - (e.clientY - b.top) / b.height * minimap.height
+        const x = Math.max(0, Math.min(minimap.width - 1, (e.clientX - b.left) / b.width * minimap.width))
+        const y = Math.max(0, Math.min(minimap.height - 1, minimap.height - 1 - (e.clientY - b.top) / b.height * minimap.height))
         camera.position = [x, y, camera.heightAt(x, y)]
+    }
+    minimap.addEventListener('contextmenu', e => e.preventDefault())
+    minimap.addEventListener('pointerdown', e => {
+        if (e.button !== 0 && e.button !== 2) return
+        e.preventDefault()
+        // (Held outside it too; a pointer the browser doesn't know, the tests', can't be.)
+        try {
+            minimap.setPointerCapture(e.pointerId)
+        } catch {}
+        if (e.button === 0) {
+            minimapHeld = {steer: true}
+            steerFromMinimap(e)
+        } else {
+            minimapHeld = {steer: false, dx: e.clientX - minimap.offsetLeft, dy: e.clientY - minimap.offsetTop}
+            minimap.classList.add('moving')
+        }
     })
+    minimap.addEventListener('pointermove', e => {
+        if (!minimapHeld) return
+        if (minimapHeld.steer) steerFromMinimap(e)
+        else {
+            minimapAt = {x: e.clientX - minimapHeld.dx, y: e.clientY - minimapHeld.dy}
+            placeMinimap()
+        }
+    })
+    const letMinimapGo = () => {
+        if (!minimapHeld) return
+        if (!minimapHeld.steer) {
+            minimap.classList.remove('moving')
+            keepView()
+        }
+        minimapHeld = null
+    }
+    minimap.addEventListener('pointerup', letMinimapGo)
+    minimap.addEventListener('pointercancel', letMinimapGo)
+
+    /** The minimap where it was dragged to (the view's top left at first), kept inside the view. */
+    function placeMinimap() {
+        const m = $('minimap')
+        const stage = m.parentElement
+        if (!stage || m.hidden) return
+        const pad = 12
+        const at = minimapAt ?? {x: pad, y: pad}
+        const x = Math.max(0, Math.min(stage.clientWidth - m.offsetWidth, at.x))
+        const y = Math.max(0, Math.min(stage.clientHeight - m.offsetHeight, at.y))
+        m.style.left = `${Math.round(x)}px`
+        m.style.top = `${Math.round(y)}px`
+    }
 
     // The terrain palette: a tool, its brush; the editor lays it where
     // the mouse's ray meets the ground, a step at a time while the left
@@ -1655,6 +1710,7 @@
                 minimap.width = msg.minimap.width
                 minimap.height = msg.minimap.height
                 minimapImage = new ImageData(new Uint8ClampedArray(msg.minimap.data.buffer, msg.minimap.data.byteOffset, msg.minimap.data.byteLength), msg.minimap.width, msg.minimap.height)
+                placeMinimap()
             }
             overlayNotes = msg.notes
             showNotes()
@@ -2063,6 +2119,16 @@
             // `click`: a button of the bar clicked (an id); `closeWindow`: the corner's close.
             if (msg.button) $(msg.button).click()
             if (msg.closeWindow) $('window-close').click()
+            // `minimapDrag`: [button, from, to], each a point of the minimap (0 to 1, from its top left), pressed, moved, let go.
+            if (msg.minimapDrag) {
+                const [button, from, to] = msg.minimapDrag
+                const b = minimap.getBoundingClientRect()
+                const at = ([u, v]) => ({clientX: b.left + u * b.width, clientY: b.top + v * b.height, button, pointerId: 1, bubbles: true})
+                minimap.dispatchEvent(new PointerEvent('pointerdown', at(from)))
+                minimap.dispatchEvent(new PointerEvent('pointermove', at([(from[0] + to[0]) / 2, (from[1] + to[1]) / 2])))
+                minimap.dispatchEvent(new PointerEvent('pointermove', at(to)))
+                minimap.dispatchEvent(new PointerEvent('pointerup', at(to)))
+            }
             // `drag`: the time's slider held and dragged there, the day going round.
             if (msg.drag !== undefined) {
                 show.cycle = true
@@ -2090,6 +2156,7 @@
                     now: light.now(performance.now() / 1000, show.cycle), slider: Number($('hours').value),
                     panels: ['tools', 'map-panel'].map(id => getComputedStyle($(id)).boxSizing),
                     windows: WINDOWS.map(([p, button, root]) => ({button, open: p.isOpen, on: $(button).classList.contains('on'), ...box(root)})),
+                    minimap: box('minimap'), camera: [...camera.position], minimapAt,
                     trg: box('trg-root'), stage: box('view'), close: $('window-close').hidden ? null : box('window-close'),
                     hoursAfter: [...document.querySelectorAll('.tool-bar > *')].findIndex(e => e.classList.contains('hours')) > [...document.querySelectorAll('.tool-bar > *')].findIndex(e => e.id === 'toggles'),
                 }})

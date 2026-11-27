@@ -222,11 +222,13 @@ button:hover {
 .pick-box[hidden] {
     display: none;
 }
-/* On the left: the windows open on the right. */
+/* At the view's top left at first (the windows open on the right);
+   dragged with the right button, where it's left is kept. */
 .minimap {
     position: absolute;
     left: 12px;
-    bottom: 12px;
+    top: 12px;
+    touch-action: none;
     width: min(220px, 30%);
     max-height: calc(100% - 24px);
     object-fit: contain;
@@ -235,6 +237,11 @@ button:hover {
     border: 1px solid var(--vscode-panel-border, #444);
     background: #000;
     cursor: crosshair;
+}
+
+.minimap.moving {
+    cursor: grabbing;
+    opacity: .85;
 }
 
 .minimap[hidden] {

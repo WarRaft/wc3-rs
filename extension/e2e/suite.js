@@ -137,6 +137,19 @@ async function steps(only) {
             check(opened(l).join() === 'tools-open', `the tools instead: ${opened(l).join(', ')}`)
             await shot('world-editor-tools')
             await layout({closeWindow: true})
+            // The minimap: at the view's top left; the left button held and
+            // moved steers the camera all the way; the right one drags it,
+            // kept for the map between runs (checked below).
+            check(Math.abs(l.minimap.left - l.stage.left - 12) <= 1 && Math.abs(l.minimap.top - l.stage.top - 12) <= 1, `the minimap at the view's top left: ${l.minimap.left - l.stage.left}, ${l.minimap.top - l.stage.top}`)
+            l = await layout({minimapDrag: [0, [0.2, 0.8], [0.7, 0.3]]})
+            const mw = l.minimap.right - l.minimap.left, mh = l.minimap.bottom - l.minimap.top
+            check(l.camera[0] > 0 && Math.abs(l.camera[0] / 192 - 0.7) < 0.03 && Math.abs(1 - l.camera[1] / 128 - 0.3) < 0.03, `the left button held and moved: the camera follows to where it's let go (${l.camera.slice(0, 2).map(v => v.toFixed(1)).join(', ')})`)
+            l = await layout({minimapDrag: [2, [0.5, 0.5], [0.5 + 300 / mw, 0.5 + 200 / mh]]})
+            check(Math.abs(l.minimap.left - l.stage.left - 312) <= 2 && Math.abs(l.minimap.top - l.stage.top - 212) <= 2, `the right button drags it: at ${l.minimap.left - l.stage.left}, ${l.minimap.top - l.stage.top}`)
+            l = await layout({minimapDrag: [2, [0.5, 0.5], [0.5 + 100000 / mw, 0.5]]})
+            check(Math.abs(l.minimap.right - l.stage.right) <= 1, `kept inside the view: its right ${l.minimap.right} against ${l.stage.right}`)
+            l = await layout({minimapDrag: [2, [0.5, 0.5], [0.5 - (l.minimap.left - l.stage.left - 312) / mw, 0.5]]})
+            const minimapAt = {x: l.minimap.left - l.stage.left, y: l.minimap.top - l.stage.top}
             l = await layout({help: true})
             check(l.help, 'the controls\' window opened')
             await shot('world-editor-help')
@@ -161,6 +174,9 @@ async function steps(only) {
             await open()
             l = await layout({})
             check(l.bar.find(b => b.tip === 'Fog').on === fog && l.hours === 18.5, `the view kept for the map: fog ${fog ? 'on' : 'off'}, ${l.hours} hours`)
+            check(Math.abs(l.minimap.left - l.stage.left - minimapAt.x) <= 1 && Math.abs(l.minimap.top - l.stage.top - minimapAt.y) <= 1, `the minimap where it was dragged to: ${l.minimap.left - l.stage.left}, ${l.minimap.top - l.stage.top}`)
+            // Back where it starts.
+            await layout({minimapDrag: [2, [0.5, 0.5], [0.5 - (minimapAt.x - 12) / mw, 0.5 - (minimapAt.y - 12) / mh]]})
             await we.panel.webview.postMessage({type: 'show', show: {fog: !fog}})
             await we.panel.webview.postMessage({type: 'hours', hours: 12})
             await sleep(300)
