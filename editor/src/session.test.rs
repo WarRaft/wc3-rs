@@ -60,7 +60,7 @@ fn the_terrain_drawn_with_the_tables_of_the_roots() {
     assert!(l.terrain.is_empty() && l.notes.iter().any(|n| n.contains("TerrainLights")), "{:?}", l.notes);
     // The pieces with a text form, where they are (the terrain) or would
     // be, at the top root (the map has none of the others).
-    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c", "war3map.w3s", "war3map.w3u", "war3map.w3t", "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3h", "war3map.w3q", "war3map.wts", "war3map.imp", "war3map.w3i"]);
+    assert_eq!(f.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["war3map.w3e", "war3map.doo", "war3mapUnits.doo", "war3map.w3r", "war3map.w3c", "war3map.w3s", "war3map.w3u", "war3map.w3t", "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3h", "war3map.w3q", "war3map.wts", "war3map.imp", "war3map.w3i", "war3mapMisc.txt"]);
     assert!(f[1].1.ends_with("map/war3map.doo"), "{f:?}");
     // Nothing placed; the minimap a pixel a corner.
     assert!(o.models.is_empty() && o.notes.is_empty());
@@ -1194,4 +1194,56 @@ fn things_together_moved_turned_copied_pasted_around_the_mouse_and_deleted_one_u
     assert_eq!((at(&s).0.len(), at(&s).1.len()), (0, 0));
     s.undo(false);
     assert_eq!((at(&s).0.len(), at(&s).1.len()), (2, 2));
+}
+
+#[test]
+fn gameplay_constants_the_games_or_the_maps_own_set_checked_undone_saved_and_off_again() {
+    let dir = TestDir::new("session-constants");
+    dir.write("wc3.bni", b"[map]\nroot=map\n");
+    dir.write("map/war3map.w3e", &testdir::terrain());
+    dir.write(
+        "map/Units/MiscMetaData.slk",
+        &testdir::slk(&[
+            &["ID", "field", "section", "displayName", "type", "minVal", "maxVal"],
+            &["mhel", "MaxHeroLevel", "Misc", "WESTRING_MHEL", "int", "1", "10000"],
+            &["gexp", "GlobalExperience", "Misc", "WESTRING_GEXP", "bool", "", ""],
+            &["twn1", "DependencyOr", "TWN1", "WESTRING_TWN1", "unitList", "", ""],
+        ]),
+    );
+    dir.write("map/Units/MiscData.txt", b"[Misc]\nMaxHeroLevel=5\nGlobalExperience=1\n");
+    dir.write("map/Units/MiscGame.txt", b"[Misc]\nMaxHeroLevel=10\n");
+    dir.write("map/Units/ItemFunc.txt", b"[TWN1]\nDependencyOr=htow,ogre\n");
+    dir.write("map/UI/WorldEditStrings.txt", b"[WorldEditStrings]\nWESTRING_MHEL=Hero Maximum Level\n");
+    let mut s = Session::open(dir.path()).unwrap();
+    s.draw();
+    let fields = |s: &mut Session| match s.constants_msg() {
+        ServerMsg::Constants { custom, fields } => (custom, fields),
+        m => panic!("{m:?}"),
+    };
+    let said = |msgs: &[ServerMsg]| msgs.iter().rev().find_map(|m| if let ServerMsg::State(st) = m { Some(st.message.clone()) } else { None }).unwrap();
+    // The game's: MiscGame.txt over MiscData.txt; named as World Editor names them.
+    let (custom, f) = fields(&mut s);
+    assert!(!custom);
+    assert_eq!((f[0].name.as_str(), f[0].value.as_str(), f[0].game.as_str(), f[1].value.as_str(), f[2].value.as_str()), ("Hero Maximum Level", "10", "10", "1", "htow,ogre"));
+    // Set: the map's own, the key changed alone; out of its limits said.
+    assert_eq!(said(&s.constant_set("mhel", "25")), "");
+    assert!(said(&s.constant_set("mhel", "0")).contains("1 at least"));
+    assert_eq!(said(&s.constant_set("twn1", "htow, ogre, etol")), "");
+    assert_eq!(s.placed.misc.as_deref(), Some("[Misc]\r\nMaxHeroLevel=25\r\n\r\n[TWN1]\r\nDependencyOr=htow,ogre,etol\r\n"));
+    let (custom, f) = fields(&mut s);
+    assert!(custom && f[0].value == "25" && f[0].game == "10");
+    // The game's value again: its line out.
+    s.constant_set("twn1", "htow,ogre");
+    assert_eq!(s.placed.misc.as_deref(), Some("[Misc]\r\nMaxHeroLevel=25\r\n\r\n[TWN1]\r\n"));
+    s.undo(false);
+    assert!(s.placed.misc.as_deref().unwrap().contains("etol"));
+    // Saved into the map's root; off again: the file gone on the next save.
+    let saved = s.save();
+    assert!(said(&saved).contains("war3mapMisc.txt"), "{saved:?}");
+    assert!(std::fs::read_to_string(dir.path().join("map/war3mapMisc.txt")).unwrap().contains("MaxHeroLevel=25"));
+    s.constant_set("custom", "0");
+    assert!(!fields(&mut s).0 && fields(&mut s).1[0].value == "10");
+    let saved = s.save();
+    assert!(said(&saved).contains("removed"), "{saved:?}");
+    assert!(!dir.path().join("map/war3mapMisc.txt").exists());
 }

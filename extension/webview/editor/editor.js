@@ -432,6 +432,7 @@
             if (o) return o.name
         }
     })
+    const constantsPanel = new EditorConstants.Panel($('constants-panel'), send, encode, constants => vscode.postMessage({type: 'constants', constants}))
     const openInfo = infoPanel.open.bind(infoPanel)
     infoPanel.open = () => {
         openInfo()
@@ -575,7 +576,7 @@
         mapPickAt(e.clientX, e.clientY)
     }, true)
     // One of these panels at a time.
-    const panels = () => [importsPanel, objectsPanel, infoPanel, triggersPanel]
+    const panels = () => [importsPanel, objectsPanel, infoPanel, constantsPanel, triggersPanel]
     const toggle = panel => {
         if (panel.isOpen) return panel.close()
         for (const p of panels()) if (p !== panel) p.close()
@@ -583,6 +584,7 @@
     }
     $('imports-open').onclick = () => toggle(importsPanel)
     $('info-open').onclick = () => toggle(infoPanel)
+    $('constants-open').onclick = () => toggle(constantsPanel)
     $('triggers-open').onclick = () => toggle(triggersPanel)
     const objectsPanel = new EditorObjectEditor.Panel($('objects-panel'), send, encode, objects => vscode.postMessage({type: 'objects', objects}))
     $('objects-open').onclick = () => toggle(objectsPanel)
@@ -1572,6 +1574,8 @@
             }
             $('status').textContent = group.length ? `${picks().length} picked together` : msg.found ? msg.text : ''
             vscode.postMessage({type: 'picked', text: group.length ? $('status').textContent : msg.found ? msg.text : ''})
+        } else if (msg.kind === 'constants') {
+            constantsPanel.setAll(msg.custom, msg.fields)
         } else if (msg.kind === 'info') {
             infoPanel.set(msg.fields)
         } else if (msg.kind === 'imports') {
@@ -1740,6 +1744,11 @@
         } else if (msg.type === 'button') {
             // A button of the page's pressed (`id`): for the tests.
             $(msg.id)?.onclick()
+        } else if (msg.type === 'constants') {
+            // The gameplay constants' panel, for the tests: `open`, a constant `set` (`id`, `value`), `close`.
+            if (msg.action === 'open') toggle(constantsPanel)
+            else if (msg.action === 'set') constantsPanel.type(msg.id, msg.value)
+            else if (msg.action === 'close') constantsPanel.close()
         } else if (msg.type === 'mapInfo') {
             // The map info panel's, for the tests: `open`, a field `set` (`field`, `value`, a flag's `bit`), `close`.
             if (msg.action === 'open') toggle(infoPanel)

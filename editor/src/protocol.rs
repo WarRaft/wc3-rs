@@ -74,6 +74,8 @@
 //! | 52 | `GroupMove` | things moved together by a drag: `u8` its first, the things (as `Copy`'s), the ray; answered as `Place` is |
 //! | 53 | `GroupRotate` | things each turned where it stands: the things, `f32` radians; answered the same |
 //! | 54 | `GroupDelete` | things taken away: the things; answered the same |
+//! | 55 | `ConstantsAsk` | the gameplay constants; answered by `Constants` |
+//! | 56 | `ConstantSet` | a gameplay constant set: its id (`custom`: 1 the map's own, 0 the game's), its value; answered by `Constants` and `State` |
 //! | 22 | `TilePathing` | the tile pather's: `u8` a tile's index in the terrain's list, `u8` what it forbids (`wpm` flags: 2 walking, 4 flying, 8 building); answered by `Overlays` and `State` |
 //! | 12 | `Icons` | the icons of types the page shows: a list of (`u8` kind, id; kind 255: id a texture's path); answered by `Icons` |
 //!
@@ -111,6 +113,7 @@
 //! | 156 | `SoundFiles` | the sound files of the game's and the map's layers (`.wav`, `.mp3`, `.flac`, `.ogg`): a list of names, sorted |
 //! | 157 | `MapName` | its kind, the name (`gg_unit_hfoo_0012`, `gg_rct_Spawn` ...; empty: none), what was picked or why none |
 //! | 158 | `MapFound` | the name, `u8` what it is (0 nothing, 1 a thing placed, 2 a region, 3 a camera), `u8` a thing's file, `u32` its index (or the region's, the camera's), `f32` where (the game's units, x, y, z), what it is in words or why nothing |
+//! | 160 | `Constants` | the gameplay constants: `u8` the map's own (`war3mapMisc.txt`), a list of (id, name, key, type, value, the game's value, min, max), all text |
 //! | 159 | `Pasted` | the things a `Paste` made: a list of (`u8` file, `u32` index) |
 //! | 141 | `Icons` | a list of (`u8` kind, id, `u32` width, height, RGBA; 0 by 0 for none) |
 //!
@@ -193,6 +196,9 @@ mod kind {
     pub const GROUP_MOVE: u8 = 52;
     pub const GROUP_ROTATE: u8 = 53;
     pub const GROUP_DELETE: u8 = 54;
+    pub const CONSTANTS_ASK: u8 = 55;
+    pub const CONSTANT_SET: u8 = 56;
+    pub const CONSTANTS: u8 = 160;
     pub const PASTED: u8 = 159;
     pub const MAP_FOUND: u8 = 158;
     pub const IMPORT_PREVIEW_ANSWER: u8 = 154;
@@ -300,6 +306,10 @@ pub enum ClientMsg {
     GroupRotate { things: Vec<(u8, u32)>, delta: f32 },
     /// Kind 54.
     GroupDelete { things: Vec<(u8, u32)> },
+    /// Kind 55.
+    ConstantsAsk,
+    /// Kind 56.
+    ConstantSet { id: String, value: String },
     /// Kind 48.
     MapName { kind: String, index: i32, origin: [f32; 3], dir: [f32; 3] },
     /// Kind 45.
@@ -446,6 +456,21 @@ pub struct ObjectsMsg {
     pub textures: Vec<crate::placed::Texture>,
     pub models: Vec<crate::placed::Model>,
     pub notes: Vec<String>,
+}
+
+/// A gameplay constant (kind 160): its id, name (World Editor's), key,
+/// type, its value as the map has it (its own, else the game's), the
+/// game's, its limits (empty: none).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ConstantMsg {
+    pub id: String,
+    pub name: String,
+    pub key: String,
+    pub ty: String,
+    pub value: String,
+    pub game: String,
+    pub min: String,
+    pub max: String,
 }
 
 /// Kind 135's body: `u8` found (a thing), `u32` model, `u32` instance,
@@ -619,6 +644,8 @@ pub enum ServerMsg {
     MapFound { name: String, what: u8, file: u8, index: u32, at: [f32; 3], said: String },
     /// Kind 159: the things a paste made, each its file and index.
     Pasted(Vec<(u8, u32)>),
+    /// Kind 160: whether the map has its own, each constant.
+    Constants { custom: bool, fields: Vec<ConstantMsg> },
     /// Kind 157.
     MapName { kind: String, name: String, said: String },
     /// Kind 155: each field and its value as text.
@@ -762,6 +789,8 @@ impl ClientMsg {
             kind::GROUP_MOVE => Some(ClientMsg::GroupMove { start: r.u8()? != 0, things: r.things()?, origin: [r.f32()?, r.f32()?, r.f32()?], dir: [r.f32()?, r.f32()?, r.f32()?] }),
             kind::GROUP_ROTATE => Some(ClientMsg::GroupRotate { things: r.things()?, delta: r.f32()? }),
             kind::GROUP_DELETE => Some(ClientMsg::GroupDelete { things: r.things()? }),
+            kind::CONSTANTS_ASK => Some(ClientMsg::ConstantsAsk),
+            kind::CONSTANT_SET => Some(ClientMsg::ConstantSet { id: r.string()?, value: r.string()? }),
             kind::PASTE => Some(ClientMsg::Paste { origin: [r.f32()?, r.f32()?, r.f32()?], dir: [r.f32()?, r.f32()?, r.f32()?] }),
             kind::MAP_NAME_ASK => Some(ClientMsg::MapName { kind: r.string()?, index: r.u32()? as i32, origin: [r.f32()?, r.f32()?, r.f32()?], dir: [r.f32()?, r.f32()?, r.f32()?] }),
             kind::INFO_ASK => Some(ClientMsg::InfoAsk),
@@ -874,6 +903,12 @@ impl ClientMsg {
             ClientMsg::GroupDelete { things } => {
                 w.things(things);
                 kind::GROUP_DELETE
+            }
+            ClientMsg::ConstantsAsk => kind::CONSTANTS_ASK,
+            ClientMsg::ConstantSet { id, value } => {
+                w.string(id);
+                w.string(value);
+                kind::CONSTANT_SET
             }
             ClientMsg::Paste { origin, dir } => {
                 origin.iter().chain(dir).for_each(|v| w.f32(*v));
@@ -1234,6 +1269,15 @@ impl ServerMsg {
                     });
                 });
                 kind::OBJECT_ENUMS
+            }
+            ServerMsg::Constants { custom, fields } => {
+                w.u8(*custom as u8);
+                w.list(fields, |w, f| {
+                    for v in [&f.id, &f.name, &f.key, &f.ty, &f.value, &f.game, &f.min, &f.max] {
+                        w.string(v);
+                    }
+                });
+                kind::CONSTANTS
             }
             ServerMsg::Pasted(things) => {
                 w.things(things);
@@ -1605,6 +1649,10 @@ impl ServerMsg {
             }
             kind::OBJECT_ENUMS => ServerMsg::ObjectEnums(r.list(|r| Ok((r.string()?, r.u8()? != 0, r.list(|r| Ok((r.string()?, r.string()?)))?)))?),
             kind::PASTED => ServerMsg::Pasted(r.things()?),
+            kind::CONSTANTS => ServerMsg::Constants {
+                custom: r.u8()? != 0,
+                fields: r.list(|r| Ok(ConstantMsg { id: r.string()?, name: r.string()?, key: r.string()?, ty: r.string()?, value: r.string()?, game: r.string()?, min: r.string()?, max: r.string()? }))?,
+            },
             kind::MAP_FOUND => ServerMsg::MapFound { name: r.string()?, what: r.u8()?, file: r.u8()?, index: r.u32()?, at: [r.f32()?, r.f32()?, r.f32()?], said: r.string()? },
             kind::MAP_NAME => ServerMsg::MapName { kind: r.string()?, name: r.string()?, said: r.string()? },
             kind::SOUND_FILES => ServerMsg::SoundFiles(r.list(|r| r.string())?),

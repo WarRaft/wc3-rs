@@ -70,6 +70,9 @@ const EditorProtocol = (() => {
         GROUP_MOVE: 52,
         GROUP_ROTATE: 53,
         GROUP_DELETE: 54,
+        CONSTANTS_ASK: 55,
+        CONSTANT_SET: 56,
+        CONSTANTS: 160,
         PASTED: 159,
         MAP_FOUND: 158,
         IMPORT_PREVIEW_ANSWER: 154,
@@ -356,6 +359,14 @@ const EditorProtocol = (() => {
             return w.frame(KIND.THING_SET_TEXT)
         },
         infoAsk: () => new Writer().frame(KIND.INFO_ASK),
+        constantsAsk: () => new Writer().frame(KIND.CONSTANTS_ASK),
+        /** A gameplay constant set (`custom`: 1 the map's own, 0 the game's). */
+        constantSet(id, value) {
+            const w = new Writer()
+            w.string(id)
+            w.string(value)
+            return w.frame(KIND.CONSTANT_SET)
+        },
         soundFiles: () => new Writer().frame(KIND.SOUND_FILES_ASK),
         /** What a name of the map's script is (`gg_unit_hfoo_0012` ...), and where. */
         mapFind(name) {
@@ -646,6 +657,12 @@ const EditorProtocol = (() => {
                 return {kind: 'mapName', type: r.string(), name: r.string(), said: r.string()}
             case KIND.SOUND_FILES:
                 return {kind: 'soundFiles', files: r.list(r => r.string())}
+            case KIND.CONSTANTS:
+                return {
+                    kind: 'constants',
+                    custom: r.u8() !== 0,
+                    fields: r.list(r => ({id: r.string(), name: r.string(), key: r.string(), ty: r.string(), value: r.string(), game: r.string(), min: r.string(), max: r.string()})),
+                }
             case KIND.INFO:
                 return {kind: 'info', fields: r.list(r => [r.string(), r.string()])}
             case KIND.IMPORTS:

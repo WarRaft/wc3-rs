@@ -128,6 +128,8 @@ pub enum Snapshot {
     Pathing(Vec<u8>),
     /// The whole terrain (the tile setter's: its list, cliffs, tileset).
     Whole(Box<Terrain>),
+    /// The gameplay constants' text, whole (`placed::Files::misc`).
+    Misc(Option<String>),
 }
 
 /// Which files have changes not saved.
@@ -151,11 +153,13 @@ pub struct Dirty {
     /// `war3map.w3i` (its playable area, its tileset) and `war3map.shd`.
     pub info: bool,
     pub shadows: bool,
+    /// `war3mapMisc.txt`.
+    pub misc: bool,
 }
 
 impl Dirty {
     pub fn any(self) -> bool {
-        self.terrain || self.doodads || self.units || self.regions || self.pathing || self.cameras || self.sounds || self.objects != 0 || self.strings || self.imports || self.info || self.shadows
+        self.terrain || self.doodads || self.units || self.regions || self.pathing || self.cameras || self.sounds || self.objects != 0 || self.strings || self.imports || self.info || self.shadows || self.misc
     }
 }
 
@@ -413,6 +417,7 @@ impl Edits {
             Snapshot::Sounds(_) => self.dirty.sounds = true,
             Snapshot::Objects(kind, _) => self.dirty.objects |= crate::objdata::bit(*kind),
             Snapshot::Strings(_) => self.dirty.strings = true,
+            Snapshot::Misc(_) => self.dirty.misc = true,
             Snapshot::Imports(..) => self.dirty.imports = true,
             Snapshot::Info(_) => self.dirty.info = true,
             Snapshot::Pathing(_) => self.dirty.pathing = true,
@@ -544,6 +549,10 @@ impl Edits {
             Snapshot::Strings(text) => {
                 self.dirty.strings = true;
                 Snapshot::Strings(std::mem::replace(&mut t.files.strings, text))
+            }
+            Snapshot::Misc(text) => {
+                self.dirty.misc = true;
+                Snapshot::Misc(std::mem::replace(&mut t.files.misc, text))
             }
             Snapshot::Pathing(cells) => {
                 self.dirty.pathing = true;

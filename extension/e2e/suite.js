@@ -765,6 +765,30 @@ async function steps(only) {
             check(!saved.dirty && saved.message.includes('war3map.imp') && saved.message.includes('Scripts\\Setup.j'), saved.message)
             await we.panel.webview.postMessage({type: 'import', action: 'close'})
         }},
+        {name: 'constants', editor: true, run: async () => {
+            log("the gameplay constants: the map's own (war3mapMisc.txt), a constant typed, one past its limits said, off and undone; saved")
+            await we.panel.webview.postMessage({type: 'constants', action: 'open'})
+            const shown = await until(() => we.constants?.count && we.constants, 'the constants shown')
+            const changed = new Map(shown.changed)
+            check(shown.custom && shown.count > 200 && changed.get('mhel') === '100', `${shown.count} constants, the map's own: ${shown.changed.map(c => c.join('=')).join(' ')}`)
+            await we.panel.webview.postMessage({type: 'constants', action: 'set', id: 'mhel', value: '50'})
+            await until(() => new Map(we.constants?.changed).get('mhel') === '50', 'the hero level typed')
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'constants', action: 'set', id: 'mhel', value: '0'})
+            const said = await until(() => we.state?.message && we.state, 'past its limits said')
+            check(/1 at least/.test(said.message) && new Map(we.constants.changed).get('mhel') === '50', `hero level 50; 0: ${said.message}`)
+            await we.panel.webview.postMessage({type: 'constants', action: 'set', id: 'custom', value: false})
+            await until(() => we.constants && !we.constants.custom && we.constants.changed.length === 0, "the game's again")
+            await shot('world-editor-constants')
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'undo'})
+            await until(() => we.constants?.custom && new Map(we.constants.changed).get('mhel') === '50', 'undone: the map\'s own again')
+            we.state = undefined
+            await we.panel.webview.postMessage({type: 'save'})
+            const saved = await until(() => we.state?.message && we.state, 'saved')
+            check(!saved.dirty && saved.message.includes('war3mapMisc.txt'), saved.message)
+            await we.panel.webview.postMessage({type: 'constants', action: 'close'})
+        }},
         {name: 'info', editor: true, run: async () => {
             log("the map's info: shown, its author and a flag, a player's race, the weather set; its name (a string of the map's) set and undone; saved")
             await we.panel.webview.postMessage({type: 'mapInfo', action: 'open'})

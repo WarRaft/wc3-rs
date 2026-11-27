@@ -1925,6 +1925,26 @@ step), this list updated.
      area (`camera.reset`: `resize::camera_bounds`, four cells in on the
      sides, two at the bottom and top); the bounds' lines follow (the
      overlays sent again, after an undo too).
+   - **Gameplay constants** (done after the things picked together):
+     World Editor's Advanced > Gameplay Constants, the page's
+     Constants… panel (`constants.js`). `editor/src/constants.rs`: the
+     fields of `Units\MiscMetaData.slk` (an id, its key and section,
+     its type, its limits, its name a `WESTRING_`), each the game's
+     value (`Units\MiscData.txt`, `Units\MiscGame.txt`,
+     `Units\ItemFunc.txt`'s `[TWN1]` ..., each over the one before)
+     unless the map's `war3mapMisc.txt` changes it. The file a piece
+     of the session (`placed::Files::misc`, its text whole;
+     `Snapshot::Misc`; read again when changed on disk; its own text
+     form, as `war3map.wts` is). Use Custom Gameplay Constants: the
+     map's own file (`[Misc]`, empty) or none (the game's again: the
+     file taken out on save). Each constant by its name, sorted,
+     searched; set as it's typed (`ConstantSet`: checked by its type,
+     `bool`, `int`, `real`, `unreal`, the lists, and its limits; said
+     and kept when it isn't), on its line of the file, the rest as it
+     was (`constants::set`; World Editor's `\r\n`), its line taken out
+     when it's the game's again (`1` and `1.0` alike); the ones the map
+     changes marked, ↺ the game's. An undo each. Messages
+     `ConstantsAsk`, `ConstantSet`, `Constants`.
    - **The triggers** (done after the sounds' Browse…): the trigger
      editor is one code, `webview/triggers.js` (with `triggers.css`): a
      map's triggers and a `.trg` alike, the tree of a map's beside its

@@ -12,6 +12,7 @@
 
 pub mod anim;
 pub mod cliffs;
+pub mod constants;
 pub mod edit;
 pub mod light;
 pub mod lock;
@@ -241,6 +242,8 @@ impl Editor {
                     ClientMsg::GroupMove { start, things, origin, dir } => s.group_move(start, &things, origin, dir),
                     ClientMsg::GroupRotate { things, delta } => s.group_rotate(&things, delta),
                     ClientMsg::GroupDelete { things } => s.group_delete(&things),
+                    ClientMsg::ConstantsAsk => vec![s.constants_msg()],
+                    ClientMsg::ConstantSet { id, value } => s.constant_set(&id, &value),
                     ClientMsg::Paste { origin, dir } => s.paste(origin, dir),
                     ClientMsg::MapName { kind, index, origin, dir } => vec![s.map_name(&kind, index, origin, dir)],
                     ClientMsg::SoundFiles => vec![ServerMsg::SoundFiles(s.sound_files())],

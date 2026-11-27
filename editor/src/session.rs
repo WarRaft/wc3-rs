@@ -8,7 +8,7 @@ use wc3_server::game::{Game, Lookup};
 use wc3_server::names::Names;
 use wc3_server::project::{self, Project};
 
-use crate::protocol::{CliffsMsg, GroundMsg, IconEntry, LightMsg, MapInfo, MapSettingsMsg, TileEntry, ObjectEntry, ObjectsMsg, PaletteEntry, PaletteMsg, PickedMsg, ServerMsg, StateMsg, ThingMsg, WaterMsg};
+use crate::protocol::{CliffsMsg, ConstantMsg, GroundMsg, IconEntry, LightMsg, MapInfo, MapSettingsMsg, TileEntry, ObjectEntry, ObjectsMsg, PaletteEntry, PaletteMsg, PickedMsg, ServerMsg, StateMsg, ThingMsg, WaterMsg};
 use crate::terrain::{Draw, Grounds};
 use crate::tileset::Tileset;
 
@@ -70,6 +70,8 @@ pub struct Session {
     enums_sent: bool,
     /// The things copied (`Copy`), as they were then, for `Paste`.
     clipboard: Vec<Copied>,
+    /// The gameplay constants' fields and the game's values, once asked.
+    constants: Option<crate::constants::Constants>,
     /// A group's drag: where it started on the ground and where each
     /// thing (file, index) stood then.
     group_drag: Option<([f32; 2], Vec<(u8, u32, f32, f32)>)>,
@@ -168,6 +170,7 @@ impl Session {
             enums_sent: false,
             clipboard: Vec::new(),
             group_drag: None,
+            constants: None,
         })
     }
 
@@ -597,6 +600,7 @@ impl Session {
         match what {
             crate::edit::Snapshot::Regions(_) | crate::edit::Snapshot::Cameras(_) | crate::edit::Snapshot::Pathing(_) => out.push(ServerMsg::Overlays(self.overlays())),
             crate::edit::Snapshot::Sounds(_) => out.push(self.sounds_msg()),
+            crate::edit::Snapshot::Misc(_) => out.push(self.constants_msg()),
             crate::edit::Snapshot::Strings(_) => {
                 self.strings_changed();
                 out.push(self.info_msg());
@@ -666,7 +670,7 @@ impl Session {
         let docs: Vec<String> = self.docs.values().map(|(p, _)| p.clone()).collect();
         let mut saved = Vec::new();
         let mut failed = Vec::new();
-        let files: [FileToSave; 10] = [
+        let files: [FileToSave; 11] = [
             (dirty.terrain, "war3map.w3e", self.terrain.to_bytes().map_err(|e| e.to_string())),
             (dirty.doodads, "war3map.doo", self.placed.doodads.as_ref().map_or(Ok(Vec::new()), |d| d.to_bytes().map_err(|e| e.to_string()))),
             (dirty.units, "war3mapUnits.doo", self.placed.units.as_ref().map_or(Ok(Vec::new()), |u| u.to_bytes().map_err(|e| e.to_string()))),
@@ -677,6 +681,7 @@ impl Session {
             (dirty.strings && self.placed.strings.is_some(), "war3map.wts", Ok(self.piece_bytes("war3map.wts").unwrap_or_default())),
             (dirty.info && self.info.is_some(), "war3map.w3i", self.info.as_ref().map_or(Ok(Vec::new()), |i| i.to_bytes().map_err(|e| e.to_string()))),
             (dirty.shadows && self.shadows.is_some(), "war3map.shd", Ok(self.shadows.as_ref().map_or(Vec::new(), |s| s.to_bytes()))),
+            (dirty.misc && self.placed.misc.is_some(), "war3mapMisc.txt", Ok(self.piece_bytes("war3mapMisc.txt").unwrap_or_default())),
         ];
         for (i, (changed, name, bytes)) in files.into_iter().enumerate() {
             if !changed {
@@ -694,9 +699,23 @@ impl Session {
                 Ok(to) => {
                     saved.push(to.display().to_string());
                     let d = &mut self.edits.dirty;
-                    *[&mut d.terrain, &mut d.doodads, &mut d.units, &mut d.regions, &mut d.pathing, &mut d.cameras, &mut d.sounds, &mut d.strings, &mut d.info, &mut d.shadows][i] = false;
+                    *[&mut d.terrain, &mut d.doodads, &mut d.units, &mut d.regions, &mut d.pathing, &mut d.cameras, &mut d.sounds, &mut d.strings, &mut d.info, &mut d.shadows, &mut d.misc][i] = false;
                 }
                 Err(e) => failed.push(format!("{name}: {e}")),
+            }
+        }
+        // The game's constants again (Use Custom Gameplay Constants off):
+        // no file.
+        if self.edits.dirty.misc && self.placed.misc.is_none() && !self.docs.contains_key("war3mapMisc.txt") {
+            match self.delete_file("war3mapMisc.txt") {
+                Ok(said) => {
+                    if !said.is_empty() {
+                        saved.push(said);
+                    }
+                    self.disk.insert("war3mapMisc.txt", None);
+                    self.edits.dirty.misc = false;
+                }
+                Err(e) => failed.push(format!("war3mapMisc.txt: {e}")),
             }
         }
         if self.edits.dirty.imports {
@@ -869,7 +888,7 @@ impl Session {
     }
 
     /// The map's pieces the editor changes, by name.
-    pub const PIECES: [&'static str; 17] = [
+    pub const PIECES: [&'static str; 18] = [
         "war3map.w3e",
         "war3map.doo",
         "war3mapUnits.doo",
@@ -887,6 +906,7 @@ impl Session {
         "war3map.wts",
         "war3map.imp",
         "war3map.w3i",
+        "war3mapMisc.txt",
     ];
 
     /// Each piece's bytes as the layers have it now, hashed (`None`: no
@@ -916,6 +936,8 @@ impl Session {
             return Vec::new();
         }
         self.game = game;
+        // The game's values may be what changed.
+        self.constants = None;
         let d = self.edits.dirty;
         let dirty = |n: &str| match n {
             "war3map.w3e" => d.terrain,
@@ -927,6 +949,7 @@ impl Session {
             "war3map.wts" => d.strings,
             "war3map.imp" => d.imports,
             "war3map.w3i" => d.info,
+            "war3mapMisc.txt" => d.misc,
             n if crate::objdata::kind_of(n).is_some() => d.objects & crate::objdata::bit(crate::objdata::kind_of(n).unwrap()) != 0,
             _ => d.pathing,
         };
@@ -956,6 +979,7 @@ impl Session {
                     self.strings_changed();
                 }
                 "war3map.imp" => self.placed.imports = files.imports.clone(),
+                "war3mapMisc.txt" => self.placed.misc = files.misc.clone(),
                 "war3map.w3i" => {
                     if let Some(Ok(i)) = self.game.read(name).map(|(b, _)| w3i_rs::parse(&b)) {
                         self.info = Some(i);
@@ -989,6 +1013,9 @@ impl Session {
             if taken.contains(&"war3map.w3i") {
                 out.push(self.info_msg());
                 out.push(self.map_msg());
+            }
+            if taken.contains(&"war3mapMisc.txt") {
+                out.push(self.constants_msg());
             }
             for name in &taken {
                 if let Some(kind) = crate::objdata::kind_of(name) {
@@ -1037,6 +1064,7 @@ impl Session {
             "war3map.imp" => self.placed.imports.as_ref()?.to_bytes().ok(),
             "war3map.w3i" => self.info.as_ref()?.to_bytes().ok(),
             "war3map.wts" => self.placed.strings.as_ref().map(|(text, bom)| format!("{}{text}", if *bom { "\u{FEFF}" } else { "" }).into_bytes()),
+            "war3mapMisc.txt" => self.placed.misc.clone().map(String::into_bytes),
             n if crate::objdata::kind_of(n).is_some() => self.placed.objects.get(&crate::objdata::kind_of(n)?)?.to_bytes().ok(),
             "war3map.w3e" => self.terrain.to_bytes().ok(),
             _ => None,
@@ -1050,6 +1078,9 @@ impl Session {
         let text = if name == "war3map.wts" {
             // The file is its own text form (without its byte order mark).
             return self.placed.strings.as_ref().map(|(t, _)| t.clone());
+        } else if name == "war3mapMisc.txt" {
+            // The file is its own text form too.
+            return self.placed.misc.clone();
         } else if let Some(kind) = crate::objdata::kind_of(name) {
             self.object_tables.load(&self.game, kind);
             wc3_server::objects::convert(wc3_server::objects::TO_TEXT, path, &bytes, &self.object_tables.meta[&kind])
@@ -1087,6 +1118,14 @@ impl Session {
         }
         if let Some(kind) = crate::objdata::kind_of(name) {
             return self.objects_text_changed(kind, path, text);
+        }
+        if name == "war3mapMisc.txt" {
+            let before = self.placed.misc.replace(text.to_string());
+            self.edits.record(crate::edit::Snapshot::Misc(before));
+            let mut out = vec![self.constants_msg()];
+            out.extend(self.sync_docs());
+            out.push(ServerMsg::State(self.state(String::new())));
+            return out;
         }
         if name == "war3map.wts" {
             let (src, _) = wts_rs::split_bom(text);
@@ -1230,6 +1269,7 @@ impl Session {
                 "war3map.w3s" => d.sounds = false,
                 "war3map.wts" => d.strings = false,
                 "war3map.w3i" => d.info = false,
+                "war3mapMisc.txt" => d.misc = false,
                 // Its files the editor writes on save, all the same.
                 "war3map.imp" if self.placed.import_files.is_empty() => d.imports = false,
                 n if crate::objdata::kind_of(n).is_some() => d.objects &= !crate::objdata::bit(crate::objdata::kind_of(n).unwrap()),
@@ -1920,6 +1960,65 @@ impl Session {
     }
 
     /// The map's info as the page shows it ([`info_fields`](Self::info_fields)).
+    /// The gameplay constants (`war3mapMisc.txt`), as the Constants…
+    /// panel shows them: whether the map has its own, and each field
+    /// (its id, name, key, type, the value it has, the game's, its
+    /// limits).
+    pub fn constants_msg(&mut self) -> ServerMsg {
+        let names = &self.names;
+        let c = self.constants.get_or_insert_with(|| crate::constants::Constants::load(&self.game, &|s| wc3_server::names::plain(&names.resolve(s))));
+        let text = self.placed.misc.as_deref().unwrap_or("");
+        let fields = c
+            .fields
+            .iter()
+            .map(|f| {
+                let game = c.game_value(f);
+                let value = crate::constants::get(text, &f.section, &f.key).unwrap_or_else(|| game.clone());
+                ConstantMsg { id: f.id.clone(), name: f.name.clone(), key: f.key.clone(), ty: f.ty.clone(), value, game, min: f.min.clone(), max: f.max.clone() }
+            })
+            .collect();
+        ServerMsg::Constants { custom: self.placed.misc.is_some(), fields }
+    }
+
+    /// A gameplay constant set (`id`; checked by its type and limits): on
+    /// its line of the map's `war3mapMisc.txt`, or taken out when it's
+    /// the game's; `custom` 1 the map's own (a file, empty), 0 the game's
+    /// again (no file). An undo each.
+    pub fn constant_set(&mut self, id: &str, value: &str) -> Vec<ServerMsg> {
+        let next = if id == "custom" {
+            match value {
+                "1" => Ok(Some(self.placed.misc.clone().unwrap_or_else(|| "[Misc]\r\n".to_string()))),
+                "0" => Ok(None),
+                _ => Err(format!("custom can't be {value}: 0 or 1")),
+            }
+        } else {
+            self.constants_msg();
+            let c = self.constants.as_ref().unwrap();
+            match c.field(id) {
+                None => Err(format!("No gameplay constant {id}.")),
+                Some(f) => crate::constants::check(f, value).map(|v| {
+                    let text = self.placed.misc.clone().unwrap_or_else(|| "[Misc]\r\n".to_string());
+                    let game = c.game_value(f);
+                    let set = if crate::constants::same(&v, &game) { None } else { Some(v.as_str()) };
+                    Some(crate::constants::set(&text, &f.section, &f.key, set))
+                }),
+            }
+        };
+        let next = match next {
+            Ok(n) => n,
+            Err(e) => return vec![self.constants_msg(), ServerMsg::State(self.state(e))],
+        };
+        if next == self.placed.misc {
+            return vec![self.constants_msg(), ServerMsg::State(self.state(String::new()))];
+        }
+        let before = std::mem::replace(&mut self.placed.misc, next);
+        self.edits.record(crate::edit::Snapshot::Misc(before));
+        let mut out = vec![self.constants_msg()];
+        out.extend(self.sync_docs());
+        out.push(ServerMsg::State(self.state(String::new())));
+        out
+    }
+
     pub fn info_msg(&self) -> ServerMsg {
         ServerMsg::Info(self.info_fields())
     }
