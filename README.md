@@ -1440,6 +1440,29 @@ its blocks (If - Conditions, Then - Actions, Else - Actions, Loop -
 Actions), a disabled line dimmed. A function the files don't have shows
 as its call, marked.
 
+**Custom Script is read as the trigger's code it's part of**
+(`triggers::script_code`): the server builds the trigger into JASS as a
+build does (`wtg_rs::jass::compile`), each line of custom script marked
+(`// @cs <line> <k>`), and reads the JASS whole: each line gets the
+tokens and the parse error found on it there, at its own columns. So a
+construct over several actions (an `if` in one, its `endif` in another,
+the trigger's actions between) reads as one, a local one declares is a
+local in the others, and a missing `endif` is an error on the last line
+of custom script before where it's found. A line the build changes (a
+local declared again) or leaves out (a disabled action) is read alone.
+
+**One way of coloring**: the parameters' values and custom script's
+tokens are classes of the same names (`tok-<type>`, `tok-<modifier>`:
+code's semantic token types, a variable of the phrases a `variable` as
+`udg_hero` in custom script is), and their colors are the current color
+theme's (`theme-tokens.js`): its file (and what it includes) read as VS
+Code reads it for semantic highlighting, a `semanticTokenColors` rule
+else the TextMate scopes a type stands for, with the user's
+`editor.semanticTokenColorCustomizations` and
+`editor.tokenColorCustomizations` over them; sent to the page again when
+the theme or those settings change. The page's own colors stand in
+without them.
+
 The view is the same document as the text, as the SLK table is: the text
 stays what's saved, and what's done in the view the server turns into
 edits of the text (`server/src/triggers.rs`), so undo, save and the

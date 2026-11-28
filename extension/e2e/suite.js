@@ -12,7 +12,7 @@ const path = require('path')
  * The steps of the work in hand (`node e2e/run.js current`); `all` runs
  * every step.
  */
-const CURRENT = ['format']
+const CURRENT = ['script-code']
 
 const out = process.env.E2E_OUT
 const map = process.env.E2E_MAP
@@ -83,46 +83,34 @@ async function steps(only) {
         await vscode.commands.executeCommand('workbench.action.closeAllEditors')
     }
     const STEPS = [
-        {name: 'format', run: async () => {
-            log('Format Document on JASS, vJASS (with a zinc block), Zinc and AngelScript: lines only moved left or right, none added or removed; Format Selection moves only the lines selected')
-            const cases = [
-                ['Fmt.j', 'function F takes nothing returns nothing\nlocal integer i = 0\nloop\nexitwhen i > 1\n  if i == 0 then\ncall BJDebugMsg("a\n  b")\n        else\nset i = i + 1\nendif\nendloop\n   endfunction\n',
-                    'function F takes nothing returns nothing\n    local integer i = 0\n    loop\n        exitwhen i > 1\n        if i == 0 then\n            call BJDebugMsg("a\n  b")\n        else\n            set i = i + 1\n        endif\n    endloop\nendfunction\n'],
-                ['Fmt.vj', 'library L\nstruct S\nmethod m takes nothing returns nothing\nendmethod\nendstruct\nendlibrary\n  //! zinc\nlibrary Z {\nfunction f() {\nx = 1;\n}\n}\n//! endzinc\n',
-                    'library L\n    struct S\n        method m takes nothing returns nothing\n        endmethod\n    endstruct\nendlibrary\n//! zinc\nlibrary Z {\n    function f() {\n        x = 1;\n    }\n}\n//! endzinc\n'],
-                ['Fmt.zn', 'library A {\nfunction f() {\nif (x)\ny();\n}\n}\n', 'library A {\n    function f() {\n        if (x)\n            y();\n    }\n}\n'],
-                ['Fmt.as', 'void f(int k) {\nswitch (k) {\n  case 1:\nx();\nbreak;\n}\n}\n', 'void f(int k) {\n    switch (k) {\n    case 1:\n        x();\n        break;\n    }\n}\n'],
-            ]
-            for (const [name, text, want] of cases) {
-                const file = path.join(root, name)
-                fs.writeFileSync(file, text)
-                const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file))
-                const editor = await vscode.window.showTextDocument(doc)
-                editor.options = {insertSpaces: true, tabSize: 4}
-                const lines = doc.lineCount
-                // The server has it once it answers with its highlighting.
-                await until(async () => (await vscode.commands.executeCommand('vscode.provideDocumentSemanticTokens', doc.uri))?.data?.length, `${name} analyzed`, 30000)
-                await until(async () => {
-                    await vscode.commands.executeCommand('editor.action.formatDocument')
-                    return doc.getText() !== text
-                }, `${name} formatted`)
-                check(doc.getText() === want, `${name} formatted:\n${doc.getText()}`)
-                check(doc.lineCount === lines, `${name}: still ${lines} lines`)
-                await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
-            }
-            // Format Selection: lines 3 and 4 of the Zinc file alone.
-            const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(root, 'Fmt.zn')))
-            const editor = await vscode.window.showTextDocument(doc)
-            editor.options = {insertSpaces: false, tabSize: 4}
-            editor.selection = new vscode.Selection(2, 0, 4, 0)
-            await until(async () => {
-                await vscode.commands.executeCommand('editor.action.formatSelection')
-                return doc.isDirty
-            }, 'the selection formatted')
-            check(doc.getText() === 'library A {\nfunction f() {\n\t\tif (x)\n\t\t\ty();\n}\n}\n', `the selection alone, with tabs:\n${doc.getText()}`)
-            await shot('format')
-            await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
+        {name: 'script-code', run: async () => {
+            log("Custom script in the trigger editor read as the trigger's code: an if in one action, its endif in another, an action between; tokens of the phrases' values and of code colored one way, the theme's colors")
+            const file = path.join(root, 'triggers', 'Script.trg')
+            fs.writeFileSync(file, '[variable]\nname="hero"\ntype="unit"\nsize=1\n\n[trigger]\nname="Script"\naction=CustomScriptCode("local integer i = 1")\naction=CustomScriptCode("if i > 0 then")\naction=DoNothing()\naction=CustomScriptCode("    call KillUnit(udg_hero)")\naction=CustomScriptCode("endif")\n')
+            await vscode.commands.executeCommand('vscode.openWith', vscode.Uri.file(file), 'wc3.trigger')
+            const editor = await until(() => api.triggerEditors.get(vscode.Uri.file(file).toString()), 'the trigger editor')
+            // (The server reads the project's game files first.)
+            // (A file just made: the editor asks till the server has it.)
+            const view = await until(() => editor.state().view, 'the view', 60000)
+            const lines = new Map()
+            const walk = nodes => nodes.forEach(n => {
+                lines.set(n.line, n)
+                n.blocks.forEach(b => walk(b.nodes))
+            })
+            walk(view.actions)
+            const code = line => lines.get(line)?.code
+            check([8, 9, 11, 12].every(l => code(l)), 'each custom script action has its code read')
+            check([8, 9, 11, 12].every(l => !code(l).errors.length), 'no errors: the if and its endif are one construct')
+            check(code(12).tokens.some(t => t[3] === 'keyword' && t[1] === 0 && t[2] === 5), 'endif a keyword')
+            check(code(9).tokens.some(t => t[3] === 'variable' && t[1] === 3), "if's i the local")
+            check(code(11).tokens.some(t => t[3] === 'variable' && t[1] === 18), 'udg_hero a variable, as a variable of the phrases')
+            const css = api.themeTokenCss()
+            check(/\.tok\.tok-keyword \{ color: #/.test(css) && /\.tok\.tok-variable \{/.test(css), `the theme's colors of tokens:\n${css.split('\n').slice(0, 6).join('\n')}`)
+            await shot('script-code')
+            fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('action=CustomScriptCode("endif")\n', ''))
+            await until(() => editor.state().view?.actions?.some(n => n.code?.errors?.length), 'without its endif: an error', 60000)
             await vscode.commands.executeCommand('workbench.action.closeAllEditors')
+            fs.rmSync(file)
         }},
     ]
     // What's run: `only`'s names (all without it), with what they need.

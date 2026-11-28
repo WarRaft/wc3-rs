@@ -143,6 +143,7 @@ const {
     McpStdioServerDefinition,
     CodeLens,
     ProgressLocation,
+    extensions,
 } = require('vscode')
 const {encode, decode, FrameReader, QUERY, FS_OP, FS_FLAG, OBJECTS_OP} = require('./protocol.js')
 const {registerWorldEditor} = require('./world-editor.js')
@@ -1848,6 +1849,26 @@ const wtgPicked = new Map()
  * @type {Map<string, {receive: (msg: any) => Promise<void>, state: () => any, wct: () => any, refresh: () => Promise<void>}>}
  */
 const triggerEditors = new Map()
+
+/**
+ * The current color theme's colors of code's tokens, as CSS for a page's
+ * `tok` classes (`theme-tokens.js`): the theme's file and the user's
+ * customizations, its own (`"[Theme]": {...}`) over the general ones.
+ */
+function themeTokenCss() {
+    const themeTokens = require('./theme-tokens')
+    const name = workspace.getConfiguration('workbench').get('colorTheme') || ''
+    const file = themeTokens.themeFile(name, extensions.all)
+    const theme = file ? themeTokens.readTheme(file) : {tokenColors: [], semanticTokenColors: {}}
+    const editor = workspace.getConfiguration('editor')
+    const of = (setting, key) => {
+        const v = editor.get(setting) || {}
+        const own = v[`[${name}]`] || {}
+        const list = [...(v[key] ? (Array.isArray(v[key]) ? v[key] : [v[key]]) : []), ...(own[key] ? (Array.isArray(own[key]) ? own[key] : [own[key]]) : [])]
+        return key === 'rules' ? {rules: Object.assign({}, ...list)} : {textMateRules: list.flat()}
+    }
+    return themeTokens.css(theme, of('semanticTokenColorCustomizations', 'rules'), of('tokenColorCustomizations', 'textMateRules'))
+}
 let onWtgPicked = (/** @type {import('vscode').Uri} */ _uri) => {}
 
 /** The file named `name` beside `uri`, in its scheme. @param {import('vscode').Uri} uri @param {string} name */
@@ -1976,6 +1997,8 @@ window.addEventListener('message', e => page.receive(e.data))
             const wct = wtg ? await workspace.openTextDocument(sibling(document.uri, 'war3map.wct')).then(d => d, () => null) : null
             /** The last tree, for the code of its triggers. */
             let last = null
+            /** The last view of a trigger (for the tests in the editor). */
+            let lastView = null
             let warned = false
             /** A map's triggers: which is picked (from 1; 0: the first), and the text's line of each of its lines. */
             let picked = 0
@@ -1988,11 +2011,20 @@ window.addEventListener('message', e => page.receive(e.data))
             /** A query's text: in a map's triggers, after which is picked. */
             const of = text => wtg ? `${picked}\n${text}` : text
 
-            const post = async select => {
+            const post = async (select, tries = 0) => {
                 const answer = await query(QUERY.TRIGGER_VIEW, id, {line: picked, character: 0})
-                if (!answer || !answer.text) return
-                if (!wtg) return webview.postMessage({type: 'view', view: JSON.parse(answer.text), select, file: path.basename(document.uri.path).replace(/\.trg$/i, '')})
+                // A file just made (Extract, a new trigger) the server doesn't
+                // have yet: asked again till it has, for a minute.
+                if (!answer || !answer.text) {
+                    if (tries < 120) setTimeout(() => post(select, tries + 1), 500)
+                    return
+                }
+                if (!wtg) {
+                    lastView = JSON.parse(answer.text)
+                    return webview.postMessage({type: 'view', view: lastView, select, file: path.basename(document.uri.path).replace(/\.trg$/i, '')})
+                }
                 const map = JSON.parse(answer.text)
+                lastView = map.view
                 last = map
                 picked = map.picked
                 at = map.at
@@ -2150,7 +2182,8 @@ window.addEventListener('message', e => page.receive(e.data))
                 // What the page answered the tests in the editor.
                 case 'e2eSplitter': lastSplitter = msg; return
                 case 'ready': {
-                    // The editor's icons once (the project's), then the view.
+                    // The theme's colors of tokens, the editor's icons once (the project's), then the view.
+                    webview.postMessage({type: 'tokenColors', css: themeTokenCss()})
                     const icons = await query(QUERY.TRIGGER_ICONS, id, {line: 0, character: 0}, '')
                     if (icons && icons.text) webview.postMessage({type: 'icons', icons: JSON.parse(icons.text)})
                     return post(0)
@@ -2261,10 +2294,17 @@ window.addEventListener('message', e => page.receive(e.data))
                 // One at a time: each edit is worked out on the text the one
                 // before left (typing a name sends one after another).
                 webview.onDidReceiveMessage(receive),
+                // Another theme, or the user's colors changed: the page's tokens too.
+                window.onDidChangeActiveColorTheme(() => webview.postMessage({type: 'tokenColors', css: themeTokenCss()})),
+                workspace.onDidChangeConfiguration(e => {
+                    if (['workbench.colorTheme', 'editor.semanticTokenColorCustomizations', 'editor.tokenColorCustomizations'].some(k => e.affectsConfiguration(k))) {
+                        webview.postMessage({type: 'tokenColors', css: themeTokenCss()})
+                    }
+                }),
             ]
             // For the tests in the editor (`e2e/`): what the page would send, and what it was last sent.
             const key = document.uri.toString()
-            triggerEditors.set(key, {receive, state: () => ({picked, tree: last, choices: lastChoices, splitter: lastSplitter}), wct: () => wct, refresh: () => post(0), page: m => webview.postMessage(m)})
+            triggerEditors.set(key, {receive, state: () => ({picked, tree: last, view: lastView, choices: lastChoices, splitter: lastSplitter}), wct: () => wct, refresh: () => post(0), page: m => webview.postMessage(m)})
             panel.onDidDispose(() => {
                 clearTimeout(timer)
                 subscriptions.forEach(d => d.dispose())
@@ -2846,7 +2886,7 @@ module.exports = {
         )
         for (const doc of workspace.textDocuments) onOpen(doc)
         // What the tests in the editor (`e2e/`) reach.
-        return {test: {triggerEditors, worldEditors, generated, PIECE_SCHEME, OBJECTS_SCHEME}}
+        return {test: {triggerEditors, worldEditors, generated, themeTokenCss, PIECE_SCHEME, OBJECTS_SCHEME}}
     },
 
     deactivate() {

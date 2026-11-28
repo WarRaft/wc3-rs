@@ -11,6 +11,7 @@
 //! it is (strings as JASS writes them), highlighted by what it is
 //! (`wtg_rs::text::semantic_tokens`).
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use wtg_rs::TriggerData;
@@ -230,7 +231,9 @@ pub fn view(text: &str, names: &crate::names::Names, visible: &[Declared], trigg
     errors.sort_by_key(|e| e.0);
     let errors: Vec<String> = errors.iter().map(|(line, m)| format!("[{line},{}]", js(m))).collect();
     let labels = ["WESTRING_EVENTS", "WESTRING_CONDITIONS", "WESTRING_ACTIONS", "WESTRING_VARIABLES"].map(|k| js(&ui.label(k)));
-    let nodes = |n: &[wtg_rs::ui::Node]| format!("[{}]", n.iter().map(node_json).collect::<Vec<_>>().join(","));
+    // Custom script read as the trigger's code it's part of.
+    let code = script_code(&t, &p.lines, &p.variables, visible, ui);
+    let nodes = |n: &[wtg_rs::ui::Node]| format!("[{}]", n.iter().map(|n| node_json(n, &code)).collect::<Vec<_>>().join(","));
     // Each variable with the line of its section.
     let doc = wtg_rs::text::parse_bni(text);
     let var_lines = doc.sections.iter().filter(|s| s.name.text == wtg_rs::text::VARIABLE).map(|s| s.line);
@@ -360,18 +363,25 @@ fn sees_locals(doc: &Doc, mut i: usize) -> bool {
     }
 }
 
-fn node_json(n: &wtg_rs::ui::Node) -> String {
+fn node_json(n: &wtg_rs::ui::Node, code: &HashMap<usize, ScriptCode>) -> String {
     let js = crate::objects::json_string;
     let blocks: Vec<String> = n
         .blocks
         .iter()
         .map(|b| {
-            let nodes: Vec<String> = b.nodes.iter().map(node_json).collect();
+            let nodes: Vec<String> = b.nodes.iter().map(|n| node_json(n, code)).collect();
             format!("{{\"label\":{},\"group\":{},\"kind\":{},\"nodes\":[{}]}}", js(&b.label), b.group, b.kind, nodes.join(","))
         })
         .collect();
+    // A custom script's: its tokens, `[line, start, end, "type mods"]`
+    // (its lines from 0, columns in characters from 0), and its errors.
+    let script = code.get(&n.line).map_or(String::new(), |c| {
+        let tokens: Vec<String> = c.tokens.iter().map(|(k, a, b, ty)| format!("[{k},{a},{b},{}]", js(ty))).collect();
+        let errors: Vec<String> = c.errors.iter().map(|(k, m)| format!("[{k},{}]", js(m))).collect();
+        format!(",\"code\":{{\"tokens\":[{}],\"errors\":[{}]}}", tokens.join(","), errors.join(","))
+    });
     format!(
-        "{{\"line\":{},\"kind\":{},\"enabled\":{},\"name\":{},\"known\":{},\"icon\":{},\"hint\":{},\"text\":{},\"blocks\":[{}]}}",
+        "{{\"line\":{},\"kind\":{},\"enabled\":{},\"name\":{},\"known\":{},\"icon\":{},\"hint\":{},\"text\":{},\"blocks\":[{}]{script}}}",
         n.line,
         n.kind,
         n.enabled,
@@ -382,6 +392,116 @@ fn node_json(n: &wtg_rs::ui::Node) -> String {
         spans_json(&n.text),
         blocks.join(",")
     )
+}
+
+/// A custom script action's code (`CustomScriptCode`) as the trigger's
+/// code reads it: highlighting tokens of each of its lines, and the errors
+/// on them.
+#[derive(Debug, Default, PartialEq)]
+pub struct ScriptCode {
+    /// Line of the code (from 0), start and end column (characters, from
+    /// 0), the token's type and modifiers (`"function defaultLibrary"`).
+    pub tokens: Vec<(usize, usize, usize, String)>,
+    /// Line of the code (from 0) and what's wrong there.
+    pub errors: Vec<(usize, String)>,
+}
+
+/// The marker a line of custom script is built with, to be found in the
+/// trigger's JASS: `// @cs <line of the action> <line of its code>`.
+const SCRIPT_MARK: &str = "// @cs ";
+
+/// Each custom script action of trigger `t` (by its line in the text,
+/// `lines` the line of each ECA as a walk of the tree meets them), read
+/// as part of the trigger's code: the trigger built into JASS
+/// (`wtg_rs::jass::compile`, the build's), each line of custom script
+/// marked, so a construct over several of them (an `if` in one, its
+/// `endif` in another, the trigger's actions between) and the locals one
+/// declares for the others read as they will. A line the build changes
+/// (a local declared again) or leaves out (a disabled action) is read
+/// alone.
+pub fn script_code(t: &wtg_rs::Trigger, lines: &[usize], own: &[Declared], visible: &[Declared], ui: &wtg_rs::ui::Ui) -> HashMap<usize, ScriptCode> {
+    fn mark(ecas: &mut [wtg_rs::Eca], lines: &[usize], at: &mut usize, code: &mut Vec<(usize, Vec<String>)>) {
+        for e in ecas {
+            let line = lines.get(*at).copied().unwrap_or(0);
+            *at += 1;
+            if e.name == "CustomScriptCode"
+                && let Some(p) = e.params.first_mut()
+            {
+                let source: Vec<String> = p.value.split('\n').map(|l| l.trim_end_matches('\r').to_string()).collect();
+                p.value = source.iter().enumerate().map(|(k, l)| if l.trim().is_empty() { l.clone() } else { format!("{l} {SCRIPT_MARK}{line} {k}") }).collect::<Vec<_>>().join("\n");
+                code.push((line, source));
+            }
+            mark(&mut e.children, lines, at, code);
+        }
+    }
+    let mut marked = t.clone();
+    let mut code = Vec::new();
+    mark(&mut marked.ecas, lines, &mut 0, &mut code);
+    if code.is_empty() {
+        return HashMap::new();
+    }
+    let built = wtg_rs::jass::compile(Some(&marked), "t", own, visible, ui);
+    // Each built line's place: the action's line, its code's line, how
+    // far right it's moved; the JASS without the markers.
+    let mut places: HashMap<usize, (usize, usize, usize)> = HashMap::new();
+    let mut jass = String::new();
+    let source = |line: usize, k: usize| code.iter().find(|(l, _)| *l == line).and_then(|(_, s)| s.get(k));
+    for (i, l) in built.lines().enumerate() {
+        let found = l.rfind(SCRIPT_MARK).and_then(|at| {
+            let mut words = l[at + SCRIPT_MARK.len()..].split_whitespace().map(|w| w.parse::<usize>().ok());
+            let (line, k) = (words.next()??, words.next()??);
+            Some((at, line, k))
+        });
+        match found {
+            Some((at, line, k)) => {
+                let text = l[..at].trim_end();
+                // As written (moved right), not as the build changed it.
+                if let Some(src) = source(line, k).map(|s| s.trim_end()).filter(|s| text.ends_with(*s) && text[..text.len() - s.len()].trim().is_empty()) {
+                    places.insert(i + 1, (line, k, text[..text.len() - src.len()].chars().count()));
+                }
+                jass += text;
+            }
+            None => jass += l,
+        }
+        jass += "\n";
+    }
+    let tokens = jass_rs::semantic::semantic_tokens_with(&jass, jass_rs::Dialect::Jass);
+    let first_error = jass_rs::parse(&jass).err();
+    let mut out: HashMap<usize, ScriptCode> = HashMap::new();
+    let ty = |t: &parser_rs::SemanticToken| {
+        let mods: Vec<&str> = parser_rs::SemanticModifier::ALL.iter().filter(|m| t.mods.contains(**m)).map(|m| m.as_str()).collect();
+        std::iter::once(t.ty.as_str()).chain(mods).collect::<Vec<_>>().join(" ")
+    };
+    for t in tokens.iter().filter(|t| t.line == t.end_line) {
+        if let Some(&(line, k, shift)) = places.get(&t.line) {
+            let c = out.entry(line).or_default();
+            c.tokens.push((k, t.start_col.saturating_sub(1 + shift), t.end_col.saturating_sub(1 + shift), ty(t)));
+        }
+    }
+    // The trigger's own code reads: what doesn't is its custom script's,
+    // the nearest line of it at or above (a missing `endif` is found at
+    // `endfunction`).
+    if let Some(e) = first_error
+        && let Some((_, &(line, k, _))) = places.iter().filter(|(l, _)| **l <= e.line).max_by_key(|(l, _)| **l)
+    {
+        out.entry(line).or_default().errors.push((k, e.message));
+    }
+    // Lines the built code hasn't as written: read alone.
+    for (line, src) in &code {
+        for (k, l) in src.iter().enumerate() {
+            if l.trim().is_empty() || places.values().any(|p| p.0 == *line && p.1 == k) {
+                continue;
+            }
+            let c = out.entry(*line).or_default();
+            for t in jass_rs::semantic::semantic_tokens_with(l, jass_rs::Dialect::Jass).iter().filter(|t| t.line == 1 && t.end_line == 1) {
+                c.tokens.push((k, t.start_col - 1, t.end_col - 1, ty(t)));
+            }
+        }
+    }
+    for c in out.values_mut() {
+        c.tokens.sort();
+    }
+    out
 }
 
 fn spans_json(spans: &[wtg_rs::ui::Span]) -> String {
@@ -398,7 +518,17 @@ fn spans_json(spans: &[wtg_rs::ui::Span]) -> String {
                     Role::Call => "c",
                     Role::Unknown => "u",
                 };
-                format!("{{\"r\":\"{r}\",\"p\":{},\"s\":{}}}", crate::objects::json_string(path), spans_json(spans))
+                // What it highlights as, in the words of code's tokens (the
+                // custom script's too: one way of coloring both).
+                let text: String = spans.iter().map(|s| if let Span::Text(t) = s { t.as_str() } else { "" }).collect();
+                let t = match role {
+                    Role::Variable => "variable",
+                    Role::Preset => "enumMember",
+                    Role::Value if text.trim().parse::<f64>().is_ok() => "number",
+                    Role::Value => "string",
+                    Role::Call | Role::Unknown => "",
+                };
+                format!("{{\"r\":\"{r}\",\"t\":\"{t}\",\"p\":{},\"s\":{}}}", crate::objects::json_string(path), spans_json(spans))
             }
         })
         .collect();

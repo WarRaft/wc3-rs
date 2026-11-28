@@ -567,9 +567,15 @@ const MAP_TYPES = ['unit', 'item', 'destructable', 'rect', 'camerasetup']
 
 const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (root.querySelector(`#${CSS.escape(id)}`))
 
-/** @typedef {string | {r: string, p: string, s: Span[]}} Span */
+/** @typedef {string | {r: string, t: string, p: string, s: Span[]}} Span */
+/**
+ * A custom script's code as the trigger's code reads it (the server builds
+ * the trigger and reads it whole): each token `[line, start, end, "type
+ * mods"]` (lines of the code from 0, columns from 0) and the errors.
+ * @typedef {{tokens: [number, number, number, string][], errors: [number, string][]}} Code
+ */
 /** @typedef {{label: string, group: number, kind: number, nodes: Node[]}} Block */
-/** @typedef {{line: number, kind: number, enabled: boolean, name: string, known: boolean, icon: string, hint: string, text: Span[], blocks: Block[]}} Node */
+/** @typedef {{line: number, kind: number, enabled: boolean, name: string, known: boolean, icon: string, hint: string, text: Span[], blocks: Block[], code?: Code}} Node */
 /** @typedef {{line: number, scope: string, name: string, type: string, type_name: string, array: boolean, size: number, initial: string | null}} Variable */
 /**
  * @typedef {{
@@ -707,10 +713,18 @@ function addNodes(out, nodes, base, depth, parent, group, inOff) {
 // ---------------------------------------------------------------- drawing
 
 /**
+ * The classes a token's `type mods` (`variable readonly`) colors with: one
+ * way for everything, the phrases' values and code alike.
+ * @param {string} t
+ */
+const tokenClasses = t => t ? t.split(' ').filter(Boolean).map(w => `tok-${w}`).concat('tok') : []
+
+/**
  * @param {HTMLElement} into
  * @param {Span[]} spans
+ * @param {Code} [code] a custom script's: its value (parameter 0) drawn by its tokens
  */
-function drawSpans(into, spans) {
+function drawSpans(into, spans, code) {
     for (const s of spans) {
         if (typeof s === 'string') {
             into.appendChild(document.createTextNode(s))
@@ -718,13 +732,45 @@ function drawSpans(into, spans) {
         }
         const el = document.createElement('span')
         el.className = `v v-${s.r}`
+        el.classList.add(...tokenClasses(s.t))
         if (s.p) {
             el.dataset.path = s.p
             el.classList.add('link')
         }
-        drawSpans(el, s.s)
+        if (code && s.p === '0' && s.s.length === 1 && typeof s.s[0] === 'string') {
+            el.classList.remove(...tokenClasses(s.t))
+            el.classList.add('code')
+            drawCode(el, s.s[0], code)
+        } else {
+            drawSpans(el, s.s)
+        }
         into.appendChild(el)
     }
+}
+
+/**
+ * Code by its tokens, an error's line marked with its message.
+ * @param {HTMLElement} into @param {string} text @param {Code} code
+ */
+function drawCode(into, text, code) {
+    text.split('\n').forEach((line, k) => {
+        if (k > 0) into.appendChild(document.createTextNode('\n'))
+        const chars = [...line]
+        const errors = code.errors.filter(e => e[0] === k).map(e => e[1])
+        const holder = errors.length ? h('span', {class: 'code-error', title: errors.join('\n')}) : into
+        if (holder !== into) into.appendChild(holder)
+        let at = 0
+        for (const [kk, start, end, type] of code.tokens) {
+            if (kk !== k || start < at) continue
+            if (start > at) holder.appendChild(document.createTextNode(chars.slice(at, start).join('')))
+            const t = document.createElement('span')
+            t.className = tokenClasses(type).join(' ')
+            t.textContent = chars.slice(start, end).join('')
+            holder.appendChild(t)
+            at = end
+        }
+        if (at < chars.length) holder.appendChild(document.createTextNode(chars.slice(at).join('')))
+    })
 }
 
 function draw() {
@@ -778,20 +824,21 @@ function drawRow(row) {
     if (row.type === 'node' && row.node) {
         const n = row.node
         icon.className = `icon fa-solid ${n.known ? KIND_ICON[n.kind] : 'fa-triangle-exclamation'} ${n.known ? KIND_CLASS[n.kind] : 'unknown'}`
-        drawSpans(label, n.text)
-        el.title = [n.name, n.hint, n.known ? '' : 'Not in UI\\TriggerData.txt', `Line ${n.line}`].filter(Boolean).join('\n')
+        drawSpans(label, n.text, n.code)
+        const codeErrors = n.code ? n.code.errors.map(e => e[1]) : []
+        el.title = [n.name, n.hint, n.known ? '' : 'Not in UI\\TriggerData.txt', ...codeErrors, `Line ${n.line}`].filter(Boolean).join('\n')
         el.draggable = true
     } else if (row.type === 'variable' && row.variable) {
         const va = row.variable
         icon.className = 'icon fa-solid fa-cube variable'
         const name = document.createElement('span')
-        name.className = 'v v-v'
+        name.className = 'v tok tok-variable'
         name.textContent = va.name
         label.append(name, ` : ${va.type_name}${va.array ? ` [${va.size}]` : ''}`)
         if (va.scope !== 'global') label.append(' ', h('span', {class: `scope scope-${va.scope}`}, [va.scope]))
         if (va.initial !== null && va.initial !== '') {
             const init = document.createElement('span')
-            init.className = 'v v-l'
+            init.className = 'v tok tok-string'
             init.textContent = va.initial
             label.append(' = ', init)
         }
@@ -1595,6 +1642,15 @@ const receive = (/** @type {any} */ msg) => {
         if (msg.select) selectLine = msg.select
         showFields(msg.view)
         draw()
+    } else if (msg.type === 'tokenColors') {
+        // The theme's colors of tokens, over the page's own.
+        let style = document.getElementById('theme-tokens')
+        if (!style) {
+            style = document.createElement('style')
+            style.id = 'theme-tokens'
+            document.head.appendChild(style)
+        }
+        style.textContent = msg.css || ''
     } else if (msg.type === 'choices') {
         paramDialog(msg.line, msg.path, msg.choices)
     } else if (msg.type === 'icons') {

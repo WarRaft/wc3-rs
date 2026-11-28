@@ -336,11 +336,29 @@ html:has(> body > .trg-root), body:has(> .trg-root) {
     border-radius: 2px;
 }
 
-.v-p { color: var(--vscode-symbolIcon-enumeratorMemberForeground, #4FC1FF); }
-.v-v { color: var(--vscode-symbolIcon-variableForeground, #75BEFF); font-style: italic; }
-.v-l { color: var(--vscode-debugTokenExpression-string, #CE9178); }
 .v-c { color: inherit; }
 .v-u { color: var(--vscode-errorForeground); }
+
+/* Tokens, by the types and modifiers of code's semantic highlighting: the
+   phrases' values (a variable, a preset, a value) and custom script's code
+   (read as the trigger's code it's part of) colored one way. */
+.tok-keyword { color: var(--vscode-symbolIcon-keywordForeground, #569CD6); }
+.tok-type, .tok-struct, .tok-interface, .tok-class { color: var(--vscode-symbolIcon-classForeground, #4EC9B0); }
+.tok-function, .tok-method, .tok-macro { color: var(--vscode-symbolIcon-functionForeground, #DCDCAA); }
+.tok-variable, .tok-property { color: var(--vscode-symbolIcon-variableForeground, #75BEFF); }
+.tok-variable { font-style: italic; }
+.tok-parameter { color: var(--vscode-symbolIcon-typeParameterForeground, #9CDCFE); }
+.tok-enumMember, .tok-readonly { color: var(--vscode-symbolIcon-enumeratorMemberForeground, #4FC1FF); }
+.tok-namespace { color: var(--vscode-symbolIcon-namespaceForeground, #4EC9B0); }
+.tok-string { color: var(--vscode-debugTokenExpression-string, #CE9178); }
+.tok-number { color: var(--vscode-debugTokenExpression-number, #B5CEA8); }
+.tok-comment { color: var(--vscode-descriptionForeground); font-style: italic; }
+.tok-operator { color: inherit; }
+/* A parameter: upright. */
+.tok-parameter { font-style: normal; }
+
+.v.code { font-family: var(--vscode-editor-font-family); white-space: pre; }
+.code-error { text-decoration: underline wavy var(--vscode-editorError-foreground, red); }
 
 .v:not(.v-c):hover {
     text-decoration: underline;

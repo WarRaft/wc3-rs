@@ -136,7 +136,7 @@ fn trg_view() {
     assert!(v.contains("{\"label\":\"Then - Actions\",\"group\":1,\"kind\":2,\"nodes\":[{\"line\":7,"), "{v}");
     assert!(v.contains("{\"label\":\"Loop - Actions\",\"group\":0,\"kind\":2,\"nodes\":[{\"line\":9,"), "{v}");
     // A call the files don't have isn't in parentheses: it has its own.
-    assert!(v.contains("{\"r\":\"c\",\"p\":\"0\",\"s\":[{\"r\":\"u\",\"p\":\"\",\"s\":[\"GetUnitsInRectAll(\"]}"), "{v}");
+    assert!(v.contains("{\"r\":\"c\",\"t\":\"\",\"p\":\"0\",\"s\":[{\"r\":\"u\",\"t\":\"\",\"p\":\"\",\"s\":[\"GetUnitsInRectAll(\"]}"), "{v}");
 }
 
 #[test]
@@ -326,8 +326,8 @@ fn trg_view_marks_undeclared_variables() {
     let text = "[trigger]\naction=SetVariable($a, $b)\naction=SetVariable($gg_trg_X, $a)\n";
     let a = wtg_rs::Variable { name: "a".into(), kind: "integer".into(), unknown: 1, is_array: 0, array_size: 1, has_initial: 0, initial: String::new() };
     let v = view(text, &names, &[Declared { variable: a, scope: Scope::Global }], &Triggers::of("/m/X.trg", text, &[]));
-    assert!(v.contains("{\"r\":\"v\",\"p\":\"0\",\"s\":[\"a\"]}"), "{v}");
-    assert!(v.contains("{\"r\":\"u\",\"p\":\"1\",\"s\":[\"b\"]}"), "{v}");
+    assert!(v.contains("{\"r\":\"v\",\"t\":\"variable\",\"p\":\"0\",\"s\":[\"a\"]}"), "{v}");
+    assert!(v.contains("{\"r\":\"u\",\"t\":\"\",\"p\":\"1\",\"s\":[\"b\"]}"), "{v}");
     assert!(v.contains("\"errors\":[[2,\"the variable `b` isn't declared in the project's trigger files ([variable])\"]]"), "{v}");
 }
 
@@ -1068,3 +1068,33 @@ fn a_131_tree_extracted() {
     // parent the map) at the root.
     assert!(e.contains("[\"000_Init/000_A.trg\",") && e.contains("[\"000_Init/001_B.trg\",") && e.contains("[\"000_Read me.trg\","), "{e}");
 }
+
+#[test]
+fn custom_script_read_as_the_triggers_code() {
+    // An `if` in one action, its `endif` in another, a trigger's action
+    // between: one construct, as the trigger's code reads; a local the
+    // first declares is a local in the others.
+    let text = "[trigger]\nname=\"T\"\naction=CustomScriptCode(\"local integer i = 1\")\naction=CustomScriptCode(\"if i > 0 then\")\naction=DoNothing()\naction=CustomScriptCode(\"    set i = i + 1\")\naction=CustomScriptCode(\"endif\")\n";
+    let p = wtg_rs::text::trigger_from_text(text, None);
+    let t = p.trigger.clone().unwrap();
+    let code = script_code(&t, &p.lines, &p.variables, &[], &wtg_rs::ui::Ui::default());
+    assert!(code.values().all(|c| c.errors.is_empty()), "{code:?}");
+    let tokens = |line: usize| code[&line].tokens.clone();
+    assert_eq!(tokens(3), [(0, 0, 5, "keyword".to_string()), (0, 6, 13, "type defaultLibrary".into()), (0, 14, 15, "variable declaration".into()), (0, 16, 17, "operator".into()), (0, 18, 19, "number".into())]);
+    assert_eq!(tokens(4)[..2], [(0, 0, 2, "keyword".to_string()), (0, 3, 4, "variable".into())]);
+    // Its own columns, not the built line's.
+    assert_eq!(tokens(6)[..2], [(0, 4, 7, "keyword".to_string()), (0, 8, 9, "variable modification".into())]);
+    assert_eq!(tokens(7), [(0, 0, 5, "keyword".to_string())]);
+
+    // Without its `endif`: the error at the last line of custom script.
+    let text = text.replace("action=CustomScriptCode(\"endif\")\n", "");
+    let p = wtg_rs::text::trigger_from_text(&text, None);
+    let code = script_code(p.trigger.as_ref().unwrap(), &p.lines, &p.variables, &[], &wtg_rs::ui::Ui::default());
+    assert_eq!(code[&6].errors.len(), 1, "{code:?}");
+    assert!(code[&3].errors.is_empty() && code[&4].errors.is_empty());
+
+    // In the view, on its node.
+    let v = view(text.as_str(), &crate::names::Names::default(), &[], &Triggers::of("", "", &[]));
+    assert!(v.contains("\"code\":{\"tokens\":[[0,0,5,\"keyword\"]"), "{v}");
+}
+
