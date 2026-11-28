@@ -76,6 +76,10 @@ pub fn diagnostics_with(doc: &Document, project: Option<&Project>, objects: Opti
         Language::Slk => return slk(project, &out),
         Language::Wts => return wts(project, &out),
         Language::Fdf => return fdf_rs::parse(text).errors.iter().map(|e| out.error(e)).collect(),
+        Language::Toc => {
+            let lint = project::apply_lint(fdf_rs::toc::lint(&fdf_rs::toc::parse(text)), project);
+            return lint.into_iter().map(|d| out.lint(d)).collect();
+        }
         Language::Txt2 => {
             let mut diags: Vec<Diagnostic> = txt2_rs::parse(text).errors.iter().map(|e| out.error(e)).collect();
             diags.sort_by_key(|d| d.range.start.line);
@@ -227,6 +231,8 @@ pub struct Analysis {
     /// functions, globals and types, and the names any language declares
     /// project-wide (a public Zinc function, say).
     pub declarations: Option<Arc<Declarations>>,
+    /// A file of code's string literals (see [`literals`]).
+    pub literals: Vec<parser_rs::Literal>,
 }
 
 /// The project-wide declarations of a file of code, for the JASS files
@@ -242,39 +248,16 @@ fn declarations(program: Option<&jass_rs::Program>, symbols: &[Occurrence]) -> D
     d
 }
 
-/// The type of the values that are frames: a string passed to a function
-/// returning one (`BlzCreateFrame("EscMenuButtonTemplate", ...)`,
-/// `BlzGetFrameByName("Name", 0)`, a function of the map's own that
-/// makes a frame) names a frame of the frame files (FDF).
-pub const FRAME_TYPE: &str = "framehandle";
-
 /// Each name `program` (of `doc`) uses that neither it nor `env` (what
 /// the rest of its project and the game's scripts declare) has, and each
 /// call of the wrong arity (`jass_rs::names`), with `project`'s `[lint]`
-/// settings; and the strings it passes to functions returning a frame
-/// ([`FRAME_TYPE`]), as references to frames (`Scope::Data`, as FDF's).
-pub fn names(doc: &Document, project: Option<&Project>, program: &jass_rs::Program, env: &[&Declarations]) -> (Vec<Diagnostic>, Vec<Occurrence>) {
+/// settings.
+pub fn names(doc: &Document, project: Option<&Project>, program: &jass_rs::Program, env: &[&Declarations]) -> Vec<Diagnostic> {
     let text = doc.text.as_str();
     let lines = LineIndex::new(text);
     let out = Out { text, lines: &lines };
-    let (found, strings) = jass_rs::names::check_with_strings(program, env);
-    let frames = strings
-        .into_iter()
-        // An empty one too: a frame's name is being typed there.
-        .filter(|s| s.returns.as_deref() == Some(FRAME_TYPE))
-        .map(|s| Occurrence {
-            name: s.text,
-            line: s.span.start_line,
-            col: s.span.start_col,
-            end_col: s.span.end_col,
-            kind: parser_rs::SymbolKind::Frame,
-            declaration: false,
-            scope: parser_rs::Scope::Data,
-            namespace: String::new(),
-            qualifier: None,
-        })
-        .collect();
-    (project::apply_lint(found, project).into_iter().map(|d| out.lint(d)).collect(), frames)
+    let found = jass_rs::names::check(program, env);
+    project::apply_lint(found, project).into_iter().map(|d| out.lint(d)).collect()
 }
 
 /// `found` (lint of `doc` its project's other files tell: an FDF file's
@@ -284,6 +267,29 @@ pub fn lint_found(doc: &Document, project: Option<&Project>, found: Vec<parser_r
     let lines = LineIndex::new(text);
     let out = Out { text, lines: &lines };
     project::apply_lint(found, project).into_iter().map(|d| out.lint(d)).collect()
+}
+
+/// The string literals of a file of code (`vJASS`'s Zinc blocks' too), for
+/// the strings that name a frame or a key ([`crate::workspace`]'s soft
+/// links: by their text alone, in any language).
+pub fn literals(doc: &Document, project: Option<&Project>) -> Vec<parser_rs::Literal> {
+    let text = doc.text.as_str();
+    let spec = match doc.language {
+        Language::Jass => jass_dialect(doc, project).spec(),
+        Language::Zinc => &zinc_rs::lexer::SPEC,
+        Language::Lua => &lua_rs::lexer::SPEC,
+        Language::AngelScript => &as_rs::lexer::SPEC,
+        _ => return Vec::new(),
+    };
+    let tokens = parser_rs::tokenize_lossy(text, spec).tokens;
+    let mut out = parser_rs::literals(&tokens, text);
+    for t in &tokens {
+        if let parser_rs::TokenKind::Embedded(e) = &t.kind {
+            let inner = parser_rs::tokenize_lossy_at(&e.source, &zinc_rs::lexer::SPEC, e.first_line).tokens;
+            out.extend(parser_rs::literals(&inner, text));
+        }
+    }
+    out
 }
 
 /// Analyzes `doc` with the settings of its `project`. Pure, so documents
@@ -329,7 +335,8 @@ pub fn analyze(doc: &Document, project: Option<&Project>, highlight: bool, objec
     };
     let code = matches!(doc.language, Language::Jass | Language::Zinc | Language::Lua | Language::AngelScript);
     let declarations = code.then(|| Arc::new(declarations(program.as_deref(), &symbols)));
-    Analysis { diagnostics, tokens, symbols, program, declarations }
+    let literals = literals(doc, project);
+    Analysis { diagnostics, tokens, symbols, program, declarations, literals }
 }
 
 /// `deltaLine, deltaStartChar, length, tokenType, tokenModifiers` per
@@ -352,6 +359,7 @@ pub fn semantic_tokens(doc: &Document, project: Option<&Project>) -> Vec<u32> {
         Language::Wts => wts_rs::encoded_semantic_tokens(text),
         Language::Txt2 => txt2_rs::semantic::encoded_semantic_tokens(text),
         Language::Fdf => fdf_rs::encoded_semantic_tokens(text),
+        Language::Toc => fdf_rs::toc::encoded_semantic_tokens(text),
     }
 }
 

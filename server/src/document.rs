@@ -49,6 +49,8 @@ pub enum Language {
     Txt2,
     /// Frame definitions (`UI\\FrameDef\\*.fdf`), via `fdf-rs`.
     Fdf,
+    /// Lists of frame definition files (`.toc`), via `fdf_rs::toc`.
+    Toc,
 }
 
 impl Language {
@@ -64,6 +66,7 @@ impl Language {
             "wts" => Language::Wts,
             "txt2" => Language::Txt2,
             "fdf" => Language::Fdf,
+            "wc3-toc" => Language::Toc,
             // Object data, which the editor shows in its BNI text form
             // (see `objects`).
             "w3a" | "w3b" | "w3d" | "w3h" | "w3q" | "w3t" | "w3u" => Language::Bni,
@@ -90,6 +93,7 @@ impl Language {
             Language::Wts => "wts",
             Language::Txt2 => "txt2",
             Language::Fdf => "fdf",
+            Language::Toc => "wc3-toc",
         }
     }
 
@@ -122,6 +126,7 @@ impl Language {
             "wts" => Language::Wts,
             "txt2" => Language::Txt2,
             "fdf" => Language::Fdf,
+            "toc" => Language::Toc,
             // A trigger of its own, as text (see `triggers`).
             "trg" => Language::Bni,
             // Not object data (`.w3a` ...): the files are binary. Only

@@ -99,8 +99,8 @@ pub enum QueryKind {
     /// [`QueryKind::TriggerJass`]'s JASS in UjAPI's AngelScript
     /// (`triggers::converted`).
     TriggerAngelScript,
-    /// In a frame file (FDF), in a string, or in JASS in a string that
-    /// names a frame (`BlzCreateFrame("|", ...)`): the names it can be, each a
+    /// In a frame file (FDF), in a string, or in code in any string
+    /// literal (strings link softly, by their text): the names it can be, each a
     /// location with its `name`, `kind` (a frame, a key), `container`
     /// (where it's declared: the file's name), and the `range` it
     /// replaces (the string's text); `id` the declaring file.
@@ -125,22 +125,30 @@ fn project_variables(ws: &Workspace, id: &str) -> Vec<wtg_rs::text::Declared> {
     out
 }
 
-/// In a frame file (FDF): each string that's the path of a file the
-/// file sees (`IncludeFile "UI\\FrameDef\\UI\\EscMenuTemplates.fdf"`), a
-/// location whose `range` is the path and `id` the file: the game's
-/// path names it relative to the game's top, so the file whose path
-/// ends with it, the project's over the game's.
-fn frame_links(ws: &Workspace, id: &str) -> Answer {
+/// Each path to a file the file sees, a location whose `range` is the
+/// path and `id` the file ([`Workspace::file_at`]): in a frame file (FDF)
+/// its strings that read as paths (`IncludeFile "UI\\FrameDef\\UI\\EscMenuTemplates.fdf"`),
+/// in a list of them (`.toc`) its lines, in code its strings that read as
+/// paths (`BlzLoadTOCFile("war3mapImported\\Menu.toc")`).
+fn file_links(ws: &Workspace, id: &str) -> Answer {
+    use crate::document::Language;
     let Some((doc, _)) = ws.file(id) else { return Answer::default() };
     let text = doc.text.as_str();
     let lines = LineIndex::new(text);
-    let norm = |p: &str| p.replace('\\', "/").to_lowercase();
-    let files: Vec<(String, &str)> = ws.scope(id).map(|(fid, _, _)| (norm(fid), fid)).collect();
-    let locations = fdf_rs::paths(&fdf_rs::parse(text))
+    let paths: Vec<fdf_rs::Named> = match doc.language {
+        Language::Fdf => fdf_rs::paths(&fdf_rs::parse(text)),
+        Language::Toc => fdf_rs::toc::parse(text).files,
+        _ => ws
+            .literals(id)
+            .iter()
+            .filter(|l| fdf_rs::names::is_path(&l.text))
+            .map(|l| fdf_rs::Named { text: l.text.clone(), span: l.span })
+            .collect(),
+    };
+    let locations = paths
         .into_iter()
         .filter_map(|p| {
-            let tail = format!("/{}", norm(&p.text).trim_start_matches('/'));
-            let target = files.iter().filter(|(n, _)| n.ends_with(&tail)).min_by_key(|(_, f)| ws.is_game(f))?.1;
+            let target = ws.file_at(id, &p.text)?;
             Some(Location {
                 id: target.to_string(),
                 range: lines.range(text, p.span.start_line, p.span.start_col, p.span.end_col),
@@ -168,9 +176,11 @@ fn frame_completion(ws: &Workspace, id: &str, pos: Position) -> Answer {
             None => return Answer::default(),
         }
     } else {
-        // Code: a string the names found naming a frame.
-        match at(ws, id, pos).filter(|o| o.scope == Scope::Data && !o.declaration) {
-            Some(o) => lines.range(text, o.line, o.col, o.end_col),
+        // Code: the string literal the cursor is in.
+        let line = pos.line as usize + 1;
+        let col = lines.column(text, pos);
+        match ws.literals(id).iter().find(|l| l.span.start_line == line && l.span.start_col <= col && col <= l.span.end_col) {
+            Some(l) => lines.range(text, line, l.span.start_col, l.span.end_col),
             None => return Answer::default(),
         }
     };
@@ -296,7 +306,8 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             return Answer { locations: Vec::new(), text };
         }
         QueryKind::Completion => return frame_completion(ws, id, pos),
-        QueryKind::PathLinks if ws.file(id).is_some_and(|(d, _)| d.language == crate::document::Language::Fdf) => return frame_links(ws, id),
+        // Anywhere but a manifest: paths to the files the file sees.
+        QueryKind::PathLinks if !ws.file(id).and_then(|(d, _)| d.path.as_deref()).is_some_and(crate::project::is_manifest) => return file_links(ws, id),
         QueryKind::PathCompletion | QueryKind::PathLinks => return manifest_paths(ws, kind, id, pos),
         QueryKind::SlkTable | QueryKind::SlkSetCell => {
             let Some((doc, _)) = ws.file(id).filter(|(d, _)| d.language == crate::document::Language::Slk) else {

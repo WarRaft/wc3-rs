@@ -58,9 +58,10 @@ struct Entry {
     /// From the last analysis; empty until the file is first analyzed.
     symbols: Vec<Occurrence>,
     /// How many of `symbols` are the file's own (its analysis'); the rest
-    /// its strings that name frames, found with its project's names
-    /// (`check_names`).
+    /// its strings that name a frame or a key (`link_strings`).
     own_symbols: usize,
+    /// A file of code's string literals (`analysis::literals`).
+    literals: Vec<parser_rs::Literal>,
     /// The root of the project it was last analyzed with.
     project: Option<PathBuf>,
     /// One of the game's scripts (see the module docs).
@@ -96,6 +97,7 @@ impl Entry {
             open,
             symbols: Vec::new(),
             own_symbols: 0,
+            literals: Vec::new(),
             project: None,
             game: false,
             objects: None,
@@ -412,6 +414,7 @@ impl Workspace {
             if let Some(entry) = self.files.get_mut(&id) {
                 entry.own_symbols = a.symbols.len();
                 entry.symbols = a.symbols;
+                entry.literals = a.literals;
                 entry.settings = roots.remove(&id).flatten();
                 entry.project = entry.settings.as_ref().map(|p| p.root.clone());
                 entry.objects = objects.remove(&id).flatten();
@@ -431,17 +434,23 @@ impl Workspace {
         } else {
             analyzed.iter().filter(|id| self.files.get(*id).is_some_and(|e| e.program.is_some())).cloned().collect()
         };
-        let mut named = Vec::new();
-        for (id, diags, frames) in self.check_names(&recheck) {
-            let entry = self.files.get_mut(&id).expect("checked");
-            entry.symbols.truncate(entry.own_symbols);
-            entry.symbols.extend(frames);
-            named.push((id, diags));
-        }
+        let mut named = self.check_names(&recheck);
+        // Code's strings that name a frame or a key: again for the code
+        // analyzed, and for all of it when what's declared may have
+        // changed (a frame file analyzed, or files left).
+        let frames_changed = changed || analyzed.iter().any(|id| self.files.get(id).is_some_and(|e| e.doc.language == Language::Fdf));
+        let relink: Vec<String> = self
+            .files
+            .iter()
+            .filter(|(id, e)| !e.game && (!e.literals.is_empty() || e.symbols.len() > e.own_symbols) && (frames_changed || analyzed.contains(*id)))
+            .map(|(id, _)| id.clone())
+            .collect();
+        self.link_strings(&relink);
         // A frame file analyzed (what it declares may have changed), or
         // files left: every frame file's inherited frames are checked again.
-        let frames: Vec<String> = if changed || analyzed.iter().any(|id| self.files.get(id).is_some_and(|e| e.doc.language == Language::Fdf)) {
-            self.files.iter().filter(|(_, e)| e.doc.language == Language::Fdf).map(|(id, _)| id.clone()).collect()
+        let frame_file = |e: &Entry| matches!(e.doc.language, Language::Fdf | Language::Toc);
+        let frames: Vec<String> = if changed || analyzed.iter().any(|id| self.files.get(id).is_some_and(frame_file)) {
+            self.files.iter().filter(|(_, e)| frame_file(e)).map(|(id, _)| id.clone()).collect()
         } else {
             Vec::new()
         };
@@ -474,11 +483,11 @@ impl Workspace {
     /// where the game's `common.j` is seen (without it every native would
     /// be unknown); never in the game's scripts or a map's own script,
     /// whose problems aren't reported. Each id with its diagnostics.
-    fn check_names(&self, ids: &[String]) -> Vec<(String, Vec<analysis::Diagnostic>, Vec<Occurrence>)> {
+    fn check_names(&self, ids: &[String]) -> Vec<(String, Vec<analysis::Diagnostic>)> {
         let jobs: Vec<(&String, &Entry)> = ids.iter().filter_map(|id| self.files.get(id).map(|e| (id, e))).collect();
         parallel_map(&jobs, |(id, e)| {
             let Some(program) = e.program.as_deref().filter(|_| !e.game && !self.is_map_script(id)) else {
-                return ((*id).clone(), Vec::new(), Vec::new());
+                return ((*id).clone(), Vec::new());
             };
             let mut env = Vec::new();
             let mut common = false;
@@ -489,7 +498,7 @@ impl Workspace {
                 }
             }
             if !common {
-                return ((*id).clone(), Vec::new(), Vec::new());
+                return ((*id).clone(), Vec::new());
             }
             // A map's custom script: what World Editor's script declares
             // for it too.
@@ -497,16 +506,74 @@ impl Workspace {
             if let Some(d) = &map {
                 env.push(d);
             }
-            let (diagnostics, frames) = analysis::names(&e.doc, e.settings.as_deref(), program, &env);
-            ((*id).clone(), diagnostics, frames)
+            ((*id).clone(), analysis::names(&e.doc, e.settings.as_deref(), program, &env))
         })
     }
 
-    /// The frame files `ids` (FDF), each frame their blocks inherit
-    /// (`INHERITS "Template"`) checked against what the frame files each
-    /// one sees declare (its project's and the game's: `fdf_rs::names`).
-    /// Only where the game's frame files are seen (without them every
-    /// template of the game would be unknown); never in the game's own.
+    /// Soft links: each string literal of the code files `ids` whose text
+    /// is a name a frame file declares (a frame, a key: `Scope::Data`)
+    /// becomes a reference to it, whatever it's passed to
+    /// (`BlzCreateFrame("EscMenuButtonTemplate", ...)`, `"ACCEPT"`), in
+    /// every language. The names are looked up in a set built once per
+    /// project (what its files see), so each string costs O(1). What a
+    /// literal means by where it's passed (a function's declaration
+    /// saying so) is for later.
+    fn link_strings(&mut self, ids: &[String]) {
+        let mut names: HashMap<Option<PathBuf>, HashSet<String>> = HashMap::new();
+        let mut links: Vec<(String, Vec<Occurrence>)> = Vec::new();
+        for id in ids {
+            let Some(e) = self.files.get(id) else { continue };
+            let set = names.entry(e.project.clone()).or_insert_with(|| {
+                self.scope(id)
+                    .flat_map(|(_, _, symbols)| symbols)
+                    .filter(|o| o.declaration && o.scope == parser_rs::Scope::Data)
+                    .map(|o| o.name.clone())
+                    .collect()
+            });
+            let found = e
+                .literals
+                .iter()
+                .filter(|l| set.contains(&l.text))
+                .map(|l| Occurrence {
+                    name: l.text.clone(),
+                    line: l.span.start_line,
+                    col: l.span.start_col,
+                    end_col: l.span.end_col,
+                    kind: parser_rs::SymbolKind::Frame,
+                    declaration: false,
+                    scope: parser_rs::Scope::Data,
+                    namespace: String::new(),
+                    qualifier: None,
+                })
+                .collect();
+            links.push((id.clone(), found));
+        }
+        for (id, found) in links {
+            let entry = self.files.get_mut(&id).expect("listed");
+            entry.symbols.truncate(entry.own_symbols);
+            entry.symbols.extend(found);
+        }
+    }
+
+    /// The file a path names as the game looks it up (from the map's or
+    /// the game's top: `UI\\FrameDef\\UI\\EscMenuTemplates.fdf`,
+    /// `war3mapImported\\Menu.toc`): of the files `id` sees, one whose path
+    /// ends with it (any case, either separator), the project's over the
+    /// game's.
+    pub fn file_at(&self, id: &str, path: &str) -> Option<&str> {
+        let norm = |p: &str| p.replace('\\', "/").to_lowercase();
+        let tail = format!("/{}", norm(path).trim_start_matches('/'));
+        self.scope(id).map(|(fid, _, _)| fid).filter(|fid| norm(fid).ends_with(&tail)).min_by_key(|fid| self.is_game(fid))
+    }
+
+    /// The frame files `ids` (FDF) and their lists (`.toc`), checked
+    /// against what the files each one sees (its project's and the
+    /// game's): each frame an FDF block inherits (`INHERITS "Template"`)
+    /// that none declares (`unknown-name`); each file a list names, or an
+    /// FDF string names as a `.fdf` (`IncludeFile`), that none is
+    /// (`missing-file`). Only where the game's frame files are seen
+    /// (without them every template and file of the game would be
+    /// unknown); never in the game's own.
     fn check_frames(&self, ids: &[String]) -> Vec<(String, Vec<analysis::Diagnostic>)> {
         let jobs: Vec<(&String, &Entry)> = ids.iter().filter_map(|id| self.files.get(id).map(|e| (id, e))).filter(|(_, e)| !e.game).collect();
         parallel_map(&jobs, |(id, e)| {
@@ -519,15 +586,24 @@ impl Workspace {
             if !game {
                 return ((*id).clone(), Vec::new());
             }
-            let parsed = fdf_rs::parse(&e.doc.text);
-            let found: Vec<parser_rs::Diagnostic> = fdf_rs::required(&parsed)
-                .into_iter()
-                .filter(|n| !declared.contains(n.text.as_str()))
-                .map(|n| {
+            let missing = |n: &fdf_rs::Named| {
+                let message = format!("'{}' is neither the project's nor the game's", n.text);
+                parser_rs::Diagnostic::warning(parser_rs::rule::MISSING_FILE, message, n.span.start_line).at(n.span)
+            };
+            let found: Vec<parser_rs::Diagnostic> = if e.doc.language == Language::Toc {
+                fdf_rs::toc::parse(&e.doc.text).files.iter().filter(|f| self.file_at(id, &f.text).is_none()).map(missing).collect()
+            } else {
+                let parsed = fdf_rs::parse(&e.doc.text);
+                let unknown = fdf_rs::required(&parsed).into_iter().filter(|n| !declared.contains(n.text.as_str())).map(|n| {
                     let message = format!("frame '{}' is declared nowhere: in the file, the project or the game's frame files", n.text);
                     parser_rs::Diagnostic::error(parser_rs::rule::UNKNOWN_NAME, message, n.span.start_line).at(n.span)
-                })
-                .collect();
+                });
+                let files = fdf_rs::paths(&parsed)
+                    .into_iter()
+                    .filter(|p| p.text.to_ascii_lowercase().ends_with(".fdf") && self.file_at(id, &p.text).is_none())
+                    .map(|p| missing(&p));
+                unknown.chain(files).collect()
+            };
             ((*id).clone(), analysis::lint_found(&e.doc, e.settings.as_deref(), found))
         })
     }
@@ -795,6 +871,11 @@ impl Workspace {
     }
 
     /// Every file's id, text and symbols, in no particular order.
+    /// A file of code's string literals (empty for any other).
+    pub fn literals(&self, id: &str) -> &[parser_rs::Literal] {
+        self.files.get(id).map_or(&[], |e| e.literals.as_slice())
+    }
+
     pub fn all_files(&self) -> impl Iterator<Item = (&str, &Document, &[Occurrence])> {
         self.files.iter().map(|(id, e)| (id.as_str(), &e.doc, e.symbols.as_slice()))
     }

@@ -178,7 +178,7 @@ const PIECE_SCHEME = 'wc3code'
 const OBJECT_LANGUAGES = new Set(['w3a', 'w3b', 'w3d', 'w3h', 'w3q', 'w3t', 'w3u', 'w3c', 'w3e', 'w3i', 'w3r', 'w3s', 'wct', 'imp', 'mmp', 'doo', 'wc3-units', 'wtg', 'w3o'])
 
 /** Language ids the server analyzes (its `Language::from_id`). */
-const LANGUAGES = new Set(['jass', 'vjass', 'zinc', 'lua', 'angelscript', 'bni', 'slk', 'wts', 'txt2', 'fdf', 'trg', ...OBJECT_LANGUAGES])
+const LANGUAGES = new Set(['jass', 'vjass', 'zinc', 'lua', 'angelscript', 'bni', 'slk', 'wts', 'txt2', 'fdf', 'wc3-toc', 'trg', ...OBJECT_LANGUAGES])
 
 /** How long highlighting waits for the server to analyze a new version. */
 const TOKENS_WAIT_MS = 1000
@@ -828,6 +828,19 @@ function showPieceDiagnostics(script) {
     }
 }
 
+/** Frames and keys for a string (`QUERY.COMPLETION`). */
+const frameNames = {
+    provideCompletionItems: async (doc, pos) => {
+        const answer = await query(QUERY.COMPLETION, idOf(doc), pos)
+        return (answer?.locations ?? []).map(l => {
+            const item = new CompletionItem(l.name, l.kind === 'key' ? CompletionItemKind.Constant : CompletionItemKind.Class)
+            item.range = new Range(...l.range)
+            item.detail = `${l.kind} · ${l.container}`
+            return item
+        })
+    },
+}
+
 /**
  * Go to definition, find references, hover, outline, workspace symbol
  * search and rename, all answered by the server's symbol index.
@@ -903,22 +916,15 @@ function registerQueries(context) {
                 return edit
             },
         }),
-        // A frame file: in a string, the frames and keys it sees; JASS: in
-        // a string passed to a function returning a frame, the same.
-        languages.registerCompletionItemProvider(['fdf', 'jass', 'vjass', 'wct'].map(language => ({language})), {
-            provideCompletionItems: async (doc, pos) => {
-                const answer = await query(QUERY.COMPLETION, idOf(doc), pos)
-                return (answer?.locations ?? []).map(l => {
-                    const item = new CompletionItem(l.name, l.kind === 'key' ? CompletionItemKind.Constant : CompletionItemKind.Class)
-                    item.range = new Range(...l.range)
-                    item.detail = `${l.kind} · ${l.container}`
-                    return item
-                })
-            },
-        }, '"'),
-        // A frame file: each string that's a file's path opens it
-        // (`IncludeFile "UI\\FrameDef\\UI\\EscMenuTemplates.fdf"`).
-        languages.registerDocumentLinkProvider({language: 'fdf'}, {
+        // In a frame file's strings, the frames and keys it sees (`"` asks);
+        // in code's strings too (they link by their text alone), asked for
+        // (Ctrl+Space): every string offering them as it opens would be noise.
+        languages.registerCompletionItemProvider({language: 'fdf'}, frameNames, '"'),
+        languages.registerCompletionItemProvider(['jass', 'vjass', 'wct', 'zinc', 'lua', 'angelscript'].map(language => ({language})), frameNames),
+        // A path to a file the project sees opens it: a frame file's
+        // strings (`IncludeFile "UI\\FrameDef\\UI\\EscMenuTemplates.fdf"`), a
+        // list's lines (`.toc`), code's strings (`BlzLoadTOCFile("...toc")`).
+        languages.registerDocumentLinkProvider(['fdf', 'wc3-toc', 'jass', 'vjass', 'wct', 'zinc', 'lua', 'angelscript'].map(language => ({language})), {
             provideDocumentLinks: async doc => {
                 const answer = await query(QUERY.PATH_LINKS, idOf(doc), {line: 0, character: 0})
                 return (answer?.locations ?? []).map(l => {

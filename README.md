@@ -1586,18 +1586,30 @@ name, read with the project's `game=` like its scripts):
 - a frame a block inherits that's declared nowhere an error
   (`unknown-name`), checked once the game's frame files are seen.
 
-**From JASS.** A string passed to a function that returns a
-`framehandle` names a frame: the game's `BlzCreateFrame("Name", ...)`,
-`BlzGetFrameByName`, `BlzCreateSimpleFrame`, and a function of the
-map's own that makes one (`MakeButton("EscMenuButtonTemplate")`); not
-`BlzFrameSetText(f, "...")`, which returns nothing. Which function and
-what it returns come from the names check (`jass_rs::names::
-check_with_strings`: every string passed to a declared function, with
-what it returns), so it holds wherever the game's `common.j` is seen
-(1.31 and later have frames). Such a string goes to its frame (F12), is
-among the frame's references, is renamed with it, and completes the
-frames and keys (`"` closes itself in JASS now, so a typed string
-parses at once). Lua, Zinc and AngelScript strings aren't linked yet.
+**From code: soft links.** A string literal in any language of code
+(JASS, vJASS's Zinc blocks, Zinc, Lua, AngelScript) whose text is a
+name the frame files declare (a frame, a key) is a reference to it,
+whatever it's passed to: `BlzCreateFrame("EscMenuButtonTemplate", ...)`,
+`BlzGetFrameByName("Name", 0)`, a map's own function's argument, a
+table's value. No function is named anywhere: the names are a set
+built once per project (what its files see), each string looked up in
+O(1), again when the code or the frame files change. Such a string goes
+to its frame (F12), is among its references, is renamed with it, and
+Ctrl+Space in any string of code offers the frames and keys (not on
+`"`: every string would offer them). `"` closes itself in JASS. What a
+literal means by where it's passed (an extended declaration of a
+function saying so) is for later.
+
+**Lists (`.toc`).** A `.toc` lists the frame files the game loads, one
+path a line: the game's `UI\FrameDef\FrameDef.toc` (in the model with
+the files it names), a map's own (`BlzLoadTOCFile("war3mapImported\\Menu.toc")`,
+which may list the game's files too). Its lines are colored, each a
+link to its file (the project's over the game's, in its archive), and
+warned of: a file that's neither the project's nor the game's
+(`missing-file`, an FDF string naming a `.fdf` too), a last line
+without a line break after it, which the game doesn't read
+(`toc-last-line`). A path in any string of code that names a file the
+project sees is a link to it (`BlzLoadTOCFile`'s).
 
 ## SLK tables
 
@@ -2717,6 +2729,8 @@ aren't lint: they can't be turned off. The rules are defined in
 | `unclosed-section-header`        | BNI                          | on      | a section header missing its `]` |
 | `unterminated-string`            | BNI                          | on      | a quoted string with no closing `"` |
 | `unknown-name`                   | JASS, FDF                    | on      | a function, variable or type declared nowhere: in the file, the files of its project, the game's scripts it runs with (see below); a frame an FDF block inherits that no frame file declares (its project's, the game's) |
+| `missing-file`                   | FDF, TOC                     | on      | a frame file a `.toc` lists, or an FDF string names as a `.fdf` (`IncludeFile`), that's neither the project's nor the game's |
+| `toc-last-line`                  | TOC                          | on      | a `.toc` file's last line without a line break after it: the game doesn't read it |
 | `argument-count`                 | JASS                         | on      | a call with more or fewer arguments than its function takes, or `function F` (a code value) of one that takes some |
 | `type-mismatch`                  | JASS                         | on      | a value of the wrong type: an argument, a value set or returned, a condition, an operator's side |
 | `array-access`                   | JASS                         | on      | an array used without its index, or an index of what isn't an array |
@@ -2751,7 +2765,8 @@ highlighting, so they agree, and half-typed code is indexed too. Every
 language produces them: JASS, Zinc (also inside vJASS `//! zinc` blocks),
 Lua and AngelScript; and FDF, its frames and string keys (in a scope of
 their own, `Scope::Data`: matched by name across the frame files, apart
-from code's names; see [Frame definitions](#frame-definitions-fdf)).
+from code's names; see [Frame definitions](#frame-definitions-fdf)),
+which code's strings with their text refer to.
 BNI is data and has none.
 
 **Resolution.** By exact (case-sensitive) name, within the name's scope:
@@ -2851,8 +2866,12 @@ statement's shape, a missing comma an error at once, unsaved, and gone
 when it's typed back); `fdf-links`, its names (`INHERITS` to the game's
 template in its archive, a key, references, hover, the outline a tree,
 `IncludeFile` a link, completion in a string, an unknown template an
-error; from JASS, `BlzCreateFrame("...")` to its frame, among its
-references, completion in a new one). `run.js`
+error; from code, any string with a frame's name to it, JASS's and
+Lua's, among its references, Ctrl+Space in a new one); `toc`, a list
+(its lines colored and links, the game's file inside its archive, a
+file that's nowhere and an unterminated last line warned of, the
+warning gone once the line break is typed, `BlzLoadTOCFile`'s path a
+link). `run.js`
 extension in a VS Code of its own: the one installed (`VSCODE`, else
 `/Applications/Visual Studio Code.app`), with a profile and extensions
 folder of its own in a temporary folder (no other extension; it opens

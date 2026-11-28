@@ -118,23 +118,27 @@ pub fn scripts(lookup: &Lookup) -> Vec<(PathBuf, crate::document::Document)> {
         Some((path.clone(), Document { language, version: 0, text, path: Some(path) }))
     };
     let mut out: Vec<(PathBuf, Document)> = SCRIPTS.iter().filter_map(|name| read(name, Language::Jass)).collect();
-    out.extend(frame_names(|name| read(name, Language::Fdf).map(|(p, d)| (d.text.clone(), (p, d)))));
+    // The list itself too (a `.toc`), the files it names after it.
+    out.extend(frame_names(|name| {
+        let language = if name.eq_ignore_ascii_case(FRAME_FILES) { Language::Toc } else { Language::Fdf };
+        read(name, language).map(|(p, d)| (d.text.clone(), (p, d)))
+    }));
     out
 }
 
 /// The list of the game's frame definitions: each line a file.
 pub const FRAME_FILES: &str = "UI\\FrameDef\\FrameDef.toc";
 
-/// The game's frame definitions, as the game loads them: the files
-/// [`FRAME_FILES`] lists, and every `.fdf` path their strings name
+/// The game's frame definitions, as the game loads them: the list
+/// [`FRAME_FILES`] itself first, the files it lists, and every `.fdf` path their strings name
 /// (`IncludeFile "UI\\FrameDef\\UI\\EscMenuTemplates.fdf"`), once each, in
 /// the order they're found. `read` gives a file's text and what's kept
 /// of it.
 pub fn frame_names<T>(read: impl Fn(&str) -> Option<(String, T)>) -> Vec<T> {
-    let Some((toc, _)) = read(FRAME_FILES) else { return Vec::new() };
-    let mut queue: std::collections::VecDeque<String> = toc.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect();
+    let Some((toc, list)) = read(FRAME_FILES) else { return Vec::new() };
+    let mut queue: std::collections::VecDeque<String> = fdf_rs::toc::parse(&toc).files.into_iter().map(|f| f.text).collect();
     let mut seen = std::collections::HashSet::new();
-    let mut out = Vec::new();
+    let mut out = vec![list];
     while let Some(name) = queue.pop_front() {
         if !seen.insert(name.to_ascii_lowercase().replace('/', "\\")) {
             continue;

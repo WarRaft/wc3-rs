@@ -12,7 +12,7 @@ const path = require('path')
  * The steps of the work in hand (`node e2e/run.js current`); `all` runs
  * every step.
  */
-const CURRENT = ['fdf', 'fdf-links']
+const CURRENT = ['fdf', 'fdf-links', 'toc']
 
 const out = process.env.E2E_OUT
 const map = process.env.E2E_MAP
@@ -137,7 +137,7 @@ async function steps(only) {
             await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
         }},
         {name: 'fdf-links', run: async () => {
-            log('a frame file\'s names: INHERITS to the game\'s template (inside the game\'s archive), its references, hover, the outline a tree, IncludeFile a link, completion in a string, a frame inherited that\'s declared nowhere an error; JASS\'s strings passed to a function returning a frame linked to it')
+            log('a frame file\'s names: INHERITS to the game\'s template (inside the game\'s archive), its references, hover, the outline a tree, IncludeFile a link, completion in a string, a frame inherited that\'s declared nowhere an error; code\'s strings with a frame\'s name linked to it (JASS, Lua), completion in them')
             const file = path.join(root, 'UI', 'FrameDef', 'Links.fdf')
             fs.mkdirSync(path.dirname(file), {recursive: true})
             fs.writeFileSync(file, [
@@ -182,52 +182,107 @@ async function steps(only) {
             check(['EscMenuButtonTemplate', 'LinksBack', 'ACCEPT'].every(n => labels.includes(n)), `completion in the string: ${labels.length} names, ${['EscMenuButtonTemplate', 'LinksBack', 'ACCEPT'].filter(n => labels.includes(n)).join(', ')} among them`)
             const problems = await until(() => vscode.languages.getDiagnostics(uri).length ? vscode.languages.getDiagnostics(uri) : null, 'the unknown template reported')
             check(problems.length === 1 && problems[0].range.start.line === 3 && problems[0].message.includes("'NoSuchTemplate'") && doc.getText(problems[0].range) === 'NoSuchTemplate', `one problem: ${problems.map(d => `${d.range.start.line + 1}: ${d.message} [${doc.getText(d.range)}]`).join('; ')}`)
-            // JASS: a string passed to a function returning a frame names it.
+            // Code: any string whose text is a frame's name is a reference
+            // to it (soft links, by the text alone), in every language.
             const jass = path.join(root, 'Frames.j')
-            // (1.26's common.j has no frames: declared here, as the game's 1.31+ has them.)
             fs.writeFileSync(jass, [
-                'type framehandle extends handle',
-                'native BlzGetOriginFrame takes integer frameType, integer index returns framehandle',
-                'native BlzCreateFrame takes string name, framehandle owner, integer priority, integer createContext returns framehandle',
-                'native BlzFrameSetText takes framehandle frame, string text returns nothing',
                 'function MakeLinks takes nothing returns nothing',
-                '    local framehandle b = BlzCreateFrame("LinksButton", BlzGetOriginFrame(0, 0), 0, 0)',
+                '    local framehandle b = BlzCreateFrame("LinksButton", BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0), 0, 0)',
                 '    local framehandle e = BlzCreateFrame("EscMenuButtonTemplate", b, 0, 0)',
                 '    call BlzFrameSetText(b, "LinksButton")',
+                '    call BlzFrameSetText(b, "Not a frame")',
                 'endfunction',
                 '',
             ].join('\n'))
+            const lua = path.join(root, 'frames.lua')
+            fs.writeFileSync(lua, 'local b = BlzCreateFrame(\'LinksBack\', nil, 0, 0)\n')
             const juri = vscode.Uri.file(jass)
             const jdoc = await vscode.workspace.openTextDocument(juri)
             const jeditor = await vscode.window.showTextDocument(jdoc)
             const jat = (line, text) => new vscode.Position(line, jdoc.lineAt(line).text.indexOf(text) + 2)
             const mine = await until(async () => {
-                const d = await vscode.commands.executeCommand('vscode.executeDefinitionProvider', juri, jat(5, 'LinksButton'))
+                const d = await vscode.commands.executeCommand('vscode.executeDefinitionProvider', juri, jat(1, 'LinksButton'))
                 return d && d.length ? d : null
             }, 'BlzCreateFrame("LinksButton") to its frame', 60000)
             check(mine.length === 1 && mine[0].uri.fsPath === file && mine[0].range.start.line === 1, `BlzCreateFrame("LinksButton") → ${mine.map(where).join(', ')}`)
-            const game = await vscode.commands.executeCommand('vscode.executeDefinitionProvider', juri, jat(6, 'EscMenuButtonTemplate'))
+            const game = await vscode.commands.executeCommand('vscode.executeDefinitionProvider', juri, jat(2, 'EscMenuButtonTemplate'))
             check(game.length === 1 && path.basename(game[0].uri.fsPath) === 'EscMenuTemplates.fdf', `BlzCreateFrame("EscMenuButtonTemplate") → ${game.map(where).join(', ')}`)
-            const text = await vscode.commands.executeCommand('vscode.executeDefinitionProvider', juri, jat(7, 'LinksButton'))
-            check(text.length === 0, `BlzFrameSetText's text names nothing: ${text.length}`)
+            const text = await vscode.commands.executeCommand('vscode.executeDefinitionProvider', juri, jat(3, 'LinksButton'))
+            check(text.length === 1 && text[0].uri.fsPath === file, `any string with a frame's name, BlzFrameSetText's too → ${text.map(where).join(', ')}`)
+            const none = await vscode.commands.executeCommand('vscode.executeDefinitionProvider', juri, jat(4, 'Not a frame'))
+            check(none.length === 0, `"Not a frame" names nothing: ${none.length}`)
+            const luri = vscode.Uri.file(lua)
+            await vscode.workspace.openTextDocument(luri)
+            const fromLua = await until(async () => {
+                const d = await vscode.commands.executeCommand('vscode.executeDefinitionProvider', luri, new vscode.Position(0, 27))
+                return d && d.length ? d : null
+            }, 'Lua\'s \'LinksBack\' to its frame')
+            check(fromLua[0].uri.fsPath === file && fromLua[0].range.start.line === 3, `Lua 'LinksBack' → ${fromLua.map(where).join(', ')}`)
             const uses = await vscode.commands.executeCommand('vscode.executeReferenceProvider', uri, at(1, 'LinksButton'))
-            check(uses.some(r => r.uri.fsPath === jass && r.range.start.line === 5), `"LinksButton" used in Frames.j: ${uses.map(where).join(', ')}`)
-            // Typing a new one: '"' closes itself, and the frames come up.
-            await jeditor.edit(e => e.insert(new vscode.Position(8, 0), '    set e = BlzCreateFrame(, b, 0, 0)\n'))
-            jeditor.selection = new vscode.Selection(8, 27, 8, 27)
+            check(uses.filter(r => r.uri.fsPath === jass).length === 2, `"LinksButton" used in Frames.j: ${uses.map(where).join(', ')}`)
+            // Typing a new one: '"' closes itself; Ctrl+Space in it offers the frames.
+            await jeditor.edit(e => e.insert(new vscode.Position(5, 0), '    set e = BlzCreateFrame(, b, 0, 0)\n'))
+            jeditor.selection = new vscode.Selection(5, 27, 5, 27)
             await vscode.commands.executeCommand('type', {text: '"'})
-            check(jdoc.lineAt(8).text.includes('BlzCreateFrame("", b'), `'"' closed: ${jdoc.lineAt(8).text.trim()}`)
+            check(jdoc.lineAt(5).text.includes('BlzCreateFrame("", b'), `'"' closed: ${jdoc.lineAt(5).text.trim()}`)
             const offered = await until(async () => {
-                const l = await vscode.commands.executeCommand('vscode.executeCompletionItemProvider', juri, new vscode.Position(8, 28), '"')
-                return l && l.items.length ? l.items.map(i => typeof i.label === 'string' ? i.label : i.label.label) : null
+                const l = await vscode.commands.executeCommand('vscode.executeCompletionItemProvider', juri, new vscode.Position(5, 28))
+                const names = l ? l.items.filter(i => i.kind === vscode.CompletionItemKind.Class).map(i => typeof i.label === 'string' ? i.label : i.label.label) : []
+                return names.length ? names : null
             }, 'frames offered in the string')
-            check(['LinksButton', 'EscMenuButtonTemplate'].every(n => offered.includes(n)), `offered in BlzCreateFrame(""): ${offered.length} names, LinksButton and EscMenuButtonTemplate among them`)
+            check(['LinksButton', 'EscMenuButtonTemplate'].every(n => offered.includes(n)), `offered in BlzCreateFrame(""): ${offered.length} frames, LinksButton and EscMenuButtonTemplate among them`)
             await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
             await vscode.commands.executeCommand('outline.focus')
             await vscode.window.showTextDocument(doc)
             await vscode.commands.executeCommand('outline.expand')
             await sleep(1500)
             await shot('fdf-links')
+            await vscode.commands.executeCommand('workbench.action.closeAllEditors')
+        }},
+        {name: 'toc', run: async () => {
+            log('a list of frame files (.toc): its language, its lines colored and links to the files (the game\'s inside its archive, the project\'s), a file that\'s nowhere and a last line without a break warned of, BlzLoadTOCFile\'s path a link')
+            const dir = path.join(root, 'war3mapImported')
+            fs.mkdirSync(dir, {recursive: true})
+            fs.writeFileSync(path.join(dir, 'Menu.fdf'), 'Frame "BACKDROP" "MenuBack" {\n}\n')
+            // (The test project has no sources: an open file is in the model.)
+            await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(dir, 'Menu.fdf')))
+            const file = path.join(dir, 'Menu.toc')
+            fs.writeFileSync(file, 'UI\\FrameDef\\UI\\EscMenuTemplates.fdf\r\nwar3mapImported\\Menu.fdf\r\nwar3mapImported\\Nowhere.fdf')
+            const uri = vscode.Uri.file(file)
+            const doc = await vscode.workspace.openTextDocument(uri)
+            await vscode.window.showTextDocument(doc)
+            check(doc.languageId === 'wc3-toc', `the language: ${doc.languageId}`)
+            const tokens = await until(async () => {
+                const t = await vscode.commands.executeCommand('vscode.provideDocumentSemanticTokens', uri)
+                return t && t.data.length ? t : null
+            }, 'the colors')
+            check(tokens.data.length === 15, `three lines colored: ${tokens.data.length / 5}`)
+            const problems = await until(() => vscode.languages.getDiagnostics(uri).length >= 2 ? vscode.languages.getDiagnostics(uri) : null, 'the problems', 60000)
+            const said = problems.map(d => `${d.range.start.line + 1}: ${d.code?.value ?? d.code ?? ''} ${d.message}`)
+            check(problems.length === 2 && problems.every(d => d.range.start.line === 2) && said.some(x => x.includes('Nowhere.fdf')) && said.some(x => x.includes('line break')), `the last line: ${said.join('; ')}`)
+            const links = await vscode.commands.executeCommand('vscode.executeLinkProvider', uri)
+            const to = links.map(l => `${l.range.start.line + 1} → ${l.target.scheme}:${path.basename(l.target.path)}`)
+            check(links.length === 2 && to[0] === '1 → wc3map:EscMenuTemplates.fdf' && to[1] === '2 → file:Menu.fdf', `links: ${to.join(', ')}`)
+            // The game's own list is read as one.
+            const target = await vscode.workspace.openTextDocument(links[0].target)
+            check(target.languageId === 'fdf', `the game's EscMenuTemplates.fdf opens as FDF: ${target.languageId}`)
+            await shot('toc')
+            // A line break at the end: the warning goes.
+            const editor = await vscode.window.showTextDocument(doc)
+            await editor.edit(e => e.insert(doc.lineAt(2).range.end, '\r\n'))
+            await until(() => vscode.languages.getDiagnostics(uri).length === 1 || null, 'only the missing file left')
+            check(vscode.languages.getDiagnostics(uri)[0].message.includes('Nowhere.fdf'), 'the line break typed: only the missing file left')
+            // In code, BlzLoadTOCFile's path opens the list.
+            const jass = path.join(root, 'LoadToc.j')
+            fs.writeFileSync(jass, 'function LoadMenu takes nothing returns nothing\n    call BlzLoadTOCFile("war3mapImported\\\\Menu.toc")\nendfunction\n')
+            const juri = vscode.Uri.file(jass)
+            await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(juri))
+            const jlinks = await until(async () => {
+                const l = await vscode.commands.executeCommand('vscode.executeLinkProvider', juri)
+                return l && l.length ? l : null
+            }, 'the path in BlzLoadTOCFile a link')
+            check(jlinks.length === 1 && jlinks[0].target.fsPath === file, `BlzLoadTOCFile("war3mapImported\\\\Menu.toc") → ${jlinks.map(l => path.basename(l.target.fsPath)).join(', ')}`)
+            await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
             await vscode.commands.executeCommand('workbench.action.closeAllEditors')
         }},
     ]

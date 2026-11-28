@@ -1015,60 +1015,100 @@ fn frame_files_link_to_each_other_and_the_games() {
 }
 
 #[test]
-fn jass_strings_that_make_frames_name_them() {
+fn code_strings_name_frames_by_their_text() {
     use crate::document::Position;
     use crate::index::{answer, QueryKind};
-    const COMMON: &str = concat!(
-        "type handle extends handle\n",
-        "type framehandle extends handle\n",
-        "native BlzCreateFrame takes string name, framehandle owner, integer priority, integer createContext returns framehandle\n",
-        "native BlzGetOriginFrame takes integer frameType, integer index returns framehandle\n",
-        "native BlzFrameSetText takes framehandle frame, string text returns nothing\n",
-    );
     const TOC: &str = "UI\\FrameDef\\UI\\Templates.fdf\r\n";
-    const TEMPLATES: &str = "Frame \"GLUETEXTBUTTON\" \"ButtonTemplate\" {\n}\n";
+    const TEMPLATES: &str = "Frame \"GLUETEXTBUTTON\" \"ButtonTemplate\" {\n}\nStringList {\n    ACCEPT \"Accept\",\n}\n";
     const MINE: &str = "Frame \"BACKDROP\" \"MyBack\" {\n}\n";
     const MAIN: &str = concat!(
-        "function MakeBack takes string name returns framehandle\n",
-        "    return BlzCreateFrame(name, BlzGetOriginFrame(0, 0), 0, 0)\n",
-        "endfunction\n",
         "function F takes nothing returns nothing\n",
-        "    local framehandle b = BlzCreateFrame(\"ButtonTemplate\", BlzGetOriginFrame(0, 0), 0, 0)\n",
-        "    local framehandle m = MakeBack(\"MyBack\")\n",
-        "    call BlzFrameSetText(b, \"MyBack\")\n",
-        "    set b = BlzCreateFrame(\"\", null, 0, 0)\n",
+        "    call Make(\"ButtonTemplate\", Other(\"MyBack\"))\n",
+        "    call Print(\"MyBack is a frame\", \"\")\n",
         "endfunction\n",
+        "//! zinc\n",
+        "library L { function G() { Make(\"MyBack\"); } }\n",
+        "//! endzinc\n",
     );
-    let tmp = project("ws-jass-frames", &[
+    let tmp = project("ws-code-frames", &[
         ("game/README", ""),
         ("p/wc3.bni", "[project]\ngame=../game\n[code]\nsources=.\n"),
         ("p/UI/FrameDef/My.fdf", MINE),
+        ("p/main.j", &format!("// @dialect vjass\n{MAIN}")),
+        ("p/z.zn", "library Z { function H() { Make(\"MyBack\"); } }\n"),
+        ("p/a.lua", "local f = Make('ACCEPT', \"MyBack\")\n"),
+        ("p/b.as", "void H() { Make(\"ButtonTemplate\"); }\n"),
+    ]);
+    let patch = tmp.0.join("game/War3Patch.mpq");
+    crate::map::tests::make_map(&patch, &[("UI\\FrameDef\\FrameDef.toc", TOC), ("UI\\FrameDef\\UI\\Templates.fdf", TEMPLATES)]);
+    let mut ws = init(&tmp.0);
+    reports(&mut ws);
+    let file = |name: &str| path_id(&tmp.0.join("p").join(name));
+    let templates = path_id(&patch.join("UI/FrameDef/UI/Templates.fdf"));
+    let ids = |a: crate::index::Answer| a.locations.into_iter().map(|l| (l.id, l.range.start.line, l.range.start.character)).collect::<Vec<_>>();
+    let def = |ws: &Workspace, name: &str, line: u32, character: u32| ids(answer(ws, QueryKind::Definition, &file(name), Position::new(line, character), ""));
+    // Any string whose text is a name, whatever it's passed to, in every language.
+    assert_eq!(def(&ws, "main.j", 2, 18), [(templates.clone(), 0, 24)]);
+    assert_eq!(def(&ws, "main.j", 2, 42), [(file("UI/FrameDef/My.fdf"), 0, 18)]);
+    assert_eq!(def(&ws, "main.j", 6, 34), [(file("UI/FrameDef/My.fdf"), 0, 18)]);
+    assert_eq!(def(&ws, "z.zn", 0, 33), [(file("UI/FrameDef/My.fdf"), 0, 18)]);
+    assert_eq!(def(&ws, "a.lua", 0, 17), [(templates.clone(), 3, 4)]);
+    assert_eq!(def(&ws, "a.lua", 0, 28), [(file("UI/FrameDef/My.fdf"), 0, 18)]);
+    assert_eq!(def(&ws, "b.as", 0, 19), [(templates.clone(), 0, 24)]);
+    // A string that isn't a name: nothing.
+    assert!(def(&ws, "main.j", 3, 18).is_empty());
+    // From the frame: every use, renamed with it.
+    let uses = ids(answer(&ws, QueryKind::References, &file("UI/FrameDef/My.fdf"), Position::new(0, 20), ""));
+    assert_eq!(uses.len(), 5, "{uses:?}");
+    let renamed = answer(&ws, QueryKind::Rename, &file("UI/FrameDef/My.fdf"), Position::new(0, 20), "MyBackdrop");
+    assert_eq!((renamed.text.as_str(), renamed.locations.len()), ("", 5));
+    // In any string of code: every frame and key (asked for: Ctrl+Space).
+    let names: Vec<String> = answer(&ws, QueryKind::Completion, &file("main.j"), Position::new(3, 37), "").locations.into_iter().map(|l| l.name).collect();
+    assert_eq!(names, ["ACCEPT", "ButtonTemplate", "MyBack"]);
+    // The frame renamed in its file: its uses follow, as soon as it's analyzed.
+    ws.open(file("UI/FrameDef/My.fdf"), Some(tmp.0.join("p/UI/FrameDef/My.fdf")), crate::document::Language::Fdf, 1, MINE.replace("MyBack", "Gone"));
+    reports(&mut ws);
+    assert!(def(&ws, "z.zn", 0, 33).is_empty());
+}
+
+#[test]
+fn toc_files_list_frame_files() {
+    use crate::document::Position;
+    use crate::index::{answer, QueryKind};
+    const TOC: &str = "UI\\FrameDef\\UI\\Templates.fdf\r\n";
+    const TEMPLATES: &str = "Frame \"GLUETEXTBUTTON\" \"ButtonTemplate\" {\n}\n";
+    const MY_TOC: &str = "UI\\FrameDef\\UI\\Templates.fdf\nwar3mapImported\\My.fdf\nwar3mapImported\\Nope.fdf";
+    const MAIN: &str = "function F takes nothing returns nothing\n    call BlzLoadTOCFile(\"war3mapImported\\\\My.toc\")\nendfunction\n";
+    let tmp = project("ws-toc", &[
+        ("game/README", ""),
+        ("p/wc3.bni", "[project]\ngame=../game\n[code]\nsources=.\n"),
+        ("p/war3mapImported/My.toc", MY_TOC),
+        ("p/war3mapImported/My.fdf", "Frame \"BACKDROP\" \"MyBack\" INHERITS \"ButtonTemplate\" {\n}\n"),
         ("p/main.j", MAIN),
     ]);
     let patch = tmp.0.join("game/War3Patch.mpq");
-    crate::map::tests::make_map(&patch, &[
-        ("Scripts\\common.j", COMMON),
-        ("UI\\FrameDef\\FrameDef.toc", TOC),
-        ("UI\\FrameDef\\UI\\Templates.fdf", TEMPLATES),
-    ]);
+    crate::map::tests::make_map(&patch, &[("UI\\FrameDef\\FrameDef.toc", TOC), ("UI\\FrameDef\\UI\\Templates.fdf", TEMPLATES)]);
     let mut ws = init(&tmp.0);
-    reports(&mut ws);
-    let main = path_id(&tmp.0.join("p/main.j"));
-    let mine = path_id(&tmp.0.join("p/UI/FrameDef/My.fdf"));
-    let templates = path_id(&patch.join("UI/FrameDef/UI/Templates.fdf"));
-    let ids = |a: crate::index::Answer| a.locations.into_iter().map(|l| (l.id, l.range.start.line, l.range.start.character)).collect::<Vec<_>>();
-    // A string passed to a function returning a frame → the frame: the
-    // game's native, and a function of the map's own.
-    assert_eq!(ids(answer(&ws, QueryKind::Definition, &main, Position::new(4, 45), "")), [(templates.clone(), 0, 24)]);
-    assert_eq!(ids(answer(&ws, QueryKind::Definition, &main, Position::new(5, 37), "")), [(mine.clone(), 0, 18)]);
-    // A string passed to one that doesn't (BlzFrameSetText's text): none.
-    assert!(answer(&ws, QueryKind::Definition, &main, Position::new(6, 30), "").locations.is_empty());
-    // From the frame file: its uses in JASS too.
-    assert_eq!(ids(answer(&ws, QueryKind::References, &mine, Position::new(0, 20), "")), [(mine.clone(), 0, 18), (main.clone(), 5, 36)]);
-    // Renaming it renames the string.
-    let renamed = answer(&ws, QueryKind::Rename, &mine, Position::new(0, 20), "MyBackdrop");
-    assert_eq!((renamed.text.as_str(), ids(renamed.clone())), ("", vec![(mine.clone(), 0, 18), (main.clone(), 5, 36)]));
-    // In an empty string there: every frame.
-    let names: Vec<String> = answer(&ws, QueryKind::Completion, &main, Position::new(7, 28), "").locations.into_iter().map(|l| l.name).collect();
-    assert_eq!(names, ["ButtonTemplate", "MyBack"]);
+    let reported = ws.take_reports();
+    let file = |name: &str| path_id(&tmp.0.join("p").join(name));
+    // The game's list is in the model, a list too.
+    let game_toc = path_id(&patch.join("UI/FrameDef/FrameDef.toc"));
+    assert!(ws.is_game(&game_toc));
+    assert_eq!(ws.file(&game_toc).map(|(d, _)| d.language), Some(crate::document::Language::Toc));
+    // The project's list: a file that's nowhere, and its last line unread.
+    let diags: Vec<(u32, &str)> = reported
+        .iter()
+        .find_map(|m| match m {
+            ServerMsg::File { id, diagnostics, .. } if *id == file("war3mapImported/My.toc") => Some(diagnostics.iter().map(|d| (d.range.start.line, d.rule)).collect()),
+            _ => None,
+        })
+        .expect("reported");
+    assert_eq!(diags, [(2, "toc-last-line"), (2, "missing-file")]);
+    let links = |id: &str| -> Vec<(u32, String)> {
+        answer(&ws, QueryKind::PathLinks, id, Position::new(0, 0), "").locations.into_iter().map(|l| (l.range.start.line, l.id)).collect()
+    };
+    // Each line → its file: the game's, the project's.
+    assert_eq!(links(&file("war3mapImported/My.toc")), [(0, path_id(&patch.join("UI/FrameDef/UI/Templates.fdf"))), (1, file("war3mapImported/My.fdf"))]);
+    // A path in a string of code → the file.
+    assert_eq!(links(&file("main.j")), [(1, file("war3mapImported/My.toc"))]);
 }
