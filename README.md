@@ -34,6 +34,26 @@ item's details are in its section below):
   - Test Map on macOS run for real: its Porting Kit setup is tested on
     stand-ins alone (`test-setup` in the e2e); on Linux no way yet;
   - the AI editor (not started).
+- **Extended declarations of functions, with `native-rs`** (a project
+  to come). A function's declaration says more than its types: what its
+  arguments mean, so the editor helps where they're written.
+  - **Typed rawcodes**: a function that takes a unit's, an ability's, an
+    item's id doesn't take any rawcode (`CreateUnit(p, 'hfoo', ...)`):
+    checked against the object data, completed, linked to the object.
+  - **Colors**: a function that takes a color as three (or four)
+    arguments (`SetUnitVertexColor(u, r, g, b, a)`) gets a color picker
+    over them.
+  - **Strings**: what a string argument is, a path to a file
+    (`BlzLoadTOCFile`), a frame's name (`BlzCreateFrame`), a frame's
+    type, a key: linked, checked and completed as such. Today strings
+    link softly, by their text alone (see
+    [Frame definitions](#frame-definitions-fdf)); a declaration will
+    pin what a literal means.
+  - **Where it's written**: an extended declaration or a doc comment,
+    for the game's natives (whose `common.j` can't be edited) and a
+    map's own functions alike; decided with `native-rs`, a base of the
+    natives: their comments, examples of use and users' comments,
+    gathered in one place, that the IDE's hints come from.
 - **Low priority, needing research.** What World Editor makes on save
   by a way of its own that isn't known; each needs that way found out
   (from Blizzard's maps in the game's folder, not maps edited by hand)
