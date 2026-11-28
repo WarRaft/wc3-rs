@@ -2697,10 +2697,10 @@ game's files), in process, so they answer as the editor does:
 `code_definition`, `code_references` and `code_symbols` (`index::at` and
 `index::matches`, Go to Definition's, Find All References' and the
 outline's): see the [`wc3-mcp` README](../wc3-mcp/README.md#code).
-Navigation knows what the symbol index knows: vJASS's structs, methods
-and members aren't symbols of their own yet (`jass-rs`'s Symbols table;
-a struct's fields are found as globals), so for them it's no better
-than the editor's.
+Navigation knows what the symbol index knows (`jass-rs`'s Symbols
+table): vJASS's libraries, structs, methods and fields, a library's
+private names its own; a struct's members are matched by their name, as
+the editor matches them (what a value's struct is takes types).
 
 ## String tables
 
