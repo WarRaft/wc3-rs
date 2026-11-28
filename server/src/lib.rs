@@ -50,6 +50,7 @@ pub mod placement;
 pub mod triggers;
 pub mod customtext;
 pub mod document;
+pub mod format;
 pub mod casc;
 pub mod game;
 pub mod glob;

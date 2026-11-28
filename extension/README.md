@@ -115,6 +115,9 @@ imports in their editors, and every file of it as text too.
   when the rename wouldn't be safe, and asks before changing files
   inside maps (Rename, Rename Outside Maps, Cancel). Parameters and locals resolve within their
   function; everything else across all project files.
+- Formatting (Format Document, Format Selection) for JASS, vJASS, Zinc
+  and AngelScript that only moves lines left or right to their level:
+  no line is ever added, removed or joined, so line numbers stay.
 - Live diagnostics: parse errors and lint warnings
   shown in the Problems panel as you type, with quick fixes where a rule
   offers one (Remove empty 'else') —

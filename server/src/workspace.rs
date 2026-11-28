@@ -890,6 +890,11 @@ impl Workspace {
         self.files.get(id).map(|e| (&e.doc, e.symbols.as_slice()))
     }
 
+    /// The settings `id` was last analyzed with: its project's.
+    pub fn settings(&self, id: &str) -> Option<&Project> {
+        self.files.get(id)?.settings.as_deref()
+    }
+
     /// The text form of object data `id` and the game's metadata it was
     /// last checked with; `None` for any other file.
     pub fn object_text(&self, id: &str) -> Option<(&Document, &Metadata)> {

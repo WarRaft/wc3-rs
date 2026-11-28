@@ -105,6 +105,12 @@ pub enum QueryKind {
     /// (where it's declared: the file's name), and the `range` it
     /// replaces (the string's text); `id` the declaring file.
     Completion,
+    /// In code (JASS, Zinc, AngelScript): the edits that indent lines
+    /// `line` to `character` (0-based, inclusive), each level the query
+    /// text (the editor's: four spaces, a tab); a location each, its
+    /// `range` a line's indentation and its `name` the new one
+    /// (`format::format`). Lines are only moved, never added or removed.
+    Format,
 }
 
 /// The variables the trigger file `id` sees: every global its project's
@@ -306,6 +312,7 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
             return Answer { locations: Vec::new(), text };
         }
         QueryKind::Completion => return frame_completion(ws, id, pos),
+        QueryKind::Format => return crate::format::format(ws, id, pos, query),
         // Anywhere but a manifest: paths to the files the file sees.
         QueryKind::PathLinks if !ws.file(id).and_then(|(d, _)| d.path.as_deref()).is_some_and(crate::project::is_manifest) => return file_links(ws, id),
         QueryKind::PathCompletion | QueryKind::PathLinks => return manifest_paths(ws, kind, id, pos),

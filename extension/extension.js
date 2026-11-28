@@ -108,6 +108,7 @@ const {
     Uri,
     Range,
     Location,
+    TextEdit,
     Hover,
     MarkdownString,
     SymbolInformation,
@@ -952,6 +953,45 @@ function registerQueries(context) {
         languages.registerWorkspaceSymbolProvider({
             provideWorkspaceSymbols: async text =>
                 ((await query(QUERY.WORKSPACE_SYMBOLS, '', {line: 0, character: 0}, text))?.locations ?? []).map(toSymbol),
+        }),
+    )
+}
+
+/**
+ * Formatting code (JASS, vJASS, Zinc, AngelScript), a document or lines of
+ * it (`QUERY.FORMAT`): the server only moves lines left or right to their
+ * level, never adds, removes or joins one. A level is the editor's
+ * indentation: `tabSize` spaces, or a tab. A piece of a custom script
+ * formats its lines of the script.
+ *
+ * @param {import('vscode').ExtensionContext} context
+ */
+function registerFormatting(context) {
+    const selector = ['jass', 'vjass', 'wct', 'zinc', 'angelscript'].map(language => ({language}))
+    /**
+     * @param {import('vscode').TextDocument} doc
+     * @param {number} first  0-based
+     * @param {number} last   0-based, inclusive
+     * @param {import('vscode').FormattingOptions} options
+     */
+    const format = async (doc, first, last, options) => {
+        const unit = options.insertSpaces ? ' '.repeat(Math.max(1, options.tabSize)) : '\t'
+        const [id, at] = target(doc, {line: first, character: 0})
+        const answer = await query(QUERY.FORMAT, id, {line: at.line, character: last + (at.line - first)}, unit)
+        const here = doc.uri.toString()
+        return (answer?.locations ?? [])
+            .map(l => ({text: l.name, loc: backTo(doc, toLocation(l))}))
+            .filter(e => e.loc.uri.toString() === here)
+            .map(e => TextEdit.replace(e.loc.range, e.text))
+    }
+    context.subscriptions.push(
+        languages.registerDocumentFormattingEditProvider(selector, {
+            provideDocumentFormattingEdits: (doc, options) => format(doc, 0, doc.lineCount - 1, options),
+        }),
+        languages.registerDocumentRangeFormattingEditProvider(selector, {
+            // A selection ending at a line's start doesn't take that line.
+            provideDocumentRangeFormattingEdits: (doc, range, options) =>
+                format(doc, range.start.line, range.end.character === 0 && range.end.line > range.start.line ? range.end.line - 1 : range.end.line, options),
         }),
     )
 }
@@ -2781,6 +2821,7 @@ module.exports = {
         if (!command) return
         startServer(command, context)
         registerQueries(context)
+        registerFormatting(context)
         registerFixes(context)
         registerManifestPaths(context)
         registerMaps(context)

@@ -89,6 +89,7 @@ const QUERY = {
     TRIGGER_LUA: 22,
     TRIGGER_ANGELSCRIPT: 23,
     COMPLETION: 24,
+    FORMAT: 25,
 }
 
 /** Symbol kinds, in wire order (`parser_rs::SymbolKind`). */

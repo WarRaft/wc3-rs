@@ -2927,6 +2927,23 @@ needs. On the game's own `Scripts` folder (293 files: `common.j`,
 `Blizzard.j`, the AI and campaign scripts) loading takes about 80 ms and a
 query about 1 ms.
 
+## Formatting
+
+**Format Document** and **Format Selection** (Shift+Alt+F) in JASS,
+vJASS, a map's custom script, Zinc and AngelScript only move lines:
+each goes left or right to its level, and no line is ever added,
+removed, joined or split, so every line number still means the same
+line and the diff is the indentation alone. A level is the editor's
+indentation (its tab size in spaces, or a tab). JASS is read in its
+dialect (`analysis::jass_dialect`), vJASS's `//! zinc` blocks as Zinc.
+A selection formats its lines only, the levels read from the whole
+file; a piece of a custom script formats its lines of the script. The
+inside of a string stays as it is, the inside of a block comment moves
+with its first line. The rules are each language's (`jass-rs`,
+`zinc-rs`, `as-rs` READMEs, "Formatting"), the shared engine
+`parser_rs::format`; the server answers a `Format` query
+(`server/src/format.rs`).
+
 ## Tests in the editor
 
 With Reforged: `WC3_GAME=<its folder> E2E_HD=1` (and `E2E_LOCALE`, a
