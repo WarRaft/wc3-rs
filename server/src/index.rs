@@ -498,7 +498,7 @@ pub fn answer(ws: &Workspace, kind: QueryKind, id: &str, pos: Position, query: &
 }
 
 /// The occurrence under the cursor.
-pub(crate) fn at<'a>(ws: &'a Workspace, id: &str, pos: Position) -> Option<&'a Occurrence> {
+pub fn at<'a>(ws: &'a Workspace, id: &str, pos: Position) -> Option<&'a Occurrence> {
     let (doc, symbols) = ws.file(id)?;
     let col = LineIndex::new(&doc.text).column(&doc.text, pos);
     let line = pos.line as usize + 1;
@@ -512,7 +512,7 @@ pub(crate) fn at<'a>(ws: &'a Workspace, id: &str, pos: Position) -> Option<&'a O
 
 /// Every occurrence of `target`'s symbol that `id` sees (see
 /// `Workspace::scope`), sorted by file and position.
-pub(crate) fn matches<'a>(ws: &'a Workspace, id: &'a str, target: &Occurrence) -> Vec<(&'a str, &'a Document, &'a Occurrence)> {
+pub fn matches<'a>(ws: &'a Workspace, id: &'a str, target: &Occurrence) -> Vec<(&'a str, &'a Document, &'a Occurrence)> {
     let mut found: Vec<(&str, &Document, &Occurrence)> = match target.scope {
         Scope::Local(_) => ws
             .file(id)

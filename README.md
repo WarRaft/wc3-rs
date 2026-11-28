@@ -2690,12 +2690,17 @@ and where the editor's files and their patches come from;
 `project_write` checks a `wc3.bni` as the editor reads it before writing
 it.
 
-Planned for it: checking JASS (syntax, names, order as the game reads a
-map's `war3map.j`), lint, listing natives with their comments, and
-renaming symbols across the project. For that the server is a library as
-well as the binary (`wc3_server`, `server/src/lib.rs`: the workspace,
-`index::answer`, analysis, the game's files), which `wc3-mcp` uses
-in-process: see the [`wc3-mcp` README](../wc3-mcp/README.md#planned-jass).
+Its code tools use the server as a library (`wc3_server`,
+`server/src/lib.rs`: the workspace, `index`, `rename`, analysis, the
+game's files), in process, so they answer as the editor does:
+`code_check` (problems), `jass_rename`, `jass_natives`, and navigation,
+`code_definition`, `code_references` and `code_symbols` (`index::at` and
+`index::matches`, Go to Definition's, Find All References' and the
+outline's): see the [`wc3-mcp` README](../wc3-mcp/README.md#code).
+Navigation knows what the symbol index knows: vJASS's structs, methods
+and members aren't symbols of their own yet (`jass-rs`'s Symbols table;
+a struct's fields are found as globals), so for them it's no better
+than the editor's.
 
 ## String tables
 
