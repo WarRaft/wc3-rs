@@ -2754,7 +2754,7 @@ what the game runs.
 
 | group  | rules                | for |
 |--------|----------------------|-----|
-| `strict` | `implicit-signature`, `implicit-keyword`, `merged-function`, `declaration-after-function`, `global-outside-globals` | strict JASS, as the game reads it: reports what extended JASS and this toolchain accept beyond the game's grammar. Off by default in extended JASS; always errors in strict JASS |
+| `strict` | `implicit-signature`, `implicit-keyword`, `merged-function`, `call-before-declaration`, `declaration-after-function`, `global-outside-globals` | strict JASS, as the game reads it: reports what extended JASS and this toolchain accept beyond the game's grammar. Off by default in extended JASS; always errors in strict JASS |
  Parse errors
 aren't lint: they can't be turned off. The rules are defined in
 `parser_rs::RULES` (`parser-rs/src/diagnostic.rs`); this table follows it.
@@ -2792,6 +2792,7 @@ aren't lint: they can't be turned off. The rules are defined in
 | `merged-function`                | JASS                         | **off** | more than one `main` or `config`, which the build merges into one; the game reads one (group `strict`) |
 | `declaration-after-function`     | JASS                         | **off** | a global, `globals` block, `native` or `type` after a function; the game reads them only before the first one (group `strict`) |
 | `global-outside-globals`         | JASS                         | **off** | a variable at the top level outside `globals ... endglobals`, where the game doesn't read it (group `strict`) |
+| `call-before-declaration`        | JASS                         | **off** | a function called (or named by `function X`) above its declaration: the game knows a function only from there down; a function calling itself is fine (group `strict`; a build orders extended JASS's functions) |
 | `object-value-type`              | Object data                  | on      | a value stored as another type than the game's metadata gives the field (a number for a string, a type written out that isn't the field's: `int 6` for an unreal); an error, the game misreads it. Quick fix: the right type |
 | `object-value-range`             | Object data                  | on      | a number outside World Editor's limits for the field, or a flag other than 0 or 1 |
 | `object-unknown-field`           | Object data                  | on      | a field the game's metadata doesn't have, like one of a newer game version |

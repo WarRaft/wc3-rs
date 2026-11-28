@@ -73,26 +73,32 @@ enum From {
     Archive(usize, String),
 }
 
-/// The build's own errors in the `war3map.j` it made: the script read as
-/// strict JASS, the game's (a parse error, a rule of the group `strict`, a
-/// declaration twice), and its names over the game's `common.j` and
-/// `Blizzard.j` (`read` from the project's layers; not checked without a
-/// `common.j`). The sources are extended JASS; what the game runs is
-/// strict, and anything here is the build's mistake, not the code's.
-pub fn strict_check(script: &str, read: &dyn Fn(&str) -> Option<Vec<u8>>) -> Vec<String> {
-    let said = |line: usize, message: &str| format!("war3map.j:{line}: the build made what the game doesn't read (strict JASS): {message}");
-    let program = match jass_rs::parse(script) {
-        Ok(p) => p,
-        Err(e) => return vec![said(e.line, &e.message)],
-    };
-    let strict = |rule: &str| rule == parser_rs::rule::DUPLICATE_DECLARATION || parser_rs::find_rule(rule).is_some_and(|r| r.groups.contains(&parser_rs::group::STRICT));
-    let mut out: Vec<String> = jass_rs::lint(&program).into_iter().filter(|d| strict(d.rule)).map(|d| said(d.line, &d.message)).collect();
+/// The game's declarations a map's script runs over: `Scripts\\common.j`
+/// and `Scripts\\Blizzard.j` (`common.ai` for an AI script, `ai`), `read`
+/// from a project's layers. Empty without a `common.j`: names aren't
+/// checked then (every native would be unknown).
+pub fn game_declarations(read: &dyn Fn(&str) -> Option<Vec<u8>>, ai: bool) -> Vec<jass_rs::names::Declarations> {
     let game = |n: &str| read(n).map(crate::document::decode).and_then(|t| jass_rs::parse(&t).ok()).map(|p| jass_rs::names::Declarations::of(&p));
-    if let Some(common) = game("Scripts\\common.j") {
-        let blizzard = game("Scripts\\Blizzard.j").unwrap_or_default();
-        out.extend(jass_rs::names::check(&program, &[&common, &blizzard]).into_iter().filter(|d| d.level == parser_rs::Level::Error).map(|d| said(d.line, &d.message)));
-    }
-    out
+    let Some(common) = game("Scripts\\common.j") else { return Vec::new() };
+    let second = if ai { "Scripts\\common.ai" } else { "Scripts\\Blizzard.j" };
+    std::iter::once(common).chain(game(second)).collect()
+}
+
+/// The build's own errors in the `war3map.j` it made: the script read as
+/// strict JASS, the game's (`jass_rs::strict::check`: a parse error, a
+/// rule of the group `strict` such as a call above its function, a
+/// declaration twice, a name or type over the game's `common.j` and
+/// `Blizzard.j`, `read` from the project's layers). The sources are
+/// extended JASS; what the game runs is strict, and anything here is the
+/// build's mistake, not the code's.
+pub fn strict_check(script: &str, read: &dyn Fn(&str) -> Option<Vec<u8>>) -> Vec<String> {
+    let env = game_declarations(read, false);
+    let env: Vec<&jass_rs::names::Declarations> = env.iter().collect();
+    jass_rs::strict::check(&[("war3map.j", script)], &env)
+        .into_iter()
+        .filter(|f| f.diagnostic.level == parser_rs::Level::Error)
+        .map(|f| format!("war3map.j:{}: the build made what the game doesn't read (strict JASS): {}", f.diagnostic.line, f.diagnostic.message))
+        .collect()
 }
 
 /// The build `name` of `project` (its first without a name; a build of
