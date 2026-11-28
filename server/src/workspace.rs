@@ -176,7 +176,17 @@ pub struct Workspace {
     /// The names each map's files declare (`map_names`), by the map's
     /// folder (or archive) and when its files last changed.
     placed: std::sync::Mutex<HashMap<PathBuf, ((Option<std::time::SystemTime>, Option<wc3_build::objects::Objects>), Placed)>>,
+    /// The triggers (`war3map.wtg`) beside each custom script whose
+    /// triggers aren't in the model (not open in the editor), read from
+    /// the disk or the map, by the map's folder (or archive): when the
+    /// file last changed, and the triggers with the names they were read
+    /// with (`refresh_triggers_beside`).
+    beside: HashMap<PathBuf, (Option<std::time::SystemTime>, Option<Beside>)>,
 }
+
+/// A map's triggers read from its `war3map.wtg`, and the names (the
+/// trigger editor's data) they were read with.
+type Beside = (Arc<wtg_rs::Triggers>, Arc<Names>);
 
 /// What a map's files name in World Editor's script: each name and its type.
 type Placed = Arc<Vec<(String, &'static str)>>;
@@ -374,6 +384,9 @@ impl Workspace {
             .collect();
 
         let mut ids: Vec<String> = std::mem::take(&mut self.dirty).into_iter().collect();
+        // Custom scripts whose triggers aren't open: those read again when
+        // they changed, and the scripts with them.
+        ids.extend(self.refresh_triggers_beside());
         // A map's triggers changed: its custom script is read again (the
         // code of a trigger turned off isn't code).
         let scripts: Vec<String> = ids.iter().filter_map(|id| self.custom_script_id_beside(id)).collect();
@@ -621,6 +634,63 @@ impl Workspace {
         })
     }
 
+    /// The map's triggers beside the custom script `id`
+    /// (`war3map.wct`), and the names they're read with: the model's
+    /// `war3map.wtg` (the editor's text, when it's open), else the file
+    /// read from the disk or the map ([`Workspace::refresh_triggers_beside`]).
+    fn triggers_beside(&self, id: &str) -> Option<(Arc<wtg_rs::Triggers>, Option<Arc<Names>>)> {
+        let path = self.files.get(id)?.doc.path.as_deref().filter(|p| crate::customtext::is_custom_text_file(p))?;
+        let dir = path.parent()?;
+        let wtg = self.files.values().find(|e| e.doc.path.as_deref().is_some_and(|p| p.parent() == Some(dir) && p.file_name().is_some_and(|n| n.eq_ignore_ascii_case("war3map.wtg"))));
+        match wtg {
+            Some(e) => Some((Arc::new(wtg_rs::text::from_text(&e.doc.text, None).file?), e.names.clone())),
+            None => self.beside.get(dir)?.1.as_ref().map(|(t, n)| (t.clone(), Some(n.clone()))),
+        }
+    }
+
+    /// Reads again the triggers (`war3map.wtg`) beside each custom script
+    /// whose triggers aren't in the model, when the file (or its map)
+    /// changed, with the trigger editor's data of the script's project;
+    /// the scripts whose triggers were read again.
+    fn refresh_triggers_beside(&mut self) -> Vec<String> {
+        let scripts: Vec<(String, PathBuf)> = self
+            .files
+            .iter()
+            .filter_map(|(id, e)| Some((id.clone(), e.doc.path.clone().filter(|p| crate::customtext::is_custom_text_file(p))?)))
+            .collect();
+        let mut changed = Vec::new();
+        for (id, path) in scripts {
+            let Some(dir) = path.parent().map(Path::to_path_buf) else { continue };
+            let wtg = dir.join("war3map.wtg");
+            let in_model = self.files.values().any(|e| e.doc.path.as_deref().is_some_and(|p| p.parent() == Some(dir.as_path()) && p.file_name().is_some_and(|n| n.eq_ignore_ascii_case("war3map.wtg"))));
+            if in_model {
+                continue;
+            }
+            let stamp = match crate::map::split(&wtg) {
+                Some((map, _)) => std::fs::metadata(map),
+                None => std::fs::metadata(&wtg),
+            }
+            .and_then(|m| m.modified())
+            .ok();
+            if self.beside.get(&dir).is_some_and(|(s, _)| *s == stamp) {
+                continue;
+            }
+            let bytes = if wtg.is_file() { std::fs::read(&wtg).ok() } else { crate::map::bytes(&wtg) };
+            let names = self.names(&path);
+            let triggers = bytes.and_then(|b| {
+                if names.triggers.is_empty() {
+                    return None;
+                }
+                let file = wtg_rs::parse_any(&b, &names.triggers).ok()?;
+                let text = wtg_rs::text::to_text_any(&file).ok()?;
+                wtg_rs::text::from_text(&text, None).file
+            });
+            self.beside.insert(dir, (stamp, triggers.map(|t| (Arc::new(t), names))));
+            changed.push(id);
+        }
+        changed
+    }
+
     /// What World Editor's script of a map declares for its custom script
     /// `id` (`war3map.wct`): of the map's triggers beside it
     /// (`war3map.wtg`, in the model), each trigger's `gg_trg_` and the
@@ -628,11 +698,10 @@ impl Workspace {
     /// and name ([`Workspace::map_names`]). `None` for any other file, or
     /// without the triggers.
     fn map_declarations(&self, id: &str) -> Option<jass_rs::names::Declarations> {
-        let path = self.files.get(id)?.doc.path.as_deref().filter(|p| crate::customtext::is_custom_text_file(p))?;
+        let path = self.files.get(id)?.doc.path.as_deref()?;
         let dir = path.parent()?;
-        let wtg = self.files.values().find(|e| e.doc.path.as_deref().is_some_and(|p| p.parent() == Some(dir) && p.file_name().is_some_and(|n| n.eq_ignore_ascii_case("war3map.wtg"))))?;
-        let file = wtg_rs::text::from_text(&wtg.doc.text, None).file?;
-        let ui = wtg.names.as_ref().map(|n| n.trigger_ui.clone()).unwrap_or_default();
+        let (file, names) = self.triggers_beside(id)?;
+        let ui = names.as_ref().map(|n| n.trigger_ui.clone()).unwrap_or_default();
         let mut text = String::from("globals\n");
         for t in file.triggers.iter().filter(|t| t.is_comment == 0) {
             text += &format!("trigger gg_trg_{} = null\n", wtg_rs::jass::ident(&t.name));
@@ -641,7 +710,7 @@ impl Workspace {
             let m = wtg_rs::jass::map_variable(&wtg_rs::text::Declared { variable: v.clone(), scope: wtg_rs::text::Scope::Global }, &ui);
             text += &format!("{} {}{}\n", m.ty, if m.array.is_some() { "array " } else { "" }, m.name);
         }
-        let types = wtg.names.as_ref().and_then(|n| n.types.as_ref());
+        let types = names.as_ref().and_then(|n| n.types.as_ref());
         for (name, ty) in self.map_names(dir, types).iter() {
             text += &format!("{ty} {name}\n");
         }
@@ -866,16 +935,14 @@ impl Workspace {
     /// `None` for any other file, or without the triggers.
     fn custom_script_read(&self, id: &str) -> Option<Document> {
         let doc = &self.files.get(id)?.doc;
-        let path = doc.path.as_deref().filter(|p| crate::customtext::is_custom_text_file(p))?;
-        let dir = path.parent()?;
-        let wtg = self.files.values().find(|e| e.doc.path.as_deref().is_some_and(|p| p.parent() == Some(dir) && p.file_name().is_some_and(|n| n.eq_ignore_ascii_case("war3map.wtg"))))?;
-        let triggers = wtg_rs::text::from_text(&wtg.doc.text, None).file?.triggers;
+        let beside = self.triggers_beside(id)?;
+        let triggers = &beside.0.triggers;
         let pieces = crate::customtext::pieces(&doc.text);
         if pieces.triggers.len() != triggers.len() {
             return None;
         }
         let mut lines: Vec<String> = doc.text.split_inclusive('\n').map(String::from).collect();
-        for ((marker, end, _), t) in pieces.triggers.iter().zip(&triggers) {
+        for ((marker, end, _), t) in pieces.triggers.iter().zip(triggers) {
             if t.enabled == 0 || t.is_comment != 0 {
                 for line in &mut lines[marker + 1..*end] {
                     *line = if line.ends_with('\n') { "\n".into() } else { String::new() };

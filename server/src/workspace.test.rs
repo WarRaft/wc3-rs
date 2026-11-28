@@ -1147,3 +1147,49 @@ fn toc_files_list_frame_files() {
     // A path in a string of code → the file.
     assert_eq!(links(&file("main.j")), [(1, file("war3mapImported/My.toc"))]);
 }
+
+/// What a map's custom script names that World Editor's script declares
+/// (its triggers' `gg_trg_`, its variables' `udg_`), and a trigger's code
+/// that's off left out, with the map's triggers read from the map's own
+/// `war3map.wtg` when the editor hasn't it open.
+#[test]
+fn a_custom_scripts_world_editor_names_from_the_maps_triggers() {
+    let data = "[TriggerEvents]\nMapInitializationEvent=0,nothing\n[TriggerActions]\nDoNothing=0,nothing\n";
+    let tmp = project("ws-we-names", &[
+        ("game/Scripts/common.j", "type unit extends handle\ntype trigger extends handle\nnative DisableTrigger takes trigger t returns nothing\nnative KillUnit takes unit u returns nothing\n"),
+        ("game/UI/TriggerData.txt", data),
+        ("p/map/README", ""),
+    ]);
+    std::fs::write(tmp.0.join("p/wc3.bni"), format!("[project]\ngame={}\n[map]\nroot=map\n", tmp.0.join("game").display())).unwrap();
+    let wtg = "[wtg]\nversion=7\ngame=2\n\n[variable]\nname=\"hero\"\ntype=\"unit\"\nsize=1\n\n[trigger]\nname=\"Use\"\ncategory=0\ncustom_text=1\n\n[trigger]\nname=\"Off\"\ncategory=0\nenabled=0\ncustom_text=1\n";
+    let bytes = crate::triggers::convert(crate::objects::TO_BYTES, "war3map.wtg", wtg.as_bytes(), &wtg_rs::TriggerData::parse(data)).unwrap();
+    std::fs::write(tmp.0.join("p/map/war3map.wtg"), bytes).unwrap();
+    let code = |s: &str| wct_rs::Code::new(s.as_bytes());
+    let wct = wct_rs::CustomText {
+        version: 1,
+        header: code(""),
+        triggers: vec![
+            code("function Trig_Use takes nothing returns nothing\r\n    call KillUnit(udg_hero)\r\n    call DisableTrigger(gg_trg_Use)\r\n    call DisableTrigger(gg_trg_Off)\r\n    call KillUnit(udg_typo)\r\nendfunction\r\n"),
+            code("function Trig_Off takes nothing returns nothing\r\n    call Missing(udg_nothing)\r\nendfunction\r\n"),
+        ],
+        ..wct_rs::CustomText::default()
+    };
+    let path = tmp.0.join("p/map/war3map.wct");
+    std::fs::write(&path, wct.to_bytes().unwrap()).unwrap();
+    let mut ws = init(&tmp.0);
+    let errors: Vec<String> = ws
+        .take_reports()
+        .into_iter()
+        .filter_map(|m| match m {
+            ServerMsg::File { id, diagnostics, .. } if id == path_id(&path) => Some(diagnostics),
+            _ => None,
+        })
+        .flatten()
+        .filter(|d| d.level == Level::Error)
+        .map(|d| d.message)
+        .collect();
+    // `gg_trg_Off` is declared all the same (World Editor declares every
+    // trigger's); the code of the trigger that's off isn't code; a name
+    // the map has nowhere is unknown.
+    assert_eq!(errors, ["the variable 'udg_typo' is declared nowhere"]);
+}
