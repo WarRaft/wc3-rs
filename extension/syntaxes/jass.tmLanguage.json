@@ -21,13 +21,7 @@
         "string": {
             "name": "string.quoted.single.jass",
             "begin": "'",
-            "end": "'|$",
-            "patterns": [
-                {
-                    "name": "constant.character.escape.jass",
-                    "match": "\\\\."
-                }
-            ]
+            "end": "'"
         },
         "zinc-block": {
             "name": "meta.embedded.block.zinc",

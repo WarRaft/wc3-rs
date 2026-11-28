@@ -317,3 +317,18 @@ fn a_manifest_has_a_build_section_per_build() {
     let two_projects = diagnostics(&doc("[project]\n[project]\n"), None);
     assert!(two_projects.iter().any(|d| d.message.contains("duplicate section [project]")), "{two_projects:?}");
 }
+
+/// A rawcode's bytes that aren't UTF-8 are lost to the text (U+FFFD); its
+/// fix writes it as `0x...` from the file's own bytes, before an editor
+/// saving it changes them.
+#[test]
+fn a_rawcodes_lost_bytes_come_from_the_file() {
+    let tmp = TempDir::new("analysis-rawcode-bytes");
+    let path = tmp.0.join("x.j");
+    let bytes: &[u8] = b"globals\n    integer x = 'a\x95b\x95'\n    integer y = 'ab\x01c'\nendglobals\n";
+    std::fs::write(&path, bytes).unwrap();
+    let text = crate::document::decode(bytes.to_vec());
+    let d = diagnostics(&doc(Language::Jass, &text, Some(&path)), None);
+    let fixes: Vec<String> = d.iter().filter(|d| d.rule == "unsafe-rawcode").filter_map(|d| d.fix.as_ref()).flat_map(|f| f.edits.iter().map(|(_, t)| t.clone())).collect();
+    assert_eq!(fixes, ["0x61956295", "0x61620163"], "{d:?}");
+}

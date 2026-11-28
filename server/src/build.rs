@@ -91,10 +91,10 @@ pub fn game_declarations(read: &dyn Fn(&str) -> Option<Vec<u8>>, ai: bool) -> Ve
 /// `Blizzard.j`, `read` from the project's layers). The sources are
 /// extended JASS; what the game runs is strict, and anything here is the
 /// build's mistake, not the code's.
-pub fn strict_check(script: &str, read: &dyn Fn(&str) -> Option<Vec<u8>>) -> Vec<String> {
+pub fn strict_check(script: &str, read: &dyn Fn(&str) -> Option<Vec<u8>>, options: &jass_rs::lint::Options) -> Vec<String> {
     let env = game_declarations(read, false);
     let env: Vec<&jass_rs::names::Declarations> = env.iter().collect();
-    jass_rs::strict::check(&[("war3map.j", script)], &env)
+    jass_rs::strict::check_with(&[("war3map.j", script)], &env, options)
         .into_iter()
         .filter(|f| f.diagnostic.level == parser_rs::Level::Error)
         .map(|f| format!("war3map.j:{}: the build made what the game doesn't read (strict JASS): {}", f.diagnostic.line, f.diagnostic.message))
@@ -149,7 +149,7 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
         notes.extend(built.notes);
         let mut errors = said(built.problems);
         if b.script == wc3_build::jass::Script::Jass {
-            errors.extend(strict_check(&built.script, &read));
+            errors.extend(strict_check(&built.script, &read, &Project::jass_lint_options(Some(project), None)));
         }
         if let Some(dir) = out.parent() {
             std::fs::create_dir_all(dir).map_err(|e| vec![format!("{}: {e}", dir.display())])?;
@@ -188,7 +188,7 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
     notes.extend(script.notes);
     let mut errors = said(script.problems.clone());
     if b.script == wc3_build::jass::Script::Jass {
-        errors.extend(strict_check(&script.text, &read));
+        errors.extend(strict_check(&script.text, &read, &Project::jass_lint_options(Some(project), None)));
     }
     let mut made = vec![(format!("war3map.{}", b.script.extension()), script.text.clone().into_bytes())];
     // Triggers of `.trg` files: World Editor's files of them too, so the

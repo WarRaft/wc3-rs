@@ -52,6 +52,13 @@ pub struct Project {
     /// `[jass] dialect=`: the dialect of `.j` files whose header declares
     /// none. A header always wins.
     pub jass_dialect: Option<jass_rs::Dialect>,
+    /// `[jass] string_limit=`: a string literal's bytes at most
+    /// (`long-string`; vanilla 1023 without it, 0 none): UjAPI's,
+    /// Reforged's.
+    pub string_limit: Option<usize>,
+    /// `[jass] concat_limit=`: a concatenation of literals' bytes at most
+    /// (vanilla 4092 without it, 0 none).
+    pub concat_limit: Option<usize>,
     /// `[code] sources=`: the project's code, as masks resolved against
     /// `root`, in the order written. A plain path is a mask without
     /// wildcards. A file is code when a mask matches it or a folder (or
@@ -165,6 +172,17 @@ impl Build {
 }
 
 impl Project {
+    /// The lint's options for JASS `source` of `project` (or none): its
+    /// string limits, vanilla's without them.
+    pub fn jass_lint_options<'a>(project: Option<&Project>, source: Option<&'a str>) -> jass_rs::lint::Options<'a> {
+        let vanilla = jass_rs::lint::Options::default();
+        jass_rs::lint::Options {
+            source,
+            string_limit: project.and_then(|p| p.string_limit).unwrap_or(vanilla.string_limit),
+            concat_limit: project.and_then(|p| p.concat_limit).unwrap_or(vanilla.concat_limit),
+        }
+    }
+
     /// The build asked for by `name`: that one; without a name, the
     /// default (the `[build]` without one), else the first; without any
     /// `[build]`, a default one.
@@ -428,6 +446,19 @@ pub fn load(root: &Path, src: &str) -> (Project, Vec<Issue>) {
                             dialect_line = Some(item.line);
                             project.jass_dialect = read_dialect(item, &mut issues);
                         }
+                        Some(key @ ("string_limit" | "concat_limit")) => {
+                            let text = item.fields.first().map(|f| f.text().trim().to_string()).unwrap_or_default();
+                            match text.parse::<usize>() {
+                                Ok(n) if item.fields.len() == 1 => {
+                                    if key == "string_limit" {
+                                        project.string_limit = Some(n);
+                                    } else {
+                                        project.concat_limit = Some(n);
+                                    }
+                                }
+                                _ => issues.push(at_name(item.key.as_ref().unwrap(), Level::Error, format!("'{key}' takes a number of bytes (0: no limit)"))),
+                            }
+                        }
                         Some(_) => unknown_key(item, "jass", &mut issues),
                         None => {}
                     }
@@ -529,7 +560,7 @@ fn unknown_key(item: &Item, section: &str, issues: &mut Vec<Issue>) {
         "map" => "root",
         "build" => "name', 'out', 'script', 'uglify', 'inline', 'dead_code' or 'string_hash",
         "test" => "build', 'game', 'window' or 'command",
-        _ => "dialect",
+        _ => "dialect', 'string_limit' or 'concat_limit",
     };
     issues.push(at_name(
         key,

@@ -154,6 +154,8 @@ dialect=vjass
 | `[build]`   | `dead_code` | `1` or `0`                             | the functions and globals nothing reachable uses left out; `0` without it |
 | `[build]`   | `string_hash` | `1` or `0`                           | `StringHash("text")` of a literal worked out as the game does; `0` without it |
 | `[jass]`    | `dialect` | `jass`, `strict` or `vjass` (case-insensitive) | the dialect of `.j` files that don't declare one in a `// @dialect` header |
+| `[jass]`    | `string_limit` | a number of bytes, 0 for none | `long-string`'s limit of a string literal: 1023 without it (vanilla; UjAPI and Reforged keep more) |
+| `[jass]`    | `concat_limit` | a number of bytes, 0 for none | `long-string`'s limit of a concatenation of literals: 4092 without it |
 | `[lint]`    | a rule or group id | `off`, `warning` or `error`     | turn a lint rule (or every rule of a group) off or on, at that level (see [Lint](#lint)) |
 | `[external]` | a tool's name | its program and first arguments, comma-separated BNI strings (`"wine","tools/ObjectMerger.exe"`; a program with a `/` relative to the project root) | the tool JassHelper's `//! external NAME` runs on the map built (see below) |
 | `[test]`    | `build`   | a `[build]`'s name                       | the build Test Map runs; the default without it |
@@ -2754,7 +2756,8 @@ what the game runs.
 
 | group  | rules                | for |
 |--------|----------------------|-----|
-| `strict` | `implicit-signature`, `implicit-keyword`, `merged-function`, `call-before-declaration`, `declaration-after-function`, `global-outside-globals` | strict JASS, as the game reads it: reports what extended JASS and this toolchain accept beyond the game's grammar. Off by default in extended JASS; always errors in strict JASS |
+| `strict` | `implicit-signature`, `implicit-keyword`, `merged-function`, `call-before-declaration`, `declaration-after-function`, `global-outside-globals`, `local-after-statement`, `reserved-name` (off in extended JASS: a build takes care of them); `missing-return`, `hidden-type`, `uninitialized-variable`, `return-conversion`, `constant-function`, `recursive-local`, `native-as-code`, `too-many-arguments`, `unsafe-in-globals`, `code-array`, `array-initializer`, `constant-without-value` (on: mistakes in any JASS) | what breaks the game's compiling or running the script (pjass's checks, `../pjass-master`). Always errors in strict JASS |
+| `warnings` | `unsafe-rawcode`, `shadowed-name`, `long-string`, `number-overflow`, `long-name`, `filter-returns-boolean` (on); `shadowed-global`, `modulo-operator` (off) | what the game reads and runs, but is likely a mistake or a patch's limit (pjass's flags): warnings, each set on its own, never forced. `global-maybe-uninitialized` and `string-hash-collision` (off) are in no group: a global is often set lazily, and two strings sharing a hash is a hash's way |
  Parse errors
 aren't lint: they can't be turned off. The rules are defined in
 `parser_rs::RULES` (`parser-rs/src/diagnostic.rs`); this table follows it.
@@ -2763,7 +2766,7 @@ aren't lint: they can't be turned off. The rules are defined in
 |----------------------------------|------------------------------|---------|-------|
 | `statement-outside-function`     | JASS, Zinc                   | on      | a statement at the top level, where only declarations belong |
 | `modifier-outside-library`       | Zinc                         | on      | `private` / `public` outside a library, where it has no effect |
-| `duplicate-declaration`          | JASS, Zinc, AngelScript      | on      | a name declared twice in the same scope |
+| `duplicate-declaration`          | JASS, Zinc, AngelScript      | on      | a name declared twice in the same scope (a JASS parameter or local declared again: a warning, legal: a local is a parameter on the function's stack, found from the top, so the last one's found and an earlier one never, a typo) |
 | `unused-local`                   | JASS, Zinc, Lua, AngelScript | on      | a local variable (or Lua local function) that's never used |
 | `shadowed-variable`              | AngelScript                  | on      | a local that hides a variable of an outer scope |
 | `missing-return`                 | JASS, Zinc, AngelScript      | on      | a function (or `get` accessor) with a return type that may not return a value |
@@ -2793,6 +2796,29 @@ aren't lint: they can't be turned off. The rules are defined in
 | `declaration-after-function`     | JASS                         | **off** | a global, `globals` block, `native` or `type` after a function; the game reads them only before the first one (group `strict`) |
 | `global-outside-globals`         | JASS                         | **off** | a variable at the top level outside `globals ... endglobals`, where the game doesn't read it (group `strict`) |
 | `call-before-declaration`        | JASS                         | **off** | a function called (or named by `function X`) above its declaration: the game knows a function only from there down; a function calling itself is fine (group `strict`; a build orders extended JASS's functions) |
+| `local-after-statement` | JASS | **off** | a `local` after a function's first other statement; the game reads locals only at its top (a build moves them there) (group `strict`, error) |
+| `shadowed-name` | JASS | on | a parameter or a local named as a declared type or a function (`local effect effect`): legal, the context tells them apart, but confusing (a build renames it) (group `warnings`, warning) |
+| `hidden-type` | JASS | on | a name the game keeps for a type: a parameter or a local named as a primitive (`local integer integer`), a global named as a type, or a type named after a parameter or a local of its name hid it in a function (group `strict`, error) |
+| `reserved-name` | JASS | **off** | a name the game keeps for itself: `alias` (a build renames it) (group `strict`, error) |
+| `uninitialized-variable` | JASS | on | a local read before anything sets it, or a global read in `globals` before its value: the game stops the thread (crashes, in `globals`) (group `strict`, error) |
+| `return-conversion` | JASS | on | a value returned that the game won't convert: an integer from a function returning real, `null` from one returning integer, real, boolean or code (group `strict`, error) |
+| `constant-function` | JASS | on | a `constant function` that sets a global or calls a function that isn't constant (group `strict`, error) |
+| `recursive-local` | JASS | on | a function calling itself in a local's value (group `strict`, error) |
+| `native-as-code` | JASS | on | `function N` of a native: the game can't run it as code (group `strict`, error) |
+| `too-many-arguments` | JASS | on | a call with more than 31 arguments, more than the game passes (group `strict`, error) |
+| `unsafe-in-globals` | JASS | on | a call in `globals` the game can't make yet: one that crashes it (`GetObjectName`, `CreateQuest`, `CreateMultiboard`, `CreateLeaderboard`, `CreateRegion` on saving) or always gives null (`OrderId`, `OrderId2String`, `UnitId2String`) (group `strict`, error) |
+| `code-array` | JASS | on | an array of `code`, which the game doesn't have (group `strict`, error) |
+| `array-initializer` | JASS | on | an array given a value where it's declared, which the game doesn't read (group `strict`, error) |
+| `constant-without-value` | JASS | on | a constant declared without its value (group `strict`, error) |
+| `unsafe-rawcode` | JASS | on | a rawcode of bytes an editor can't show or keep (a control character, a line break, bytes that aren't UTF-8): the game reads its bytes as they are, an editor saving the file changes them; written as `0x...`, the same number, it's safe (group `warnings`, warning) |
+| `long-string` | JASS | on | a string literal longer, in bytes, than the game keeps when a saved game is loaded (1023; a concatenation of literals, 4092), which crashes loading it; `[jass] string_limit` and `concat_limit` set the limits (0: none), for UjAPI or Reforged (group `warnings`, warning) |
+| `number-overflow` | JASS | on | a number literal too big for its type: the game cuts it, as its parser does (group `warnings`, warning) |
+| `long-name` | JASS | on | a name longer than 3958 characters, more than the game reads (a generator's slip) (group `warnings`, warning) |
+| `filter-returns-boolean` | JASS | on | a function given to `Filter` or `Condition` that doesn't return boolean (group `warnings`, warning) |
+| `shadowed-global` | JASS | **off** | a local or a parameter named as a global variable, which it hides there (legal; a build renames it) (group `warnings`, warning) |
+| `modulo-operator` | JASS | **off** | the `%` operator, which patches before 1.29 don't have (group `warnings`, warning) |
+| `global-maybe-uninitialized` | JASS | **off** | a global without a value read in a function: it may not be set yet (often set lazily, so off) (warning) |
+| `string-hash-collision` | JASS | **off** | two different strings with the same `StringHash` (a hash's way: off) (warning) |
 | `object-value-type`              | Object data                  | on      | a value stored as another type than the game's metadata gives the field (a number for a string, a type written out that isn't the field's: `int 6` for an unreal); an error, the game misreads it. Quick fix: the right type |
 | `object-value-range`             | Object data                  | on      | a number outside World Editor's limits for the field, or a flag other than 0 or 1 |
 | `object-unknown-field`           | Object data                  | on      | a field the game's metadata doesn't have, like one of a newer game version |

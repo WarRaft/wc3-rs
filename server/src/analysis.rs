@@ -73,7 +73,8 @@ pub fn diagnostics_with(doc: &Document, project: Option<&Project>, objects: Opti
         // In a vJASS file, `//! zinc` blocks are handed to zinc-rs (lines
         // stay file-absolute; Zinc lint is included).
         Language::Jass => {
-            jass_rs::parse_with(text, jass_dialect(doc, project)).map(|p| jass_rs::lint(&p))
+            let options = Project::jass_lint_options(project, Some(text));
+            jass_rs::parse_with(text, jass_dialect(doc, project)).map(|p| rawcodes_from_disk(doc, jass_rs::lint_with(&p, &options)))
         }
         Language::Zinc => zinc_rs::parse(text).map(|p| zinc_rs::lint(&p)),
         Language::Lua => lua_rs::parse(text).map(|c| lua_rs::lint(&c)),
@@ -111,6 +112,35 @@ pub fn diagnostics_with(doc: &Document, project: Option<&Project>, objects: Opti
     let markers = crate::customtext::diagnostics(doc.path.as_deref(), text);
     diags.extend(markers.iter().map(|e| out.error(e)));
     diags
+}
+
+/// `unsafe-rawcode`s whose bytes the text lost (a file that isn't UTF-8,
+/// read with them replaced): their fix, `0x...`, from the file's own
+/// bytes, when the rawcode there reads as the text does (the text not
+/// changed since).
+fn rawcodes_from_disk(doc: &Document, mut lint: Vec<parser_rs::Diagnostic>) -> Vec<parser_rs::Diagnostic> {
+    let lost = |d: &parser_rs::Diagnostic| d.rule == parser_rs::rule::UNSAFE_RAWCODE && d.fix.is_none() && d.span.is_some();
+    if !lint.iter().any(lost) {
+        return lint;
+    }
+    let Some(path) = doc.path.as_deref() else { return lint };
+    let bytes = if crate::map::split(path).is_some() { crate::map::bytes(path) } else { std::fs::read(path).ok() };
+    let Some(bytes) = bytes else { return lint };
+    let lines = LineIndex::new(&doc.text);
+    for d in lint.iter_mut().filter(|d| lost(d)) {
+        let span = d.span.expect("filtered");
+        let Some(raw) = jass_rs::lint::rawcode_bytes_at(&bytes, span.start_line, span.start_col) else { continue };
+        // The text's rawcode, its quotes off: as the file's bytes read.
+        let first = lines.line(&doc.text, span.start_line - 1);
+        let written: String = first.chars().skip(span.start_col).collect();
+        let shown = String::from_utf8_lossy(&raw);
+        if !written.starts_with(shown.lines().next().unwrap_or_default()) || !matches!(raw.len(), 1 | 4) {
+            continue;
+        }
+        let hex = jass_rs::lint::hex_rawcode(&raw);
+        d.fix = Some(parser_rs::Fix { title: format!("Write it as {hex}, from the file's bytes"), edits: vec![parser_rs::Edit { span, text: hex }] });
+    }
+    lint
 }
 
 /// Is `rule` one of the group `strict`'s (what the game's JASS rejects)?

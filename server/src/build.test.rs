@@ -242,8 +242,8 @@ fn a_protected_maps_own_script_is_kept() {
 fn a_built_script_is_checked_as_strict_jass() {
     let common = "type unit extends handle\nnative KillUnit takes unit u returns nothing\n";
     let read = |n: &str| (n == "Scripts\\common.j").then(|| common.as_bytes().to_vec());
-    assert!(strict_check("function main takes nothing returns nothing\n    call KillUnit(null)\nendfunction\n", &read).is_empty());
-    let bad = |script: &str| strict_check(script, &read);
+    assert!(strict_check("function main takes nothing returns nothing\n    call KillUnit(null)\nendfunction\n", &read, &Default::default()).is_empty());
+    let bad = |script: &str| strict_check(script, &read, &Default::default());
     // Extended JASS left in it, a rule of `strict`, an unknown name.
     assert!(bad("function main takes nothing returns boolean\n    return !true\nendfunction\n")[0].starts_with("war3map.j:2: "));
     assert!(bad("function main takes nothing returns nothing\n    KillUnit(null)\nendfunction\n")[0].contains("strict JASS"));
