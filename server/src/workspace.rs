@@ -88,6 +88,13 @@ struct Entry {
     tokens: Vec<u32>,
     /// The settings it was last analyzed with (its `[lint]` for its names).
     settings: Option<Arc<Project>>,
+    /// JASS read strict, from its last analysis (`analysis::jass_dialect`):
+    /// compiled code, a whole program with nothing to import. It sees only
+    /// the game's files, and no other file sees it.
+    strict: bool,
+    /// A script a build made (`Project::is_generated`), from its last
+    /// analysis: the next build makes it anew.
+    generated: bool,
 }
 
 impl Entry {
@@ -109,6 +116,8 @@ impl Entry {
             named: Vec::new(),
             tokens: Vec::new(),
             settings: None,
+            strict: false,
+            generated: false,
         }
     }
 
@@ -361,7 +370,7 @@ impl Workspace {
     pub fn take_reports(&mut self) -> Vec<ServerMsg> {
         let mut out: Vec<ServerMsg> = std::mem::take(&mut self.cleared)
             .into_iter()
-            .map(|id| ServerMsg::File { id, version: 0, diagnostics: Vec::new(), tokens: Vec::new() })
+            .map(|id| ServerMsg::File { id, version: 0, diagnostics: Vec::new(), tokens: Vec::new(), generated: false })
             .collect();
 
         let mut ids: Vec<String> = std::mem::take(&mut self.dirty).into_iter().collect();
@@ -418,6 +427,10 @@ impl Workspace {
                 entry.settings = roots.remove(&id).flatten();
                 entry.project = entry.settings.as_ref().map(|p| p.root.clone());
                 entry.objects = objects.remove(&id).flatten();
+                entry.generated = !entry.game && entry.doc.path.as_deref().is_some_and(|p| Project::is_generated(entry.settings.as_deref(), p));
+                entry.strict = !entry.game
+                    && entry.doc.language == Language::Jass
+                    && analysis::jass_dialect(&entry.doc, entry.settings.as_deref()) == jass_rs::Dialect::Strict;
                 if entry.game || quiet.contains(&id) {
                     a.diagnostics.clear();
                 }
@@ -472,7 +485,7 @@ impl Workspace {
             let mut diagnostics = e.own.clone();
             diagnostics.extend(e.named.iter().cloned());
             diagnostics.sort_by_key(|d| (d.range.start.line, d.range.start.character));
-            out.push(ServerMsg::File { id: id.clone(), version: e.doc.version, diagnostics, tokens: e.tokens.clone() });
+            out.push(ServerMsg::File { id: id.clone(), version: e.doc.version, diagnostics, tokens: e.tokens.clone(), generated: e.generated });
         }
         out
     }
@@ -700,6 +713,12 @@ impl Workspace {
         }
     }
 
+    /// Is `id` a script a build made (`Project::is_generated`), as its
+    /// last analysis found?
+    pub fn is_generated(&self, id: &str) -> bool {
+        self.files.get(id).is_some_and(|e| e.generated)
+    }
+
     /// Is `id` one of the game's scripts?
     pub fn is_game(&self, id: &str) -> bool {
         self.games.values().any(|ids| ids.iter().any(|g| g == id))
@@ -722,11 +741,19 @@ impl Workspace {
         };
         let sees = move |fid: &str| Script::of(Path::new(fid)).is_none_or(|s| viewer.sees(s));
         // Among non-game files: an AI script only itself, anything else
-        // anything but AI scripts.
+        // anything but AI scripts. Strict JASS (compiled code) only
+        // itself, and no other file it.
         let me_id = id.to_string();
-        let shares = move |fid: &str| match viewer {
-            Script::Ai => fid == me_id,
-            _ => Script::for_file(Path::new(fid)) != Script::Ai,
+        let me_strict = me.is_some_and(|e| e.strict);
+        let shares = move |fid: &str| {
+            let strict = self.files.get(fid).is_some_and(|e| e.strict);
+            if me_strict || strict {
+                return fid == me_id;
+            }
+            match viewer {
+                Script::Ai => fid == me_id,
+                _ => Script::for_file(Path::new(fid)) != Script::Ai,
+            }
         };
         // A game file sees the one set of game files it's read with.
         let game: Option<HashSet<&str>> = if me.is_some_and(|e| e.game) {

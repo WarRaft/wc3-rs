@@ -157,14 +157,14 @@ fn infinite_loops_are_off_unless_the_project_turns_them_on() {
 }
 
 #[test]
-fn pure_jass_reports_left_out_takes_and_returns() {
+fn strict_jass_reports_left_out_takes_and_returns() {
     let src = "function main
 endfunction";
     assert!(diags(Language::Jass, src).is_empty());
 
-    let tmp = TempDir::new("analysis-lint-pure");
+    let tmp = TempDir::new("analysis-lint-strict");
     std::fs::write(tmp.0.join(project::MANIFEST), "[lint]
-pure=error
+strict=error
 ").unwrap();
     let path = tmp.0.join("x.j");
     let project = crate::project::Projects::default().for_file(&path);
@@ -181,6 +181,28 @@ pure=error
         .map(|d| d.rule)
         .collect();
     assert_eq!(rules, vec!["global-outside-globals", "declaration-after-function"]);
+}
+
+/// Strict JASS (a map's `war3map.j`, a `// @dialect strict` file): the
+/// group `strict`'s rules are errors, whatever the project says.
+#[test]
+fn strict_dialect_reports_the_strict_group_as_errors() {
+    let tmp = TempDir::new("analysis-strict-dialect");
+    std::fs::write(tmp.0.join(project::MANIFEST), "[lint]\nstrict=off\n").unwrap();
+    let src = "function main\n    x = 1\nendfunction\n";
+    // A build's war3map.j (code alone: build/war3map.j), and a file that
+    // says it's strict.
+    for (name, text) in [("build/war3map.j", src.to_string()), ("a.j", format!("// @dialect strict\n{src}"))] {
+        let path = tmp.0.join(name);
+        let project = crate::project::Projects::default().for_file(&path);
+        let d = diagnostics(&doc(Language::Jass, &text, Some(&path)), project.as_deref());
+        let rules: Vec<_> = d.iter().map(|d| (d.rule, d.level)).collect();
+        assert!(rules.contains(&("implicit-signature", Level::Error)) && rules.contains(&("implicit-keyword", Level::Error)), "{name}: {rules:?}");
+    }
+    // Extended JASS: the project's choice.
+    let path = tmp.0.join("b.j");
+    let project = crate::project::Projects::default().for_file(&path);
+    assert!(diagnostics(&doc(Language::Jass, src, Some(&path)), project.as_deref()).iter().all(|d| d.rule != "implicit-signature"));
 }
 
 #[test]
@@ -201,6 +223,22 @@ fn a_vj_file_is_vjass_unless_its_header_says_otherwise() {
     assert_eq!(jass_dialect(&file("/p/A.VJ", ""), None), jass_rs::Dialect::VJass);
     assert_eq!(jass_dialect(&file("/p/a.vj", "// @dialect jass\n"), None), jass_rs::Dialect::Jass);
     assert_eq!(jass_dialect(&file("/p/a.j", ""), None), jass_rs::Dialect::Jass);
+    // Compiled code: strict, what the game reads.
+    // A war3map.j that's in no map nor a project's build: code like any.
+    assert_eq!(jass_dialect(&file("/p/map/war3map.j", ""), None), jass_rs::Dialect::Jass);
+    // A file named as a game's script needn't be the game's: the game's
+    // own see only the game anyway.
+    assert_eq!(jass_dialect(&file("/p/Blizzard.j", ""), None), jass_rs::Dialect::Jass);
+    // A map's script is strict whatever its header says: the game knows
+    // no `// @dialect`.
+    let tmp = TempDir::new("analysis-map-script");
+    std::fs::create_dir_all(tmp.0.join("A/Models")).unwrap();
+    std::fs::write(tmp.0.join(project::MANIFEST), "[map]\nroot=A/Models\n").unwrap();
+    let path = tmp.0.join("A/Models/war3map.j");
+    let project = crate::project::Projects::default().for_file(&path);
+    assert_eq!(jass_dialect(&file(path.to_str().unwrap(), "// @dialect vjass\n"), project.as_deref()), jass_rs::Dialect::Strict);
+    let ai = tmp.0.join("A/Models/elf.ai");
+    assert_eq!(jass_dialect(&file(ai.to_str().unwrap(), ""), project.as_deref()), jass_rs::Dialect::Strict);
     assert_eq!(Language::from_path(Path::new("/p/a.vj")), Some(Language::Jass));
     assert_eq!(Language::from_id("vjass"), Some(Language::Jass));
     // `library` is a vJASS keyword: an error only in plain JASS.

@@ -170,6 +170,9 @@ pub enum ServerMsg {
         version: i32,
         diagnostics: Vec<Diagnostic>,
         tokens: Vec<u32>,
+        /// `u8` 1: a script a build made (`Project::is_generated`), which
+        /// the next build makes anew; the editor says so over it.
+        generated: bool,
     },
     /// Kind 130. The answer to `Query` number `request`: `text` (Markdown
     /// for a hover; for a rename, why it's refused, empty if it isn't) and
@@ -441,7 +444,7 @@ impl ServerMsg {
     pub fn encode(&self) -> Vec<u8> {
         let mut w = Writer::default();
         let kind = match self {
-            ServerMsg::File { id, version, diagnostics, tokens } => {
+            ServerMsg::File { id, version, diagnostics, tokens, generated } => {
                 w.string(id);
                 w.i32(*version);
                 w.list(diagnostics, |w, d| {
@@ -467,6 +470,7 @@ impl ServerMsg {
                     }
                 });
                 w.list(tokens, |w, t| w.u32(*t));
+                w.u8(u8::from(*generated));
                 kind::FILE
             }
             ServerMsg::Legend { types, modifiers } => {
@@ -579,6 +583,7 @@ impl ServerMsg {
                     Ok(Diagnostic { level, range, message, rule, fix })
                 })?,
                 tokens: r.list(|r| r.u32())?,
+                generated: r.u8()? == 1,
             },
             kind::LEGEND => ServerMsg::Legend {
                 types: r.list(|r| r.string())?,

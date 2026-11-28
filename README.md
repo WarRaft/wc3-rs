@@ -153,7 +153,7 @@ dialect=vjass
 | `[build]`   | `inline`  | `1` or `0`                               | one-line functions' calls inlined, as JassHelper does (see "What a build does to the script" below); `0` without it |
 | `[build]`   | `dead_code` | `1` or `0`                             | the functions and globals nothing reachable uses left out; `0` without it |
 | `[build]`   | `string_hash` | `1` or `0`                           | `StringHash("text")` of a literal worked out as the game does; `0` without it |
-| `[jass]`    | `dialect` | `jass` or `vjass` (case-insensitive)     | the dialect of `.j` files that don't declare one in a `// @dialect` header |
+| `[jass]`    | `dialect` | `jass`, `strict` or `vjass` (case-insensitive) | the dialect of `.j` files that don't declare one in a `// @dialect` header |
 | `[lint]`    | a rule or group id | `off`, `warning` or `error`     | turn a lint rule (or every rule of a group) off or on, at that level (see [Lint](#lint)) |
 | `[external]` | a tool's name | its program and first arguments, comma-separated BNI strings (`"wine","tools/ObjectMerger.exe"`; a program with a `/` relative to the project root) | the tool JassHelper's `//! external NAME` runs on the map built (see below) |
 | `[test]`    | `build`   | a `[build]`'s name                       | the build Test Map runs; the default without it |
@@ -199,9 +199,24 @@ dialect=vjass
   into the Mac's) and Test Map run. On Linux a window says no
   way has been found yet, and what to write by hand.
 - **`dialect`.** A file's own header always wins over the project, so a
-  project can still mix dialects. Without either, a file is plain JASS.
-  A `.vj` file is vJASS unless its header says otherwise. The order is
-  header, then `.vj`, then project, then plain JASS.
+  project can still mix dialects. Without either, a file is (extended)
+  JASS. A `.vj` file is vJASS unless its header says otherwise.
+  **Code the game runs as it is is strict JASS, whatever its header
+  says** (the game knows no `// @dialect`: to it, a comment), read with
+  the game's files only (no neighbour sees it, it sees none: the game has
+  no imports): a map's script, `war3map.j` and `Scripts\war3map.j` at
+  the top of any map (a root, however deep the project keeps it:
+  `A/B/C/Models` as a root has its `war3map.j` at `A/B/C/Models/war3map.j`;
+  any `.w3x`, a root or not), a build's own (`build/war3map.j`, inside
+  `build/<name>.w3x`), and a map's `.ai` and `.pld` files. A map's
+  script is **generated**: an earlier build's (World Editor's,
+  JassHelper's, ours), the triggers and the custom script in it already;
+  the next build makes it anew. The editor says so in a lens over its
+  first line and a mark (⚙) in the explorer; it can still be edited (a
+  hotfix), the change lost on the next build. A rename in it changes it
+  alone, and one elsewhere never reaches it. The order is compiled code, then header, then
+  `.vj`, then project, then JASS. Strict and extended JASS
+  are in the [`jass-rs` README](../jass-rs/README.md#strict-and-extended-jass).
 - **`[code]` and `[map]`: code and the map.** The two say different
   things, and it's worth keeping them apart:
   - **`root`** is the map: everything the map is made of (models,
@@ -263,8 +278,19 @@ dialect=vjass
   one that only gets scripts written in. A map can be put together from
   several: a base map, a folder shared by projects, the project's own
   icons and scripts. Each `root=` goes over the ones
-  before. What's in a root is part of the project, so `[code] sources`
-  is needed only for files outside the map (scripts the build compiles). A build puts the roots' files together into
+  before. **No root may hold another**: they're read from the top
+  down, and one that meets a root above (inside it, holding it, the
+  same; a map inside a folder root too) is left out, an error. Else a
+  file would be in two maps' layers, a `war3map.j` both a map's script
+  and a file of the map above. What's in a root is part of the project, so `[code] sources`
+  is needed only for files outside the map (scripts the build compiles).
+  Code may live in a root beside what it goes with (a package: a hero's
+  model, textures and code; a library with its textures), the root also
+  among `sources`: a build doesn't put code (`.j`, `.vj`, `.zn`, `.lua`,
+  `.as`) from a root into the map, the script is made of it. Only what
+  the game reads from a map as it is goes in: `.ai`, `.pld`, the map's
+  own `Scripts\common.j` and `Scripts\Blizzard.j`. A map's script in a
+  root is never a source. A build puts the roots' files together into
   the map in a place of its own (`[build] out=`): a copy of the first
   root when it's a map, with the rest and the script written in, else a
   map made of the files (see [Building a map](#building-a-map)). Campaigns, several maps at once, will be a project above
@@ -526,7 +552,10 @@ each output is made from it:
   `RunInitializationTriggers`). `set`, `call`, `local` and `takes nothing
   returns nothing` are written; locals go to the top of their function,
   globals into `globals`. What it makes passes the rules of the group
-  `pure`.
+  `strict`: each build reads its `war3map.j` back as strict JASS (the
+  game's, with the game's `common.j` and `Blizzard.j`, nothing of the
+  project's) and says what doesn't read so among its errors, as the
+  build's own mistakes (`server/src/build.rs`'s `strict_check`).
 - **Which one: `[build] script=jass|lua|as`** (`jass` without it). Every
   source (JASS, vJASS, Zinc, the triggers) goes through the IR to the
   one asked for: all of a map's JASS is transpiled, nothing is written
@@ -2713,17 +2742,19 @@ project-wide (a public Zinc function is known, its arguments not
 counted). When a file's declarations change, every JASS file is checked
 again, so a problem between files shows and goes as it's typed. Only
 where the game's `common.j` is found: without it every native would be
-unknown. The game's scripts and a map's own `war3map.j` aren't checked.
+unknown. The game's scripts and a map's own copies of them aren't checked; a map's `war3map.j` (strict JASS) is, over the game's files alone.
 `wc3-mcp`'s `code_check` gives the same for a whole project.
 
-A **group** switches several rules at once: `pure=error` sets every rule
-of the group `pure`. A rule set by name wins over its group, wherever
-the lines are, so `pure=error` with `implicit-signature=off` keeps that
-one rule off.
+A **group** switches several rules at once: `strict=error` sets every rule
+of the group `strict`. A rule set by name wins over its group, wherever
+the lines are, so `strict=error` with `implicit-signature=off` keeps that
+one rule off. In strict JASS (a file read with the dialect `strict`) the
+group `strict` is always errors, whatever `[lint]` says: such a file is
+what the game runs.
 
 | group  | rules                | for |
 |--------|----------------------|-----|
-| `pure` | `implicit-signature`, `implicit-keyword`, `merged-function`, `declaration-after-function`, `global-outside-globals` | pure JASS as the game reads it: reports what this toolchain accepts beyond the game's grammar. Off by default |
+| `strict` | `implicit-signature`, `implicit-keyword`, `merged-function`, `declaration-after-function`, `global-outside-globals` | strict JASS, as the game reads it: reports what extended JASS and this toolchain accept beyond the game's grammar. Off by default in extended JASS; always errors in strict JASS |
  Parse errors
 aren't lint: they can't be turned off. The rules are defined in
 `parser_rs::RULES` (`parser-rs/src/diagnostic.rs`); this table follows it.
@@ -2756,11 +2787,11 @@ aren't lint: they can't be turned off. The rules are defined in
 | `array-access`                   | JASS                         | on      | an array used without its index, or an index of what isn't an array |
 | `constant-assignment`            | JASS                         | on      | a constant set |
 | `array-struct`                   | JASS                         | on      | what a struct `extends array` can't have or do, its instances only numbers that nothing creates or destroys: a member's default value, an array member, `onDestroy` (its own, or a module's it implements: said at the `implement`); `allocate`, `create`, `destroy`, `deallocate` not its own or a module's |
-| `implicit-signature`             | JASS                         | **off** | a `function` or `native` without `takes` or `returns`, which the game requires (group `pure`) |
-| `implicit-keyword`               | JASS                         | **off** | an assignment without `set`, a call without `call` or a local without `local`, which the game requires (group `pure`) |
-| `merged-function`                | JASS                         | **off** | more than one `main` or `config`, which the build merges into one; the game reads one (group `pure`) |
-| `declaration-after-function`     | JASS                         | **off** | a global, `globals` block, `native` or `type` after a function; the game reads them only before the first one (group `pure`) |
-| `global-outside-globals`         | JASS                         | **off** | a variable at the top level outside `globals ... endglobals`, where the game doesn't read it (group `pure`) |
+| `implicit-signature`             | JASS                         | **off** | a `function` or `native` without `takes` or `returns`, which the game requires (group `strict`) |
+| `implicit-keyword`               | JASS                         | **off** | an assignment without `set`, a call without `call` or a local without `local`, which the game requires (group `strict`) |
+| `merged-function`                | JASS                         | **off** | more than one `main` or `config`, which the build merges into one; the game reads one (group `strict`) |
+| `declaration-after-function`     | JASS                         | **off** | a global, `globals` block, `native` or `type` after a function; the game reads them only before the first one (group `strict`) |
+| `global-outside-globals`         | JASS                         | **off** | a variable at the top level outside `globals ... endglobals`, where the game doesn't read it (group `strict`) |
 | `object-value-type`              | Object data                  | on      | a value stored as another type than the game's metadata gives the field (a number for a string, a type written out that isn't the field's: `int 6` for an unreal); an error, the game misreads it. Quick fix: the right type |
 | `object-value-range`             | Object data                  | on      | a number outside World Editor's limits for the field, or a flag other than 0 or 1 |
 | `object-unknown-field`           | Object data                  | on      | a field the game's metadata doesn't have, like one of a newer game version |
@@ -2847,15 +2878,15 @@ be done safely:
   name, the same namespace);
 - it's used in the game's scripts, or in a map that can't be written (see
   maps as folders above).
-- it's what World Editor's script makes of a map's triggers: a name
-  declared only in a `war3map.j` with a `war3map.wtg` beside it (a
-  variable's `udg_`, a trigger's `gg_trg_` and its GUI functions, a
-  placed thing's `gg_unit_` ...: made again from the triggers when the
-  map is saved or built), or a trigger's `InitTrig_<name>` in the custom
-  script (called by the trigger's name). The trigger or variable is
-  renamed instead. A name the custom script declares and that
-  `war3map.j` copies is renamed in both, from either. The MCP's
-  `jass_rename` is this rename.
+- it's a trigger's `InitTrig_<name>` in the custom script (World
+  Editor's script calls it by the trigger's name): the trigger is
+  renamed instead.
+
+A map's `war3map.j` is strict JASS, a whole program apart: a rename in
+it changes that file alone (a hotfix, lost on the next build: `udg_`,
+`gg_trg_` ... come back from the triggers), and a rename in the
+project's code never reaches it, its copy of the custom script's names
+included. The MCP's `jass_rename` is this rename.
 
 When some of the places are inside maps, the editor asks first: renaming
 there rewrites the map. **Rename** changes them all, **Rename Outside

@@ -24,7 +24,7 @@
 //! dialect=vjass
 //!
 //! [lint]
-//! pure=error
+//! strict=error
 //! infinite-loop=warning
 //! unused-local=off
 //! ```
@@ -173,6 +173,15 @@ impl Project {
             Some(n) => self.builds.iter().find(|b| b.name == n).cloned(),
             None => Some(self.builds.iter().find(|b| b.name.is_empty()).or(self.builds.first()).cloned().unwrap_or_default()),
         }
+    }
+
+    /// Is `path` what a build of the project makes: its map (`build/map.w3x`,
+    /// a file inside it) or, for code alone, its script
+    /// (`build/war3map.j`)? Compiled code, read as strict JASS.
+    pub fn is_built(&self, path: &Path) -> bool {
+        let path = normalize(path);
+        let default = self.build_named(None);
+        self.builds.iter().chain(default.as_ref()).any(|b| path.starts_with(normalize(&b.out(self))))
     }
 
     /// Why the map of `b` can't be written where it goes: inside a root
@@ -564,9 +573,9 @@ fn read_lint(item: &Item, rule: &str, project: &mut Project, issues: &mut Vec<Is
 fn read_dialect(item: &Item, issues: &mut Vec<Issue>) -> Option<jass_rs::Dialect> {
     let [field] = item.fields.as_slice() else {
         let message = if item.fields.is_empty() {
-            "'dialect' needs a value: jass or vjass"
+            "'dialect' needs a value: jass, strict or vjass"
         } else {
-            "'dialect' takes a single value: jass or vjass"
+            "'dialect' takes a single value: jass, strict or vjass"
         };
         issues.push(at_name(item.key.as_ref().unwrap(), Level::Error, message.into()));
         return None;
@@ -577,7 +586,7 @@ fn read_dialect(item: &Item, issues: &mut Vec<Issue>) -> Option<jass_rs::Dialect
         issues.push(at_field(
             field,
             Level::Error,
-            format!("unknown JASS dialect '{name}' (expected jass or vjass)"),
+            format!("unknown JASS dialect '{name}' (expected jass, strict or vjass)"),
         ));
     }
     dialect
@@ -635,8 +644,18 @@ fn read_root(root: &Path, item: &Item, project: &mut Project, issues: &mut Vec<I
         return;
     }
     let path = resolve(root, text);
-    if project.roots.contains(&path) {
-        issues.push(at_field(field, Level::Warning, format!("root '{text}' is already a root above")));
+    // Roots go from the top down, and none may hold another: a file would
+    // be in two maps' layers at once, a `war3map.j` both a map's script
+    // and a file of the map above. One that meets a root above is left out.
+    if let Some(above) = project.roots.iter().find(|r| overlap(r, &path)) {
+        let message = if normalize(above) == normalize(&path) {
+            format!("root '{text}' is already a root above; it's left out")
+        } else if inside(&path, above) {
+            format!("root '{text}' is inside the root {} above: roots can't hold one another; it's left out", above.display())
+        } else {
+            format!("root '{text}' holds the root {} above: roots can't hold one another; it's left out", above.display())
+        };
+        issues.push(at_field(field, Level::Error, message));
         return;
     }
     if !path.exists() {
@@ -650,6 +669,59 @@ fn read_root(root: &Path, item: &Item, project: &mut Project, issues: &mut Vec<I
     }
     project.root_masks.push(Glob::new(root, text));
     project.roots.push(path);
+}
+
+/// Is `path` `dir` or inside it (compared as the file system on Windows
+/// and macOS does: case aside)?
+fn inside(path: &Path, dir: &Path) -> bool {
+    let low = |p: &Path| normalize(p).to_string_lossy().to_lowercase().replace('\\', "/");
+    let (p, d) = (low(path), low(dir));
+    p == d || p.strip_prefix(&d).is_some_and(|rest| rest.starts_with('/') || d.ends_with('/'))
+}
+
+/// Do two roots meet: one of them inside the other, or both the same?
+fn overlap(a: &Path, b: &Path) -> bool {
+    inside(a, b) || inside(b, a)
+}
+
+/// The scripts a build makes, by their names in a map: what a map's own
+/// one there is, an earlier build's.
+pub const MAP_SCRIPTS: [&str; 2] = ["war3map.j", "scripts\\war3map.j"];
+
+impl Project {
+    /// The name `path` has in a map, lowercase, `\`-separated: inside a
+    /// map archive (any: a root of the project's or not), else inside one
+    /// of the project's folder roots.
+    pub fn map_name(project: Option<&Project>, path: &Path) -> Option<String> {
+        if let Some((_, name)) = crate::map::split(path) {
+            return Some(name.to_ascii_lowercase());
+        }
+        let project = project?;
+        project.roots.iter().filter(|r| r.is_dir()).find_map(|r| {
+            let rest = path.strip_prefix(r).ok()?;
+            let parts: Vec<String> = rest.iter().filter_map(|p| p.to_str()).map(str::to_ascii_lowercase).collect();
+            (!parts.is_empty()).then(|| parts.join("\\"))
+        })
+    }
+
+    /// Is `path` a script a build made, which the next build makes anew:
+    /// a map's `war3map.j` or `Scripts\war3map.j` (World Editor's,
+    /// JassHelper's, a build's of ours: the triggers and the custom script
+    /// are in it already), or what a build of the project wrote
+    /// ([`Project::is_built`]).
+    pub fn is_generated(project: Option<&Project>, path: &Path) -> bool {
+        Project::map_name(project, path).is_some_and(|n| MAP_SCRIPTS.contains(&n.as_str()))
+            || project.is_some_and(|p| p.is_built(path))
+    }
+
+    /// Is `path` code the game runs as it is, read as strict JASS whatever
+    /// its header says (the game knows no `// @dialect`, a comment to it):
+    /// a generated script ([`Project::is_generated`]), or a map's AI script
+    /// (`.ai`) or preload file (`.pld`).
+    pub fn is_compiled(project: Option<&Project>, path: &Path) -> bool {
+        Project::is_generated(project, path)
+            || Project::map_name(project, path).is_some_and(|n| n.ends_with(".ai") || n.ends_with(".pld"))
+    }
 }
 
 /// `[build]`: one build scenario, named by `name=`, unique.

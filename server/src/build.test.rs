@@ -1,14 +1,14 @@
 use super::*;
 
 /// The problems of a script: names and types over the game's scripts, and
-/// the rules of `pure`.
+/// the rules of `strict`.
 fn problems(text: &str, env: &jass_rs::names::Declarations) -> Vec<String> {
     let program = jass_rs::parse(text).unwrap_or_else(|e| panic!("line {}: {}", e.line, e.message));
     let mut out: Vec<String> = jass_rs::names::check(&program, &[env]).into_iter().map(|d| format!("{}: {}", d.rule, d.message)).collect();
     out.extend(
         jass_rs::lint(&program)
             .into_iter()
-            .filter(|d| parser_rs::find_rule(d.rule).is_some_and(|r| r.groups.contains(&parser_rs::group::PURE)) || d.rule == parser_rs::rule::DUPLICATE_DECLARATION)
+            .filter(|d| parser_rs::find_rule(d.rule).is_some_and(|r| r.groups.contains(&parser_rs::group::STRICT)) || d.rule == parser_rs::rule::DUPLICATE_DECLARATION)
             .map(|d| format!("{}: {}", d.rule, d.message)),
     );
     out
@@ -144,6 +144,8 @@ fn code_alone_builds_its_script_in_each_language() {
     // JASS: build/war3map.j.
     let j = build_at(&tmp.0, None).unwrap_or_else(|e| panic!("{e:#?}"));
     assert_eq!(j.out, tmp.0.join("build").join("war3map.j"));
+    // What it made reads as strict JASS: no error of the build's own.
+    assert!(j.errors.is_empty(), "{:?}", j.errors);
     let text = std::fs::read_to_string(&j.out).unwrap();
     assert!(text.contains("function main takes nothing returns nothing") && text.contains("function config"), "{text}");
     // Lua: build/war3map.lua, as Lua reads it.
@@ -232,4 +234,49 @@ fn a_protected_maps_own_script_is_kept() {
     assert_eq!(a.read_file("Scripts\\war3map.j").unwrap(), script);
     // None made in front of it: the game would run that one.
     assert!(a.read_file("war3map.j").is_err());
+}
+
+/// A build's script goes through strict JASS: what the game wouldn't
+/// read is the build's error, said with its line.
+#[test]
+fn a_built_script_is_checked_as_strict_jass() {
+    let common = "type unit extends handle\nnative KillUnit takes unit u returns nothing\n";
+    let read = |n: &str| (n == "Scripts\\common.j").then(|| common.as_bytes().to_vec());
+    assert!(strict_check("function main takes nothing returns nothing\n    call KillUnit(null)\nendfunction\n", &read).is_empty());
+    let bad = |script: &str| strict_check(script, &read);
+    // Extended JASS left in it, a rule of `strict`, an unknown name.
+    assert!(bad("function main takes nothing returns boolean\n    return !true\nendfunction\n")[0].starts_with("war3map.j:2: "));
+    assert!(bad("function main takes nothing returns nothing\n    KillUnit(null)\nendfunction\n")[0].contains("strict JASS"));
+    assert_eq!(bad("function main takes nothing returns nothing\n    call Missing()\nendfunction\n").len(), 1);
+}
+
+/// Code kept in a root (a hero's model, textures and code side by side)
+/// is a source: the script is made of it, the map doesn't hold it. What
+/// the game reads from a map as it is stays: `.ai`, `.pld`, the map's
+/// own `Scripts\Blizzard.j`. A root's `war3map.j` is an earlier build's,
+/// not code, even among the sources.
+#[test]
+fn code_in_a_root_is_a_source_not_a_file_of_the_map() {
+    let tmp = crate::project::tests::TempDir::new("root-code");
+    let root = &tmp.0;
+    let hero = root.join("map/DemonHunter");
+    std::fs::create_dir_all(hero.join("../Scripts")).unwrap();
+    std::fs::create_dir_all(&hero).unwrap();
+    std::fs::write(root.join("map/war3map.w3i"), w3i_rs::Info { version: 25, ..Default::default() }.to_bytes().unwrap()).unwrap();
+    std::fs::write(hero.join("DemonHunter.mdx"), b"MDLX").unwrap();
+    std::fs::write(hero.join("Hero.j"), "function HeroInit takes nothing returns nothing\nendfunction\n").unwrap();
+    std::fs::write(hero.join("hero.lua"), "-- nothing").unwrap();
+    std::fs::write(hero.join("elf.ai"), "function main takes nothing returns nothing\nendfunction\n").unwrap();
+    std::fs::write(hero.join("load.pld"), "function PreloadFiles takes nothing returns nothing\nendfunction\n").unwrap();
+    std::fs::write(root.join("map/Scripts/Blizzard.j"), "function BJ takes nothing returns nothing\nendfunction\n").unwrap();
+    std::fs::write(root.join("map/war3map.j"), "function main takes nothing returns nothing\n    call Old()\nendfunction\n").unwrap();
+    std::fs::write(root.join("wc3.bni"), "[map]\nroot=map\n[code]\nsources=map\n[build]\n").unwrap();
+    let b = build_at(root, None).unwrap_or_else(|e| panic!("{e:#?}"));
+    let a = storm_rs::archive::MpqArchive::open(&b.out).unwrap();
+    let mut names: Vec<String> = a.list_files().into_iter().filter(|n| !n.starts_with('(')).collect();
+    names.sort();
+    assert_eq!(names, ["DemonHunter\\DemonHunter.mdx", "DemonHunter\\elf.ai", "DemonHunter\\load.pld", "Scripts\\Blizzard.j", "war3map.j", "war3map.w3i"], "{names:?}");
+    let script = String::from_utf8(a.read_file("war3map.j").unwrap()).unwrap();
+    // The hero's code is in the script; the old war3map.j isn't code.
+    assert!(script.contains("function HeroInit") && !script.contains("Old()"), "{script}");
 }

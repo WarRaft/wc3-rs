@@ -66,6 +66,7 @@ fn file_messages_round_trip() {
             },
         ],
         tokens: vec![0, 1, 2, 3, 4],
+        generated: true,
     };
     let frame = msg.encode();
     let (kind, body) = read_frame(&mut &frame[..]).unwrap().unwrap();

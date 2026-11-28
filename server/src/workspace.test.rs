@@ -18,7 +18,7 @@ fn reports(ws: &mut Workspace) -> Vec<(String, i32, usize, usize)> {
     ws.take_reports()
         .into_iter()
         .map(|msg| {
-            let ServerMsg::File { id, version, diagnostics, tokens } = msg else {
+            let ServerMsg::File { id, version, diagnostics, tokens, .. } = msg else {
                 panic!("only file reports");
             };
             let errors = diagnostics.iter().filter(|d| d.level == Level::Error).count();
@@ -473,6 +473,41 @@ fn an_ai_script_runs_on_its_own() {
     let refs = answer(&ws, QueryKind::References, &id("elf.ai"), Position::new(0, 10), "");
     assert!(refs.locations.iter().all(|l| l.id == id("elf.ai")), "{:?}", refs.locations);
     assert_eq!(refs.locations.len(), 2);
+}
+
+/// Strict JASS (compiled code: the `war3map.j` a build made, a
+/// `// @dialect strict` file) is a whole program, with nothing to import: it sees the game's
+/// files only, not its project's, and no file of the project sees it.
+#[test]
+fn a_strict_file_sees_only_the_game() {
+    use crate::document::Position;
+    use crate::index::{answer, QueryKind};
+    const COMMON: &str = "native CreateTimer takes nothing returns timer\n";
+    let tmp = project("ws-strict-alone", &[
+        ("game/README", ""),
+        ("wc3.bni", "[project]\ngame=game\n[code]\nsources=src,build\n"),
+        ("src/lib.j", "function Shared takes nothing returns nothing\n    call Built()\nendfunction\n"),
+        ("build/war3map.j", "function Built takes nothing returns nothing\n    call CreateTimer()\n    call Shared()\nendfunction\n"),
+        ("src/check.j", "// @dialect strict\nfunction Own takes nothing returns nothing\n    call Shared()\nendfunction\n"),
+    ]);
+    let patch = tmp.0.join("game/War3Patch.mpq");
+    crate::map::tests::make_map(&patch, &[("Scripts\\common.j", COMMON)]);
+    let mut ws = init(&tmp.0);
+    reports(&mut ws);
+    let id = |f: &str| path_id(&tmp.0.join(f));
+    let definition = |file: &str, line: u32| -> Vec<String> {
+        answer(&ws, QueryKind::Definition, &id(file), Position::new(line, 10), "")
+            .locations
+            .into_iter()
+            .map(|l| l.id)
+            .collect()
+    };
+    // The game's, yes; a neighbour's, no.
+    assert_eq!(definition("build/war3map.j", 1), vec![path_id(&patch.join("Scripts").join("common.j"))]);
+    assert!(definition("build/war3map.j", 2).is_empty());
+    assert!(definition("src/check.j", 2).is_empty());
+    // Nor does a neighbour see it.
+    assert!(definition("src/lib.j", 1).is_empty());
 }
 
 #[test]

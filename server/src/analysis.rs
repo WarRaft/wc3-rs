@@ -35,14 +35,20 @@ pub struct Fix {
     pub edits: Vec<(Range, String)>,
 }
 
-/// The dialect a JASS document is read in: whatever its own header
-/// declares (`// @dialect vjass`), else vJASS for a `.vj` file, else its
-/// project's default (`[jass] dialect=` in `wc3.bni`), else plain JASS,
-/// but for a map's custom script (`.wct`): vJASS, as JassHelper's maps
-/// have it (and as a build reads it). The header wins, so a project can
+/// The dialect a JASS document is read in: strict JASS for code the game
+/// runs as it is (`Project::is_compiled`: a map's `war3map.j`, an earlier
+/// build's, its `.ai` and `.pld` files), whatever its header says, the
+/// game knowing no `// @dialect`; else whatever its own header declares
+/// (`// @dialect vjass`), else vJASS for a `.vj` file, else its project's
+/// default (`[jass] dialect=` in `wc3.bni`), else (extended) JASS, but for
+/// a map's custom script (`.wct`): vJASS, as JassHelper's maps have it (and
+/// as a build reads it). The header wins over the rest, so a project can
 /// still mix dialects.
 pub fn jass_dialect(doc: &Document, project: Option<&Project>) -> jass_rs::Dialect {
     let ext = |x: &str| doc.path.as_deref().and_then(|p| p.extension()).and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case(x));
+    if doc.path.as_deref().is_some_and(|p| Project::is_compiled(project, p)) {
+        return jass_rs::Dialect::Strict;
+    }
     jass_rs::Dialect::declared(&doc.text)
         .or(ext("vj").then_some(jass_rs::Dialect::VJass))
         .or_else(|| project.and_then(|p| p.jass_dialect))
@@ -86,15 +92,30 @@ pub fn diagnostics_with(doc: &Document, project: Option<&Project>, objects: Opti
             return diags;
         }
     };
+    // Strict JASS (compiled code): the group `strict`'s rules are errors
+    // whatever the project says, as the game would reject what they find.
+    let strict = doc.language == Language::Jass && jass_dialect(doc, project) == jass_rs::Dialect::Strict;
     let mut diags: Vec<Diagnostic> = match result {
         Err(err) => vec![out.error(&err)],
-        Ok(lint) => project::apply_lint(lint, project).into_iter().map(|d| out.lint(d)).collect(),
+        Ok(lint) => {
+            let (forced, rest): (Vec<_>, Vec<_>) = lint.into_iter().partition(|d| strict && in_strict_group(d.rule));
+            let forced = forced.into_iter().map(|mut d| {
+                d.level = parser_rs::Level::Error;
+                d
+            });
+            forced.chain(project::apply_lint(rest, project)).map(|d| out.lint(d)).collect()
+        }
     };
     // A map's custom script (`.wct`) in its text form: markers that
     // wouldn't save.
     let markers = crate::customtext::diagnostics(doc.path.as_deref(), text);
     diags.extend(markers.iter().map(|e| out.error(e)));
     diags
+}
+
+/// Is `rule` one of the group `strict`'s (what the game's JASS rejects)?
+fn in_strict_group(rule: &str) -> bool {
+    parser_rs::find_rule(rule).is_some_and(|r| r.groups.contains(&parser_rs::group::STRICT))
 }
 
 /// BNI never fails as a whole: every malformed line is its own error, and

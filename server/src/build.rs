@@ -73,6 +73,28 @@ enum From {
     Archive(usize, String),
 }
 
+/// The build's own errors in the `war3map.j` it made: the script read as
+/// strict JASS, the game's (a parse error, a rule of the group `strict`, a
+/// declaration twice), and its names over the game's `common.j` and
+/// `Blizzard.j` (`read` from the project's layers; not checked without a
+/// `common.j`). The sources are extended JASS; what the game runs is
+/// strict, and anything here is the build's mistake, not the code's.
+pub fn strict_check(script: &str, read: &dyn Fn(&str) -> Option<Vec<u8>>) -> Vec<String> {
+    let said = |line: usize, message: &str| format!("war3map.j:{line}: the build made what the game doesn't read (strict JASS): {message}");
+    let program = match jass_rs::parse(script) {
+        Ok(p) => p,
+        Err(e) => return vec![said(e.line, &e.message)],
+    };
+    let strict = |rule: &str| rule == parser_rs::rule::DUPLICATE_DECLARATION || parser_rs::find_rule(rule).is_some_and(|r| r.groups.contains(&parser_rs::group::STRICT));
+    let mut out: Vec<String> = jass_rs::lint(&program).into_iter().filter(|d| strict(d.rule)).map(|d| said(d.line, &d.message)).collect();
+    let game = |n: &str| read(n).map(crate::document::decode).and_then(|t| jass_rs::parse(&t).ok()).map(|p| jass_rs::names::Declarations::of(&p));
+    if let Some(common) = game("Scripts\\common.j") {
+        let blizzard = game("Scripts\\Blizzard.j").unwrap_or_default();
+        out.extend(jass_rs::names::check(&program, &[&common, &blizzard]).into_iter().filter(|d| d.level == parser_rs::Level::Error).map(|d| said(d.line, &d.message)));
+    }
+    out
+}
+
 /// The build `name` of `project` (its first without a name; a build of
 /// its own without a `[build]`), made.
 pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>> {
@@ -119,7 +141,10 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
         }
         let built = wc3_build::jass::build_with(&module, &options).map_err(said)?;
         notes.extend(built.notes);
-        let errors = said(built.problems);
+        let mut errors = said(built.problems);
+        if b.script == wc3_build::jass::Script::Jass {
+            errors.extend(strict_check(&built.script, &read));
+        }
         if let Some(dir) = out.parent() {
             std::fs::create_dir_all(dir).map_err(|e| vec![format!("{}: {e}", dir.display())])?;
         }
@@ -155,7 +180,10 @@ pub fn build(project: &Project, name: Option<&str>) -> Result<Built, Vec<String>
     let input = Input { read: &read, read_patched: &read_patched, variables, initialization, code, uglify: b.uglify, inline: b.inline, dead_code: b.dead_code, string_hash: b.string_hash, script: b.script, import: &import };
     let script = wc3_build::whole::script(&input).map_err(said)?;
     notes.extend(script.notes);
-    let errors = said(script.problems.clone());
+    let mut errors = said(script.problems.clone());
+    if b.script == wc3_build::jass::Script::Jass {
+        errors.extend(strict_check(&script.text, &read));
+    }
     let mut made = vec![(format!("war3map.{}", b.script.extension()), script.text.clone().into_bytes())];
     // Triggers of `.trg` files: World Editor's files of them too, so the
     // map opens with the triggers it runs.
@@ -420,11 +448,19 @@ fn is_code(project: &Project, path: &Path) -> bool {
     project.sources.iter().any(|m| m.matches(path)) && !project.exclude.iter().any(|m| m.matches(path))
 }
 
-/// Is a file named `name` in the map the project's, not the map's?
+/// Is a file named `name` in the map the project's, not the map's? Code
+/// in a root (`.j`, `.vj`, `.zn`, `.lua`, `.as`) is a source, kept beside
+/// what it goes with (a hero's model, its textures and its code): the
+/// script is made of it, the map doesn't hold it. But for what the game
+/// reads from a map as it is: an AI script (`.ai`), a preload file
+/// (`.pld`), the map's own `Scripts\common.j` and `Scripts\Blizzard.j`.
 fn left_out(name: &str) -> bool {
     let lower = name.to_ascii_lowercase().replace('/', "\\");
     let file = lower.rsplit('\\').next().unwrap_or(&lower);
-    matches!(lower.as_str(), "(listfile)" | "(attributes)" | "(signature)" | "war3map.j" | "scripts\\war3map.j" | "war3map.lua" | "scripts\\war3map.lua" | "war3map.as")
+    let ext = file.rsplit_once('.').map_or("", |(_, e)| e);
+    let code = matches!(ext, "j" | "vj" | "zn" | "lua" | "as") && !matches!(lower.as_str(), "scripts\\common.j" | "scripts\\blizzard.j");
+    matches!(lower.as_str(), "(listfile)" | "(attributes)" | "(signature)")
+        || code
         || file == crate::project::MANIFEST
         || file.ends_with(".trg")
         || file.contains(".patch.")
@@ -453,7 +489,10 @@ fn map_files(project: &Project, out: &Path) -> Result<(Files, Option<PathBuf>), 
                 Ok(list) => {
                     for (path, name) in list {
                         let hidden = path.strip_prefix(root).is_ok_and(|r| r.components().any(|c| crate::project::is_hidden(c.as_os_str())));
-                        if hidden || path == out || crate::map::is_map_name(&path) || is_code(project, &path) || left_out(&name) {
+                        // Among the sources too (a package: a hero's code, model
+                        // and textures together), a file is the map's unless it's
+                        // code (`left_out`).
+                        if hidden || path == out || crate::map::is_map_name(&path) || left_out(&name) {
                             continue;
                         }
                         files.insert(name.to_ascii_lowercase(), (name, From::Disk(path)));
@@ -499,7 +538,8 @@ fn code_files(project: &Project, extensions: &[&str]) -> Vec<PathBuf> {
             }
         }
     }
-    out.retain(|p| p.extension().and_then(|e| e.to_str()).is_some_and(|e| extensions.iter().any(|x| e.eq_ignore_ascii_case(x))) && is_code(project, p));
+    // A map's script in a root (`war3map.j`) is an earlier build's, not code.
+    out.retain(|p| p.extension().and_then(|e| e.to_str()).is_some_and(|e| extensions.iter().any(|x| e.eq_ignore_ascii_case(x))) && is_code(project, p) && !Project::is_generated(Some(project), p));
     out.sort();
     out
 }

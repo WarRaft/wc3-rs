@@ -174,17 +174,19 @@ fn angelscript_rename_conflicts_only_within_the_namespace() {
 }
 
 #[test]
-fn renames_in_maps_too_but_not_in_the_games_archives() {
+fn a_maps_script_is_left_out_of_renames_and_archives_say_if_they_can_be_written() {
     let (tmp, mut ws) = workspace("ren-map", &[("lib.j", LIB)]);
     std::fs::write(tmp.0.join("wc3.bni"), "[code]\nsources=.\n").unwrap();
     ws.disk_changed(&[tmp.0.join("wc3.bni")]);
     crate::map::tests::make_map(&tmp.0.join("Test.w3x"), &[("war3map.j", USER)]);
     ws.disk_changed(&[tmp.0.join("Test.w3x")]);
     ws.take_reports();
+    // A map's war3map.j is an earlier build's, strict JASS: a whole
+    // program, which sees nothing of the project's and isn't renamed with it.
     let a = ren(&ws, &tmp, "lib.j", 0, 10, "Assist");
     let files: Vec<String> = edits(&a).into_iter().map(|(f, _, _)| f).collect();
-    assert!(files.contains(&"war3map.j".to_string()) && files.contains(&"lib.j".to_string()), "{files:?}");
-    assert!(a.locations.iter().any(|l| l.id.contains("Test.w3x")));
+    assert!(files.contains(&"lib.j".to_string()) && !files.contains(&"war3map.j".to_string()), "{files:?}");
+    assert!(!a.locations.iter().any(|l| l.id.contains("Test.w3x")));
 
     // An archive that can't be written refuses.
     assert!(crate::mapfs::readonly(&tmp.0.join("Test.w3x")).is_none());
@@ -204,7 +206,7 @@ fn content_answers_with_the_text_of_a_file_in_a_map() {
 }
 
 #[test]
-fn refuses_what_world_editors_script_makes_of_the_triggers() {
+fn a_maps_script_renames_in_itself_and_init_trig_follows_its_trigger() {
     let (tmp, mut ws) = workspace("ren-we", &[]);
     let custom = wct_rs::CustomText {
         magic: false,
@@ -228,17 +230,19 @@ fn refuses_what_world_editors_script_makes_of_the_triggers() {
         let ch = line.chars().take(o.col - 1).collect::<String>().encode_utf16().count() as u32;
         rename(&ws, &id, Position::new(o.line as u32 - 1, ch), new)
     };
-    // Only in the script made of the triggers: the variable's.
-    let a = by_name("war3map.j", "udg_Count", "udg_Total");
-    assert!(a.locations.is_empty() && a.text.starts_with("`udg_Count` is declared only in war3map.j, which World Editor makes"), "{}", a.text);
+    // In the map's script (strict JASS, a whole program apart): renamed in
+    // it alone, a hotfix the next build makes anew.
+    let files: Vec<String> = edits(&by_name("war3map.j", "udg_Count", "udg_Total")).into_iter().map(|(f, _, _)| f).collect();
+    assert_eq!(files, ["war3map.j", "war3map.j"]);
     // A trigger's InitTrig_: the trigger's name.
     let a = by_name("war3map.wct", "InitTrig_A", "InitTrig_B");
     assert!(a.text.starts_with("`InitTrig_A` is what World Editor's script calls for the trigger `A`"), "{}", a.text);
-    // The custom script's own: in it and in its copy, from either.
-    for file in ["war3map.wct", "war3map.j"] {
-        let files: Vec<String> = edits(&by_name(file, "Shared", "Common")).into_iter().map(|(f, _, _)| f).collect();
-        assert_eq!((files.iter().filter(|f| *f == "war3map.j").count(), files.iter().filter(|f| *f == "war3map.wct").count()), (2, 2), "{file}: {files:?}");
-    }
+    // The custom script's own: in it only; its copy in war3map.j, in that
+    // file only. Neither reaches the other.
+    let files: Vec<String> = edits(&by_name("war3map.wct", "Shared", "Common")).into_iter().map(|(f, _, _)| f).collect();
+    assert_eq!(files, ["war3map.wct", "war3map.wct"]);
+    let files: Vec<String> = edits(&by_name("war3map.j", "Shared", "Common")).into_iter().map(|(f, _, _)| f).collect();
+    assert_eq!(files, ["war3map.j", "war3map.j"]);
     // Without triggers beside it, a war3map.j is the map's own code.
     let plain = tmp.0.join("Plain.w3x");
     crate::map::tests::make_map(&plain, &[("war3map.j", script)]);

@@ -371,7 +371,7 @@ class Reader {
  * @typedef {{severity: number, range: [number, number, number, number], message: string, rule: string, fix: WireFix | null}} WireDiagnostic
  * @typedef {{title: string, edits: {range: [number, number, number, number], text: string}[]}} WireFix
  * @typedef {{id: string, range: [number, number, number, number], name: string, container: string, kind: string}} WireLocation
- * @typedef {{kind: 'file', id: string, version: number, diagnostics: WireDiagnostic[], tokens: Uint32Array}
+ * @typedef {{kind: 'file', id: string, version: number, diagnostics: WireDiagnostic[], tokens: Uint32Array, generated: boolean}
  *         | {kind: 'legend', types: string[], modifiers: string[]}
  *         | {kind: 'answer', request: number, text: string, locations: WireLocation[]}
  *         | {kind: 'fs', request: number, error: string | null, message: string, stat: FsStat | null, entries: [string, 'file' | 'dir'][], data: Uint8Array}
@@ -405,7 +405,8 @@ function decode(kind, body) {
                 if (title) d.fix = {title, edits}
                 diagnostics.push(d)
             }
-            return {kind: 'file', id, version, diagnostics, tokens: r.u32s()}
+            const tokens = r.u32s()
+            return {kind: 'file', id, version, diagnostics, tokens, generated: r.u8() === 1}
         }
         case KIND.LEGEND:
             return {kind: 'legend', types: r.strings(), modifiers: r.strings()}

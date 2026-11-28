@@ -30,7 +30,7 @@ fn session(events: Vec<Event>) -> Vec<Answer> {
     let mut answers = Vec::new();
     while let Some((kind, body)) = read_frame(&mut input).unwrap() {
         match ServerMsg::decode(kind, &body).unwrap() {
-            Some(ServerMsg::File { id, version, diagnostics, tokens }) => {
+            Some(ServerMsg::File { id, version, diagnostics, tokens, .. }) => {
                 answers.push(Answer { id, version, diagnostics, tokens })
             }
             Some(ServerMsg::Legend { .. }) => assert!(answers.is_empty(), "the legend comes first"),

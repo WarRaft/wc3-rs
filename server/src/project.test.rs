@@ -219,10 +219,10 @@ fn a_group_switches_its_rules_and_a_rule_setting_wins() {
     assert_eq!(rules, vec![rule::UNUSED_LOCAL]);
 
     let (project, issues) = load(Path::new("/p"), "[lint]
-pure=warning
+strict=warning
 ");
     assert!(issues.is_empty(), "{issues:?}");
-    assert_eq!(project.lint_groups.get("pure"), Some(&LintSetting::On(Level::Warning)));
+    assert_eq!(project.lint_groups.get("strict"), Some(&LintSetting::On(Level::Warning)));
     assert!(project.lint.is_empty());
     let got: Vec<_> = apply_lint(diags(), Some(&project)).iter().map(|d| (d.rule, d.level)).collect();
     assert_eq!(got, vec![(rule::IMPLICIT_SIGNATURE, Level::Warning), (rule::UNUSED_LOCAL, Level::Warning)]);
@@ -230,9 +230,9 @@ pure=warning
     // The rule's own setting wins, before or after the group.
     for src in ["[lint]
 implicit-signature=off
-pure=error
+strict=error
 ", "[lint]
-pure=error
+strict=error
 implicit-signature=off
 "] {
         let (project, _) = load(Path::new("/p"), src);
@@ -354,7 +354,7 @@ fn reads_the_map_roots_in_order_and_they_are_sources() {
         vec![
             (5, Level::Warning, "root 'nope' does not exist"),
             (6, Level::Warning, "root 'notes.txt' is a file but not a map: a root is a folder or a map (.w3x, .w3m)"),
-            (7, Level::Warning, "root 'map' is already a root above"),
+            (7, Level::Error, "root 'map' is already a root above; it's left out"),
             (8, Level::Error, "'root' needs a value: a folder or a map (.w3x, .w3m)"),
             (9, Level::Error, "'root' takes a single path (quote a path that contains a comma; add another 'root=' line for another root)"),
             (10, Level::Warning, "unknown setting 'size' in [map] (expected 'root')"),
@@ -471,4 +471,58 @@ fn a_reforged_games_hd_and_locale() {
     assert_eq!((p.hd, p.de), (false, true));
     let (_, issues) = load(Path::new("/p"), "[project]\nhd=yes\nde=true\nlocale=russian\n");
     assert_eq!(issues.iter().map(|i| i.message.as_str()).collect::<Vec<_>>(), ["'hd' is 1 or 0", "'de' is 1 or 0", "'locale' is a locale's four letters: ruRU, enUS ..."]);
+}
+
+/// What a build makes: its map (and the files in it), or code alone's
+/// script; nothing else, not a map's own `war3map.j` among the roots.
+#[test]
+fn what_a_build_makes() {
+    let (alone, _) = load(Path::new("/p"), "");
+    assert!(alone.is_built(Path::new("/p/build/war3map.j")));
+    assert!(!alone.is_built(Path::new("/p/src/war3map.j")));
+    let (map, _) = load(Path::new("/p"), "[map]\nroot=map\n[build]\nname=release\n");
+    assert!(map.is_built(Path::new("/p/build/release.w3x/war3map.j")));
+    assert!(!map.is_built(Path::new("/p/map/war3map.j")));
+    assert!(!map.is_built(Path::new("/p/build/war3map.j")));
+}
+
+/// Roots go from the top down, and none may hold another: one that meets a
+/// root above (inside it, holding it, the same) is left out, an error.
+#[test]
+fn roots_cant_hold_one_another() {
+    let tmp = TempDir::new("project-nested-roots");
+    for d in ["A/B/C/Models", "A/F/Icons", "X"] {
+        std::fs::create_dir_all(tmp.0.join(d)).unwrap();
+    }
+    crate::map::tests::make_map(&tmp.0.join("X/base.w3x"), &[("war3map.j", "")]);
+    let src = "[map]\nroot=A/B/C/Models\nroot=A/F/Icons\nroot=A/B\nroot=A/B/C/Models/Sub\nroot=X\nroot=X/base.w3x\nroot=a/f/icons\n";
+    let (project, issues) = load(&tmp.0, src);
+    assert_eq!(project.roots, ["A/B/C/Models", "A/F/Icons", "X"].map(|r| tmp.0.join(r)).to_vec());
+    let got: Vec<(usize, Level, bool)> = issues.iter().map(|i| (i.line, i.level, i.message.contains("it's left out"))).collect();
+    assert_eq!(got, [4, 5, 7, 8].map(|l| (l, Level::Error, true)).to_vec(), "{issues:?}");
+    assert!(issues[0].message.contains("holds the root") && issues[1].message.contains("is inside the root"), "{issues:?}");
+}
+
+/// A map's script (`war3map.j`, `Scripts\war3map.j`) is generated, in
+/// any root however deep the project keeps it, and in any map; a map's
+/// `.ai` and `.pld` are code the game runs as it is too: strict.
+#[test]
+fn what_a_map_holds_is_compiled() {
+    let tmp = TempDir::new("project-compiled");
+    std::fs::create_dir_all(tmp.0.join("A/B/C/Models/Scripts")).unwrap();
+    crate::map::tests::make_map(&tmp.0.join("Loose.w3x"), &[("war3map.j", "")]);
+    let (project, _) = load(&tmp.0, "[map]\nroot=A/B/C/Models\n");
+    let p = Some(&project);
+    let at = |f: &str| tmp.0.join(f);
+    assert!(Project::is_generated(p, &at("A/B/C/Models/war3map.j")));
+    assert!(Project::is_generated(p, &at("A/B/C/Models/Scripts/War3map.J")));
+    assert!(Project::is_generated(p, &at("Loose.w3x/war3map.j")));
+    assert!(Project::is_generated(None, &at("Loose.w3x/war3map.j")));
+    assert!(!Project::is_generated(p, &at("A/B/C/Models/Sub/war3map.j")));
+    assert!(!Project::is_generated(p, &at("A/war3map.j")));
+    assert!(Project::is_compiled(p, &at("A/B/C/Models/Scripts/elf.ai")));
+    assert!(Project::is_compiled(p, &at("A/B/C/Models/x.pld")));
+    assert!(!Project::is_generated(p, &at("A/B/C/Models/x.pld")));
+    assert!(!Project::is_compiled(p, &at("A/B/C/Models/lib.j")));
+    assert!(!Project::is_compiled(p, &at("src/elf.ai")));
 }
