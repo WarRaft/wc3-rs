@@ -54,6 +54,40 @@ item's details are in its section below):
     map's own functions alike; decided with `native-rs`, a base of the
     natives: their comments, examples of use and users' comments,
     gathered in one place, that the IDE's hints come from.
+- **MCP: what the editor can do and the agent can't yet** (see
+  [MCP](#mcp); navigation, `code_definition` / `code_references` /
+  `code_symbols`, is done). In order:
+  - `obj_values`: an object's every field as the game sees it (the
+    game's tables and profiles with the map's object data over them:
+    `wc3_editor::objdata`), not only what the map changes (`obj_get`);
+    `obj_find`: the game's standard objects by name or a field's value
+    (the rawcode of Blizzard, the units with more than 1000 hit points);
+  - `map_derive`: what World Editor makes again on save after the
+    terrain or what's placed changed (`w3e_brush`, `w3e_tiles`,
+    `doo_new` ...): `war3map.wpm` (`wc3_editor::pathing`), the minimap's
+    `war3mapMap.blp` and `war3map.mmp` (`wc3_editor::minimap`);
+  - `game_read` / `game_find`: a file as the project's layers find it
+    (`game=` and roots, last found wins: `game::Lookup`), and whether a
+    path is there and where from; then a check of the paths a map names
+    (models, icons, sounds in object data and code) that neither its
+    imports nor the game have;
+  - `code_format` (`format.rs`); `blp_image` (BLP, DDS, TGA to PNG) and
+    `blp_write` (PNG to BLP, libjpeg-turbo's JPEG); `trg_jass` in Lua and
+    AngelScript (the server's `TriggerLua`, `TriggerAngelScript`); FDF
+    tools (`fdf_check`, its frames and their types); `test_map` (only
+    when asked: it runs the game).
+- **vJASS's names, what's left** (`jass-rs`'s Symbols, `names`):
+  - a struct's members are matched by their name (every `path` field of
+    every struct one symbol, in navigation and rename alike): telling
+    which struct a value is takes types (a local's declared type, a
+    method's `returns`, `thistype`);
+  - a `public` name used as `Scope_name` outside its scope isn't linked
+    to its declaration (`names` knows it, the symbols don't);
+  - a module's methods see the members of the struct implementing it
+    only when that struct is in the same file.
+- **The trigger editor's colors**: a theme of the old `.tmTheme` format
+  isn't read (the page's own colors stand in); a theme's
+  `semanticHighlighting: false` isn't heeded (its semantic rules count).
 - **Low priority, needing research.** What World Editor makes on save
   by a way of its own that isn't known; each needs that way found out
   (from Blizzard's maps in the game's folder, not maps edited by hand)
